@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.13",
     "pydantic-settings>=2.4",
+    "espn-api>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -54,4 +55,8 @@ plugins = ["pydantic.mypy"]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["app", "migrations", "tests"]
+files = ["app", "migrations", "tests", "scripts"]
+
+[[tool.mypy.overrides]]
+module = "espn_api.*"
+ignore_missing_imports = true

@@ -71,6 +71,15 @@ uvicorn app.main:create_app --factory --reload
 curl http://127.0.0.1:8000/health   # -> {"status":"ok"}
 ```
 
+## Probe an ESPN league (read-only)
+
+```bash
+python scripts/espn_probe.py
+```
+
+Prints one league's settings and team list. Fetches only, nothing is persisted.
+Needs `ESPN_LEAGUE_ID`, `ESPN_SEASON`, `ESPN_SWID`, `ESPN_S2` (see `.env.example`).
+
 ## Quality gates
 
 ```bash
