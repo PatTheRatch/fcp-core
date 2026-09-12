@@ -5,14 +5,18 @@ Usage:
     python scripts/ingest_league.py
 
 Reads the same ESPN_* variables as scripts/espn_probe.py and writes to
-DATABASE_URL. Safe to re-run: a season already stored is updated in place,
-and a season not yet stored is inserted alongside the others.
+DATABASE_URL. Persists the season's structure, its teams and owners, its
+matchup periods and matchups, and a roster snapshot per team per period.
+
+Safe to re-run: a season already stored is updated in place, and a season not
+yet stored is inserted alongside the others. Makes one ESPN call per matchup
+period, so a full season is a couple of dozen requests.
 """
 
 from app.config import get_settings
 from app.db.session import make_engine, make_session_factory
 from app.espn import fetch_league, get_espn_settings
-from app.ingest import ingest_league_structure
+from app.ingest import ingest_season
 
 
 def main() -> None:
@@ -23,7 +27,7 @@ def main() -> None:
     try:
         session_factory = make_session_factory(engine)
         with session_factory() as session:
-            stored = ingest_league_structure(session, league)
+            stored = ingest_season(session, league)
             session.commit()
 
             print(f"Stored {stored.name!r} season {stored.season}")
@@ -36,6 +40,12 @@ def main() -> None:
             print(f"  trade deadline: {stored.trade_deadline}")
             categories = ", ".join(c.abbreviation for c in stored.categories)
             print(f"  categories ({len(stored.categories)}): {categories}")
+
+            matchups = sum(len(p.matchups) for p in stored.matchup_periods)
+            rosters = sum(len(m.roster_slots) for p in stored.matchup_periods for m in p.matchups)
+            print(f"  teams stored: {len(stored.teams)}")
+            print(f"  matchup periods: {len(stored.matchup_periods)}  matchups: {matchups}")
+            print(f"  roster snapshots: {rosters}")
     finally:
         engine.dispose()
 

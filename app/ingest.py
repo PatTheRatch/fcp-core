@@ -17,7 +17,17 @@ from espn_api.basketball.constant import STATS_MAP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import League, LeagueSeason, LeagueSeasonCategory
+from app.db.models import (
+    League,
+    LeagueSeason,
+    LeagueSeasonCategory,
+    Matchup,
+    MatchupPeriod,
+    Owner,
+    Player,
+    RosterSlot,
+    Team,
+)
 
 
 def _epoch_ms_to_datetime(epoch_ms: Any) -> datetime | None:
@@ -121,4 +131,207 @@ def ingest_league_structure(session: Session, espn_league: ESPNLeague) -> League
 
     _sync_categories(league_season, _scoring_items(settings))
     session.flush()
+    return league_season
+
+
+def _owner_key(raw_owner: dict[str, Any]) -> str | None:
+    espn_owner_id = raw_owner.get("id")
+    return str(espn_owner_id) if espn_owner_id else None
+
+
+def _sync_owners(session: Session, team: Team, raw_owners: list[dict[str, Any]]) -> None:
+    """Attach the team's owners, creating people we have not seen before.
+
+    A team can have more than one owner, so this is a many-to-many rather
+    than a column on the team.
+    """
+    owners: list[Owner] = []
+    for raw_owner in raw_owners:
+        key = _owner_key(raw_owner)
+        if key is None:
+            continue
+        owner = session.scalar(select(Owner).where(Owner.espn_owner_id == key))
+        if owner is None:
+            owner = Owner(espn_owner_id=key)
+            session.add(owner)
+        owner.display_name = raw_owner.get("displayName")
+        owner.first_name = raw_owner.get("firstName")
+        owner.last_name = raw_owner.get("lastName")
+        owners.append(owner)
+
+    session.flush()
+    team.owners = owners
+
+
+def ingest_teams(session: Session, league_season: LeagueSeason, espn_league: ESPNLeague) -> None:
+    """Write every team in the season. Existing teams are updated in place."""
+    for espn_team in espn_league.teams:
+        espn_team_id = int(espn_team.team_id)
+        team = session.scalar(
+            select(Team).where(
+                Team.league_season_id == league_season.id,
+                Team.espn_team_id == espn_team_id,
+            )
+        )
+        if team is None:
+            team = Team(league_season_id=league_season.id, espn_team_id=espn_team_id)
+            session.add(team)
+
+        team.name = str(espn_team.team_name)
+        team.abbreviation = getattr(espn_team, "team_abbrev", None)
+        team.logo_url = getattr(espn_team, "logo_url", None)
+        team.division_id = getattr(espn_team, "division_id", None)
+        team.division_name = getattr(espn_team, "division_name", None)
+        team.standing = getattr(espn_team, "standing", None)
+        team.final_standing = getattr(espn_team, "final_standing", None)
+        team.categories_won = int(getattr(espn_team, "wins", 0) or 0)
+        team.categories_lost = int(getattr(espn_team, "losses", 0) or 0)
+        team.categories_tied = int(getattr(espn_team, "ties", 0) or 0)
+        team.acquisitions = getattr(espn_team, "acquisitions", None)
+        team.drops = getattr(espn_team, "drops", None)
+        team.trades = getattr(espn_team, "trades", None)
+        team.acquisition_budget_spent = getattr(espn_team, "acquisition_budget_spent", None)
+
+        session.flush()
+        _sync_owners(session, team, list(getattr(espn_team, "owners", None) or []))
+
+    session.flush()
+
+
+def _team_index(session: Session, league_season: LeagueSeason) -> dict[int, Team]:
+    teams = session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all()
+    return {team.espn_team_id: team for team in teams}
+
+
+def _espn_team_id(side: Any) -> int | None:
+    """Box score sides are a Team, or the integer 0 when a team has a bye."""
+    team_id = getattr(side, "team_id", side)
+    try:
+        team_id = int(team_id)
+    except (TypeError, ValueError):
+        return None
+    return team_id or None
+
+
+def _get_or_create_player(session: Session, espn_player: Any) -> Player | None:
+    espn_player_id = getattr(espn_player, "playerId", None)
+    if espn_player_id is None:
+        return None
+    espn_player_id = int(espn_player_id)
+
+    player = session.scalar(select(Player).where(Player.espn_player_id == espn_player_id))
+    if player is None:
+        player = Player(espn_player_id=espn_player_id)
+        session.add(player)
+    player.name = str(getattr(espn_player, "name", "") or f"player {espn_player_id}")
+    return player
+
+
+def _sync_roster(session: Session, matchup: Matchup, team: Team, lineup: list[Any]) -> None:
+    """Record who was on this team during this matchup period."""
+    existing = {
+        (slot.team_id, slot.player_id): slot
+        for slot in matchup.roster_slots
+        if slot.team_id == team.id
+    }
+    seen: set[tuple[int, int]] = set()
+
+    for espn_player in lineup:
+        player = _get_or_create_player(session, espn_player)
+        if player is None:
+            continue
+        session.flush()  # assign player.id before it is used as a key
+
+        key = (team.id, player.id)
+        if key in seen:  # a player cannot occupy two slots on one roster
+            continue
+        seen.add(key)
+
+        slot = existing.get(key)
+        if slot is None:
+            slot = RosterSlot(team_id=team.id, player_id=player.id)
+            matchup.roster_slots.append(slot)
+
+        slot.position = getattr(espn_player, "position", None)
+        slot.pro_team = getattr(espn_player, "proTeam", None)
+        slot.injured = bool(getattr(espn_player, "injured", False))
+        slot.injury_status = getattr(espn_player, "injuryStatus", None)
+
+    for key, slot in existing.items():
+        if key not in seen:
+            matchup.roster_slots.remove(slot)
+
+
+def ingest_matchups_and_rosters(
+    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+) -> None:
+    """Write every matchup period, its matchups, and the rosters that played.
+
+    One ESPN call per matchup period. Box scores are used rather than
+    `team.schedule` for two reasons: each matchup appears once instead of
+    twice, and the lineups come back in the same response. Team schedules are
+    also not a reliable enumeration, since their length varies by team.
+    """
+    teams = _team_index(session, league_season)
+    period_numbers = sorted(
+        int(period) for period in (getattr(espn_league.settings, "matchup_periods", None) or {})
+    )
+
+    for period_number in period_numbers:
+        matchup_period = session.scalar(
+            select(MatchupPeriod).where(
+                MatchupPeriod.league_season_id == league_season.id,
+                MatchupPeriod.period == period_number,
+            )
+        )
+        if matchup_period is None:
+            matchup_period = MatchupPeriod(league_season_id=league_season.id, period=period_number)
+            session.add(matchup_period)
+
+        matchup_period.is_playoff = period_number > league_season.regular_season_periods
+        session.flush()
+
+        for box in espn_league.box_scores(period_number):
+            home_team = teams.get(_espn_team_id(box.home_team) or -1)
+            if home_team is None:
+                continue  # a side we have no team row for; nothing to hang it on
+            away_team = teams.get(_espn_team_id(box.away_team) or -1)
+
+            if matchup_period.final_scoring_period is None:
+                scoring_period = getattr(box, "scoring_period", None)
+                matchup_period.final_scoring_period = (
+                    int(scoring_period) if scoring_period is not None else None
+                )
+
+            matchup = session.scalar(
+                select(Matchup).where(
+                    Matchup.matchup_period_id == matchup_period.id,
+                    Matchup.home_team_id == home_team.id,
+                )
+            )
+            if matchup is None:
+                matchup = Matchup(matchup_period_id=matchup_period.id, home_team_id=home_team.id)
+                session.add(matchup)
+
+            matchup.away_team_id = away_team.id if away_team else None
+            matchup.winner = str(getattr(box, "winner", "UNDECIDED") or "UNDECIDED")
+            matchup.home_categories_won = int(getattr(box, "home_wins", 0) or 0)
+            matchup.home_categories_lost = int(getattr(box, "away_wins", 0) or 0)
+            matchup.categories_tied = int(getattr(box, "home_ties", 0) or 0)
+            session.flush()
+
+            _sync_roster(session, matchup, home_team, list(getattr(box, "home_lineup", None) or []))
+            if away_team is not None:
+                _sync_roster(
+                    session, matchup, away_team, list(getattr(box, "away_lineup", None) or [])
+                )
+
+    session.flush()
+
+
+def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
+    """Write one whole season: structure, teams, matchup periods and rosters."""
+    league_season = ingest_league_structure(session, espn_league)
+    ingest_teams(session, league_season, espn_league)
+    ingest_matchups_and_rosters(session, league_season, espn_league)
     return league_season

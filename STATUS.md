@@ -14,12 +14,18 @@
   patch holds, and settings + all 14 teams come back populated.
 
 - League structure persisted: `leagues`, `league_seasons`,
-  `league_season_categories` (migration 0002). `scripts/ingest_league.py`
-  writes one season and is safe to re-run. Verified against the live league.
+  `league_season_categories` (migration 0002).
+- Teams, owners, matchup periods, matchups and rosters persisted: `teams`,
+  `owners`, `team_owners`, `matchup_periods`, `matchups`, `players`,
+  `roster_slots` (migration 0003).
+- `scripts/ingest_league.py` writes one whole season and is safe to re-run.
+  Verified against the live league on 2026-09-12: 14 teams, 15 owners,
+  22 matchup periods, 157 matchups, 348 players, 4436 roster snapshots, in
+  about 20 seconds. A second run changed no row counts.
 
 ## Building now
 
-- Persisting teams, matchup periods and rosters on top of `league_seasons`
+- Deciding what to build on top of the stored season
 
 ### Why the schema is season-scoped
 
@@ -55,10 +61,38 @@ Two deliberate consequences:
 - `team.owners` is a list of dicts and can hold more than one owner, so the
   team-to-owner relationship is many-to-many, not a single column.
 
+### What the box scores taught us
+
+- Box scores, not `team.schedule`, are the right enumeration. Each matchup
+  appears once instead of twice, lineups arrive in the same response, and
+  schedule length varies by team (21 for some, 22 for others).
+- A bye is reported as opponent team id `0` with winner `UNDECIDED`. Stored
+  as a matchup with a null away team. There are six, all in the playoffs.
+- `box.home_wins` / `away_wins` / `home_ties` are the categories won in that
+  one matchup, and they do sum to the category count.
+- **A matchup record is now derivable**, which it was not before. Summing
+  matchup winners over the regular season gives, for example, 14-5-0, against
+  a category tally of 106-62-3 for the same team.
+- `espn_api` reports `lineupSlot` as "PG" for every player in every period
+  (601 of 601 checked). It is a parsing bug upstream, so starter-versus-bench
+  is not recoverable and no lineup slot column exists.
+- ESPN's `matchupPeriods` map claims one scoring period per matchup period,
+  which the box scores contradict (period 1 reports scoring period 6).
+  `matchup_periods.final_scoring_period` records what the box score said
+  rather than inventing a mapping.
+
 ## Next
 
-1. Persist teams / matchup periods / rosters
-2. Derive matchup records from the schedule endpoint (ESPN does not give them)
+1. Per-category matchup detail: `box.home_team_cats` carries a score and a
+   result per category, currently unpersisted
+2. Player statistics per scoring period
+3. An API surface over the stored season
+
+## Open questions
+
+- Rosters are snapshots per matchup period, which is the finest grain the box
+  scores expose. Daily roster movement within a period is not recoverable
+  from this source.
 
 ## Not building yet
 

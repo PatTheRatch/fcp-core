@@ -22,10 +22,12 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Table,
     UniqueConstraint,
     func,
 )
@@ -103,6 +105,16 @@ class LeagueSeason(Base):
         cascade="all, delete-orphan",
         order_by="LeagueSeasonCategory.position",
     )
+    teams: Mapped[list["Team"]] = relationship(
+        back_populates="league_season",
+        cascade="all, delete-orphan",
+        order_by="Team.espn_team_id",
+    )
+    matchup_periods: Mapped[list["MatchupPeriod"]] = relationship(
+        back_populates="league_season",
+        cascade="all, delete-orphan",
+        order_by="MatchupPeriod.period",
+    )
 
 
 class LeagueSeasonCategory(Base):
@@ -131,3 +143,189 @@ class LeagueSeasonCategory(Base):
     is_reverse: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     league_season: Mapped[LeagueSeason] = relationship(back_populates="categories")
+
+
+team_owners = Table(
+    "team_owners",
+    Base.metadata,
+    Column("team_id", ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
+    Column("owner_id", ForeignKey("owners.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Owner(Base):
+    """A person, identified by the GUID ESPN assigns them.
+
+    Global rather than season-scoped: the same GUID follows someone across
+    seasons and across leagues, so an owner outlives any team they managed.
+    """
+
+    __tablename__ = "owners"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: ESPN's owner GUID, e.g. "{238280FE-...}". Stable across seasons.
+    espn_owner_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String)
+    first_name: Mapped[str | None] = mapped_column(String)
+    last_name: Mapped[str | None] = mapped_column(String)
+
+    teams: Mapped[list["Team"]] = relationship(secondary=team_owners, back_populates="owners")
+
+
+class Team(Base):
+    """A team as it existed in one season.
+
+    Season-scoped for the same reason `league_seasons` is: a team can be
+    renamed, change hands, or have its ESPN id reused between years. The
+    durable identity is the owner, not the team.
+    """
+
+    __tablename__ = "teams"
+    __table_args__ = (
+        UniqueConstraint("league_season_id", "espn_team_id", name="uq_teams_season_espn_team"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    #: ESPN's team id. Sparse and non-contiguous, so it is a key, not an index.
+    espn_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    abbreviation: Mapped[str | None] = mapped_column(String)
+    logo_url: Mapped[str | None] = mapped_column(String)
+    division_id: Mapped[int | None] = mapped_column(Integer)
+    division_name: Mapped[str | None] = mapped_column(String)
+    standing: Mapped[int | None] = mapped_column(Integer)
+    final_standing: Mapped[int | None] = mapped_column(Integer)
+
+    #: Season totals of CATEGORIES won, lost and tied. Not a matchup record:
+    #: they sum to (regular season periods x categories). ESPN reports no
+    #: season matchup record at all; derive it from `matchups` if needed.
+    categories_won: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    categories_lost: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    categories_tied: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    acquisitions: Mapped[int | None] = mapped_column(Integer)
+    drops: Mapped[int | None] = mapped_column(Integer)
+    trades: Mapped[int | None] = mapped_column(Integer)
+    acquisition_budget_spent: Mapped[int | None] = mapped_column(Integer)
+
+    league_season: Mapped[LeagueSeason] = relationship(back_populates="teams")
+    owners: Mapped[list[Owner]] = relationship(secondary=team_owners, back_populates="teams")
+
+
+class MatchupPeriod(Base):
+    """One scoring window in a season.
+
+    ESPN's own `matchupPeriods` map claims each period covers a single
+    scoring period, which the box scores contradict. Rather than invent a
+    mapping, `final_scoring_period` records the scoring period the box score
+    actually reported for this window.
+    """
+
+    __tablename__ = "matchup_periods"
+    __table_args__ = (
+        UniqueConstraint("league_season_id", "period", name="uq_matchup_periods_season_period"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: True once `period` exceeds the season's regular season period count.
+    is_playoff: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    final_scoring_period: Mapped[int | None] = mapped_column(Integer)
+
+    league_season: Mapped[LeagueSeason] = relationship(back_populates="matchup_periods")
+    matchups: Mapped[list["Matchup"]] = relationship(
+        back_populates="matchup_period", cascade="all, delete-orphan"
+    )
+
+
+class Matchup(Base):
+    """One pairing inside a matchup period.
+
+    `away_team_id` is null for a bye: ESPN reports the absent side as team 0
+    and leaves the result UNDECIDED, which happens in the playoff rounds.
+    """
+
+    __tablename__ = "matchups"
+    __table_args__ = (
+        UniqueConstraint("matchup_period_id", "home_team_id", name="uq_matchups_period_home"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    matchup_period_id: Mapped[int] = mapped_column(
+        ForeignKey("matchup_periods.id", ondelete="CASCADE"), nullable=False
+    )
+    home_team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    away_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+
+    #: HOME, AWAY, TIE or UNDECIDED, as ESPN reports it.
+    winner: Mapped[str] = mapped_column(String, nullable=False)
+    home_categories_won: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    home_categories_lost: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    categories_tied: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    matchup_period: Mapped[MatchupPeriod] = relationship(back_populates="matchups")
+    roster_slots: Mapped[list["RosterSlot"]] = relationship(
+        back_populates="matchup", cascade="all, delete-orphan"
+    )
+
+
+class Player(Base):
+    """An NBA player, identified by ESPN's global player id.
+
+    Global, like `owners`: a player is not owned by a league or a season.
+    Anything about them that changes (team, position, health) is recorded on
+    the roster row instead, because that row is pinned to a point in time.
+    """
+
+    __tablename__ = "players"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    espn_player_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class RosterSlot(Base):
+    """One player on one team's roster during one matchup period.
+
+    A roster is a moving target, so this is deliberately a snapshot pinned to
+    a matchup period rather than a "current roster" that would be wrong the
+    moment anyone makes a waiver claim.
+
+    There is no lineup slot column on purpose. `espn-api` reports the slot as
+    "PG" for every player in every period, which is plainly a parsing bug
+    upstream, so starter-versus-bench cannot be recovered from this source.
+    """
+
+    __tablename__ = "roster_slots"
+    __table_args__ = (
+        UniqueConstraint(
+            "matchup_id", "team_id", "player_id", name="uq_roster_slots_matchup_team_player"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    matchup_id: Mapped[int] = mapped_column(
+        ForeignKey("matchups.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+
+    #: Position and pro team as at this matchup period, not as of today.
+    position: Mapped[str | None] = mapped_column(String)
+    pro_team: Mapped[str | None] = mapped_column(String)
+    injured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    injury_status: Mapped[str | None] = mapped_column(String)
+
+    matchup: Mapped[Matchup] = relationship(back_populates="roster_slots")
+    player: Mapped[Player] = relationship()

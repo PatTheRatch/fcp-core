@@ -17,9 +17,19 @@ from alembic.config import Config
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import League, LeagueSeason, LeagueSeasonCategory
+from app.db.models import (
+    League,
+    LeagueSeason,
+    LeagueSeasonCategory,
+    Matchup,
+    MatchupPeriod,
+    Owner,
+    Player,
+    RosterSlot,
+    Team,
+)
 from app.db.session import make_engine, make_session_factory
-from app.ingest import ingest_league_structure
+from app.ingest import ingest_league_structure, ingest_season
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -199,3 +209,275 @@ def test_changing_categories_within_a_season_is_reconciled(session: Session) -> 
     kept = next(c for c in stored.categories if c.stat_id == 0)
     assert kept.id == points_id, "a category that survived should keep its row id"
     assert len(session.scalars(select(LeagueSeasonCategory)).all()) == 9
+
+
+def fake_player(
+    player_id: int,
+    name: str,
+    *,
+    position: str = "PG",
+    pro_team: str = "LAL",
+    injured: bool = False,
+    injury_status: str = "ACTIVE",
+) -> Any:
+    return SimpleNamespace(
+        playerId=player_id,
+        name=name,
+        position=position,
+        proTeam=pro_team,
+        injured=injured,
+        injuryStatus=injury_status,
+        # Always "PG" upstream, which is why ingest ignores it.
+        lineupSlot="PG",
+    )
+
+
+def fake_team(
+    team_id: int,
+    name: str,
+    *,
+    owners: list[dict[str, Any]] | None = None,
+    categories: tuple[int, int, int] = (95, 76, 0),
+    standing: int = 1,
+) -> Any:
+    return SimpleNamespace(
+        team_id=team_id,
+        team_name=name,
+        team_abbrev=name[:4].upper(),
+        logo_url=f"https://example.test/{team_id}.png",
+        division_id=1,
+        division_name="UK",
+        standing=standing,
+        final_standing=standing,
+        wins=categories[0],
+        losses=categories[1],
+        ties=categories[2],
+        owners=owners if owners is not None else [owner_dict(f"owner-{team_id}")],
+        acquisitions=113,
+        drops=113,
+        trades=4,
+        acquisition_budget_spent=50,
+    )
+
+
+def owner_dict(guid: str, first: str = "Pat", last: str = "M") -> dict[str, Any]:
+    return {
+        "id": guid,
+        "displayName": f"{first.lower()}{last.lower()}",
+        "firstName": first,
+        "lastName": last,
+    }
+
+
+def fake_box(
+    home: Any,
+    away: Any,
+    *,
+    winner: str = "HOME",
+    home_wins: int = 5,
+    away_wins: int = 4,
+    ties: int = 0,
+    scoring_period: int = 6,
+    home_lineup: list[Any] | None = None,
+    away_lineup: list[Any] | None = None,
+) -> Any:
+    return SimpleNamespace(
+        home_team=home,
+        away_team=away,
+        winner=winner,
+        home_wins=home_wins,
+        away_wins=away_wins,
+        home_ties=ties,
+        scoring_period=scoring_period,
+        home_lineup=home_lineup or [],
+        away_lineup=away_lineup or [],
+    )
+
+
+def league_with_play(
+    *,
+    season: int = 2026,
+    teams: list[Any],
+    boxes: dict[int, list[Any]],
+    reg_season_count: int = 2,
+    matchup_period_count: int = 3,
+) -> Any:
+    """A fake league that also answers `box_scores(period)`."""
+    league = fake_league(
+        season=season,
+        reg_season_count=reg_season_count,
+        matchup_period_count=matchup_period_count,
+    )
+    league.teams = teams
+    league.box_scores = lambda period: boxes.get(period, [])
+    return league
+
+
+def test_ingest_teams_stores_identity_and_category_tallies(session: Session) -> None:
+    home, away = fake_team(3, "Through The Wire"), fake_team(21, "Load Management")
+    espn = league_with_play(teams=[home, away], boxes={})
+
+    ingest_season(session, espn)
+
+    stored = {t.espn_team_id: t for t in session.scalars(select(Team)).all()}
+    assert sorted(stored) == [3, 21]
+    assert stored[3].name == "Through The Wire"
+    assert stored[3].division_name == "UK"
+    # Named for what they are: category tallies, not a matchup record.
+    assert (stored[3].categories_won, stored[3].categories_lost) == (95, 76)
+
+
+def test_a_team_can_have_several_owners(session: Session) -> None:
+    shared = fake_team(25, "Ben's Need Some VC", owners=[owner_dict("g-ben"), owner_dict("g-bern")])
+    espn = league_with_play(teams=[shared], boxes={})
+
+    ingest_season(session, espn)
+
+    team = session.scalars(select(Team)).one()
+    assert {o.espn_owner_id for o in team.owners} == {"g-ben", "g-bern"}
+
+
+def test_owners_are_shared_across_seasons_not_duplicated(session: Session) -> None:
+    """An owner is a person, so the same GUID must not create a second row."""
+    guid = owner_dict("g-pat")
+    ingest_season(
+        session, league_with_play(season=2026, teams=[fake_team(3, "A", owners=[guid])], boxes={})
+    )
+    session.commit()
+    ingest_season(
+        session, league_with_play(season=2027, teams=[fake_team(3, "B", owners=[guid])], boxes={})
+    )
+    session.commit()
+
+    assert len(session.scalars(select(Owner)).all()) == 1
+    assert len(session.scalars(select(Team)).all()) == 2, "teams are season-scoped"
+
+
+def test_matchup_periods_flag_the_playoffs(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away)], 2: [fake_box(home, away)], 3: [fake_box(home, away)]},
+        reg_season_count=2,
+        matchup_period_count=3,
+    )
+
+    ingest_season(session, espn)
+
+    periods = {p.period: p for p in session.scalars(select(MatchupPeriod)).all()}
+    assert sorted(periods) == [1, 2, 3]
+    assert periods[1].is_playoff is False
+    assert periods[2].is_playoff is False
+    assert periods[3].is_playoff is True, "period beyond the regular season is a playoff period"
+
+
+def test_a_bye_is_stored_with_no_opponent(session: Session) -> None:
+    """ESPN reports the absent side as team 0 and the result as UNDECIDED."""
+    home = fake_team(3, "A")
+    espn = league_with_play(
+        teams=[home],
+        boxes={1: [fake_box(home, 0, winner="UNDECIDED", home_wins=0, away_wins=0)]},
+        matchup_period_count=1,
+    )
+
+    ingest_season(session, espn)
+
+    matchup = session.scalars(select(Matchup)).one()
+    assert matchup.away_team_id is None
+    assert matchup.winner == "UNDECIDED"
+
+
+def test_rosters_are_snapshots_per_matchup_period(session: Session) -> None:
+    """A roster changes constantly, so each period keeps its own record."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    kawhi, sengun = fake_player(6450, "Kawhi Leonard"), fake_player(4066261, "Alperen Sengun")
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={
+            1: [fake_box(home, away, home_lineup=[kawhi], away_lineup=[sengun])],
+            # Traded: the same two players swap teams for period 2.
+            2: [fake_box(home, away, home_lineup=[sengun], away_lineup=[kawhi])],
+        },
+        matchup_period_count=2,
+    )
+
+    ingest_season(session, espn)
+
+    assert len(session.scalars(select(Player)).all()) == 2, "players are global, not per team"
+    slots = session.scalars(select(RosterSlot)).all()
+    assert len(slots) == 4
+
+    by_period = {(s.matchup.matchup_period.period, s.player.name): s.team_id for s in slots}
+    teams = {t.espn_team_id: t.id for t in session.scalars(select(Team)).all()}
+    assert by_period[(1, "Kawhi Leonard")] == teams[3]
+    assert by_period[(2, "Kawhi Leonard")] == teams[21], "period 2 reflects the trade"
+
+
+def test_roster_details_are_recorded_as_at_that_period(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    hurt = fake_player(
+        6450, "Kawhi Leonard", position="SF", pro_team="LAC", injured=True, injury_status="OUT"
+    )
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[hurt])]},
+        matchup_period_count=1,
+    )
+
+    ingest_season(session, espn)
+
+    slot = session.scalars(select(RosterSlot)).one()
+    assert (slot.position, slot.pro_team) == ("SF", "LAC")
+    assert slot.injured is True
+    assert slot.injury_status == "OUT"
+
+
+def test_reingesting_a_season_does_not_duplicate_play(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    kawhi = fake_player(6450, "Kawhi Leonard")
+
+    def build() -> Any:
+        return league_with_play(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_lineup=[kawhi], away_lineup=[])]},
+            matchup_period_count=1,
+        )
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(MatchupPeriod)).all()) == 1
+    assert len(session.scalars(select(Matchup)).all()) == 1
+    assert len(session.scalars(select(RosterSlot)).all()) == 1
+    assert len(session.scalars(select(Player)).all()) == 1
+
+
+def test_a_dropped_player_leaves_the_roster_on_reingest(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    kawhi, sengun = fake_player(6450, "Kawhi"), fake_player(4066261, "Sengun")
+
+    ingest_season(
+        session,
+        league_with_play(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_lineup=[kawhi, sengun])]},
+            matchup_period_count=1,
+        ),
+    )
+    session.commit()
+
+    ingest_season(
+        session,
+        league_with_play(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_lineup=[kawhi])]},
+            matchup_period_count=1,
+        ),
+    )
+    session.commit()
+
+    names = {s.player.name for s in session.scalars(select(RosterSlot)).all()}
+    assert names == {"Kawhi"}
+    assert len(session.scalars(select(Player)).all()) == 2, "the player row itself survives a drop"

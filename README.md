@@ -89,9 +89,20 @@ ESPN does not return a matchup record for a category league.
 python scripts/ingest_league.py
 ```
 
-Persists one season's structure to `DATABASE_URL`. Safe to re-run: an
-already-stored season is updated in place, a new season is inserted alongside
-it, and earlier seasons are never modified.
+Persists one whole season to `DATABASE_URL`: league settings and scoring
+categories, teams and their owners, matchup periods and the matchups inside
+them, and a roster snapshot per team per matchup period.
+
+Safe to re-run: an already-stored season is updated in place, a new season is
+inserted alongside it, and earlier seasons are never modified. It makes one
+ESPN call per matchup period, so a full season is a couple of dozen requests
+and takes roughly twenty seconds.
+
+Two things the schema deliberately does not have. There is no lineup slot on
+a roster row, because `espn-api` reports every player's slot as `PG`. There is
+no season matchup record on a team, because ESPN does not report one; the
+team's `categories_won` is a tally of categories, and a matchup record is
+derived by counting winners in `matchups`.
 
 ## Quality gates
 
