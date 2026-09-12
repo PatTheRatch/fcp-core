@@ -461,23 +461,29 @@ sudo systemctl restart fcp-core-api.service
 Forgetting the restart is quiet rather than loud: the new routes simply 404
 while everything reports healthy. It caught me once already.
 
-### How much transaction history ESPN actually keeps
+### Why 2026 has so many more transactions
 
-Transactions are much thinner for older seasons:
+Not ESPN retention. **The league moved to FAAB in 2026**, and the stored
+settings say so: `uses_faab` is false for 2019 to 2025 and true for 2026.
 
-| season | transactions | executed waivers |
-|---|---|---|
-| 2019 | 856 | 50 |
-| 2022 | 820 | 36 |
-| 2024 | 1245 | 72 |
-| 2025 | 1616 | 67 |
-| 2026 | 5132 | 1148 |
+The composition flips completely, and the totals follow from the mechanism:
 
-A twentyfold gap in executed waivers between 2025 and 2026 is not plausible
-as real behaviour, and it matches the pattern seen twice already: ESPN thins
-historical detail, as it does with `pointsByScoringPeriod` and with player
-card days. Treated as retention rather than as a record of how the league
-played, though the cause is not confirmed.
+| season | faab | waivers | free agent | rows with a bid | top bid |
+|---|---|---|---|---|---|
+| 2019 | no | 91 | 681 | 0 | 0 |
+| 2022 | no | 54 | 753 | 0 | 0 |
+| 2024 | no | 172 | 868 | 0 | 0 |
+| 2025 | no | 191 | 1070 | 0 | 0 |
+| 2026 | yes | 4571 | 2 | 819 | 23 |
+
+Under first-come free agency a pickup is one row: whoever got there first.
+Under FAAB every team's bid on the same player is its own row, and most of
+them lose. So the jump is mechanical rather than a change in how much the
+league traded, and it is exactly why the losing bids are worth keeping.
+
+Recorded here because the first reading of this file said the opposite. The
+retention hypothesis was wrong, and the answer was already in a column the
+schema had been storing since migration 0002.
 
 ## Correction, now resolved: daily lineups and bench
 
