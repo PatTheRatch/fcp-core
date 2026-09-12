@@ -18,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    NON_STARTING_SLOTS,
+    DailyLineupSlot,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -518,14 +520,162 @@ def ingest_player_stats(
     return written
 
 
-def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
-    """Write one whole season: structure, teams, play, rosters and player stats.
+def _matchup_id_windows(espn_league: ESPNLeague) -> dict[int, list[int]]:
+    """Matchup period -> every scoring period in it, from `League.matchup_ids`.
 
-    Player stats come last because they are scoped to the players who
-    actually appeared on a roster, which is only known once rosters exist.
+    This is the authoritative mapping. `settings.matchup_periods` claims one
+    day per period and is wrong. Keys arrive as ints and values as strings in
+    lexicographic order ("10" before "7"), so both are coerced and sorted.
+    """
+    raw = getattr(espn_league, "matchup_ids", None) or {}
+    windows: dict[int, list[int]] = {}
+    for period, days in raw.items():
+        try:
+            period_number = int(period)
+        except (TypeError, ValueError):
+            continue
+        windows[period_number] = sorted(int(day) for day in days)
+    return windows
+
+
+def _record_period_windows(
+    session: Session, league_season: LeagueSeason, windows: dict[int, list[int]]
+) -> dict[int, MatchupPeriod]:
+    """Store each period's true scoring-period range and return them by period."""
+    periods = {
+        period.period: period
+        for period in session.scalars(
+            select(MatchupPeriod).where(MatchupPeriod.league_season_id == league_season.id)
+        ).all()
+    }
+    for period_number, days in windows.items():
+        period = periods.get(period_number)
+        if period is None or not days:
+            continue
+        period.first_scoring_period = days[0]
+        period.final_scoring_period = days[-1]
+    session.flush()
+    return periods
+
+
+def _lineup_sides(box: Any) -> list[tuple[int | None, list[Any]]]:
+    """The (espn team id, lineup) pairs on a box score, skipping a bye's gap."""
+    return [
+        (_espn_team_id(box.home_team), list(getattr(box, "home_lineup", None) or [])),
+        (_espn_team_id(box.away_team), list(getattr(box, "away_lineup", None) or [])),
+    ]
+
+
+def ingest_daily_lineups(
+    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+) -> int:
+    """Write where every player sat, for every team, on every day.
+
+    One ESPN call per scoring period, requested with `matchup_total=False`
+    so the response carries `rosterForCurrentScoringPeriod` and its real
+    lineup slots. The default aggregate roster reports slot 0 for everyone
+    and is useless for this.
+
+    Returns the number of rows written.
+    """
+    windows = _matchup_id_windows(espn_league)
+    if not windows:
+        return 0
+
+    teams = _team_index(session, league_season)
+    periods = _record_period_windows(session, league_season, windows)
+    players = {player.espn_player_id: player for player in session.scalars(select(Player)).all()}
+    written = 0
+
+    for period_number in sorted(windows):
+        matchup_period = periods.get(period_number)
+        if matchup_period is None:
+            continue
+
+        for scoring_period in windows[period_number]:
+            # Load the day's stored rows in one query rather than per player.
+            existing = {
+                (row.team_id, row.player_id): row
+                for row in session.scalars(
+                    select(DailyLineupSlot).where(
+                        DailyLineupSlot.matchup_period_id == matchup_period.id,
+                        DailyLineupSlot.scoring_period == scoring_period,
+                    )
+                ).all()
+            }
+            seen: set[tuple[int, int]] = set()
+
+            boxes = espn_league.box_scores(
+                matchup_period=period_number,
+                scoring_period=scoring_period,
+                matchup_total=False,
+            )
+
+            # Collect the day's entries first, so every player new to us is
+            # created in one flush rather than one flush per player.
+            entries: list[tuple[Team, Any]] = []
+            for box in boxes:
+                for espn_team_id, lineup in _lineup_sides(box):
+                    team = teams.get(espn_team_id or -1)
+                    if team is None:
+                        continue  # the empty side of a bye
+                    entries.extend((team, espn_player) for espn_player in lineup)
+
+            for _, espn_player in entries:
+                espn_player_id = getattr(espn_player, "playerId", None)
+                if espn_player_id is not None and int(espn_player_id) not in players:
+                    player = _get_or_create_player(session, espn_player)
+                    if player is not None:
+                        players[int(espn_player_id)] = player
+            session.flush()
+
+            for team, espn_player in entries:
+                espn_player_id = getattr(espn_player, "playerId", None)
+                player = players.get(int(espn_player_id)) if espn_player_id is not None else None
+                if player is None:
+                    continue
+
+                key = (team.id, player.id)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                row = existing.get(key)
+                if row is None:
+                    row = DailyLineupSlot(
+                        team_id=team.id,
+                        matchup_period_id=matchup_period.id,
+                        scoring_period=scoring_period,
+                        player_id=player.id,
+                    )
+                    session.add(row)
+
+                slot = str(getattr(espn_player, "slot_position", "FA") or "FA")
+                row.slot = slot
+                row.started = slot not in NON_STARTING_SLOTS
+                row.injured = bool(getattr(espn_player, "injured", False))
+                row.injury_status = getattr(espn_player, "injuryStatus", None)
+                written += 1
+
+            for key, row in existing.items():
+                if key not in seen:
+                    session.delete(row)
+
+            session.flush()
+
+    return written
+
+
+def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
+    """Write one whole season: structure, teams, play, lineups and player stats.
+
+    Order matters twice. Daily lineups need the matchup periods to exist, and
+    player stats come last because they are scoped to the players who
+    appeared on a roster, which is only known once rosters and lineups are in.
     """
     league_season = ingest_league_structure(session, espn_league)
     ingest_teams(session, league_season, espn_league)
     ingest_matchups_and_rosters(session, league_season, espn_league)
+    ingest_daily_lineups(session, league_season, espn_league)
     ingest_player_stats(session, league_season, espn_league)
     return league_season

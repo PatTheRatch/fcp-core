@@ -24,11 +24,15 @@
 - Player statistics per scoring period persisted: `player_game_stats`
   (migration 0005). A box score line per player per day, global rather than
   league-scoped, keyed on (player, season, scoring period).
+- Daily lineups persisted: `daily_lineup_slots` (migration 0006). Where every
+  player sat, for every team, on every day, including bench and injured
+  reserve. Kept alongside the weekly `roster_slots`, not in place of it.
 - `scripts/ingest_league.py` writes one whole season and is safe to re-run.
   Verified against the live league on 2026-09-12: 14 teams, 15 owners,
   22 matchup periods, 157 matchups, 348 players, 4436 roster snapshots and
-  4004 matchup statistics and 28215 player game lines (20431 with a stat
-  line), in about 50 seconds. A second run changed no row counts.
+  4004 matchup statistics, 28215 player game lines (20431 with a stat line)
+  and 29100 daily lineup slots (9257 not started), in about two and a half
+  minutes. A second run changed no row counts.
 
 ## Building now
 
@@ -126,45 +130,56 @@ Two deliberate consequences:
 
 1. An API surface over the stored season
 2. Ingesting prior seasons, which the schema already allows
-3. Ingesting daily lineups so bench status is queryable, which the
-   Correction below shows is straightforward
+3. Narrative queries over the stored season, now that bench decisions and
+   exact category attribution are both available
 
-## Correction: daily lineups and bench ARE available
+## Correction, now resolved: daily lineups and bench
 
-Two earlier conclusions in this file were wrong. Both are recorded here
-rather than quietly edited away, because they shaped the schema.
+Two earlier conclusions in this file were wrong, and both shaped the schema,
+so they are recorded rather than quietly edited away.
 
 **Who was benched on a given day is recoverable.** Each side of a box score
 carries two rosters. `rosterForMatchupPeriod` is the aggregate and sets every
-`lineupSlotId` to 0, which is where the useless "PG" comes from.
-`rosterForCurrentScoringPeriod` carries the real slots. `espn_api` exposes
-this as `box_scores(matchup_period=N, scoring_period=M, matchup_total=False)`,
-whose `slot_position` returns PG, SG, SF, PF, C, G, F, UT, BE and IR. On one
-sampled day, 55 of 181 lineup entries were BE.
+`lineupSlotId` to 0, which is where the useless "PG" comes from, and it is
+what `espn_api` reads by default. `rosterForCurrentScoringPeriod` carries the
+real slots, reached with
+`box_scores(matchup_period=N, scoring_period=M, matchup_total=False)`, whose
+`slot_position` returns PG, SG, SF, PF, C, G, F, UT, BE and IR.
 
 **The exact scoring-period mapping exists.** `League.matchup_ids` maps each
 matchup period to every scoring period it contains: period 1 is days 1-6,
-period 2 is days 7-13. No approximation needed. Note its keys are ints and
-its values are strings in lexicographic order, so sort numerically.
+period 2 is days 7-13. Its keys are ints and its values are strings in
+lexicographic order ("10" before "7"), so sort numerically or lose the
+window. Stored as `first_scoring_period` and `final_scoring_period`.
 
-**Together these reconcile exactly.** Summing the daily started players
-(slot not BE or IR) for team 3 over matchup period 1 gives 472.0 points
-against a stored team total of 472.0. The reconciliation gap reported
-earlier was an artefact of both mistakes, not a property of the data.
+**Reconciliation is now exact.** Summing the daily started players against
+the separately stored team totals, over all 308 sides of the season:
 
-Cost to ingest: one call per scoring period, so about 160 calls at 0.37s,
-roughly one minute added to a full season ingest.
+| Category | Sides agreeing |
+|---|---|
+| PTS, AST, STL, BLK, TO, 3PM, FGM, FTA | 308 of 308 |
+| REB | 307 of 308 |
+
+The single rebound exception is ESPN disagreeing with itself, not a pipeline
+fault: for Fantastic 5 in period 19 the player rows are internally consistent
+(47 offensive + 203 defensive = 250) while ESPN's team total says 249.
+
+### Narratives this unlocks
+
+Bench decisions are now queryable. Over the regular season, Masters of their
+Domains left 370 points on their bench and benched a 20-point game seven
+times. The worst single call was The Infirmary sitting Gary Trent Jr. for 36
+points on a day their best starter managed 5.
 
 ## Open questions
 
-- Daily lineups are not yet ingested. `roster_slots` remains a per-matchup-
-  period snapshot, so bench status is not queryable from the database today
-  even though it is available from ESPN.
 - ESPN omits the date and opponent on about 4.7% of played lines (969 of
   20431). The statistics are present and correct; only the game context is
   missing. Verified as an upstream gap, not a parsing fault.
 - The fantasy season ends at scoring period 160 while `player_game_stats`
   holds days up to 174, since NBA games continue past the fantasy playoffs.
+- `roster_slots` (weekly) and `daily_lineup_slots` (daily) overlap by design.
+  Worth revisiting only if the weekly table stops earning its keep.
 
 ## Open questions
 

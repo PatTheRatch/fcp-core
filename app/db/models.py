@@ -241,10 +241,16 @@ class MatchupPeriod(Base):
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     #: True once `period` exceeds the season's regular season period count.
     is_playoff: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    #: The window this period covers, from `League.matchup_ids`. Inclusive at
+    #: both ends. Period 1 is days 1-6, period 2 is days 7-13, and so on.
+    first_scoring_period: Mapped[int | None] = mapped_column(Integer)
     final_scoring_period: Mapped[int | None] = mapped_column(Integer)
 
     league_season: Mapped[LeagueSeason] = relationship(back_populates="matchup_periods")
     matchups: Mapped[list["Matchup"]] = relationship(
+        back_populates="matchup_period", cascade="all, delete-orphan"
+    )
+    daily_lineup_slots: Mapped[list["DailyLineupSlot"]] = relationship(
         back_populates="matchup_period", cascade="all, delete-orphan"
     )
 
@@ -439,4 +445,58 @@ class PlayerGameStat(Base):
     #: meaningless for a single game (PPG equals PTS) but harmless to keep.
     raw_totals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
+    player: Mapped[Player] = relationship()
+
+
+#: Lineup slots that mean the player did not count toward the team's totals.
+#: "FA" is `espn-api`'s placeholder when ESPN sends no slot at all.
+NON_STARTING_SLOTS = ("BE", "IR", "FA")
+
+
+class DailyLineupSlot(Base):
+    """Where one player sat in one team's lineup on one day.
+
+    The finest grain ESPN exposes, and the one that makes narratives
+    possible: who was benched, who was started while injured, and what the
+    player they sat went on to do that night.
+
+    Kept alongside `roster_slots` rather than replacing it. The weekly row
+    says who a team held during a matchup period; these rows say what the
+    team actually did with them, day by day.
+
+    Sourced from ESPN's `rosterForCurrentScoringPeriod`, which is only
+    returned when a specific scoring period is requested. The aggregate
+    roster used for `roster_slots` reports no usable slot at all.
+    """
+
+    __tablename__ = "daily_lineup_slots"
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id", "scoring_period", "player_id", name="uq_daily_lineup_slots_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    #: The matchup period this day falls inside, per `League.matchup_ids`.
+    matchup_period_id: Mapped[int] = mapped_column(
+        ForeignKey("matchup_periods.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The day itself. Join to `player_game_stats` on this to see what the
+    #: player actually did while sitting in this slot.
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+
+    #: PG, SG, SF, PF, C, G, F, UT, BE, IR, or FA.
+    slot: Mapped[str] = mapped_column(String, nullable=False)
+    #: False for BE, IR and FA. Materialised because almost every narrative
+    #: query filters on it.
+    started: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    injured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    injury_status: Mapped[str | None] = mapped_column(String)
+
+    team: Mapped[Team] = relationship()
+    matchup_period: Mapped[MatchupPeriod] = relationship(back_populates="daily_lineup_slots")
     player: Mapped[Player] = relationship()

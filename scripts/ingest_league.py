@@ -16,7 +16,7 @@ period, so a full season is a couple of dozen requests.
 from sqlalchemy import func, select
 
 from app.config import get_settings
-from app.db.models import PlayerGameStat
+from app.db.models import DailyLineupSlot, MatchupPeriod, PlayerGameStat
 from app.db.session import make_engine, make_session_factory
 from app.espn import fetch_league, get_espn_settings
 from app.ingest import ingest_season
@@ -70,6 +70,20 @@ def main() -> None:
                 .where(PlayerGameStat.season == stored.season, PlayerGameStat.played)
             )
             print(f"  player game lines: {games} ({played} with a stat line)")
+
+            lineups = session.scalar(
+                select(func.count())
+                .select_from(DailyLineupSlot)
+                .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
+                .where(MatchupPeriod.league_season_id == stored.id)
+            )
+            benched = session.scalar(
+                select(func.count())
+                .select_from(DailyLineupSlot)
+                .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
+                .where(MatchupPeriod.league_season_id == stored.id, ~DailyLineupSlot.started)
+            )
+            print(f"  daily lineup slots: {lineups} ({benched} not started)")
     finally:
         engine.dispose()
 

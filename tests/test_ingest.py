@@ -14,10 +14,11 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import (
+    DailyLineupSlot,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -221,6 +222,7 @@ def fake_player(
     pro_team: str = "LAL",
     injured: bool = False,
     injury_status: str = "ACTIVE",
+    slot: str = "PG",
 ) -> Any:
     return SimpleNamespace(
         playerId=player_id,
@@ -229,8 +231,10 @@ def fake_player(
         proTeam=pro_team,
         injured=injured,
         injuryStatus=injury_status,
-        # Always "PG" upstream, which is why ingest ignores it.
+        # Always "PG" on the aggregate roster, which is why ingest ignores it.
         lineupSlot="PG",
+        # The real daily slot, from rosterForCurrentScoringPeriod.
+        slot_position=slot,
     )
 
 
@@ -352,6 +356,48 @@ def league_with_play(
     league.player_info = lambda playerId: [  # noqa: N803  (ESPN's own parameter name)
         by_id[i] for i in playerId if i in by_id
     ]
+    league.matchup_ids = {}
+    league.box_scores = lambda matchup_period=None, scoring_period=None, matchup_total=True: (
+        boxes.get(matchup_period, [])
+    )
+    return league
+
+
+def league_with_days(
+    *,
+    teams: list[Any],
+    boxes: dict[int, list[Any]],
+    days: dict[int, dict[int, list[Any]]],
+    windows: dict[int, list[str]],
+    reg_season_count: int = 2,
+    matchup_period_count: int = 2,
+    cards: dict[int, Any] | None = None,
+) -> Any:
+    """A fake league with daily lineups.
+
+    `days` maps matchup period -> scoring period -> box scores for that day.
+    `windows` mirrors ESPN's `matchup_ids`: int keys, string values, and
+    deliberately in lexicographic order so the sorting is exercised.
+    """
+    league = league_with_play(
+        teams=teams,
+        boxes=boxes,
+        reg_season_count=reg_season_count,
+        matchup_period_count=matchup_period_count,
+        cards=cards,
+    )
+    league.matchup_ids = windows
+
+    def box_scores(
+        matchup_period: int | None = None,
+        scoring_period: int | None = None,
+        matchup_total: bool = True,
+    ) -> list[Any]:
+        if not matchup_total and scoring_period is not None:
+            return days.get(matchup_period or 0, {}).get(scoring_period, [])
+        return boxes.get(matchup_period or 0, [])
+
+    league.box_scores = box_scores
     return league
 
 
@@ -742,3 +788,150 @@ def test_only_players_rostered_this_season_are_fetched(session: Session) -> None
 
     names = {r.player.name for r in session.scalars(select(PlayerGameStat)).all()}
     assert names == {"Rostered"}
+
+
+def _daily_league(
+    *,
+    day_slots: dict[int, list[tuple[int, str]]],
+    cards: dict[int, Any] | None = None,
+) -> Any:
+    """A two-team league where `day_slots` maps scoring period -> (player id, slot).
+
+    Both teams share the matchup; the slots given are the home team's.
+    """
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    weekly = fake_box(
+        home, away, home_lineup=[fake_player(pid, f"P{pid}") for pid, _ in day_slots.get(1, [])]
+    )
+    days: dict[int, dict[int, list[Any]]] = {1: {}}
+    for scoring_period, slots in day_slots.items():
+        lineup = [fake_player(pid, f"P{pid}", slot=slot) for pid, slot in slots]
+        days[1][scoring_period] = [fake_box(home, away, home_lineup=lineup, away_lineup=[])]
+    return league_with_days(
+        teams=[home, away],
+        boxes={1: [weekly]},
+        days=days,
+        # Lexicographic on purpose: "10" sorts before "7" as a string.
+        windows={1: [str(d) for d in sorted(day_slots, key=str)]},
+        matchup_period_count=1,
+        cards=cards,
+    )
+
+
+def test_daily_slots_record_who_started_and_who_sat(session: Session) -> None:
+    espn = _daily_league(day_slots={1: [(100, "PG"), (200, "BE"), (300, "IR"), (400, "UT")]})
+
+    ingest_season(session, espn)
+
+    rows = {r.player.name: r for r in session.scalars(select(DailyLineupSlot)).all()}
+    assert rows["P100"].slot == "PG"
+    assert rows["P100"].started is True
+    assert rows["P200"].slot == "BE"
+    assert rows["P200"].started is False, "bench does not count"
+    assert rows["P300"].started is False, "injured reserve does not count"
+    assert rows["P400"].started is True, "utility is a starting slot"
+
+
+def test_the_same_player_can_start_one_day_and_sit_the_next(session: Session) -> None:
+    """The whole point of the daily grain."""
+    espn = _daily_league(day_slots={7: [(100, "PG")], 8: [(100, "BE")]})
+
+    ingest_season(session, espn)
+
+    by_day = {r.scoring_period: r.started for r in session.scalars(select(DailyLineupSlot)).all()}
+    assert by_day == {7: True, 8: False}
+
+
+def test_period_window_is_taken_from_matchup_ids(session: Session) -> None:
+    """Values arrive as unsorted strings, so the window must be sorted numerically."""
+    espn = _daily_league(day_slots={7: [(100, "PG")], 8: [(100, "PG")], 10: [(100, "PG")]})
+
+    ingest_season(session, espn)
+
+    period = session.scalars(select(MatchupPeriod)).one()
+    assert period.first_scoring_period == 7
+    assert period.final_scoring_period == 10, "10 must not lose to 8 lexicographically"
+
+
+def test_daily_rows_carry_injury_state(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    hurt = fake_player(100, "Hurt", injured=True, injury_status="OUT", slot="BE")
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[hurt])]},
+        days={1: {1: [fake_box(home, away, home_lineup=[hurt], away_lineup=[])]}},
+        windows={1: ["1"]},
+        matchup_period_count=1,
+    )
+
+    ingest_season(session, espn)
+
+    row = session.scalars(select(DailyLineupSlot)).one()
+    assert row.injured is True
+    assert row.injury_status == "OUT"
+    assert row.started is False
+
+
+def test_the_weekly_snapshot_is_kept_alongside_the_daily_one(session: Session) -> None:
+    """Both grains are retained; the daily rows do not replace roster_slots."""
+    espn = _daily_league(day_slots={1: [(100, "PG"), (200, "BE")]})
+
+    ingest_season(session, espn)
+
+    assert len(session.scalars(select(RosterSlot)).all()) > 0, "weekly rows still written"
+    assert len(session.scalars(select(DailyLineupSlot)).all()) == 2
+
+
+def test_daily_lineups_are_not_duplicated_on_reingest(session: Session) -> None:
+    def build() -> Any:
+        return _daily_league(day_slots={1: [(100, "PG")], 2: [(100, "BE")]})
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(DailyLineupSlot)).all()) == 2
+
+
+def test_a_player_dropped_from_a_day_is_removed(session: Session) -> None:
+    ingest_season(session, _daily_league(day_slots={1: [(100, "PG"), (200, "BE")]}))
+    session.commit()
+
+    ingest_season(session, _daily_league(day_slots={1: [(100, "PG")]}))
+    session.commit()
+
+    names = {r.player.name for r in session.scalars(select(DailyLineupSlot)).all()}
+    assert names == {"P100"}
+
+
+def test_started_players_reconcile_with_the_team_total(session: Session) -> None:
+    """The narrative payoff, and the check that the two grains agree.
+
+    P100 starts and scores 30, P200 is benched and scores 40. The team total
+    must count only the 30.
+    """
+    espn = _daily_league(
+        day_slots={1: [(100, "PG"), (200, "BE")]},
+        cards={
+            100: fake_card(100, "P100", {1: dict(BOX_LINE, PTS=30.0)}),
+            200: fake_card(200, "P200", {1: dict(BOX_LINE, PTS=40.0)}),
+        },
+    )
+
+    ingest_season(session, espn)
+
+    started_points = session.scalar(
+        select(func.sum(PlayerGameStat.points))
+        .join(DailyLineupSlot, DailyLineupSlot.player_id == PlayerGameStat.player_id)
+        .where(
+            DailyLineupSlot.scoring_period == PlayerGameStat.scoring_period,
+            DailyLineupSlot.started,
+        )
+    )
+    assert started_points == 30.0, "the benched 40 must not count"
+
+    benched = session.scalars(
+        select(DailyLineupSlot).where(DailyLineupSlot.started == False)  # noqa: E712
+    ).one()
+    assert benched.player.name == "P200"

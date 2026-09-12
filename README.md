@@ -92,18 +92,22 @@ python scripts/ingest_league.py
 Persists one whole season to `DATABASE_URL`: league settings and scoring
 categories, teams and their owners, matchup periods and the matchups inside
 them, a roster snapshot per team per matchup period, every statistic each team
-posted in each matchup, and a box score line per player per scoring period.
+posted in each matchup, a box score line per player per scoring period, and
+where every player sat in every team's lineup on every day.
 
 Safe to re-run: an already-stored season is updated in place, a new season is
 inserted alongside it, and earlier seasons are never modified. It makes one
 ESPN call per matchup period, so a full season is a couple of dozen requests
-plus a handful of batched player-card calls, and takes roughly fifty seconds.
+plus one per scoring period for the daily lineups and a handful of batched
+player-card calls, and takes roughly two and a half minutes.
 
-Two things the schema does not have yet. There is no lineup slot on a roster
-row: the default box score call reports every player's slot as `PG`, though
-the real daily slots are available via
-`box_scores(matchup_period, scoring_period, matchup_total=False)` and are
-simply not ingested yet. There is
+Two grains of roster data are kept on purpose. `roster_slots` says who a team
+held during a matchup period. `daily_lineup_slots` says what the team did with
+them each day, including who sat on the bench or injured reserve, and is the
+one to use for anything about decisions. Summing the started players there
+reproduces a team's stored category totals exactly.
+
+One thing the schema does not have. There is
 no season matchup record on a team, because ESPN does not report one; the
 team's `categories_won` is a tally of categories, and a matchup record is
 derived by counting winners in `matchups`.
