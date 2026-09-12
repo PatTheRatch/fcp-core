@@ -445,6 +445,40 @@ on the Mac, and a nightly `--recent` run takes about 10 seconds. The stored
 data matches the Mac exactly, including the 2021 reconciliation gap, which is
 a good sign the two are genuinely the same pipeline.
 
+### Deploying a code change to the VPS
+
+Pulling is not enough. The ingest picks up new code on its next run, because
+systemd starts a fresh process each time, but the API is a long-running
+service and keeps serving whatever it was started with:
+
+```
+cd /opt/fcp-core && git pull
+./.venv/bin/pip install -q -e ".[dev]"     # only if dependencies moved
+./.venv/bin/python -m alembic upgrade head # only if there is a new migration
+sudo systemctl restart fcp-core-api.service
+```
+
+Forgetting the restart is quiet rather than loud: the new routes simply 404
+while everything reports healthy. It caught me once already.
+
+### How much transaction history ESPN actually keeps
+
+Transactions are much thinner for older seasons:
+
+| season | transactions | executed waivers |
+|---|---|---|
+| 2019 | 856 | 50 |
+| 2022 | 820 | 36 |
+| 2024 | 1245 | 72 |
+| 2025 | 1616 | 67 |
+| 2026 | 5132 | 1148 |
+
+A twentyfold gap in executed waivers between 2025 and 2026 is not plausible
+as real behaviour, and it matches the pattern seen twice already: ESPN thins
+historical detail, as it does with `pointsByScoringPeriod` and with player
+card days. Treated as retention rather than as a record of how the league
+played, though the cause is not confirmed.
+
 ## Correction, now resolved: daily lineups and bench
 
 Two earlier conclusions in this file were wrong, and both shaped the schema,
