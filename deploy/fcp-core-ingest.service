@@ -38,4 +38,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/opt/fcp-core/logs
+# Same reasoning as the backup unit: name the checkout, not a subdirectory
+# that may not exist when the namespace is built.
+ReadWritePaths=/opt/fcp-core

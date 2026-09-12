@@ -30,4 +30,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/opt/fcp-core/backups /opt/fcp-core/logs
+# The checkout, not the two subdirectories: systemd builds the namespace
+# before anything runs, so naming a directory that does not exist yet fails
+# the unit with exit 226 rather than creating it.
+ReadWritePaths=/opt/fcp-core
