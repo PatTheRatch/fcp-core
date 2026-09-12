@@ -3,7 +3,8 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- `GET /health` returns `{"status": "ok"}`
+- Read-only HTTP API over the stored season, 13 endpoints (see below).
+  Writes stay with the ingest.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
@@ -33,6 +34,41 @@
   4004 matchup statistics, 28215 player game lines (20431 with a stat line)
   and 29100 daily lineup slots (9257 not started), in about two and a half
   minutes. A second run changed no row counts.
+
+### The API surface
+
+Read-only. Paths are keyed on ESPN's identifiers, so a URL is buildable from
+a league id and a year rather than from surrogate database ids.
+
+| Route | What it gives |
+|---|---|
+| `GET /health` | liveness |
+| `GET /leagues` | every league, with the seasons held |
+| `GET /leagues/{id}/seasons` | seasons for one league |
+| `GET /leagues/{id}/seasons/{yr}` | that season's settings and categories |
+| `.../teams` | teams with their owners |
+| `.../standings` | derived matchup record beside ESPN's category tally |
+| `.../periods` | matchup periods and the days each covers |
+| `.../matchups` | matchups with per-category detail for both sides |
+| `.../teams/{tid}/lineups` | daily slots with that day's production |
+| `.../teams/{tid}/bench` | bench points and the worst individual calls |
+| `GET /players` | name search |
+| `GET /players/{pid}` | one player |
+| `GET /players/{pid}/games` | game log |
+
+Notes on the design:
+
+- `/standings` is the only place a matchup record exists, because ESPN does
+  not report one. It counts winners and excludes byes: an unopposed matchup
+  is not a win. It shows the category tally alongside so the two are not
+  confused.
+- Bounded collections return a plain list. Collections that grow with the
+  season return `{items, total, limit, offset}`, so no caller is handed an
+  unbounded response by accident.
+- `is_scored_category` on matchup statistics comes from the league's category
+  list, not from `result`, which is null on both sides of a bye.
+- Run it locally with
+  `uvicorn app.main:create_app --factory`, then read `/docs`.
 
 ## Building now
 
@@ -128,10 +164,10 @@ Two deliberate consequences:
 
 ## Next
 
-1. An API surface over the stored season
-2. Ingesting prior seasons, which the schema already allows
-3. Narrative queries over the stored season, now that bench decisions and
-   exact category attribution are both available
+1. Ingesting prior seasons, which the schema already allows
+2. Narrative endpoints beyond the bench report: streaks, category trends,
+   head-to-head histories
+3. Deciding whether anything needs write access, and therefore auth
 
 ## Correction, now resolved: daily lineups and bench
 

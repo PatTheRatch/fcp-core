@@ -152,3 +152,25 @@ scripts/      small operational helpers (currently: test-db bootstrap for Docker
 - Keep PRs small enough for a human to understand.
 - STATUS.md must describe reality.
 - Prefer deleting complexity over documenting complexity.
+
+## Run the API
+
+```bash
+uvicorn app.main:create_app --factory
+```
+
+Read-only access to whatever has been ingested. Interactive documentation is
+at `/docs`; the generated schema is at `/openapi.json`.
+
+Paths are keyed on ESPN's own identifiers, so a URL can be built from a
+league id and a year:
+
+```bash
+curl localhost:8000/leagues/3853870/seasons/2026/standings
+curl "localhost:8000/leagues/3853870/seasons/2026/teams/3/bench"
+curl "localhost:8000/leagues/3853870/seasons/2026/teams/3/lineups?scoring_period=91"
+```
+
+`/standings` is worth singling out. ESPN reports no matchup record, so that
+route derives one by counting winners, excludes byes, and prints it next to
+the category tally rather than instead of it.
