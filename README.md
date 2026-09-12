@@ -78,7 +78,9 @@ python scripts/espn_probe.py
 ```
 
 Prints one league's settings and team list. Fetches only, nothing is persisted.
-Needs `ESPN_LEAGUE_ID`, `ESPN_SEASON`, `ESPN_SWID`, `ESPN_S2` (see `.env.example`).
+Needs `ESPN_LEAGUE_ID`, `ESPN_SWID` and `ESPN_S2` (see `.env.example`). The
+season is derived from the date; `ESPN_SEASON` is optional and only pins a
+run to a particular year.
 
 Note the per-team `W-L-T` is a count of *categories* won, not matchups won.
 ESPN does not return a matchup record for a category league.
@@ -248,8 +250,13 @@ Every attempt is recorded whether it succeeds or not:
 
 ```bash
 curl localhost:8000/ingest-runs
-curl localhost:8000/ingest-runs/health/2026
+curl localhost:8000/ingest-runs/health
 ```
+
+Ask `/ingest-runs/health` without a season. It answers for whichever season
+is running now, which is the question you actually want answered: a finished
+season refreshed nightly looks perfectly healthy while the live one is going
+unrecorded.
 
 A run still showing `running` means the process died partway. `stale` goes
 true when nothing has succeeded for 36 hours, which tolerates one missed

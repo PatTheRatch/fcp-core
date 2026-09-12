@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.api.deps import SessionDep
 from app.api.schemas import IngestHealthOut, IngestRunOut, Page
 from app.db.models import IngestRun
+from app.espn import current_season
 from app.ingest_runs import SUCCEEDED
 
 router = APIRouter(tags=["ingest"])
@@ -65,8 +66,22 @@ def list_ingest_runs(
 
 
 @router.get(
+    "/ingest-runs/health",
+    summary="Whether the season now running is being kept current",
+)
+def get_current_ingest_health(session: SessionDep) -> IngestHealthOut:
+    """Freshness of whichever season is running now.
+
+    Deliberately takes no season: asking about a fixed year is how a stale
+    schedule hides, since a finished season refreshed nightly looks perfectly
+    healthy while the live one goes unrecorded.
+    """
+    return get_ingest_health(current_season(), session)
+
+
+@router.get(
     "/ingest-runs/health/{season}",
-    summary="Whether a season's data is still being kept current",
+    summary="Whether a given season's data is still being kept current",
 )
 def get_ingest_health(season: int, session: SessionDep) -> IngestHealthOut:
     """Age of the last successful run, and whether that counts as stale.

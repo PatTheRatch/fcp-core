@@ -2,13 +2,16 @@
 """Fetch ESPN league seasons and persist them.
 
 Usage:
-    python scripts/ingest_league.py                  # the configured season
+    python scripts/ingest_league.py                  # the season running now
     python scripts/ingest_league.py --season 2023    # one prior season
     python scripts/ingest_league.py --all-seasons    # every season ESPN holds
     python scripts/ingest_league.py --recent         # trailing days only
 
 Reads the same ESPN_* variables as scripts/espn_probe.py and writes to
-DATABASE_URL. Each season persists its structure, teams and owners, matchup
+DATABASE_URL. The season is derived from the date, not configured: ESPN
+labels a season by the year it ends in and turns over in October. Setting
+ESPN_SEASON pins every run to one year, which is useful for a one-off
+backfill and dangerous for a schedule. Each season persists its structure, teams and owners, matchup
 periods and matchups, per-category matchup detail, a box score line per
 player per day, and where every player sat each day.
 
@@ -39,7 +42,12 @@ from app.db.models import (
     PlayerGameStat,
 )
 from app.db.session import make_engine, make_session_factory
-from app.espn import fetch_league, get_espn_settings, prior_seasons
+from app.espn import (
+    fetch_current_league,
+    fetch_league,
+    get_espn_settings,
+    prior_seasons,
+)
 from app.ingest import FULL_SCOPE, ingest_season, recent_scope
 from app.ingest_runs import record_run
 
@@ -132,15 +140,23 @@ def _ingest_one(factory: sessionmaker[Session], season: int, *, recent_days: int
 
 
 def _seasons_to_ingest(args: argparse.Namespace) -> Sequence[int]:
-    configured = get_espn_settings().espn_season
+    """Which seasons to write.
+
+    The default is whichever season is running now, derived from the date
+    rather than read from configuration. `ESPN_SEASON` still pins it if set,
+    but leaving it unset is what keeps a schedule honest across a rollover.
+    """
     if args.season is not None:
         return [args.season]
-    if not args.all_seasons:
-        return [configured]
 
-    # The league itself lists the seasons ESPN still holds.
-    current = fetch_league(get_espn_settings())
-    return [*prior_seasons(current), configured]
+    settings = get_espn_settings()
+    if not args.all_seasons:
+        # Ask ESPN rather than trusting the calendar alone: in early October
+        # the new season may not exist yet, and the fetch settles it.
+        return [int(fetch_current_league(settings).year)]
+
+    current = fetch_current_league(settings)
+    return [*prior_seasons(current), int(current.year)]
 
 
 def main() -> None:
@@ -170,6 +186,9 @@ def main() -> None:
 
     seasons = _seasons_to_ingest(args)
     scope_label = "full" if args.recent is None else f"last {args.recent} days"
+    pinned = get_espn_settings().espn_season
+    if pinned:
+        print(f"NOTE: ESPN_SEASON pins every run to {pinned}. Unset it to follow the calendar.")
     print(
         f"Ingesting {len(seasons)} season(s) [{scope_label}]: {', '.join(str(s) for s in seasons)}"
     )

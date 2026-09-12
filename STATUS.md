@@ -10,6 +10,9 @@
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
+- The season is derived from the date, not configured. ESPN labels a season by
+  the year it ends in and turns over in October, so a schedule follows the
+  rollover by itself. `ESPN_SEASON` still pins a one-off backfill.
 - Quality gates: pytest, Ruff, mypy (strict)
 - `scripts/espn_probe.py` fetches one ESPN league (settings + team list),
   read-only, no persistence. Confirmed against a live ESPN response on
@@ -75,6 +78,7 @@ Operational routes:
 | Route | What it gives |
 |---|---|
 | `GET /ingest-runs` | ingest history, newest first |
+| `GET /ingest-runs/health` | freshness of the season running now |
 | `GET /ingest-runs/health/{season}` | time since the last success, and staleness |
 
 The derivation lives in `app/narratives.py`, not in the routers, because it
@@ -286,6 +290,20 @@ one line. A phase-by-phase timing run found it.
 | first `--recent` attempt | 149s |
 | after batching stat loads | 83s |
 | after actually passing the scope | 15s |
+
+**It follows the season rollover.** `ESPN_SEASON` used to be required, which
+made the schedule a time bomb: the 2026 season ended on 2026-04-13, and a
+pinned job would have kept refreshing it through the whole of 2026-27,
+succeeding every night while the live season went unrecorded. Worse, the
+health route would have reported `stale: false` throughout, because the
+pinned season really was fresh. The season is now derived, and
+`GET /ingest-runs/health` with no season answers for whichever year is
+actually running.
+
+ESPN creates a season shortly before play starts rather than on 1 October, so
+the derived year is tried first and falls back one year if it is not there
+yet. That turns a possible fortnight of failed nightly runs into a silent,
+correct fallback, while keeping the loud failure mode for anything else.
 
 **Every run is recorded** in `ingest_runs`, opened before ESPN is touched and
 closed whatever happens. A row left at "running" means the process died,
