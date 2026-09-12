@@ -1,0 +1,19 @@
+# Nightly refresh of the current season.
+#
+# 09:00 UTC lands after the previous night's NBA games have finished and been
+# scored. The host runs on UTC, and the time is pinned to it rather than left
+# to local time so the slot does not move.
+
+[Unit]
+Description=fcp-core - nightly current-season refresh
+Requires=fcp-core-ingest.service
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+# Catch up after a reboot or a host that was down at 09:00.
+Persistent=true
+# Avoid firing at the same instant as every other job on the host.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,41 @@
+# Refresh the current season. Paired with fcp-core-ingest.timer.
+#
+# Install (from a checkout at /opt/fcp-core):
+#     sudo cp deploy/fcp-core-ingest.* /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-ingest.timer
+#
+# Run one now:      sudo systemctl start fcp-core-ingest.service
+# Watch:            journalctl -u fcp-core-ingest.service -n 50
+# Remove:           sudo systemctl disable --now fcp-core-ingest.timer
+#
+# Named fcp-core-* deliberately, to stay distinct from any other Full Court
+# Press unit already on the host.
+
+[Unit]
+Description=fcp-core - refresh the current season
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/scripts/scheduled_ingest.sh
+
+# A full backfill can take twenty minutes; a --recent run is seconds. This
+# ceiling is for the former, so a manual full pass is not killed halfway.
+TimeoutStartSec=2400
+
+# Exit 69 means the database was unreachable, so nothing was attempted. It
+# is left as a failure on purpose: on a server the database is meant to be
+# up, so a skip is a problem worth showing in `systemctl --failed`.
+
+# The ingest reads .env and writes only to Postgres over TCP.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core/logs
