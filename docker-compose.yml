@@ -1,8 +1,15 @@
-# Local development database. Postgres 16 with two databases:
+# Postgres 16 with two databases:
 #   fcp       -> DATABASE_URL
 #   fcp_test  -> TEST_DATABASE_URL  (created by scripts/init-test-db.sql on first boot)
 #
 #   docker compose up -d
+#
+# The host port is configurable so this can run alongside another Postgres,
+# which is the normal case on a shared host:
+#
+#   FCP_DB_PORT=5433 docker compose -p fcp-core up -d
+#
+# Whatever port you pick has to match the one in DATABASE_URL.
 services:
   db:
     image: postgres:16
@@ -11,7 +18,7 @@ services:
       POSTGRES_PASSWORD: fcp
       POSTGRES_DB: fcp
     ports:
-      - "5432:5432"
+      - "${FCP_DB_PORT:-5432}:5432"
     volumes:
       - fcp_pgdata:/var/lib/postgresql/data
       - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
