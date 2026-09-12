@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.ingest_runs import router as ingest_runs_router
 from app.api.leagues import router as leagues_router
 from app.api.narratives import router as narratives_router
 from app.api.players import router as players_router
@@ -26,4 +27,5 @@ def create_app() -> FastAPI:
     app.include_router(teams_router)
     app.include_router(narratives_router)
     app.include_router(players_router)
+    app.include_router(ingest_runs_router)
     return app

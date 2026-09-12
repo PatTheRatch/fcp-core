@@ -26,6 +26,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
@@ -500,3 +501,42 @@ class DailyLineupSlot(Base):
     team: Mapped[Team] = relationship()
     matchup_period: Mapped[MatchupPeriod] = relationship(back_populates="daily_lineup_slots")
     player: Mapped[Player] = relationship()
+
+
+class IngestRun(Base):
+    """One execution of the ingest, successful or not.
+
+    Deliberately not tied to `leagues` or `league_seasons` by foreign key.
+    A run that fails before it writes anything still needs to be recorded,
+    and a scheduled job that never reaches ESPN has no season row to hang
+    off. `espn_league_id` and `season` are therefore plain numbers.
+
+    This is what makes a schedule observable: without it, "did last night's
+    ingest run" is unanswerable.
+    """
+
+    __tablename__ = "ingest_runs"
+    __table_args__ = (
+        # The listing this table exists for: newest runs, per season.
+        Index("ix_ingest_runs_season_started", "season", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    espn_league_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: "full" rewrites the season; "recent" only the trailing days.
+    mode: Mapped[str] = mapped_column(String, nullable=False)
+    #: "running", "succeeded" or "failed". A row left at "running" means the
+    #: process died without finishing, which is itself worth seeing.
+    status: Mapped[str] = mapped_column(String, nullable=False)
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+
+    #: First line of the failure, kept short enough to read in a listing.
+    error: Mapped[str | None] = mapped_column(String)
+    #: Row counts and the scope the run covered.
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

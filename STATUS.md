@@ -3,8 +3,10 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- Read-only HTTP API over the stored seasons, 20 endpoints (see below),
+- Read-only HTTP API over the stored seasons, 22 endpoints (see below),
   including seven narrative routes. Writes stay with the ingest.
+- Nightly scheduled ingest keeping the current season current, with every
+  run recorded and queryable.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
@@ -67,6 +69,13 @@ Narrative routes, all derived rather than ingested:
 | `.../notable-matchups` | the season's sweeps and nail-biters |
 | `GET /leagues/{id}/owners` | every owner's record across all seasons |
 | `GET /leagues/{id}/head-to-head` | every pair of owners who have met |
+
+Operational routes:
+
+| Route | What it gives |
+|---|---|
+| `GET /ingest-runs` | ingest history, newest first |
+| `GET /ingest-runs/health/{season}` | time since the last success, and staleness |
 
 The derivation lives in `app/narratives.py`, not in the routers, because it
 is domain logic rather than HTTP. One idea carries most of it: a matchup is
@@ -195,8 +204,9 @@ Two deliberate consequences:
 ## Next
 
 1. Deciding whether anything needs write access, and therefore auth
-2. A scheduled ingest, so the current season stays current
-3. Whichever narratives the endpoints turn out not to answer
+2. Whichever narratives the endpoints turn out not to answer
+3. Alerting on a stale season, rather than having to look at
+   `/ingest-runs/health`
 
 ### Prior seasons
 
@@ -249,6 +259,56 @@ The four 2021 exceptions are ESPN omitting days from its own player cards for
 that COVID-shortened season. Al Horford's 2021 card returns 74 scoring
 periods and simply has no entry for days 43, 45 or 48, though the team totals
 counted his production. Verified upstream, not a parsing fault.
+
+### The scheduled ingest
+
+A nightly job refreshes the current season. It runs
+`scripts/scheduled_ingest.sh`, which calls the ingest in `--recent` mode.
+
+**Narrow by design.** A full season is a couple of hundred ESPN requests and
+about two and a half minutes. `--recent` covers the trailing ten scoring
+periods, which is 15 seconds. Nothing outside that window is deleted or
+rewritten, so a nightly narrow run and an occasional full one coexist.
+Anchored on ESPN's `current_week`, which is the current scoring period
+clamped to the fantasy season, and windowed from the stored matchup periods
+so no discovery pass is needed.
+
+**Getting it fast took two fixes, both worth remembering.** The first
+`--recent` run took 149 seconds, no faster than a full one. Player stats were
+issuing a query per row across 28000 rows; they now load one query per batch.
+Then it still took 83 seconds, because the scope was never reaching the day
+generator: the argument had been dropped when the call was reformatted onto
+one line. A phase-by-phase timing run found it.
+
+| | duration |
+|---|---|
+| full season | ~150s |
+| first `--recent` attempt | 149s |
+| after batching stat loads | 83s |
+| after actually passing the scope | 15s |
+
+**Every run is recorded** in `ingest_runs`, opened before ESPN is touched and
+closed whatever happens. A row left at "running" means the process died,
+which is itself worth seeing. Failures keep the first line of the error.
+`GET /ingest-runs` lists history; `GET /ingest-runs/health/{season}` reports
+how long since the last success and whether that is stale, with a 36 hour
+threshold so one missed nightly run does not cry wolf.
+
+**Installed** as a user-level launchd agent at 09:00 local:
+
+```
+cp deploy/com.fcp-core.ingest.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fcp-core.ingest.plist
+launchctl start com.fcp-core.ingest      # run one now
+launchctl unload ~/Library/LaunchAgents/com.fcp-core.ingest.plist   # remove
+```
+
+The wrapper waits up to 60 seconds for the database and exits 69 if it never
+appears, logging why, rather than reporting a failure that was never
+attempted. **The Compose database must be running for the job to do
+anything**, so Docker needs to start at login for the schedule to be
+reliable. Output goes to `logs/scheduled-ingest.log`, trimmed when it grows
+past 2MB.
 
 ## Correction, now resolved: daily lineups and bench
 

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly refresh of the current season.
+
+  Install (user level, no sudo):
+      cp deploy/com.fcp-core.ingest.plist ~/Library/LaunchAgents/
+      launchctl load ~/Library/LaunchAgents/com.fcp-core.ingest.plist
+
+  Run it now, without waiting for the schedule:
+      launchctl start com.fcp-core.ingest
+
+  Remove:
+      launchctl unload ~/Library/LaunchAgents/com.fcp-core.ingest.plist
+      rm ~/Library/LaunchAgents/com.fcp-core.ingest.plist
+
+  The hour below is local time. 09:00 is after the previous night's NBA games
+  have finished and been scored, whichever timezone you read them from.
+
+  REPLACE the two paths if the checkout lives somewhere else.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fcp-core.ingest</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/patrickmcdowell/fcp-core/scripts/scheduled_ingest.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/patrickmcdowell/fcp-core</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Not on load: loading happens at login, and a login is not a reason
+         to re-ingest. Use `launchctl start` to trigger one by hand. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/patrickmcdowell/fcp-core/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/patrickmcdowell/fcp-core/logs/launchd.err.log</string>
+</dict>
+</plist>

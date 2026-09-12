@@ -89,6 +89,7 @@ ESPN does not return a matchup record for a category league.
 python scripts/ingest_league.py                  # the configured season
 python scripts/ingest_league.py --season 2023    # one prior season
 python scripts/ingest_league.py --all-seasons    # every season ESPN holds
+python scripts/ingest_league.py --recent         # trailing days only, ~15s
 ```
 
 Persists one whole season to `DATABASE_URL`: league settings and scoring
@@ -199,3 +200,35 @@ GUID is stable across seasons and an all-time record is the point.
 Three conventions apply throughout. Byes never count toward a record. A tie
 breaks a streak rather than extending it. Head-to-head counts each meeting
 once, and a co-owned team gives the meeting to each of its owners.
+
+## Keeping the current season current
+
+A nightly launchd agent runs the ingest in `--recent` mode, which refreshes
+the trailing ten scoring periods in about 15 seconds instead of the two and a
+half minutes a full season takes. Nothing outside that window is rewritten,
+so the narrow nightly run and an occasional `--all-seasons` pass coexist.
+
+```bash
+cp deploy/com.fcp-core.ingest.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fcp-core.ingest.plist
+```
+
+`launchctl start com.fcp-core.ingest` triggers one immediately;
+`launchctl unload ~/Library/LaunchAgents/com.fcp-core.ingest.plist` removes
+the schedule. Edit the `Hour` in the plist to move it.
+
+The Compose database has to be running for the job to do anything. The
+wrapper waits a minute for it and then exits 69, logging that it skipped
+rather than failed, so enable Docker at login if you want the schedule to be
+dependable.
+
+Every attempt is recorded whether it succeeds or not:
+
+```bash
+curl localhost:8000/ingest-runs
+curl localhost:8000/ingest-runs/health/2026
+```
+
+A run still showing `running` means the process died partway. `stale` goes
+true when nothing has succeeded for 36 hours, which tolerates one missed
+night. Text output lands in `logs/scheduled-ingest.log`.

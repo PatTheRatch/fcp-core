@@ -7,6 +7,7 @@ an unbounded response by accident.
 """
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -285,3 +286,28 @@ class LeagueBenchCallOut(BaseModel):
     benched_points: float
     best_starter_points: float
     margin: float
+
+
+class IngestRunOut(BaseModel):
+    """One ingest execution. A row still 'running' means the process died."""
+
+    id: int
+    season: int
+    mode: str = Field(description="'full' rewrites the season, 'recent' the trailing days")
+    status: str = Field(description="'running', 'succeeded' or 'failed'")
+    started_at: datetime
+    finished_at: datetime | None
+    duration_seconds: float | None
+    error: str | None
+    detail: dict[str, Any] = Field(description="Row counts and the scope the run covered")
+
+
+class IngestHealthOut(BaseModel):
+    """Whether the schedule is actually keeping the current season current."""
+
+    season: int
+    last_success_at: datetime | None
+    hours_since_last_success: float | None
+    last_status: str | None = Field(description="Status of the most recent run, successful or not")
+    stale: bool = Field(description="True when no run has succeeded within the staleness window")
+    staleness_threshold_hours: int

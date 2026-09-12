@@ -10,6 +10,7 @@ ingest safe to run every year, and on a schedule within a year.
 """
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -137,6 +138,84 @@ def ingest_league_structure(session: Session, espn_league: ESPNLeague) -> League
     _sync_categories(league_season, _scoring_items(settings))
     session.flush()
     return league_season
+
+
+@dataclass(frozen=True)
+class IngestScope:
+    """Which parts of a season an ingest should rewrite.
+
+    `None` means everything. A restricted scope is what makes a scheduled
+    run cheap: a full season is a couple of hundred ESPN requests, while the
+    trailing few days are a handful.
+
+    Restricting never deletes outside the scope. Rows for days and periods
+    not covered are simply left as they were, which is why a nightly recent
+    run and an occasional full run can coexist.
+    """
+
+    matchup_periods: frozenset[int] | None = None
+    scoring_periods: frozenset[int] | None = None
+
+    @property
+    def is_full(self) -> bool:
+        return self.matchup_periods is None and self.scoring_periods is None
+
+    def covers_period(self, period: int) -> bool:
+        return self.matchup_periods is None or period in self.matchup_periods
+
+    def covers_day(self, day: int) -> bool:
+        return self.scoring_periods is None or day in self.scoring_periods
+
+    def describe(self) -> dict[str, Any]:
+        if self.is_full:
+            return {"mode": "full"}
+        periods = sorted(self.matchup_periods or ())
+        days = sorted(self.scoring_periods or ())
+        return {
+            "mode": "recent",
+            "matchup_periods": periods,
+            "scoring_periods": [days[0], days[-1]] if days else [],
+        }
+
+
+FULL_SCOPE = IngestScope()
+
+
+def recent_scope(
+    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague, days_back: int
+) -> IngestScope:
+    """The trailing `days_back` scoring periods, and the periods holding them.
+
+    Anchored on ESPN's `current_week`, which is the current scoring period
+    clamped to the fantasy season: with the NBA on day 175 and the fantasy
+    season ended at 160, it reports 160 rather than running off the end.
+
+    Windows come from the stored matchup periods rather than from ESPN, so a
+    scheduled run needs no discovery pass and works for any season already
+    ingested once.
+    """
+    anchor = getattr(espn_league, "current_week", None)
+    if not isinstance(anchor, int) or anchor <= 0:
+        return FULL_SCOPE
+
+    first_day = max(1, anchor - days_back + 1)
+    days = frozenset(range(first_day, anchor + 1))
+
+    periods = session.scalars(
+        select(MatchupPeriod).where(MatchupPeriod.league_season_id == league_season.id)
+    ).all()
+    covered = {
+        period.period
+        for period in periods
+        if period.first_scoring_period is not None
+        and period.final_scoring_period is not None
+        and period.first_scoring_period <= anchor
+        and period.final_scoring_period >= first_day
+    }
+    if not covered:
+        # Nothing stored to narrow against; a full pass is the safe answer.
+        return FULL_SCOPE
+    return IngestScope(matchup_periods=frozenset(covered), scoring_periods=days)
 
 
 def _owner_key(raw_owner: dict[str, Any]) -> str | None:
@@ -324,7 +403,10 @@ def _sync_matchup_stats(
 
 
 def ingest_matchups_and_rosters(
-    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+    session: Session,
+    league_season: LeagueSeason,
+    espn_league: ESPNLeague,
+    scope: IngestScope = FULL_SCOPE,
 ) -> None:
     """Write every matchup period, its matchups, the rosters and the stats.
 
@@ -340,6 +422,8 @@ def ingest_matchups_and_rosters(
     )
 
     for period_number in period_numbers:
+        if not scope.covers_period(period_number):
+            continue
         matchup_period = session.scalar(
             select(MatchupPeriod).where(
                 MatchupPeriod.league_season_id == league_season.id,
@@ -471,12 +555,19 @@ def _scoring_period_entries(espn_player: Any) -> list[tuple[int, dict[str, Any]]
 
 
 def ingest_player_stats(
-    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+    session: Session,
+    league_season: LeagueSeason,
+    espn_league: ESPNLeague,
+    scope: IngestScope = FULL_SCOPE,
 ) -> int:
     """Write a box score line per player per scoring period. Returns rows written.
 
     Scoped to players who appeared on a roster this season, so ingesting a
     second league does not refetch the whole player universe.
+
+    Existing rows are loaded one query per player rather than one per row.
+    The naive version issued a query for each of roughly 28000 rows, which
+    took over two minutes and dominated the cost of a scheduled run.
     """
     espn_player_ids = _season_player_ids(session, league_season)
     players = {
@@ -494,6 +585,22 @@ def ingest_player_stats(
         if not isinstance(fetched, list):
             fetched = [fetched]
 
+        # One query for the whole batch's stored lines, keyed for lookup.
+        batch_player_ids = [players[espn_id].id for espn_id in batch if espn_id in players]
+        stored_lines = select(PlayerGameStat).where(
+            PlayerGameStat.season == season,
+            PlayerGameStat.player_id.in_(batch_player_ids),
+        )
+        if scope.scoring_periods is not None:
+            # Without this a scheduled run hydrates every stored line for the
+            # season, tens of thousands of rows, to update a handful of days.
+            stored_lines = stored_lines.where(
+                PlayerGameStat.scoring_period.in_(sorted(scope.scoring_periods))
+            )
+        existing = {
+            (row.player_id, row.scoring_period): row for row in session.scalars(stored_lines).all()
+        }
+
         for espn_player in fetched:
             if espn_player is None:
                 continue
@@ -502,19 +609,16 @@ def ingest_player_stats(
                 continue
 
             for scoring_period, payload in _scoring_period_entries(espn_player):
+                if not scope.covers_day(scoring_period):
+                    continue
                 totals = payload.get("total") or {}
-                row = session.scalar(
-                    select(PlayerGameStat).where(
-                        PlayerGameStat.player_id == player.id,
-                        PlayerGameStat.season == season,
-                        PlayerGameStat.scoring_period == scoring_period,
-                    )
-                )
+                row = existing.get((player.id, scoring_period))
                 if row is None:
                     row = PlayerGameStat(
                         player_id=player.id, season=season, scoring_period=scoring_period
                     )
                     session.add(row)
+                    existing[(player.id, scoring_period)] = row
 
                 row.game_date = _as_utc(payload.get("date"))
                 row.opponent = payload.get("team")
@@ -575,6 +679,7 @@ def _daily_boxes(
     espn_league: ESPNLeague,
     windows: dict[int, list[int]],
     max_period: int,
+    scope: IngestScope = FULL_SCOPE,
 ) -> Iterator[tuple[int, int, list[Any]]]:
     """Yield (matchup period, scoring period, box scores) for every day.
 
@@ -589,10 +694,16 @@ def _daily_boxes(
     """
     if windows:
         for period in sorted(windows):
+            if not scope.covers_period(period):
+                continue
             for day in windows[period]:
+                if not scope.covers_day(day):
+                    continue
                 yield period, day, _daily_lineup_call(espn_league, period, day)
         return
 
+    # Discovery has to start from day 1 to keep its place, so a restricted
+    # scope filters what it yields rather than where it begins.
     period = 1
     for day in range(1, DAY_CEILING + 1):
         for candidate in (period, period + 1):
@@ -601,7 +712,8 @@ def _daily_boxes(
             boxes = _daily_lineup_call(espn_league, candidate, day)
             if _has_lineups(boxes):
                 period = candidate
-                yield candidate, day, boxes
+                if scope.covers_day(day) and scope.covers_period(candidate):
+                    yield candidate, day, boxes
                 break
 
 
@@ -614,7 +726,10 @@ def _lineup_sides(box: Any) -> list[tuple[int | None, list[Any]]]:
 
 
 def ingest_daily_lineups(
-    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+    session: Session,
+    league_season: LeagueSeason,
+    espn_league: ESPNLeague,
+    scope: IngestScope = FULL_SCOPE,
 ) -> int:
     """Write where every player sat, for every team, on every day.
 
@@ -645,7 +760,9 @@ def ingest_daily_lineups(
     observed: dict[int, list[int]] = {}
     written = 0
 
-    for period_number, scoring_period, boxes in _daily_boxes(espn_league, windows, max(periods)):
+    for period_number, scoring_period, boxes in _daily_boxes(
+        espn_league, windows, max(periods), scope
+    ):
         matchup_period = periods.get(period_number)
         if matchup_period is None:
             continue
@@ -716,16 +833,21 @@ def ingest_daily_lineups(
         session.flush()
 
     # Record the window each period turned out to cover, discovered or given.
-    for period_number, seen_days in observed.items():
-        period = periods[period_number]
-        period.first_scoring_period = min(seen_days)
-        period.final_scoring_period = max(seen_days)
-    session.flush()
+    # Skipped on a restricted run: it only saw part of each period, and
+    # narrowing a stored window to that slice would corrupt it.
+    if scope.is_full:
+        for period_number, seen_days in observed.items():
+            period = periods[period_number]
+            period.first_scoring_period = min(seen_days)
+            period.final_scoring_period = max(seen_days)
+        session.flush()
 
     return written
 
 
-def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
+def ingest_season(
+    session: Session, espn_league: ESPNLeague, scope: IngestScope = FULL_SCOPE
+) -> LeagueSeason:
     """Write one whole season: structure, teams, play, player stats and lineups.
 
     The order is load-bearing. Teams need the season, matchups need the
@@ -733,10 +855,13 @@ def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
     the roster tables reveal. Daily lineups must precede them: for seasons
     before 2025 the weekly aggregate roster is nearly empty, so the daily
     lineups are the only complete account of who a team held.
+
+    Pass a narrowed `scope` to refresh only the trailing days, which is what
+    a scheduled run does. Nothing outside the scope is deleted.
     """
     league_season = ingest_league_structure(session, espn_league)
     ingest_teams(session, league_season, espn_league)
-    ingest_matchups_and_rosters(session, league_season, espn_league)
-    ingest_daily_lineups(session, league_season, espn_league)
-    ingest_player_stats(session, league_season, espn_league)
+    ingest_matchups_and_rosters(session, league_season, espn_league, scope)
+    ingest_daily_lineups(session, league_season, espn_league, scope)
+    ingest_player_stats(session, league_season, espn_league, scope)
     return league_season
