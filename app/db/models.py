@@ -117,6 +117,11 @@ class LeagueSeason(Base):
         cascade="all, delete-orphan",
         order_by="MatchupPeriod.period",
     )
+    transactions: Mapped[list["Transaction"]] = relationship(
+        back_populates="league_season",
+        cascade="all, delete-orphan",
+        order_by="Transaction.scoring_period",
+    )
 
 
 class LeagueSeasonCategory(Base):
@@ -540,3 +545,83 @@ class IngestRun(Base):
     error: Mapped[str | None] = mapped_column(String)
     #: Row counts and the scope the run covered.
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class Transaction(Base):
+    """One roster move: a waiver claim, a free agent pickup, or a trade.
+
+    Failed and cancelled moves are kept, not filtered out. A waiver claim
+    that lost is often the more interesting record: it says who wanted a
+    player and what they were willing to pay, which a successful claim alone
+    never reveals.
+
+    Lineup shuffling (ESPN's FUTURE_ROSTER) is excluded. It is the bulk of
+    what the endpoint returns and is already recorded, properly, in
+    `daily_lineup_slots`.
+    """
+
+    __tablename__ = "transactions"
+    __table_args__ = (
+        UniqueConstraint("espn_transaction_id", name="uq_transactions_espn_id"),
+        Index("ix_transactions_season_period", "league_season_id", "scoring_period"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    #: ESPN's own UUID for the move. Stable, so re-ingesting cannot duplicate.
+    espn_transaction_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    #: The team that initiated it. Null when ESPN reports team 0, meaning
+    #: the move came from outside any roster.
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+
+    #: WAIVER, FREEAGENT, TRADE_ACCEPT, TRADE_PROPOSAL and so on.
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    #: EXECUTED, CANCELED, PENDING, or one of ESPN's FAILED_* reasons.
+    status: Mapped[str | None] = mapped_column(String)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: When ESPN processed it. Null for anything never processed.
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: FAAB bid. Zero on a free pickup, and meaningful even when the claim
+    #: failed, since it records what was offered.
+    bid_amount: Mapped[int | None] = mapped_column(Integer)
+
+    league_season: Mapped[LeagueSeason] = relationship(back_populates="transactions")
+    items: Mapped[list["TransactionItem"]] = relationship(
+        back_populates="transaction", cascade="all, delete-orphan"
+    )
+
+
+class TransactionItem(Base):
+    """One player moving within one transaction.
+
+    A waiver claim usually has two: the player added and the player dropped.
+    A trade has one per player changing hands, and the direction is the point,
+    which is why both team columns exist.
+    """
+
+    __tablename__ = "transaction_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "transaction_id", "player_id", "item_type", name="uq_transaction_items_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+
+    #: ADD, DROP or TRADE.
+    item_type: Mapped[str] = mapped_column(String, nullable=False)
+    #: Null on either side means free agency rather than a team.
+    from_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    to_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+
+    transaction: Mapped[Transaction] = relationship(back_populates="items")
+    player: Mapped[Player] = relationship()

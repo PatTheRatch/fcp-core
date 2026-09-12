@@ -33,7 +33,10 @@ from app.db.models import (
     PlayerGameStat,
     RosterSlot,
     Team,
+    Transaction,
+    TransactionItem,
 )
+from app.espn import fetch_transactions, player_names
 
 
 def _epoch_ms_to_datetime(epoch_ms: Any) -> datetime | None:
@@ -845,6 +848,139 @@ def ingest_daily_lineups(
     return written
 
 
+def _team_or_none(teams: dict[int, Team], raw_team_id: Any) -> Team | None:
+    """ESPN uses team 0 for free agency, which is an absence, not a team."""
+    try:
+        espn_team_id = int(raw_team_id)
+    except (TypeError, ValueError):
+        return None
+    return teams.get(espn_team_id) if espn_team_id else None
+
+
+def ingest_transactions(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_league: ESPNLeague,
+    scope: IngestScope = FULL_SCOPE,
+) -> int:
+    """Write every waiver claim, pickup and trade. Returns rows written.
+
+    One ESPN call per scoring period, the same shape as daily lineups, and
+    restricted by the scope in the same way.
+
+    Failed and cancelled moves are kept deliberately. A losing waiver bid
+    records who wanted a player and what they offered, which no successful
+    claim reveals on its own.
+    """
+    teams = _team_index(session, league_season)
+    periods = session.scalars(
+        select(MatchupPeriod).where(MatchupPeriod.league_season_id == league_season.id)
+    ).all()
+    days = sorted(
+        {
+            day
+            for period in periods
+            if period.first_scoring_period and period.final_scoring_period
+            for day in range(period.first_scoring_period, period.final_scoring_period + 1)
+            if scope.covers_day(day) and scope.covers_period(period.period)
+        }
+    )
+    if not days:
+        return 0
+
+    names = player_names(espn_league)
+    players = {player.espn_player_id: player for player in session.scalars(select(Player)).all()}
+    written = 0
+
+    for scoring_period in days:
+        raw = fetch_transactions(espn_league, scoring_period)
+        if not raw:
+            continue
+
+        # Create any player this day references but we have never rostered.
+        for payload in raw:
+            for item in payload.get("items") or []:
+                espn_player_id = item.get("playerId")
+                if espn_player_id is None or int(espn_player_id) in players:
+                    continue
+                espn_player_id = int(espn_player_id)
+                created = Player(
+                    espn_player_id=espn_player_id,
+                    name=names.get(espn_player_id, f"player {espn_player_id}"),
+                )
+                session.add(created)
+                players[espn_player_id] = created
+        session.flush()
+
+        existing = {
+            row.espn_transaction_id: row
+            for row in session.scalars(
+                select(Transaction).where(
+                    Transaction.league_season_id == league_season.id,
+                    Transaction.scoring_period == scoring_period,
+                )
+            ).all()
+        }
+
+        for payload in raw:
+            espn_transaction_id = payload.get("id")
+            if not espn_transaction_id:
+                continue
+
+            transaction = existing.get(str(espn_transaction_id))
+            if transaction is None:
+                transaction = Transaction(
+                    league_season_id=league_season.id,
+                    espn_transaction_id=str(espn_transaction_id),
+                    scoring_period=scoring_period,
+                )
+                session.add(transaction)
+
+            team = _team_or_none(teams, payload.get("teamId"))
+            transaction.team_id = team.id if team else None
+            transaction.type = str(payload.get("type") or "UNKNOWN")
+            status = payload.get("status")
+            transaction.status = str(status) if status is not None else None
+            transaction.processed_at = _epoch_ms_to_datetime(payload.get("processDate"))
+            bid = payload.get("bidAmount")
+            transaction.bid_amount = int(bid) if bid is not None else None
+            session.flush()
+
+            # A TRADE_UPHOLD carries no items at all, which is what makes
+            # espn-api's own parser raise on real data.
+            stored_items = {(item.player_id, item.item_type): item for item in transaction.items}
+            seen: set[tuple[int, str]] = set()
+            for raw_item in payload.get("items") or []:
+                espn_player_id = raw_item.get("playerId")
+                player = players.get(int(espn_player_id)) if espn_player_id is not None else None
+                if player is None:
+                    continue
+                item_type = str(raw_item.get("type") or "UNKNOWN")
+                key = (player.id, item_type)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                item = stored_items.get(key)
+                if item is None:
+                    item = TransactionItem(player_id=player.id, item_type=item_type)
+                    transaction.items.append(item)
+                source = _team_or_none(teams, raw_item.get("fromTeamId"))
+                target = _team_or_none(teams, raw_item.get("toTeamId"))
+                item.from_team_id = source.id if source else None
+                item.to_team_id = target.id if target else None
+
+            for key, item in stored_items.items():
+                if key not in seen:
+                    transaction.items.remove(item)
+
+            written += 1
+
+        session.flush()
+
+    return written
+
+
 def ingest_season(
     session: Session, espn_league: ESPNLeague, scope: IngestScope = FULL_SCOPE
 ) -> LeagueSeason:
@@ -864,4 +1000,6 @@ def ingest_season(
     ingest_matchups_and_rosters(session, league_season, espn_league, scope)
     ingest_daily_lineups(session, league_season, espn_league, scope)
     ingest_player_stats(session, league_season, espn_league, scope)
+    # Last, because it can reference players no roster ever held.
+    ingest_transactions(session, league_season, espn_league, scope)
     return league_season

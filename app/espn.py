@@ -5,8 +5,10 @@ persists anything. Kept separate from `app.config.Settings` so ESPN
 credentials are not required to boot the API or run the DB test suite.
 """
 
+import json
 from datetime import UTC, date, datetime
 from functools import lru_cache
+from typing import Any
 
 from espn_api.basketball import League
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -120,6 +122,58 @@ def fetch_current_league(settings: ESPNSettings, today: date | None = None) -> L
         # Not an error worth surfacing on its own: the previous season is the
         # right answer until ESPN publishes the new one.
         return fetch_league(settings, season=derived - 1)
+
+
+#: Transaction types worth storing. FUTURE_ROSTER is excluded on purpose: it
+#: is daily lineup shuffling, 53 of 86 rows on a sampled day, and already
+#: recorded far better in `daily_lineup_slots`.
+TRANSACTION_TYPES = (
+    "FREEAGENT",
+    "WAIVER",
+    "WAIVER_ERROR",
+    "TRADE_ACCEPT",
+    "TRADE_PROPOSAL",
+    "TRADE_DECLINE",
+    "TRADE_UPHOLD",
+    "TRADE_VETO",
+    "TRADE_ERROR",
+)
+
+
+def fetch_transactions(league: League, scoring_period: int) -> list[dict[str, Any]]:
+    """Raw transactions for one day.
+
+    Parsed here rather than through `League.transactions()`, which is unusable
+    for this: it drops the transaction id, drops `fromTeamId` and `toTeamId`
+    on every item so a trade cannot be read, and raises outright on a
+    TRADE_UPHOLD, which carries no items at all. Its HTTP layer is still used,
+    so endpoint selection and the history fallback stay in one place.
+
+    A scoring period must be given. The default is the league's current
+    scoring period, which runs past the end of the fantasy season and returns
+    a payload with no transactions key.
+    """
+    headers = {
+        "x-fantasy-filter": json.dumps(
+            {"transactions": {"filterType": {"value": list(TRANSACTION_TYPES)}}}
+        )
+    }
+    data = league.espn_request.league_get(
+        params={"view": "mTransactions2", "scoringPeriodId": scoring_period},
+        headers=headers,
+    )
+    found = (data or {}).get("transactions") or []
+    return [item for item in found if isinstance(item, dict)]
+
+
+def player_names(league: League) -> dict[int, str]:
+    """ESPN player id -> name, for everyone the league knows about.
+
+    Transactions reference players by id alone, including ones never rostered
+    long enough to appear in a box score, so this is how they get named.
+    """
+    raw = getattr(league, "player_map", None) or {}
+    return {int(k): str(v) for k, v in raw.items() if isinstance(k, int) and isinstance(v, str)}
 
 
 def prior_seasons(league: League) -> list[int]:

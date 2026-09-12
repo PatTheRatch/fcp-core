@@ -223,6 +223,69 @@ def league_with_play(
     league.box_scores = lambda matchup_period=None, scoring_period=None, matchup_total=True: (
         boxes.get(matchup_period, [])
     )
+    attach_transactions(league, {})
+    return league
+
+
+def fake_transaction(
+    transaction_id: str,
+    *,
+    team_id: int,
+    type_: str = "WAIVER",
+    status: str = "EXECUTED",
+    bid: int | None = 0,
+    processed: int | None = 1769598004347,
+    items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """One raw ESPN transaction, in the shape the endpoint really returns."""
+    payload: dict[str, Any] = {
+        "id": transaction_id,
+        "teamId": team_id,
+        "type": type_,
+        "status": status,
+        "scoringPeriodId": 0,
+        "bidAmount": bid,
+        "processDate": processed,
+    }
+    if items is not None:
+        payload["items"] = items
+    return payload
+
+
+def tx_item(
+    player_id: int, item_type: str, *, from_team: int = 0, to_team: int = 0
+) -> dict[str, Any]:
+    """A transaction item. Team 0 is ESPN's way of saying free agency."""
+    return {
+        "playerId": player_id,
+        "type": item_type,
+        "fromTeamId": from_team,
+        "toTeamId": to_team,
+    }
+
+
+def attach_transactions(
+    league: Any,
+    by_day: dict[int, list[dict[str, Any]]],
+    names: dict[int, str] | None = None,
+) -> Any:
+    """Give a fake league the request layer the transaction fetch uses.
+
+    The real code calls `league.espn_request.league_get`, so the fake answers
+    at the same level rather than stubbing the parsing above it.
+    """
+
+    def league_get(
+        params: dict[str, Any] | None = None,
+        headers: dict[str, Any] | None = None,
+        extend: str = "",
+    ) -> dict[str, Any]:
+        day = int((params or {}).get("scoringPeriodId") or 0)
+        found = [dict(tx, scoringPeriodId=day) for tx in by_day.get(day, [])]
+        return {"transactions": found}
+
+    league.espn_request = SimpleNamespace(league_get=league_get)
+    league.player_map = dict(names or {})
     return league
 
 

@@ -29,21 +29,26 @@ from app.db.models import (
     PlayerGameStat,
     RosterSlot,
     Team,
+    Transaction,
+    TransactionItem,
 )
 from app.db.session import make_engine, make_session_factory
-from app.ingest import ingest_league_structure, ingest_season
+from app.ingest import IngestScope, ingest_league_structure, ingest_season
 from tests.fakes import (
     BOX_LINE,
     NINE_CAT_STAT_IDS,
+    attach_transactions,
     fake_box,
     fake_card,
     fake_league,
     fake_player,
     fake_team,
+    fake_transaction,
     league_with_days,
     league_with_play,
     owner_dict,
     stat_block,
+    tx_item,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -810,3 +815,177 @@ def test_two_seasons_of_the_same_league_keep_their_own_shape(session: Session) -
     later_names = {t.espn_team_id: t.name for t in seasons[2027].teams}
     assert earlier_names[1] == "Alpha"
     assert later_names[1] == "Alpha Renamed"
+
+
+def _tx_league(by_day: dict[int, list[dict[str, Any]]], names: dict[int, str]) -> Any:
+    """A two-team league whose single period covers days 1 to 3."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+    weekly = fake_box(home, away, home_lineup=[starter])
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [weekly]},
+        days={
+            1: {
+                day: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]
+                for day in (1, 2, 3)
+            }
+        },
+        windows={1: ["1", "2", "3"]},
+        reg_season_count=1,
+        matchup_period_count=1,
+        cards={100: fake_card(100, "Starter", {1: BOX_LINE})},
+    )
+    return attach_transactions(espn, by_day, names)
+
+
+def test_a_waiver_claim_records_both_sides_and_the_bid(session: Session) -> None:
+    espn = _tx_league(
+        {
+            2: [
+                fake_transaction(
+                    "tx-1",
+                    team_id=3,
+                    bid=17,
+                    items=[tx_item(900, "ADD", to_team=3), tx_item(901, "DROP", from_team=3)],
+                )
+            ]
+        },
+        names={900: "Added Guy", 901: "Dropped Guy"},
+    )
+
+    ingest_season(session, espn)
+
+    tx = session.scalars(select(Transaction)).one()
+    assert tx.type == "WAIVER"
+    assert tx.status == "EXECUTED"
+    assert tx.bid_amount == 17
+    assert tx.scoring_period == 2
+    assert tx.processed_at is not None
+
+    moves = {i.item_type: i for i in tx.items}
+    assert set(moves) == {"ADD", "DROP"}
+    assert moves["ADD"].player.name == "Added Guy"
+    assert moves["ADD"].from_team_id is None, "team 0 is free agency, not a team"
+    assert moves["ADD"].to_team_id is not None
+    assert moves["DROP"].to_team_id is None
+
+
+def test_a_failed_claim_is_kept_with_its_bid(session: Session) -> None:
+    """A losing bid says who wanted a player and what they offered."""
+    espn = _tx_league(
+        {
+            2: [
+                fake_transaction(
+                    "tx-win",
+                    team_id=3,
+                    bid=20,
+                    status="EXECUTED",
+                    items=[tx_item(900, "ADD", to_team=3)],
+                ),
+                fake_transaction(
+                    "tx-lose",
+                    team_id=21,
+                    bid=12,
+                    status="FAILED_INVALIDPLAYERSOURCE",
+                    items=[tx_item(900, "ADD", to_team=21)],
+                ),
+            ]
+        },
+        names={900: "Contested Guy"},
+    )
+
+    ingest_season(session, espn)
+
+    by_status = {t.status: t for t in session.scalars(select(Transaction)).all()}
+    assert set(by_status) == {"EXECUTED", "FAILED_INVALIDPLAYERSOURCE"}
+    assert by_status["FAILED_INVALIDPLAYERSOURCE"].bid_amount == 12
+
+
+def test_a_trade_records_the_direction_each_player_moved(session: Session) -> None:
+    espn = _tx_league(
+        {
+            3: [
+                fake_transaction(
+                    "tx-trade",
+                    team_id=3,
+                    type_="TRADE_ACCEPT",
+                    bid=None,
+                    items=[
+                        tx_item(900, "TRADE", from_team=21, to_team=3),
+                        tx_item(901, "TRADE", from_team=3, to_team=21),
+                    ],
+                )
+            ]
+        },
+        names={900: "Incoming", 901: "Outgoing"},
+    )
+
+    ingest_season(session, espn)
+
+    tx = session.scalars(select(Transaction)).one()
+    assert tx.type == "TRADE_ACCEPT"
+    teams = {t.espn_team_id: t.id for t in session.scalars(select(Team)).all()}
+    moves = {i.player.name: i for i in tx.items}
+    assert moves["Incoming"].from_team_id == teams[21]
+    assert moves["Incoming"].to_team_id == teams[3]
+    assert moves["Outgoing"].from_team_id == teams[3]
+
+
+def test_a_transaction_with_no_items_is_still_stored(session: Session) -> None:
+    """TRADE_UPHOLD carries none, which is what breaks espn-api's own parser."""
+    espn = _tx_league(
+        {2: [fake_transaction("tx-uphold", team_id=3, type_="TRADE_UPHOLD", items=None)]},
+        names={},
+    )
+
+    ingest_season(session, espn)
+
+    tx = session.scalars(select(Transaction)).one()
+    assert tx.type == "TRADE_UPHOLD"
+    assert tx.items == []
+
+
+def test_a_player_never_rostered_is_created_from_the_transaction(session: Session) -> None:
+    espn = _tx_league(
+        {2: [fake_transaction("tx-1", team_id=3, items=[tx_item(777, "ADD", to_team=3)])]},
+        names={777: "Passing Through"},
+    )
+
+    ingest_season(session, espn)
+
+    names = {p.name for p in session.scalars(select(Player)).all()}
+    assert "Passing Through" in names
+
+
+def test_transactions_are_not_duplicated_on_reingest(session: Session) -> None:
+    def build() -> Any:
+        return _tx_league(
+            {2: [fake_transaction("tx-1", team_id=3, items=[tx_item(900, "ADD", to_team=3)])]},
+            names={900: "Added Guy"},
+        )
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(Transaction)).all()) == 1
+    assert len(session.scalars(select(TransactionItem)).all()) == 1
+
+
+def test_a_narrowed_run_does_not_touch_other_days(session: Session) -> None:
+    by_day = {
+        1: [fake_transaction("tx-day1", team_id=3, items=[tx_item(900, "ADD", to_team=3)])],
+        3: [fake_transaction("tx-day3", team_id=3, items=[tx_item(901, "ADD", to_team=3)])],
+    }
+    names = {900: "Early", 901: "Late"}
+    ingest_season(session, _tx_league(by_day, names))
+    session.commit()
+    assert len(session.scalars(select(Transaction)).all()) == 2
+
+    ingest_season(session, _tx_league(by_day, names), IngestScope(frozenset({1}), frozenset({3})))
+    session.commit()
+
+    stored = {t.espn_transaction_id for t in session.scalars(select(Transaction)).all()}
+    assert stored == {"tx-day1", "tx-day3"}, "the uncovered day was left alone"

@@ -40,6 +40,7 @@ from app.db.models import (
     LeagueSeason,
     MatchupPeriod,
     PlayerGameStat,
+    Transaction,
 )
 from app.db.session import make_engine, make_session_factory
 from app.espn import (
@@ -80,7 +81,13 @@ def _report(session: Session, stored: LeagueSeason, *, scope_note: str = "full")
         f"  matchups {matchups}  categories {len(stored.categories)}"
     )
     print(f"    roster snapshots {rosters}  matchup statistics {stats}")
+    transactions = session.scalar(
+        select(func.count())
+        .select_from(Transaction)
+        .where(Transaction.league_season_id == stored.id)
+    )
     print(f"    player game lines {games}  daily lineup slots {lineups}")
+    print(f"    transactions {transactions}")
     if window:
         first, last = window[0], window[-1]
         print(
@@ -99,6 +106,12 @@ def _counts(session: Session, stored: LeagueSeason) -> dict[str, int]:
             select(func.count())
             .select_from(PlayerGameStat)
             .where(PlayerGameStat.season == stored.season)
+        )
+        or 0,
+        "transactions": session.scalar(
+            select(func.count())
+            .select_from(Transaction)
+            .where(Transaction.league_season_id == stored.id)
         )
         or 0,
         "daily_lineup_slots": session.scalar(
