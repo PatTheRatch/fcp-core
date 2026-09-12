@@ -912,13 +912,14 @@ def ingest_transactions(
                 players[espn_player_id] = created
         session.flush()
 
+        # Keyed on ESPN's id, not on the day. The same transaction is returned
+        # under more than one scoring period, so looking it up by the day it
+        # was requested for misses the row and violates the unique constraint.
+        raw_ids = [str(item["id"]) for item in raw if item.get("id")]
         existing = {
             row.espn_transaction_id: row
             for row in session.scalars(
-                select(Transaction).where(
-                    Transaction.league_season_id == league_season.id,
-                    Transaction.scoring_period == scoring_period,
-                )
+                select(Transaction).where(Transaction.espn_transaction_id.in_(raw_ids))
             ).all()
         }
 
@@ -927,14 +928,21 @@ def ingest_transactions(
             if not espn_transaction_id:
                 continue
 
+            # ESPN reports which day a transaction belongs to, which is not
+            # always the day it was requested under. Trust the payload.
+            raw_period = payload.get("scoringPeriodId")
+            belongs_to = int(raw_period) if raw_period is not None else scoring_period
+
             transaction = existing.get(str(espn_transaction_id))
             if transaction is None:
                 transaction = Transaction(
                     league_season_id=league_season.id,
                     espn_transaction_id=str(espn_transaction_id),
-                    scoring_period=scoring_period,
+                    scoring_period=belongs_to,
                 )
                 session.add(transaction)
+                existing[str(espn_transaction_id)] = transaction
+            transaction.scoring_period = belongs_to
 
             team = _team_or_none(teams, payload.get("teamId"))
             transaction.team_id = team.id if team else None

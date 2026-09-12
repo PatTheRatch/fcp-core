@@ -989,3 +989,30 @@ def test_a_narrowed_run_does_not_touch_other_days(session: Session) -> None:
 
     stored = {t.espn_transaction_id for t in session.scalars(select(Transaction)).all()}
     assert stored == {"tx-day1", "tx-day3"}, "the uncovered day was left alone"
+
+
+def test_a_transaction_returned_on_two_days_is_stored_once(session: Session) -> None:
+    """ESPN repeats a transaction across scoring periods.
+
+    Looking it up by the day it was requested under misses the stored row and
+    violates the unique constraint, which is what broke the first backfill.
+    The payload's own scoringPeriodId is the truth.
+    """
+    repeated = fake_transaction("tx-repeat", team_id=3, items=[tx_item(900, "ADD", to_team=3)])
+    # Returned on day 2 and again on day 3, both claiming to belong to day 2.
+    espn = _tx_league(
+        {2: [dict(repeated)], 3: [dict(repeated, scoringPeriodId=2)]},
+        names={900: "Repeated Guy"},
+    )
+    # The fake stamps the requested day, so pin the second one back to day 2.
+    espn.espn_request.league_get = lambda params=None, headers=None, extend="": {
+        "transactions": [dict(repeated, scoringPeriodId=2)]
+        if int((params or {}).get("scoringPeriodId") or 0) in (2, 3)
+        else []
+    }
+
+    ingest_season(session, espn)
+
+    stored = session.scalars(select(Transaction)).all()
+    assert len(stored) == 1, "the same ESPN id must not create a second row"
+    assert stored[0].scoring_period == 2, "the day comes from the payload, not the request"
