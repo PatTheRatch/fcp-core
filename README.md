@@ -91,7 +91,8 @@ python scripts/ingest_league.py
 
 Persists one whole season to `DATABASE_URL`: league settings and scoring
 categories, teams and their owners, matchup periods and the matchups inside
-them, and a roster snapshot per team per matchup period.
+them, a roster snapshot per team per matchup period, and every statistic each
+team posted in each matchup.
 
 Safe to re-run: an already-stored season is updated in place, a new season is
 inserted alongside it, and earlier seasons are never modified. It makes one
@@ -103,6 +104,11 @@ a roster row, because `espn-api` reports every player's slot as `PG`. There is
 no season matchup record on a team, because ESPN does not report one; the
 team's `categories_won` is a tally of categories, and a matchup record is
 derived by counting winners in `matchups`.
+
+In `matchup_team_stats`, a row is a scored category when
+`league_season_category_id` is set. Do not use `result` for that test: a bye
+reports real values with a null result on every statistic. Percentages are
+stored as ratios, so FG% is `0.457`.
 
 ## Quality gates
 

@@ -46,6 +46,15 @@ def main() -> None:
             print(f"  teams stored: {len(stored.teams)}")
             print(f"  matchup periods: {len(stored.matchup_periods)}  matchups: {matchups}")
             print(f"  roster snapshots: {rosters}")
+            stats = sum(len(m.team_stats) for p in stored.matchup_periods for m in p.matchups)
+            scored = sum(
+                1
+                for p in stored.matchup_periods
+                for m in p.matchups
+                for s in m.team_stats
+                if s.league_season_category_id is not None
+            )
+            print(f"  matchup statistics: {stats} ({scored} scored categories)")
     finally:
         engine.dispose()
 

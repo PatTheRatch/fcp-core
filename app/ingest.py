@@ -23,6 +23,7 @@ from app.db.models import (
     LeagueSeasonCategory,
     Matchup,
     MatchupPeriod,
+    MatchupTeamStat,
     Owner,
     Player,
     RosterSlot,
@@ -262,10 +263,66 @@ def _sync_roster(session: Session, matchup: Matchup, team: Team, lineup: list[An
             matchup.roster_slots.remove(slot)
 
 
+def _category_by_abbreviation(
+    session: Session, league_season: LeagueSeason
+) -> dict[str, LeagueSeasonCategory]:
+    """The season's scored categories, keyed by the abbreviation box scores use."""
+    categories = session.scalars(
+        select(LeagueSeasonCategory).where(
+            LeagueSeasonCategory.league_season_id == league_season.id
+        )
+    ).all()
+    return {category.abbreviation: category for category in categories}
+
+
+def _sync_matchup_stats(
+    matchup: Matchup,
+    team: Team,
+    stats: dict[str, Any],
+    categories: dict[str, LeagueSeasonCategory],
+) -> None:
+    """Record every statistic one team posted in one matchup.
+
+    Stores the component stats (FGM, FGA, FTM, FTA) alongside the scored
+    categories, so a percentage can be recomputed instead of trusted.
+
+    Whether a statistic is scored is decided by the season's category list,
+    never by `result`: on a bye ESPN reports real values with a null result
+    on every one of them.
+    """
+    existing = {
+        (stat.team_id, stat.abbreviation): stat
+        for stat in matchup.team_stats
+        if stat.team_id == team.id
+    }
+    seen: set[tuple[int, str]] = set()
+
+    for abbreviation, payload in (stats or {}).items():
+        if not isinstance(payload, dict) or payload.get("value") is None:
+            continue
+        key = (team.id, str(abbreviation))
+        seen.add(key)
+
+        stat = existing.get(key)
+        if stat is None:
+            stat = MatchupTeamStat(team_id=team.id, abbreviation=str(abbreviation))
+            matchup.team_stats.append(stat)
+
+        stat.value = float(payload["value"])
+        result = payload.get("result")
+        stat.result = str(result) if result is not None else None
+        category = categories.get(str(abbreviation))
+        stat.league_season_category_id = category.id if category is not None else None
+
+    for key, stat in existing.items():
+        if key not in seen:
+            matchup.team_stats.remove(stat)
+
+
 def ingest_matchups_and_rosters(
     session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
 ) -> None:
-    """Write every matchup period, its matchups, and the rosters that played.
+    """Write every matchup period, its matchups, the rosters and the stats.
 
     One ESPN call per matchup period. Box scores are used rather than
     `team.schedule` for two reasons: each matchup appears once instead of
@@ -273,6 +330,7 @@ def ingest_matchups_and_rosters(
     also not a reliable enumeration, since their length varies by team.
     """
     teams = _team_index(session, league_season)
+    categories = _category_by_abbreviation(session, league_season)
     period_numbers = sorted(
         int(period) for period in (getattr(espn_league.settings, "matchup_periods", None) or {})
     )
@@ -321,9 +379,15 @@ def ingest_matchups_and_rosters(
             session.flush()
 
             _sync_roster(session, matchup, home_team, list(getattr(box, "home_lineup", None) or []))
+            _sync_matchup_stats(
+                matchup, home_team, getattr(box, "home_stats", None) or {}, categories
+            )
             if away_team is not None:
                 _sync_roster(
                     session, matchup, away_team, list(getattr(box, "away_lineup", None) or [])
+                )
+                _sync_matchup_stats(
+                    matchup, away_team, getattr(box, "away_stats", None) or {}, categories
                 )
 
     session.flush()

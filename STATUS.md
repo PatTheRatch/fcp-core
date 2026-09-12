@@ -18,10 +18,14 @@
 - Teams, owners, matchup periods, matchups and rosters persisted: `teams`,
   `owners`, `team_owners`, `matchup_periods`, `matchups`, `players`,
   `roster_slots` (migration 0003).
+- Per-category matchup detail persisted: `matchup_team_stats` (migration
+  0004). Every statistic each team posted in each matchup, covering the nine
+  scored categories and the four component stats behind the percentages.
 - `scripts/ingest_league.py` writes one whole season and is safe to re-run.
   Verified against the live league on 2026-09-12: 14 teams, 15 owners,
-  22 matchup periods, 157 matchups, 348 players, 4436 roster snapshots, in
-  about 20 seconds. A second run changed no row counts.
+  22 matchup periods, 157 matchups, 348 players, 4436 roster snapshots and
+  4004 matchup statistics, in about 20 seconds. A second run changed no row
+  counts.
 
 ## Building now
 
@@ -81,12 +85,27 @@ Two deliberate consequences:
   `matchup_periods.final_scoring_period` records what the box score said
   rather than inventing a mapping.
 
+### What the per-category detail taught us
+
+- `box.home_stats` carries 13 statistics: the 9 scored categories plus FGM,
+  FGA, FTM and FTA. The components mean a stored percentage can be
+  recomputed or re-weighted instead of being taken on trust. FG% recomputes
+  from its components to within 5e-9 across all 308 sides.
+- A statistic is a scored category when it links to a row in
+  `league_season_categories`, never because `result` is non-null. On a bye
+  ESPN reports real values with a null result on all 13 statistics.
+- Percentages are ratios, not percents: FG% arrives as 0.457.
+- Turnovers invert: the side with fewer turnovers gets `result = WIN`, even
+  though `isReverseItem` is false in the scoring settings. Trust the result,
+  not the flag.
+- Cross-check passed: tallying per-category WIN, LOSS and TIE reproduces the
+  separately stored matchup totals for 151 of 151 contested matchups.
+
 ## Next
 
-1. Per-category matchup detail: `box.home_team_cats` carries a score and a
-   result per category, currently unpersisted
-2. Player statistics per scoring period
-3. An API surface over the stored season
+1. Player statistics per scoring period
+2. An API surface over the stored season
+3. Ingesting prior seasons, which the schema already allows
 
 ## Open questions
 

@@ -24,6 +24,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -276,6 +277,9 @@ class Matchup(Base):
     roster_slots: Mapped[list["RosterSlot"]] = relationship(
         back_populates="matchup", cascade="all, delete-orphan"
     )
+    team_stats: Mapped[list["MatchupTeamStat"]] = relationship(
+        back_populates="matchup", cascade="all, delete-orphan"
+    )
 
 
 class Player(Base):
@@ -329,3 +333,45 @@ class RosterSlot(Base):
 
     matchup: Mapped[Matchup] = relationship(back_populates="roster_slots")
     player: Mapped[Player] = relationship()
+
+
+class MatchupTeamStat(Base):
+    """One statistic posted by one team in one matchup.
+
+    Covers both the categories the league scores and the component stats
+    behind the percentages. ESPN returns FGM, FGA, FTM and FTA alongside
+    FG% and FT%, so a stored percentage can be recomputed or re-weighted
+    rather than being taken on trust.
+
+    `league_season_category_id` is set only when the statistic is one this
+    season actually scores, which is the reliable test. `result` is not:
+    a bye leaves every result null while still reporting real values.
+    """
+
+    __tablename__ = "matchup_team_stats"
+    __table_args__ = (
+        UniqueConstraint("matchup_id", "team_id", "abbreviation", name="uq_matchup_team_stats_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    matchup_id: Mapped[int] = mapped_column(
+        ForeignKey("matchups.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+
+    #: ESPN's abbreviation, e.g. "PTS", "FG%", "FGM".
+    abbreviation: Mapped[str] = mapped_column(String, nullable=False)
+    #: A count for counting stats, a ratio for percentages (FG% is 0.457, not 45.7).
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    #: WIN, LOSS or TIE. Null for a component stat, and null on both sides of
+    #: a bye, where there is no opponent to compare against.
+    result: Mapped[str | None] = mapped_column(String)
+
+    #: Set when this statistic is a category the season scores; null otherwise.
+    #: This, not `result`, is how to tell a scored category from a component.
+    league_season_category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("league_season_categories.id", ondelete="SET NULL")
+    )
+
+    matchup: Mapped[Matchup] = relationship(back_populates="team_stats")
+    category: Mapped[LeagueSeasonCategory | None] = relationship()

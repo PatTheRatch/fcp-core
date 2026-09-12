@@ -23,6 +23,7 @@ from app.db.models import (
     LeagueSeasonCategory,
     Matchup,
     MatchupPeriod,
+    MatchupTeamStat,
     Owner,
     Player,
     RosterSlot,
@@ -280,6 +281,8 @@ def fake_box(
     scoring_period: int = 6,
     home_lineup: list[Any] | None = None,
     away_lineup: list[Any] | None = None,
+    home_stats: dict[str, Any] | None = None,
+    away_stats: dict[str, Any] | None = None,
 ) -> Any:
     return SimpleNamespace(
         home_team=home,
@@ -291,7 +294,21 @@ def fake_box(
         scoring_period=scoring_period,
         home_lineup=home_lineup or [],
         away_lineup=away_lineup or [],
+        home_stats=home_stats if home_stats is not None else {},
+        away_stats=away_stats if away_stats is not None else {},
     )
+
+
+def stat_block(
+    *, pts: float = 503.0, result: str | None = "WIN", fgm: float = 182.0, fga: float = 398.0
+) -> dict[str, Any]:
+    """A scored category, a percentage, and the components behind it."""
+    return {
+        "PTS": {"value": pts, "result": result},
+        "FG%": {"value": round(fgm / fga, 8), "result": result},
+        "FGM": {"value": fgm, "result": None},
+        "FGA": {"value": fga, "result": None},
+    }
 
 
 def league_with_play(
@@ -481,3 +498,116 @@ def test_a_dropped_player_leaves_the_roster_on_reingest(session: Session) -> Non
     names = {s.player.name for s in session.scalars(select(RosterSlot)).all()}
     assert names == {"Kawhi"}
     assert len(session.scalars(select(Player)).all()) == 2, "the player row itself survives a drop"
+
+
+def _stats_league(**box_kwargs: Any) -> tuple[Any, Any, Any]:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, **box_kwargs)]},
+        matchup_period_count=1,
+    )
+    return home, away, espn
+
+
+def test_scored_categories_and_components_are_both_stored(session: Session) -> None:
+    _, _, espn = _stats_league(
+        home_stats=stat_block(result="WIN"), away_stats=stat_block(pts=397.0, result="LOSS")
+    )
+
+    ingest_season(session, espn)
+
+    stats = session.scalars(select(MatchupTeamStat)).all()
+    assert len(stats) == 8, "four statistics for each of two teams"
+    by_abbrev = {(s.team_id, s.abbreviation): s for s in stats}
+    teams = {t.espn_team_id: t.id for t in session.scalars(select(Team)).all()}
+    assert by_abbrev[(teams[3], "PTS")].value == 503.0
+    assert by_abbrev[(teams[3], "PTS")].result == "WIN"
+    assert by_abbrev[(teams[21], "PTS")].result == "LOSS"
+
+
+def test_a_scored_category_links_to_the_seasons_category_row(session: Session) -> None:
+    """The link, not the result, is what marks a statistic as scored."""
+    _, _, espn = _stats_league(home_stats=stat_block(), away_stats=stat_block())
+
+    ingest_season(session, espn)
+
+    stats = {s.abbreviation: s for s in session.scalars(select(MatchupTeamStat)).all()}
+    assert stats["PTS"].league_season_category_id is not None
+    assert stats["PTS"].category is not None
+    assert stats["PTS"].category.stat_id == 0, "PTS is ESPN stat id 0"
+    # FGM and FGA are components of FG%, not categories the league scores.
+    assert stats["FGM"].league_season_category_id is None
+    assert stats["FGA"].league_season_category_id is None
+
+
+def test_components_let_a_percentage_be_recomputed(session: Session) -> None:
+    _, _, espn = _stats_league(home_stats=stat_block(fgm=182.0, fga=398.0), away_stats={})
+
+    ingest_season(session, espn)
+
+    stats = {s.abbreviation: s.value for s in session.scalars(select(MatchupTeamStat)).all()}
+    assert stats["FGM"] / stats["FGA"] == pytest.approx(stats["FG%"])
+
+
+def test_a_bye_stores_values_with_no_result(session: Session) -> None:
+    """The trap: a bye reports real values but a null result on every one."""
+    home = fake_team(3, "A")
+    espn = league_with_play(
+        teams=[home],
+        boxes={
+            1: [
+                fake_box(
+                    home,
+                    0,
+                    winner="UNDECIDED",
+                    home_wins=0,
+                    away_wins=0,
+                    home_stats=stat_block(pts=634.0, result=None),
+                )
+            ]
+        },
+        matchup_period_count=1,
+    )
+
+    ingest_season(session, espn)
+
+    points = session.scalars(
+        select(MatchupTeamStat).where(MatchupTeamStat.abbreviation == "PTS")
+    ).one()
+    assert points.value == 634.0
+    assert points.result is None
+    # Still a scored category, despite having no result to show for it.
+    assert points.league_season_category_id is not None
+
+
+def test_stats_are_not_duplicated_on_reingest(session: Session) -> None:
+    def build() -> Any:
+        _, _, espn = _stats_league(home_stats=stat_block(), away_stats=stat_block())
+        return espn
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(MatchupTeamStat)).all()) == 8
+
+
+def test_a_statistic_that_disappears_is_removed(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+
+    def build(stats: dict[str, Any]) -> Any:
+        return league_with_play(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_stats=stats, away_stats={})]},
+            matchup_period_count=1,
+        )
+
+    ingest_season(session, build(stat_block()))
+    session.commit()
+    ingest_season(session, build({"PTS": {"value": 503.0, "result": "WIN"}}))
+    session.commit()
+
+    abbrevs = {s.abbreviation for s in session.scalars(select(MatchupTeamStat)).all()}
+    assert abbrevs == {"PTS"}
