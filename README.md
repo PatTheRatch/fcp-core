@@ -80,6 +80,19 @@ python scripts/espn_probe.py
 Prints one league's settings and team list. Fetches only, nothing is persisted.
 Needs `ESPN_LEAGUE_ID`, `ESPN_SEASON`, `ESPN_SWID`, `ESPN_S2` (see `.env.example`).
 
+Note the per-team `W-L-T` is a count of *categories* won, not matchups won.
+ESPN does not return a matchup record for a category league.
+
+## Ingest a league season
+
+```bash
+python scripts/ingest_league.py
+```
+
+Persists one season's structure to `DATABASE_URL`. Safe to re-run: an
+already-stored season is updated in place, a new season is inserted alongside
+it, and earlier seasons are never modified.
+
 ## Quality gates
 
 ```bash

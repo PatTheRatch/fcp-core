@@ -24,14 +24,19 @@ def main() -> None:
     print(f"  playoff teams: {league.settings.playoff_team_count}")
     print()
 
-    print(f"Teams ({len(league.teams)}):")
+    # In an H2H_CATEGORY league `team.wins/losses/ties` count CATEGORIES won,
+    # not matchups won: they sum to (matchup periods x categories) per team.
+    # ESPN exposes no matchup record here — it has to be derived from the
+    # schedule endpoint — so label these for what they actually are.
+    print(f"Teams ({len(league.teams)}) — W-L-T below are category tallies, not matchup records:")
     for team in league.teams:
         owners = (
             ", ".join(o.get("firstName", "?") for o in team.owners) if team.owners else "unclaimed"
         )
+        categories = team.wins + team.losses + team.ties
         print(
-            f"  [{team.team_id:>2}] {team.team_name:<25} "
-            f"{team.wins}-{team.losses}-{team.ties}  owners: {owners}"
+            f"  [{team.team_id:>2}] {team.team_name:<28} "
+            f"cat {team.wins}-{team.losses}-{team.ties} of {categories}  owners: {owners}"
         )
 
 

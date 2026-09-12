@@ -13,9 +13,30 @@
   2026-09-12 (league 3853870, season 2026): auth cookies work, the timeout
   patch holds, and settings + all 14 teams come back populated.
 
+- League structure persisted: `leagues`, `league_seasons`,
+  `league_season_categories` (migration 0002). `scripts/ingest_league.py`
+  writes one season and is safe to re-run. Verified against the live league.
+
 ## Building now
 
-- Designing the first canonical tables from what the probe returns
+- Persisting teams, matchup periods and rosters on top of `league_seasons`
+
+### Why the schema is season-scoped
+
+ESPN settings are per season, not per league: between years a league can
+change its name, team count, playoff format and scored categories. So
+`leagues` holds only the durable ESPN id, and everything that can change
+hangs off `league_seasons`, one row per (league, season). Re-ingesting a
+season updates it in place; a new season inserts alongside and leaves prior
+seasons untouched.
+
+Two deliberate consequences:
+
+- Scoring categories are rows, not columns, so nine-cat becoming eight-cat is
+  a data change rather than a migration.
+- `league_seasons.raw_settings` (JSONB) keeps the payload ESPN returned, so a
+  field we do not model yet can be backfilled without re-fetching a season
+  that may no longer be available.
 
 ### What the live probe taught us
 
@@ -36,8 +57,8 @@
 
 ## Next
 
-1. Persist league structure
-2. Persist teams / matchup periods / rosters
+1. Persist teams / matchup periods / rosters
+2. Derive matchup records from the schedule endpoint (ESPN does not give them)
 
 ## Not building yet
 
