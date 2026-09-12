@@ -26,6 +26,9 @@
 - Teams, owners, matchup periods, matchups and rosters persisted: `teams`,
   `owners`, `team_owners`, `matchup_periods`, `matchups`, `players`,
   `roster_slots` (migration 0003).
+- Draft persisted: `draft_picks` (migration 0009). Auction prices, keeper
+  flags, and who nominated each player. Costs no ESPN request: the draft
+  arrives with the league itself.
 - Transactions persisted: `transactions`, `transaction_items` (migration
   0008). Waiver claims, pickups and trades, with the players each moved and
   what was bid.
@@ -79,6 +82,8 @@ Narrative routes, all derived rather than ingested:
 | `GET /leagues/{id}/head-to-head` | every pair of owners who have met |
 | `.../transactions` | waivers, pickups and trades, filterable |
 | `.../contested-claims` | players several teams bid on, and what winning cost |
+| `.../draft` | the draft board in pick order, with auction prices |
+| `.../draft-value` | what each pick cost against what the player returned |
 
 Operational routes:
 
@@ -193,6 +198,25 @@ Two deliberate consequences:
   not the flag.
 - Cross-check passed: tallying per-category WIN, LOSS and TIE reproduces the
   separately stored matchup totals for 151 of 151 contested matchups.
+
+### What the draft gave us
+
+Free, and it was sitting on the league object from the very first fetch. The
+league drafts by auction, so every pick carries a price, and every season has
+one: 130 picks in 2019 through 208 in 2023.
+
+`bid_amount` here is the **draft** budget, roughly 200 a team, and a
+different pot from the in-season acquisition budget of 100 that
+`transactions.bid_amount` records. Two columns with the same name and
+different meanings, which is worth knowing before comparing them.
+
+The point of storing it is the comparison against production. In 2026
+Wembanyama cost 100 and returned 16.0 points per dollar, while
+Gilgeous-Alexander cost 79 and returned 26.8. Giannis cost 70 and returned
+14.2 across an injury-shortened year.
+
+A drafted player already known to us keeps the name we have; the draft does
+not rename anyone.
 
 ### What the transactions endpoint taught us
 

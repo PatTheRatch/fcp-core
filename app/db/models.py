@@ -122,6 +122,11 @@ class LeagueSeason(Base):
         cascade="all, delete-orphan",
         order_by="Transaction.scoring_period",
     )
+    draft_picks: Mapped[list["DraftPick"]] = relationship(
+        back_populates="league_season",
+        cascade="all, delete-orphan",
+        order_by="DraftPick.round_num, DraftPick.round_pick",
+    )
 
 
 class LeagueSeasonCategory(Base):
@@ -624,4 +629,46 @@ class TransactionItem(Base):
     to_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
 
     transaction: Mapped[Transaction] = relationship(back_populates="items")
+    player: Mapped[Player] = relationship()
+
+
+class DraftPick(Base):
+    """One pick, from the draft that started a season.
+
+    The league drafts by auction, so `bid_amount` is what the team paid
+    rather than a formality. That makes the pick comparable against what the
+    player went on to return, which is the whole reason to store it.
+
+    Costs nothing to collect: ESPN sends the full draft with the league
+    itself, so this needs no request of its own.
+    """
+
+    __tablename__ = "draft_picks"
+    __table_args__ = (
+        UniqueConstraint("league_season_id", "round_num", "round_pick", name="uq_draft_picks_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The team that ended up with the player.
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    #: The team that put the player up for auction, which is often not the
+    #: team that won him.
+    nominating_team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE")
+    )
+
+    round_num: Mapped[int] = mapped_column(Integer, nullable=False)
+    round_pick: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Auction price. Not a FAAB bid: this is the draft budget, a separate
+    #: pot from the in-season acquisition budget.
+    bid_amount: Mapped[int | None] = mapped_column(Integer)
+    keeper: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    league_season: Mapped[LeagueSeason] = relationship(back_populates="draft_picks")
     player: Mapped[Player] = relationship()

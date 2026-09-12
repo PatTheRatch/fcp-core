@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.draft import router as draft_router
 from app.api.health import router as health_router
 from app.api.ingest_runs import router as ingest_runs_router
 from app.api.leagues import router as leagues_router
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="FCP Core", description=DESCRIPTION, version="0.1.0")
     app.include_router(health_router)
     app.include_router(leagues_router)
+    app.include_router(draft_router)
     app.include_router(teams_router)
     app.include_router(narratives_router)
     app.include_router(transactions_router)

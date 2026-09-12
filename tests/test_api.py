@@ -24,9 +24,11 @@ from app.ingest import ingest_season
 from app.main import create_app
 from tests.fakes import (
     BOX_LINE,
+    attach_draft,
     attach_transactions,
     fake_box,
     fake_card,
+    fake_pick,
     fake_player,
     fake_team,
     fake_transaction,
@@ -106,6 +108,15 @@ def _seeded_league() -> Any:
                 {1: dict(BOX_LINE, PTS=30.0), 2: dict(BOX_LINE, PTS=10.0)},
             ),
         },
+    )
+    attach_draft(
+        espn,
+        [
+            # Both already exist as rostered players. An existing player keeps
+            # the name we know them by; the draft does not rename anyone.
+            fake_pick(1, 1, 6450, "Kawhi Leonard", team=home, nominated_by=away, bid=100),
+            fake_pick(1, 2, 4871144, "Alperen Sengun", team=away, nominated_by=away, bid=5),
+        ],
     )
     # Two teams bid on the same player on day 2; one wins, one fails.
     return attach_transactions(
@@ -407,3 +418,35 @@ def test_contested_claims_name_the_winner_and_count_the_losers(client: TestClien
     assert fight["winning_bid"] == 17
     assert fight["losing_bids"] == 1
     assert fight["highest_losing_bid"] == 9
+
+
+def test_the_draft_board_is_returned_in_pick_order(client: TestClient) -> None:
+    picks = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/draft").json()
+    assert [(p["round_num"], p["round_pick"]) for p in picks] == [(1, 1), (1, 2)]
+    first = picks[0]
+    assert first["player_name"] == "Kawhi Leonard"
+    assert first["paid"] == 100
+    assert first["team"] == "Through The Wire"
+    assert first["nominated_by"] == "Load Management", "the nominator is not the buyer"
+
+
+def test_draft_value_ranks_by_return_per_dollar(client: TestClient) -> None:
+    """Kawhi cost 100 for 52 points; Sengun cost 5 for 40. Value is the ratio."""
+    worst = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/draft-value", params={"order": "worst"}
+    ).json()
+    assert worst[0]["player_name"] == "Kawhi Leonard"
+    assert worst[0]["paid"] == 100
+    assert worst[0]["points_per_dollar"] < worst[-1]["points_per_dollar"]
+
+    best = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/draft-value", params={"order": "best"}
+    ).json()
+    assert best[0]["player_name"] == "Alperen Sengun"
+
+
+def test_draft_value_can_ignore_cheap_picks(client: TestClient) -> None:
+    body = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/draft-value", params={"min_paid": 50}
+    ).json()
+    assert [p["player_name"] for p in body] == ["Kawhi Leonard"]

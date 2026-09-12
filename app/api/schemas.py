@@ -358,3 +358,27 @@ class ContestedClaimOut(BaseModel):
     winning_bid: int | None
     losing_bids: int = Field(description="How many other teams bid and did not get him")
     highest_losing_bid: int | None
+
+
+class DraftPickOut(BaseModel):
+    """One pick. `paid` is the auction price, not a FAAB bid."""
+
+    round_num: int
+    round_pick: int
+    player_id: int = Field(description="ESPN player id")
+    player_name: str
+    team: str | None
+    nominated_by: str | None = Field(description="Who put the player up, often not the buyer")
+    paid: int | None
+    keeper: bool
+
+
+class DraftValueOut(BaseModel):
+    """What a pick cost against what the player went on to produce."""
+
+    player_name: str
+    team: str | None
+    paid: int
+    season_points: float
+    points_per_dollar: float
+    games_played: int

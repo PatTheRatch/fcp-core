@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import (
     DailyLineupSlot,
+    DraftPick,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -37,10 +38,12 @@ from app.ingest import IngestScope, ingest_league_structure, ingest_season
 from tests.fakes import (
     BOX_LINE,
     NINE_CAT_STAT_IDS,
+    attach_draft,
     attach_transactions,
     fake_box,
     fake_card,
     fake_league,
+    fake_pick,
     fake_player,
     fake_team,
     fake_transaction,
@@ -1016,3 +1019,73 @@ def test_a_transaction_returned_on_two_days_is_stored_once(session: Session) -> 
     stored = session.scalars(select(Transaction)).all()
     assert len(stored) == 1, "the same ESPN id must not create a second row"
     assert stored[0].scoring_period == 2, "the day comes from the payload, not the request"
+
+
+def test_the_draft_is_stored_with_its_auction_prices(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+    attach_draft(
+        espn,
+        [
+            fake_pick(1, 1, 500, "First Overall", team=home, nominated_by=away, bid=100),
+            fake_pick(1, 2, 501, "Second", team=away, nominated_by=away, bid=91),
+        ],
+    )
+
+    ingest_season(session, espn)
+
+    picks = session.scalars(select(DraftPick).order_by(DraftPick.round_pick)).all()
+    assert len(picks) == 2
+    teams = {t.espn_team_id: t.id for t in session.scalars(select(Team)).all()}
+    assert picks[0].player.name == "First Overall"
+    assert picks[0].bid_amount == 100
+    assert picks[0].team_id == teams[3]
+    assert picks[0].nominating_team_id == teams[21], "nominator is not always the buyer"
+
+
+def test_a_drafted_player_we_never_rostered_is_created(session: Session) -> None:
+    home = fake_team(3, "A")
+    espn = league_with_days(teams=[home], boxes={}, days={}, windows={}, matchup_period_count=1)
+    attach_draft(espn, [fake_pick(5, 3, 999, "Drafted And Cut", team=home)])
+
+    ingest_season(session, espn)
+
+    assert "Drafted And Cut" in {p.name for p in session.scalars(select(Player)).all()}
+
+
+def test_the_draft_is_not_duplicated_on_reingest(session: Session) -> None:
+    home = fake_team(3, "A")
+
+    def build() -> Any:
+        espn = league_with_days(teams=[home], boxes={}, days={}, windows={}, matchup_period_count=1)
+        return attach_draft(espn, [fake_pick(1, 1, 500, "First", team=home, bid=50)])
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(DraftPick)).all()) == 1
+
+
+def test_each_season_keeps_its_own_draft(session: Session) -> None:
+    """Auction prices move year to year; one season must not overwrite another."""
+    home = fake_team(3, "A")
+
+    first = league_with_days(teams=[home], boxes={}, days={}, windows={}, matchup_period_count=1)
+    attach_draft(first, [fake_pick(1, 1, 500, "Star", team=home, bid=40)])
+    ingest_season(session, first)
+    session.commit()
+
+    second = league_with_days(teams=[home], boxes={}, days={}, windows={}, matchup_period_count=1)
+    second.year = 2027
+    attach_draft(second, [fake_pick(1, 1, 500, "Star", team=home, bid=85)])
+    ingest_season(session, second)
+    session.commit()
+
+    by_season = {
+        p.league_season.season: p.bid_amount for p in session.scalars(select(DraftPick)).all()
+    }
+    assert by_season == {2026: 40, 2027: 85}

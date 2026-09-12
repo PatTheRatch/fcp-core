@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     NON_STARTING_SLOTS,
     DailyLineupSlot,
+    DraftPick,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -989,6 +990,70 @@ def ingest_transactions(
     return written
 
 
+def ingest_draft(session: Session, league_season: LeagueSeason, espn_league: ESPNLeague) -> int:
+    """Write the season's draft. Returns picks written.
+
+    Takes no scope and makes no request: ESPN sends the draft with the league
+    itself, so this is free on every run including a nightly one.
+    """
+    picks = list(getattr(espn_league, "draft", None) or [])
+    if not picks:
+        return 0
+
+    teams = _team_index(session, league_season)
+    names = player_names(espn_league)
+    players = {player.espn_player_id: player for player in session.scalars(select(Player)).all()}
+    existing = {
+        (row.round_num, row.round_pick): row
+        for row in session.scalars(
+            select(DraftPick).where(DraftPick.league_season_id == league_season.id)
+        ).all()
+    }
+    written = 0
+
+    for pick in picks:
+        espn_player_id = getattr(pick, "playerId", None)
+        if espn_player_id is None:
+            continue
+        espn_player_id = int(espn_player_id)
+
+        player = players.get(espn_player_id)
+        if player is None:
+            player = Player(
+                espn_player_id=espn_player_id,
+                name=str(getattr(pick, "playerName", "") or f"player {espn_player_id}")
+                or names.get(espn_player_id, f"player {espn_player_id}"),
+            )
+            session.add(player)
+            session.flush()
+            players[espn_player_id] = player
+
+        round_num = int(getattr(pick, "round_num", 0) or 0)
+        round_pick = int(getattr(pick, "round_pick", 0) or 0)
+        row = existing.get((round_num, round_pick))
+        if row is None:
+            row = DraftPick(
+                league_season_id=league_season.id,
+                round_num=round_num,
+                round_pick=round_pick,
+            )
+            session.add(row)
+            existing[(round_num, round_pick)] = row
+
+        won_by = teams.get(_espn_team_id(getattr(pick, "team", None)) or -1)
+        nominated_by = teams.get(_espn_team_id(getattr(pick, "nominatingTeam", None)) or -1)
+        row.player_id = player.id
+        row.team_id = won_by.id if won_by else None
+        row.nominating_team_id = nominated_by.id if nominated_by else None
+        bid = getattr(pick, "bid_amount", None)
+        row.bid_amount = int(bid) if bid is not None else None
+        row.keeper = bool(getattr(pick, "keeper_status", False))
+        written += 1
+
+    session.flush()
+    return written
+
+
 def ingest_season(
     session: Session, espn_league: ESPNLeague, scope: IngestScope = FULL_SCOPE
 ) -> LeagueSeason:
@@ -1005,6 +1070,8 @@ def ingest_season(
     """
     league_season = ingest_league_structure(session, espn_league)
     ingest_teams(session, league_season, espn_league)
+    # Free: the draft arrives with the league, so it needs no request.
+    ingest_draft(session, league_season, espn_league)
     ingest_matchups_and_rosters(session, league_season, espn_league, scope)
     ingest_daily_lineups(session, league_season, espn_league, scope)
     ingest_player_stats(session, league_season, espn_league, scope)

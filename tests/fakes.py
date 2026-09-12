@@ -325,3 +325,33 @@ def league_with_days(
 
     league.box_scores = box_scores
     return league
+
+
+def fake_pick(
+    round_num: int,
+    round_pick: int,
+    player_id: int,
+    name: str,
+    *,
+    team: Any = None,
+    nominated_by: Any = None,
+    bid: int | None = 10,
+    keeper: bool = False,
+) -> Any:
+    """One draft pick, as `League.draft` presents it."""
+    return SimpleNamespace(
+        playerId=player_id,
+        playerName=name,
+        round_num=round_num,
+        round_pick=round_pick,
+        bid_amount=bid,
+        keeper_status=keeper,
+        team=team,
+        nominatingTeam=nominated_by,
+    )
+
+
+def attach_draft(league: Any, picks: list[Any]) -> Any:
+    """Give a fake league a draft. The real one arrives with the league."""
+    league.draft = picks
+    return league
