@@ -375,3 +375,62 @@ class MatchupTeamStat(Base):
 
     matchup: Mapped[Matchup] = relationship(back_populates="team_stats")
     category: Mapped[LeagueSeasonCategory | None] = relationship()
+
+
+class PlayerGameStat(Base):
+    """What one player recorded in one scoring period.
+
+    A scoring period in ESPN basketball is a single day, so this is the
+    box score line for one game. It is a global fact about a player rather
+    than a league one: two leagues holding the same player share this row.
+    `season` is part of the key because scoring period numbers restart each
+    year.
+
+    A row exists for every scoring period ESPN lists for the player,
+    including days their team played and they did not. `played` separates
+    the two, which is what makes availability answerable rather than
+    guessable from missing rows.
+    """
+
+    __tablename__ = "player_game_stats"
+    __table_args__ = (
+        UniqueConstraint("player_id", "season", "scoring_period", name="uq_player_game_stats_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    #: Tip-off, as ESPN reports it. ESPN sends no offset, so it is read as UTC.
+    game_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The opposing pro team. ESPN never reports the player's own team here.
+    opponent: Mapped[str | None] = mapped_column(String)
+    #: False when ESPN lists the scoring period but records no stat line.
+    played: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    minutes: Mapped[float | None] = mapped_column(Float)
+    points: Mapped[float | None] = mapped_column(Float)
+    rebounds: Mapped[float | None] = mapped_column(Float)
+    offensive_rebounds: Mapped[float | None] = mapped_column(Float)
+    defensive_rebounds: Mapped[float | None] = mapped_column(Float)
+    assists: Mapped[float | None] = mapped_column(Float)
+    steals: Mapped[float | None] = mapped_column(Float)
+    blocks: Mapped[float | None] = mapped_column(Float)
+    turnovers: Mapped[float | None] = mapped_column(Float)
+    personal_fouls: Mapped[float | None] = mapped_column(Float)
+
+    field_goals_made: Mapped[float | None] = mapped_column(Float)
+    field_goals_attempted: Mapped[float | None] = mapped_column(Float)
+    three_pointers_made: Mapped[float | None] = mapped_column(Float)
+    three_pointers_attempted: Mapped[float | None] = mapped_column(Float)
+    free_throws_made: Mapped[float | None] = mapped_column(Float)
+    free_throws_attempted: Mapped[float | None] = mapped_column(Float)
+
+    #: All 45 statistics ESPN returned, including the rate stats that are
+    #: meaningless for a single game (PPG equals PTS) but harmless to keep.
+    raw_totals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+    player: Mapped[Player] = relationship()

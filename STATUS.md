@@ -21,11 +21,14 @@
 - Per-category matchup detail persisted: `matchup_team_stats` (migration
   0004). Every statistic each team posted in each matchup, covering the nine
   scored categories and the four component stats behind the percentages.
+- Player statistics per scoring period persisted: `player_game_stats`
+  (migration 0005). A box score line per player per day, global rather than
+  league-scoped, keyed on (player, season, scoring period).
 - `scripts/ingest_league.py` writes one whole season and is safe to re-run.
   Verified against the live league on 2026-09-12: 14 teams, 15 owners,
   22 matchup periods, 157 matchups, 348 players, 4436 roster snapshots and
-  4004 matchup statistics, in about 20 seconds. A second run changed no row
-  counts.
+  4004 matchup statistics and 28215 player game lines (20431 with a stat
+  line), in about 50 seconds. A second run changed no row counts.
 
 ## Building now
 
@@ -101,11 +104,47 @@ Two deliberate consequences:
 - Cross-check passed: tallying per-category WIN, LOSS and TIE reproduces the
   separately stored matchup totals for 151 of 151 contested matchups.
 
+### What the player cards taught us
+
+- `player_info` batches. ESPN returned all 348 players of this league in a
+  single call in about 3 seconds, so per-player fetching is unnecessary.
+  Ingest batches at 100 to keep request size bounded on larger leagues.
+- A player card carries roughly 82 numeric keys, one per scoring period,
+  each with a date, the opposing team and 45 statistics. The non-numeric
+  keys ("2026_total", "2026_last_7") are season rollups and are skipped.
+- The `team` field on a card entry is the OPPONENT. Across 29 distinct
+  values for one player, their own team never appeared.
+- Rows are kept for days a player's team played and they did not, flagged
+  `played = false`. Absence of a row means no fixture; it should not have to
+  double as "did not play".
+- Dates arrive with no offset and are read as UTC. The stored range,
+  2025-10-22 to 2026-04-13, is exactly the NBA regular season.
+- Rate stats (PPG, FG%, MPG) stay in `raw_totals` only. For a single game
+  they either duplicate a counting stat or divide by one.
+
 ## Next
 
-1. Player statistics per scoring period
-2. An API surface over the stored season
-3. Ingesting prior seasons, which the schema already allows
+1. An API surface over the stored season
+2. Ingesting prior seasons, which the schema already allows
+3. Deciding whether starter-versus-bench is worth recovering from another
+   endpoint, since it blocks exact reconciliation (see below)
+
+## Open questions
+
+- Rosters are snapshots per matchup period, which is the finest grain the box
+  scores expose. Daily roster movement within a period is not recoverable
+  from this source.
+- ESPN omits the date and opponent on about 4.7% of played lines (969 of
+  20431). The statistics are present and correct; only the game context is
+  missing. Verified as an upstream gap, not a parsing fault.
+- Daily player lines do **not** reconcile exactly with the weekly team
+  totals, and should not be presented as validating each other. Two known
+  causes: only started players count toward a team's category total and
+  `lineupSlot` is unusable, so the bench cannot be excluded; and the
+  scoring-period window per matchup period is approximate, because ESPN's own
+  period mapping is inconsistent. Of 294 sides compared, 36 matched exactly
+  and 230 had a roster sum above the team total, which is the direction the
+  bench explanation predicts.
 
 ## Open questions
 

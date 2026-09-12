@@ -26,6 +26,7 @@ from app.db.models import (
     MatchupTeamStat,
     Owner,
     Player,
+    PlayerGameStat,
     RosterSlot,
     Team,
 )
@@ -393,9 +394,138 @@ def ingest_matchups_and_rosters(
     session.flush()
 
 
+#: How many players to request from the player card endpoint at once. ESPN
+#: served all 348 of a 14-team league in one call, but batching keeps the
+#: request size bounded for larger leagues.
+PLAYER_INFO_BATCH = 100
+
+#: ESPN abbreviation -> column on PlayerGameStat. The rate stats ESPN also
+#: returns (PPG, RPG, FG% and friends) are left to `raw_totals`: for a single
+#: game they either duplicate a counting stat or divide by one.
+_PLAYER_STAT_COLUMNS = {
+    "MIN": "minutes",
+    "PTS": "points",
+    "REB": "rebounds",
+    "OREB": "offensive_rebounds",
+    "DREB": "defensive_rebounds",
+    "AST": "assists",
+    "STL": "steals",
+    "BLK": "blocks",
+    "TO": "turnovers",
+    "PF": "personal_fouls",
+    "FGM": "field_goals_made",
+    "FGA": "field_goals_attempted",
+    "3PM": "three_pointers_made",
+    "3PA": "three_pointers_attempted",
+    "FTM": "free_throws_made",
+    "FTA": "free_throws_attempted",
+}
+
+
+def _as_utc(value: Any) -> datetime | None:
+    """ESPN sends game times with no offset. Read them as UTC."""
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _season_player_ids(session: Session, league_season: LeagueSeason) -> list[int]:
+    """Every player who appeared on a roster in this season."""
+    return list(
+        session.scalars(
+            select(Player.espn_player_id)
+            .join(RosterSlot, RosterSlot.player_id == Player.id)
+            .join(Team, Team.id == RosterSlot.team_id)
+            .where(Team.league_season_id == league_season.id)
+            .distinct()
+            .order_by(Player.espn_player_id)
+        ).all()
+    )
+
+
+def _scoring_period_entries(espn_player: Any) -> list[tuple[int, dict[str, Any]]]:
+    """The per-scoring-period entries, dropping ESPN's season aggregates.
+
+    Numeric keys are scoring periods. The rest ("2026_total",
+    "2026_projected", "2026_last_7") are season rollups we can recompute.
+    """
+    entries: list[tuple[int, dict[str, Any]]] = []
+    for key, payload in (getattr(espn_player, "stats", None) or {}).items():
+        text = str(key)
+        if not text.isdigit() or not isinstance(payload, dict):
+            continue
+        entries.append((int(text), payload))
+    return entries
+
+
+def ingest_player_stats(
+    session: Session, league_season: LeagueSeason, espn_league: ESPNLeague
+) -> int:
+    """Write a box score line per player per scoring period. Returns rows written.
+
+    Scoped to players who appeared on a roster this season, so ingesting a
+    second league does not refetch the whole player universe.
+    """
+    espn_player_ids = _season_player_ids(session, league_season)
+    players = {
+        player.espn_player_id: player
+        for player in session.scalars(
+            select(Player).where(Player.espn_player_id.in_(espn_player_ids))
+        ).all()
+    }
+    season = league_season.season
+    written = 0
+
+    for start in range(0, len(espn_player_ids), PLAYER_INFO_BATCH):
+        batch = espn_player_ids[start : start + PLAYER_INFO_BATCH]
+        fetched = espn_league.player_info(playerId=batch)
+        if not isinstance(fetched, list):
+            fetched = [fetched]
+
+        for espn_player in fetched:
+            if espn_player is None:
+                continue
+            player = players.get(int(getattr(espn_player, "playerId", 0) or 0))
+            if player is None:
+                continue
+
+            for scoring_period, payload in _scoring_period_entries(espn_player):
+                totals = payload.get("total") or {}
+                row = session.scalar(
+                    select(PlayerGameStat).where(
+                        PlayerGameStat.player_id == player.id,
+                        PlayerGameStat.season == season,
+                        PlayerGameStat.scoring_period == scoring_period,
+                    )
+                )
+                if row is None:
+                    row = PlayerGameStat(
+                        player_id=player.id, season=season, scoring_period=scoring_period
+                    )
+                    session.add(row)
+
+                row.game_date = _as_utc(payload.get("date"))
+                row.opponent = payload.get("team")
+                row.played = bool(totals)
+                row.raw_totals = dict(totals)
+                for abbreviation, column in _PLAYER_STAT_COLUMNS.items():
+                    raw = totals.get(abbreviation)
+                    setattr(row, column, float(raw) if raw is not None else None)
+                written += 1
+
+        session.flush()
+
+    return written
+
+
 def ingest_season(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
-    """Write one whole season: structure, teams, matchup periods and rosters."""
+    """Write one whole season: structure, teams, play, rosters and player stats.
+
+    Player stats come last because they are scoped to the players who
+    actually appeared on a roster, which is only known once rosters exist.
+    """
     league_season = ingest_league_structure(session, espn_league)
     ingest_teams(session, league_season, espn_league)
     ingest_matchups_and_rosters(session, league_season, espn_league)
+    ingest_player_stats(session, league_season, espn_league)
     return league_season

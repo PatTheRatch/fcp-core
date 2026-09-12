@@ -26,6 +26,7 @@ from app.db.models import (
     MatchupTeamStat,
     Owner,
     Player,
+    PlayerGameStat,
     RosterSlot,
     Team,
 )
@@ -311,6 +312,25 @@ def stat_block(
     }
 
 
+def fake_card(player_id: int, name: str, periods: dict[int, dict[str, Any] | None]) -> Any:
+    """A player card: scoring period -> stat line, or None for a day not played.
+
+    Also carries the season rollups ESPN mixes into the same dict, which the
+    ingest has to ignore.
+    """
+    stats: dict[str, Any] = {
+        "2026_total": {"total": {"PTS": 1.0}, "date": None, "team": None},
+        "2026_projected": {"total": {"PTS": 2.0}, "date": None, "team": None},
+    }
+    for period, line in periods.items():
+        stats[str(period)] = {
+            "total": line or {},
+            "date": datetime(2025, 10, 23, 0, 30) if line is not None else datetime(2025, 10, 24),
+            "team": "TOR",
+        }
+    return SimpleNamespace(playerId=player_id, name=name, stats=stats)
+
+
 def league_with_play(
     *,
     season: int = 2026,
@@ -318,8 +338,9 @@ def league_with_play(
     boxes: dict[int, list[Any]],
     reg_season_count: int = 2,
     matchup_period_count: int = 3,
+    cards: dict[int, Any] | None = None,
 ) -> Any:
-    """A fake league that also answers `box_scores(period)`."""
+    """A fake league that also answers `box_scores(period)` and `player_info`."""
     league = fake_league(
         season=season,
         reg_season_count=reg_season_count,
@@ -327,6 +348,10 @@ def league_with_play(
     )
     league.teams = teams
     league.box_scores = lambda period: boxes.get(period, [])
+    by_id = cards or {}
+    league.player_info = lambda playerId: [  # noqa: N803  (ESPN's own parameter name)
+        by_id[i] for i in playerId if i in by_id
+    ]
     return league
 
 
@@ -611,3 +636,109 @@ def test_a_statistic_that_disappears_is_removed(session: Session) -> None:
 
     abbrevs = {s.abbreviation for s in session.scalars(select(MatchupTeamStat)).all()}
     assert abbrevs == {"PTS"}
+
+
+BOX_LINE = {
+    "PTS": 22.0,
+    "REB": 9.0,
+    "OREB": 2.0,
+    "DREB": 7.0,
+    "AST": 5.0,
+    "STL": 1.0,
+    "BLK": 2.0,
+    "TO": 3.0,
+    "PF": 4.0,
+    "MIN": 35.0,
+    "FGM": 8.0,
+    "FGA": 17.0,
+    "3PM": 2.0,
+    "3PA": 5.0,
+    "FTM": 4.0,
+    "FTA": 4.0,
+    "PPG": 22.0,
+    "FG%": 0.47058824,
+}
+
+
+def _league_with_cards(periods: dict[int, dict[str, Any] | None]) -> Any:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    kawhi = fake_player(6450, "Kawhi Leonard")
+    return league_with_play(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[kawhi], away_lineup=[])]},
+        matchup_period_count=1,
+        cards={6450: fake_card(6450, "Kawhi Leonard", periods)},
+    )
+
+
+def test_player_stats_are_stored_per_scoring_period(session: Session) -> None:
+    ingest_season(session, _league_with_cards({2: BOX_LINE, 4: BOX_LINE}))
+
+    rows = session.scalars(select(PlayerGameStat).order_by(PlayerGameStat.scoring_period)).all()
+    assert [r.scoring_period for r in rows] == [2, 4], "season rollups must not become rows"
+    assert rows[0].season == 2026
+    assert rows[0].points == 22.0
+    assert rows[0].minutes == 35.0
+    assert rows[0].field_goals_made == 8.0
+    assert rows[0].opponent == "TOR"
+
+
+def test_a_day_without_a_stat_line_is_kept_and_flagged(session: Session) -> None:
+    """Absence of a row would mean "no game". This means "played no part in one"."""
+    ingest_season(session, _league_with_cards({2: BOX_LINE, 5: None}))
+
+    rows = {r.scoring_period: r for r in session.scalars(select(PlayerGameStat)).all()}
+    assert rows[2].played is True
+    assert rows[5].played is False
+    assert rows[5].points is None
+    assert rows[5].game_date is not None, "the fixture still happened"
+
+
+def test_game_dates_are_stored_as_utc(session: Session) -> None:
+    """ESPN sends no offset, so the naive timestamp is read as UTC."""
+    ingest_season(session, _league_with_cards({2: BOX_LINE}))
+
+    row = session.scalars(select(PlayerGameStat)).one()
+    assert row.game_date == datetime(2025, 10, 23, 0, 30, tzinfo=UTC)
+
+
+def test_rate_stats_stay_in_raw_totals_only(session: Session) -> None:
+    ingest_season(session, _league_with_cards({2: BOX_LINE}))
+
+    row = session.scalars(select(PlayerGameStat)).one()
+    assert row.raw_totals["FG%"] == pytest.approx(0.47058824)
+    assert row.raw_totals["PPG"] == 22.0
+    # Recomputable from the columns, so it is not one.
+    made, attempted = row.field_goals_made, row.field_goals_attempted
+    assert made is not None and attempted is not None
+    assert made / attempted == pytest.approx(row.raw_totals["FG%"])
+
+
+def test_player_stats_are_not_duplicated_on_reingest(session: Session) -> None:
+    ingest_season(session, _league_with_cards({2: BOX_LINE, 4: BOX_LINE}))
+    session.commit()
+    ingest_season(session, _league_with_cards({2: BOX_LINE, 4: BOX_LINE}))
+    session.commit()
+
+    assert len(session.scalars(select(PlayerGameStat)).all()) == 2
+
+
+def test_only_players_rostered_this_season_are_fetched(session: Session) -> None:
+    """Ingesting one league must not pull the whole player universe."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    rostered, stranger = fake_player(6450, "Rostered"), fake_player(999, "Never Rostered")
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[rostered], away_lineup=[])]},
+        matchup_period_count=1,
+        cards={
+            6450: fake_card(6450, "Rostered", {2: BOX_LINE}),
+            999: fake_card(999, "Never Rostered", {2: BOX_LINE}),
+        },
+    )
+    assert stranger is not None  # present in the league's cards, absent from every roster
+
+    ingest_season(session, espn)
+
+    names = {r.player.name for r in session.scalars(select(PlayerGameStat)).all()}
+    assert names == {"Rostered"}

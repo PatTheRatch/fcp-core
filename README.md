@@ -91,13 +91,13 @@ python scripts/ingest_league.py
 
 Persists one whole season to `DATABASE_URL`: league settings and scoring
 categories, teams and their owners, matchup periods and the matchups inside
-them, a roster snapshot per team per matchup period, and every statistic each
-team posted in each matchup.
+them, a roster snapshot per team per matchup period, every statistic each team
+posted in each matchup, and a box score line per player per scoring period.
 
 Safe to re-run: an already-stored season is updated in place, a new season is
 inserted alongside it, and earlier seasons are never modified. It makes one
 ESPN call per matchup period, so a full season is a couple of dozen requests
-and takes roughly twenty seconds.
+plus a handful of batched player-card calls, and takes roughly fifty seconds.
 
 Two things the schema deliberately does not have. There is no lineup slot on
 a roster row, because `espn-api` reports every player's slot as `PG`. There is
@@ -109,6 +109,12 @@ In `matchup_team_stats`, a row is a scored category when
 `league_season_category_id` is set. Do not use `result` for that test: a bye
 reports real values with a null result on every statistic. Percentages are
 stored as ratios, so FG% is `0.457`.
+
+In `player_game_stats`, a row with `played = false` means the player's team
+had a fixture and they recorded nothing, so do not treat a missing row and an
+unplayed row as the same thing. `opponent` is the opposing team, never the
+player's own. ESPN omits the date and opponent on a small share of otherwise
+valid lines.
 
 ## Quality gates
 
