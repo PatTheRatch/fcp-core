@@ -1,0 +1,33 @@
+# Nightly verified dump of the database.
+#
+# Install:
+#     sudo cp deploy/fcp-core-backup.* /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-backup.timer
+#
+# Run one now:   sudo systemctl start fcp-core-backup.service
+# Restore:       pg_restore -d "$DB_URL" --clean --if-exists backups/fcp-<stamp>.dump
+
+[Unit]
+Description=fcp-core - verified database backup
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/scripts/backup_db.sh
+TimeoutStartSec=1800
+
+# Exit 69 means the database was unreachable and nothing was attempted. Left
+# as a failure on purpose: a server whose database is down should show up in
+# `systemctl --failed`.
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core/backups /opt/fcp-core/logs

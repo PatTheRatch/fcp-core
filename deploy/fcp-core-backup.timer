@@ -1,0 +1,14 @@
+# Nightly, an hour after the ingest, so the dump contains that night's data
+# rather than the state just before it was refreshed.
+
+[Unit]
+Description=fcp-core - nightly database backup
+Requires=fcp-core-backup.service
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
