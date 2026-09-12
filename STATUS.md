@@ -26,6 +26,9 @@
 - Teams, owners, matchup periods, matchups and rosters persisted: `teams`,
   `owners`, `team_owners`, `matchup_periods`, `matchups`, `players`,
   `roster_slots` (migration 0003).
+- Transactions persisted: `transactions`, `transaction_items` (migration
+  0008). Waiver claims, pickups and trades, with the players each moved and
+  what was bid.
 - Per-category matchup detail persisted: `matchup_team_stats` (migration
   0004). Every statistic each team posted in each matchup, covering the nine
   scored categories and the four component stats behind the percentages.
@@ -74,6 +77,8 @@ Narrative routes, all derived rather than ingested:
 | `.../notable-matchups` | the season's sweeps and nail-biters |
 | `GET /leagues/{id}/owners` | every owner's record across all seasons |
 | `GET /leagues/{id}/head-to-head` | every pair of owners who have met |
+| `.../transactions` | waivers, pickups and trades, filterable |
+| `.../contested-claims` | players several teams bid on, and what winning cost |
 
 Operational routes:
 
@@ -188,6 +193,30 @@ Two deliberate consequences:
   not the flag.
 - Cross-check passed: tallying per-category WIN, LOSS and TIE reproduces the
   separately stored matchup totals for 151 of 151 contested matchups.
+
+### What the transactions endpoint taught us
+
+- `League.transactions()` is unusable. It drops the transaction id, drops
+  `fromTeamId` and `toTeamId` on every item so a trade cannot be read at all,
+  and raises outright on a TRADE_UPHOLD, which carries no items. The payload
+  is parsed directly; only its HTTP layer is reused, so endpoint selection and
+  the history fallback stay in one place.
+- It also defaults to the league's current scoring period, which runs past
+  the end of the fantasy season and returns a payload with no transactions
+  key. A day must be passed explicitly.
+- **The same transaction is returned under more than one scoring period.**
+  Keying stored rows on (season, requested day) missed them and killed the
+  first backfill on a unique violation. The key is ESPN's own id, and the day
+  comes from the payload rather than the request.
+- FUTURE_ROSTER is daily lineup shuffling, 53 of 86 rows on a sampled day.
+  Excluded: `daily_lineup_slots` already records it properly.
+- Failed and cancelled moves are kept on purpose. A losing bid records who
+  wanted a player and what they offered, which no successful claim reveals.
+  Of 5132 transactions in 2026, only 1148 were executed waivers.
+- Team 0 means free agency, not a team, and is stored as null on both sides
+  of an item.
+- Transactions reference players never rostered long enough to appear in a
+  box score, so they are created from the league's player map.
 
 ### What the player cards taught us
 

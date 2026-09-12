@@ -200,6 +200,8 @@ Seven routes answer questions ESPN does not, with the derivation in
 `app/narratives.py` rather than in the routers:
 
 ```bash
+curl "localhost:8000/leagues/3853870/seasons/2026/contested-claims"
+curl "localhost:8000/leagues/3853870/seasons/2026/transactions?status=EXECUTED&min_bid=10"
 curl localhost:8000/leagues/3853870/owners
 curl "localhost:8000/leagues/3853870/head-to-head?min_meetings=8"
 curl localhost:8000/leagues/3853870/seasons/2026/streaks
@@ -211,6 +213,10 @@ curl localhost:8000/leagues/3853870/seasons/2026/bench-leaderboard
 
 Owner routes sit under the league rather than a season, because ESPN's owner
 GUID is stable across seasons and an all-time record is the point.
+
+Transactions keep failed and cancelled moves deliberately. A losing waiver
+bid records who wanted a player and what they offered, which a successful
+claim never shows, and `contested-claims` exists entirely because of it.
 
 Three conventions apply throughout. Byes never count toward a record. A tie
 breaks a streak rather than extending it. Head-to-head counts each meeting
