@@ -6,7 +6,7 @@
 - Read-only HTTP API over the stored seasons, 22 endpoints (see below),
   including seven narrative routes. Writes stay with the ingest.
 - Nightly scheduled ingest keeping the current season current, with every
-  run recorded and queryable.
+  run recorded and queryable. **Runs on the VPS**, not a laptop.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
@@ -294,7 +294,26 @@ which is itself worth seeing. Failures keep the first line of the error.
 how long since the last success and whether that is stale, with a 36 hour
 threshold so one missed nightly run does not cry wolf.
 
-**Installed** as a user-level launchd agent at 09:00 local:
+**Runs on the VPS**, at `/opt/fcp-core`, via
+`deploy/fcp-core-ingest.{service,timer}` at 09:00 UTC. A laptop sleeps, so a
+launchd agent only fires when you happen to be at the desk, which defeats the
+point of a schedule. The Mac agent is unloaded and kept as
+`com.fcp-core.ingest.plist.disabled` in `~/Library/LaunchAgents` if it is ever
+wanted back.
+
+```
+sudo cp deploy/fcp-core-ingest.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fcp-core-ingest.timer
+sudo systemctl start fcp-core-ingest.service   # run one now
+```
+
+Exit code 69, the database being unreachable, is left as a systemd failure on
+purpose: on a server the database is meant to be up, so a skip belongs in
+`systemctl --failed` rather than being quietly tolerated.
+
+**Also installable** as a user-level launchd agent at 09:00 local, which is
+how it ran before the move:
 
 ```
 cp deploy/com.fcp-core.ingest.plist ~/Library/LaunchAgents/
@@ -309,6 +328,43 @@ attempted. **The Compose database must be running for the job to do
 anything**, so Docker needs to start at login for the schedule to be
 reliable. Output goes to `logs/scheduled-ingest.log`, trimmed when it grows
 past 2MB.
+
+### Deployment: sharing a host with the live stack
+
+`aisha-vps` already runs production Full Court Press, and that shaped every
+choice here. Reached over Tailscale SSH, which needs a browser approval
+before a session will authenticate.
+
+What was already there, and is untouched:
+
+| | |
+|---|---|
+| `fcp-v2-pg` | Postgres 16 on port 5432 |
+| `fullcourtpress-caddy-1` | Caddy on 80 and 443 |
+| `fullcourtpress-backend-1` | the live API on 8000 |
+| `/srv/fullcourtpress` | the live checkout |
+| `fcp-snapshot-refresh.timer` | hits the public API every 15 minutes |
+| `https://fcp.patrickmcdowell.dev` | the live site |
+
+So the rebuild is deliberately isolated rather than installed in place:
+
+- Postgres on **5433**, since 5432 is taken. `FCP_DB_PORT` in
+  `docker-compose.yml` exists for exactly this.
+- Compose project name `fcp-core`, so `docker compose down` in one project
+  cannot reach the other's containers.
+- systemd units named `fcp-core-ingest.*`, distinct from the existing
+  `fcp-snapshot-refresh.*`.
+- The API is not exposed. Caddy was not touched, so nothing new is public.
+
+Only this project's secrets were copied over. The local `.env` also holds
+Anthropic, Supabase, Resend and DeepSeek keys, which were deliberately left
+behind; the remote file has the two database URLs and the four ESPN values,
+at mode 600.
+
+The VPS is also simply faster: 72 to 88 seconds per season against 140 to 172
+on the Mac, and a nightly `--recent` run takes about 10 seconds. The stored
+data matches the Mac exactly, including the 2021 reconciliation gap, which is
+a good sign the two are genuinely the same pipeline.
 
 ## Correction, now resolved: daily lineups and bench
 

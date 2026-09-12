@@ -203,6 +203,28 @@ once, and a co-owned team gives the meeting to each of its owners.
 
 ## Keeping the current season current
 
+This runs on the VPS at `/opt/fcp-core`, not on a laptop, because a laptop
+asleep at 09:00 does not refresh anything.
+
+```bash
+sudo cp deploy/fcp-core-ingest.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fcp-core-ingest.timer
+```
+
+`sudo systemctl start fcp-core-ingest.service` runs one immediately and
+`journalctl -u fcp-core-ingest.service` shows what happened.
+
+On a host that already has a Postgres, set `FCP_DB_PORT` and match it in
+`DATABASE_URL`, then give Compose its own project name so the two stacks
+cannot reach each other:
+
+```bash
+FCP_DB_PORT=5433 docker compose -p fcp-core up -d
+```
+
+### On a Mac instead
+
 A nightly launchd agent runs the ingest in `--recent` mode, which refreshes
 the trailing ten scoring periods in about 15 seconds instead of the two and a
 half minutes a full season takes. Nothing outside that window is rewritten,
