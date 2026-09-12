@@ -182,7 +182,7 @@ def get_owner_records(
     _require_league(session, league_id)
     return [
         OwnerRecordOut(
-            espn_owner_id=r.espn_owner_id,
+            owner_id=r.owner_id,
             display_name=r.display_name,
             matchups_won=r.matchups_won,
             matchups_lost=r.matchups_lost,

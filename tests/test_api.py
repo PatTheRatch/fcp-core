@@ -174,6 +174,11 @@ def test_teams_carry_their_owners(client: TestClient) -> None:
     assert [o["first_name"] for o in by_id[3]["owners"]] == ["Patrick"]
     assert len(by_id[21]["owners"]) == 2, "a team can have more than one owner"
 
+    # The response carries our id, never ESPN's SWID GUID.
+    owner = by_id[3]["owners"][0]
+    assert isinstance(owner["owner_id"], int)
+    assert "espn_owner_id" not in owner
+
 
 def test_standings_show_matchup_record_and_category_tally_separately(client: TestClient) -> None:
     """The two records mean different things, and ESPN only reports one."""
@@ -304,3 +309,32 @@ def test_played_only_drops_the_blank_days(client: TestClient) -> None:
 def test_unknown_player_is_404(client: TestClient) -> None:
     assert client.get("/players/1/games").status_code == 404
     assert client.get("/players/1").status_code == 404
+
+
+def test_no_endpoint_leaks_the_espn_owner_guid(client: TestClient) -> None:
+    """A blanket check, because the GUID is half of ESPN's cookie pair.
+
+    Sweeps the routes that carry owner identity and asserts none of them
+    returns anything shaped like the SWID GUID the seed data uses.
+    """
+    paths = [
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams",
+        f"/leagues/{LEAGUE_ID}/owners",
+        f"/leagues/{LEAGUE_ID}/head-to-head",
+    ]
+    for path in paths:
+        body = client.get(path).text
+        assert body, f"{path} returned nothing, so the check would pass vacuously"
+        assert "g-pat" not in body, f"{path} leaked the owner GUID"
+        assert "espn_owner_id" not in body, f"{path} exposes the GUID field"
+
+
+def test_owner_ids_correlate_across_endpoints(client: TestClient) -> None:
+    """The opaque id has to be worth having, not just safe."""
+    teams = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams").json()
+    owners = client.get(f"/leagues/{LEAGUE_ID}/owners").json()
+
+    from_teams = {o["owner_id"] for t in teams for o in t["owners"]}
+    from_records = {o["owner_id"] for o in owners}
+    assert from_teams, "no owners came back from the teams route"
+    assert from_teams <= from_records, "the same owner must have the same id everywhere"

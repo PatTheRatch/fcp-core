@@ -110,7 +110,7 @@ def list_teams(league_season: LeagueSeasonDep, session: SessionDep) -> list[Team
             logo_url=team.logo_url,
             owners=[
                 OwnerOut(
-                    espn_owner_id=o.espn_owner_id,
+                    owner_id=o.id,
                     display_name=o.display_name,
                     first_name=o.first_name,
                 )

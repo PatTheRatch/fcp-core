@@ -255,8 +255,8 @@ def test_owner_records_span_seasons(session: Session) -> None:
     second.matchup(2, 7, 8, "TIE")
     session.flush()
 
-    records = {r.espn_owner_id: r for r in narratives.owner_records(session, LEAGUE_ID)}
-    pat = records["guid-pat"]
+    records = {r.display_name: r for r in narratives.owner_records(session, LEAGUE_ID)}
+    pat = records["guid-pat"]  # display_name is seeded from the guid in the builder
 
     assert pat.matchups_won == 2
     assert pat.matchups_lost == 1
@@ -305,3 +305,29 @@ def test_head_to_head_handles_a_jointly_owned_team(session: Session) -> None:
     assert len(pairs) == 2, "one meeting for each of the two co-owners"
     for pair in pairs.values():
         assert pair.meetings == 1
+
+
+def test_owner_identifiers_never_carry_the_espn_guid(session: Session) -> None:
+    """The GUID is half of ESPN's cookie pair; it stays in the database.
+
+    It is still the identity key, so this checks the exported id is ours and
+    that the secret is not smuggled out under another name.
+    """
+    b = Builder(session, regular_periods=1)
+    b.team(1, "A", owners=["{DEADBEEF-0000-0000-0000-000000000001}"])
+    b.team(2, "B", owners=["{DEADBEEF-0000-0000-0000-000000000002}"])
+    b.matchup(1, 1, 2, "HOME")
+    session.flush()
+
+    exported = [
+        *(r.owner_id for r in narratives.owner_records(session, LEAGUE_ID)),
+        *(h.owner_a for h in narratives.head_to_head(session, LEAGUE_ID)),
+        *(h.owner_b for h in narratives.head_to_head(session, LEAGUE_ID)),
+    ]
+    assert exported, "nothing was exported, so the check would pass vacuously"
+    assert all(isinstance(value, int) for value in exported)
+    assert not any("DEADBEEF" in str(value) for value in exported)
+
+    # The GUID is still stored, because identity across seasons depends on it.
+    stored = session.scalars(select(Owner.espn_owner_id)).all()
+    assert any("DEADBEEF" in guid for guid in stored)

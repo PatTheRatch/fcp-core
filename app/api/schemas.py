@@ -50,7 +50,16 @@ class SeasonOut(SeasonSummaryOut):
 
 
 class OwnerOut(BaseModel):
-    espn_owner_id: str = Field(description="ESPN's GUID, stable across seasons and leagues")
+    """A league member.
+
+    `owner_id` is this database's own id, not ESPN's. ESPN identifies an
+    owner by their SWID GUID, which is half of the cookie pair that
+    authenticates a real ESPN account, so it is a join key and never a
+    response field. The opaque id is stable and correlates across every
+    endpoint here, which is all a caller needs it for.
+    """
+
+    owner_id: int
     display_name: str | None
     first_name: str | None
 
@@ -250,11 +259,11 @@ class OwnerSeasonOut(BaseModel):
 class OwnerRecordOut(BaseModel):
     """One person's history, across every season stored.
 
-    Owners are keyed on the GUID ESPN keeps stable across seasons, so this is
-    the only view that outlives a team.
+    Identity persists across seasons, so this is the only view that outlives
+    a team. See `OwnerOut` for why the id here is ours and not ESPN's.
     """
 
-    espn_owner_id: str
+    owner_id: int
     display_name: str | None
     matchups_won: int
     matchups_lost: int
@@ -266,9 +275,9 @@ class OwnerRecordOut(BaseModel):
 class HeadToHeadOut(BaseModel):
     """How two owners have fared against each other, all seasons combined."""
 
-    owner_a: str
+    owner_a: int
     owner_a_name: str | None
-    owner_b: str
+    owner_b: int
     owner_b_name: str | None
     a_wins: int
     b_wins: int

@@ -382,11 +382,12 @@ class OwnerSeason:
 class OwnerRecord:
     """One person's history in the league, across every season stored.
 
-    Owners are keyed on ESPN's GUID, which follows a person across seasons,
-    so this is the one view that outlives any single team.
+    Identity follows a person across seasons, so this is the one view that
+    outlives any single team. The id is ours, not ESPN's: see
+    `_team_owner_ids`.
     """
 
-    espn_owner_id: str
+    owner_id: int
     display_name: str | None
     seasons: list[OwnerSeason]
 
@@ -409,17 +410,21 @@ class OwnerRecord:
 
 def _team_owner_ids(
     session: Session, team_ids: set[int]
-) -> dict[int, list[tuple[str, str | None]]]:
-    """Team id -> its owners. A team can have more than one."""
+) -> dict[int, list[tuple[int, str | None]]]:
+    """Team id -> its owners, keyed on our id rather than ESPN's.
+
+    ESPN identifies an owner by their SWID GUID, which is half of the cookie
+    pair that authenticates a real ESPN account. It stays in the database as
+    the identity key and never travels any further than that.
+
+    A team can have more than one owner.
+    """
     if not team_ids:
         return {}
     rows = session.scalars(
         select(Team).options(selectinload(Team.owners)).where(Team.id.in_(team_ids))
     ).all()
-    return {
-        team.id: [(owner.espn_owner_id, owner.display_name) for owner in team.owners]
-        for team in rows
-    }
+    return {team.id: [(owner.id, owner.display_name) for owner in team.owners] for team in rows}
 
 
 def owner_records(
@@ -433,10 +438,10 @@ def owner_records(
         .order_by(LeagueSeason.season)
     ).all()
 
-    tally: dict[str, dict[int, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
-    names: dict[str, str | None] = {}
-    team_names: dict[tuple[str, int], str] = {}
-    standings: dict[tuple[str, int], int | None] = {}
+    tally: dict[int, dict[int, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
+    names: dict[int, str | None] = {}
+    team_names: dict[tuple[int, int], str] = {}
+    standings: dict[tuple[int, int], int | None] = {}
 
     for league_season in seasons:
         sides = matchup_sides(session, league_season, include_playoffs=include_playoffs)
@@ -463,7 +468,7 @@ def owner_records(
 
     records = [
         OwnerRecord(
-            espn_owner_id=owner_id,
+            owner_id=owner_id,
             display_name=names.get(owner_id),
             seasons=[
                 OwnerSeason(
@@ -487,9 +492,9 @@ def owner_records(
 class HeadToHead:
     """How two owners have fared against each other, all seasons combined."""
 
-    owner_a: str
+    owner_a: int
     owner_a_name: str | None
-    owner_b: str
+    owner_b: int
     owner_b_name: str | None
     a_wins: int
     b_wins: int
@@ -513,9 +518,9 @@ def head_to_head(
         .order_by(LeagueSeason.season)
     ).all()
 
-    pairs: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0, 0])
-    met_in: dict[tuple[str, str], set[int]] = defaultdict(set)
-    names: dict[str, str | None] = {}
+    pairs: dict[tuple[int, int], list[int]] = defaultdict(lambda: [0, 0, 0])
+    met_in: dict[tuple[int, int], set[int]] = defaultdict(set)
+    names: dict[int, str | None] = {}
 
     for league_season in seasons:
         sides = matchup_sides(session, league_season, include_playoffs=include_playoffs)

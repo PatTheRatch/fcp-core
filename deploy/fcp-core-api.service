@@ -1,0 +1,40 @@
+# The read-only API, on the tailnet only.
+#
+# Install (from a checkout at /opt/fcp-core):
+#     sudo cp deploy/fcp-core-api.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-api.service
+#
+# Status:   systemctl status fcp-core-api
+# Logs:     journalctl -u fcp-core-api -f
+# Remove:   sudo systemctl disable --now fcp-core-api.service
+#
+# There is no authentication on this service. It binds the Tailscale address
+# and nothing else, which is what keeps it private. Do not put it behind a
+# public reverse proxy without adding auth first.
+
+[Unit]
+Description=fcp-core - read-only API (tailnet only)
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/scripts/serve_api.sh
+Restart=on-failure
+RestartSec=5
+
+# Tailscale may not have an address the instant the network is up.
+TimeoutStartSec=60
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
