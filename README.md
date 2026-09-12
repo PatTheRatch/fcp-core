@@ -99,8 +99,11 @@ inserted alongside it, and earlier seasons are never modified. It makes one
 ESPN call per matchup period, so a full season is a couple of dozen requests
 plus a handful of batched player-card calls, and takes roughly fifty seconds.
 
-Two things the schema deliberately does not have. There is no lineup slot on
-a roster row, because `espn-api` reports every player's slot as `PG`. There is
+Two things the schema does not have yet. There is no lineup slot on a roster
+row: the default box score call reports every player's slot as `PG`, though
+the real daily slots are available via
+`box_scores(matchup_period, scoring_period, matchup_total=False)` and are
+simply not ingested yet. There is
 no season matchup record on a team, because ESPN does not report one; the
 team's `categories_won` is a tally of categories, and a matchup record is
 derived by counting winners in `matchups`.

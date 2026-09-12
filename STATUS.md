@@ -81,12 +81,12 @@ Two deliberate consequences:
   matchup winners over the regular season gives, for example, 14-5-0, against
   a category tally of 106-62-3 for the same team.
 - `espn_api` reports `lineupSlot` as "PG" for every player in every period
-  (601 of 601 checked). It is a parsing bug upstream, so starter-versus-bench
-  is not recoverable and no lineup slot column exists.
+  (601 of 601 checked), and `slot_position` too. **This was misread as
+  unrecoverable and it is not** — see "Correction" below.
 - ESPN's `matchupPeriods` map claims one scoring period per matchup period,
   which the box scores contradict (period 1 reports scoring period 6).
-  `matchup_periods.final_scoring_period` records what the box score said
-  rather than inventing a mapping.
+  `matchup_periods.final_scoring_period` holds what the box score said. The
+  authoritative mapping turned out to be `League.matchup_ids`.
 
 ### What the per-category detail taught us
 
@@ -126,25 +126,45 @@ Two deliberate consequences:
 
 1. An API surface over the stored season
 2. Ingesting prior seasons, which the schema already allows
-3. Deciding whether starter-versus-bench is worth recovering from another
-   endpoint, since it blocks exact reconciliation (see below)
+3. Ingesting daily lineups so bench status is queryable, which the
+   Correction below shows is straightforward
+
+## Correction: daily lineups and bench ARE available
+
+Two earlier conclusions in this file were wrong. Both are recorded here
+rather than quietly edited away, because they shaped the schema.
+
+**Who was benched on a given day is recoverable.** Each side of a box score
+carries two rosters. `rosterForMatchupPeriod` is the aggregate and sets every
+`lineupSlotId` to 0, which is where the useless "PG" comes from.
+`rosterForCurrentScoringPeriod` carries the real slots. `espn_api` exposes
+this as `box_scores(matchup_period=N, scoring_period=M, matchup_total=False)`,
+whose `slot_position` returns PG, SG, SF, PF, C, G, F, UT, BE and IR. On one
+sampled day, 55 of 181 lineup entries were BE.
+
+**The exact scoring-period mapping exists.** `League.matchup_ids` maps each
+matchup period to every scoring period it contains: period 1 is days 1-6,
+period 2 is days 7-13. No approximation needed. Note its keys are ints and
+its values are strings in lexicographic order, so sort numerically.
+
+**Together these reconcile exactly.** Summing the daily started players
+(slot not BE or IR) for team 3 over matchup period 1 gives 472.0 points
+against a stored team total of 472.0. The reconciliation gap reported
+earlier was an artefact of both mistakes, not a property of the data.
+
+Cost to ingest: one call per scoring period, so about 160 calls at 0.37s,
+roughly one minute added to a full season ingest.
 
 ## Open questions
 
-- Rosters are snapshots per matchup period, which is the finest grain the box
-  scores expose. Daily roster movement within a period is not recoverable
-  from this source.
+- Daily lineups are not yet ingested. `roster_slots` remains a per-matchup-
+  period snapshot, so bench status is not queryable from the database today
+  even though it is available from ESPN.
 - ESPN omits the date and opponent on about 4.7% of played lines (969 of
   20431). The statistics are present and correct; only the game context is
   missing. Verified as an upstream gap, not a parsing fault.
-- Daily player lines do **not** reconcile exactly with the weekly team
-  totals, and should not be presented as validating each other. Two known
-  causes: only started players count toward a team's category total and
-  `lineupSlot` is unusable, so the bench cannot be excluded; and the
-  scoring-period window per matchup period is approximate, because ESPN's own
-  period mapping is inconsistent. Of 294 sides compared, 36 matched exactly
-  and 230 had a roster sum above the team total, which is the direction the
-  bench explanation predicts.
+- The fantasy season ends at scoring period 160 while `player_game_stats`
+  holds days up to 174, since NBA games continue past the fantasy playoffs.
 
 ## Open questions
 

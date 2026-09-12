@@ -220,10 +220,13 @@ class Team(Base):
 class MatchupPeriod(Base):
     """One scoring window in a season.
 
-    ESPN's own `matchupPeriods` map claims each period covers a single
-    scoring period, which the box scores contradict. Rather than invent a
-    mapping, `final_scoring_period` records the scoring period the box score
-    actually reported for this window.
+    `settings.matchup_periods` claims each period covers a single scoring
+    period, which the box scores contradict. The authoritative mapping is
+    `League.matchup_ids`, which gives every scoring period in each window
+    (period 1 covers days 1-6, period 2 covers 7-13, and so on).
+
+    `final_scoring_period` predates that discovery and holds only the last
+    day of the window, which is why it is the weaker of the two.
     """
 
     __tablename__ = "matchup_periods"
@@ -304,9 +307,12 @@ class RosterSlot(Base):
     a matchup period rather than a "current roster" that would be wrong the
     moment anyone makes a waiver claim.
 
-    There is no lineup slot column on purpose. `espn-api` reports the slot as
-    "PG" for every player in every period, which is plainly a parsing bug
-    upstream, so starter-versus-bench cannot be recovered from this source.
+    There is no lineup slot column yet, but the slot IS recoverable and this
+    is a gap rather than a dead end. `box_scores(matchup_period, ...)` reads
+    ESPN's `rosterForMatchupPeriod`, where every `lineupSlotId` is 0, hence
+    the useless "PG" on every player. Passing `matchup_total=False` with an
+    explicit `scoring_period` reads `rosterForCurrentScoringPeriod` instead,
+    which carries the real daily slots including BE and IR.
     """
 
     __tablename__ = "roster_slots"
