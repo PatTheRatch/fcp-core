@@ -179,3 +179,109 @@ class PlayerGameOut(BaseModel):
 class PlayerOut(BaseModel):
     espn_player_id: int
     name: str
+
+
+class StreakOut(BaseModel):
+    """A team's best and worst runs. A tie breaks a run rather than extending it."""
+
+    espn_team_id: int
+    name: str
+    longest_win_streak: int
+    longest_loss_streak: int
+    final_streak: int = Field(description="Length of the run the season ended on")
+    final_streak_result: str | None = Field(description="WIN or LOSS, null if it ended in a tie")
+
+
+class CategoryRecordOut(BaseModel):
+    abbreviation: str
+    stat_id: int
+    won: int
+    lost: int
+    tied: int
+    win_rate: float | None = Field(
+        description="Share of decided contests won. Null when none were decided"
+    )
+
+
+class TeamCategoryProfileOut(BaseModel):
+    """Where a team was strong and where it was not, category by category."""
+
+    espn_team_id: int
+    name: str
+    categories: list[CategoryRecordOut]
+
+
+class BenchTotalOut(BaseModel):
+    espn_team_id: int
+    name: str
+    bench_points: float
+    benched_games_of_20_plus: int
+    benched_appearances: int = Field(description="Benched player-days where they did play")
+
+
+class NotableMatchupOut(BaseModel):
+    period: int
+    is_playoff: bool
+    winner_name: str
+    loser_name: str
+    categories_won: int
+    categories_lost: int
+    categories_tied: int
+    margin: int = Field(description="Categories won minus lost, from the winner's side")
+
+
+class NotableMatchupsOut(BaseModel):
+    """The season's most and least lopsided results. Ties appear in neither."""
+
+    sweeps: list[NotableMatchupOut]
+    nail_biters: list[NotableMatchupOut]
+
+
+class OwnerSeasonOut(BaseModel):
+    season: int
+    team_name: str
+    matchups_won: int
+    matchups_lost: int
+    matchups_tied: int
+    final_standing: int | None
+
+
+class OwnerRecordOut(BaseModel):
+    """One person's history, across every season stored.
+
+    Owners are keyed on the GUID ESPN keeps stable across seasons, so this is
+    the only view that outlives a team.
+    """
+
+    espn_owner_id: str
+    display_name: str | None
+    matchups_won: int
+    matchups_lost: int
+    matchups_tied: int
+    titles: int = Field(description="Seasons finished in first place")
+    seasons: list[OwnerSeasonOut]
+
+
+class HeadToHeadOut(BaseModel):
+    """How two owners have fared against each other, all seasons combined."""
+
+    owner_a: str
+    owner_a_name: str | None
+    owner_b: str
+    owner_b_name: str | None
+    a_wins: int
+    b_wins: int
+    ties: int
+    meetings: int
+    seasons: list[int]
+
+
+class LeagueBenchCallOut(BaseModel):
+    """A bench call anywhere in the league, so it names the team too."""
+
+    scoring_period: int
+    team_name: str
+    player_name: str
+    benched_points: float
+    best_starter_points: float
+    margin: float

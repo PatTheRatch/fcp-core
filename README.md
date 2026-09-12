@@ -177,3 +177,25 @@ curl "localhost:8000/leagues/3853870/seasons/2026/teams/3/lineups?scoring_period
 `/standings` is worth singling out. ESPN reports no matchup record, so that
 route derives one by counting winners, excludes byes, and prints it next to
 the category tally rather than instead of it.
+
+## Narratives
+
+Seven routes answer questions ESPN does not, with the derivation in
+`app/narratives.py` rather than in the routers:
+
+```bash
+curl localhost:8000/leagues/3853870/owners
+curl "localhost:8000/leagues/3853870/head-to-head?min_meetings=8"
+curl localhost:8000/leagues/3853870/seasons/2026/streaks
+curl localhost:8000/leagues/3853870/seasons/2026/notable-matchups
+curl localhost:8000/leagues/3853870/seasons/2026/worst-bench-calls
+curl localhost:8000/leagues/3853870/seasons/2026/category-profiles
+curl localhost:8000/leagues/3853870/seasons/2026/bench-leaderboard
+```
+
+Owner routes sit under the league rather than a season, because ESPN's owner
+GUID is stable across seasons and an all-time record is the point.
+
+Three conventions apply throughout. Byes never count toward a record. A tie
+breaks a streak rather than extending it. Head-to-head counts each meeting
+once, and a co-owned team gives the meeting to each of its owners.

@@ -3,8 +3,8 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- Read-only HTTP API over the stored season, 13 endpoints (see below).
-  Writes stay with the ingest.
+- Read-only HTTP API over the stored seasons, 20 endpoints (see below),
+  including seven narrative routes. Writes stay with the ingest.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
@@ -55,6 +55,36 @@ a league id and a year rather than from surrogate database ids.
 | `GET /players` | name search |
 | `GET /players/{pid}` | one player |
 | `GET /players/{pid}/games` | game log |
+
+Narrative routes, all derived rather than ingested:
+
+| Route | What it gives |
+|---|---|
+| `.../streaks` | longest winning and losing runs per team |
+| `.../category-profiles` | where each team was strong, category by category |
+| `.../bench-leaderboard` | which teams left the most on the bench |
+| `.../worst-bench-calls` | days a benched player beat every starter |
+| `.../notable-matchups` | the season's sweeps and nail-biters |
+| `GET /leagues/{id}/owners` | every owner's record across all seasons |
+| `GET /leagues/{id}/head-to-head` | every pair of owners who have met |
+
+The derivation lives in `app/narratives.py`, not in the routers, because it
+is domain logic rather than HTTP. One idea carries most of it: a matchup is
+stored once from the home team's point of view, so `matchup_sides` produces
+both teams' views and everything else builds on that.
+
+Decisions worth knowing when reading these:
+
+- Byes are excluded from every derived record. A team with no opponent
+  neither won nor lost, and counting one would inflate playoff records.
+- A tie breaks a streak rather than extending either run, so "won five in a
+  row" means five wins.
+- Head-to-head counts each meeting once. A win appears on one side, but a tie
+  appears on both, so ties are taken from the lower team id. A co-owned team
+  gives each of its owners the meeting rather than being dropped.
+- Owner routes hang off the league, not a season, because ESPN's owner GUID
+  is stable across seasons. That makes an all-time record possible: one owner
+  is 101-42-2 with four titles across all eight seasons.
 
 Notes on the design:
 
@@ -164,9 +194,9 @@ Two deliberate consequences:
 
 ## Next
 
-1. Narrative endpoints beyond the bench report: streaks, category trends,
-   head-to-head histories across seasons
-2. Deciding whether anything needs write access, and therefore auth
+1. Deciding whether anything needs write access, and therefore auth
+2. A scheduled ingest, so the current season stays current
+3. Whichever narratives the endpoints turn out not to answer
 
 ### Prior seasons
 
