@@ -7,6 +7,8 @@
   including seven narrative routes. Writes stay with the ingest.
 - Nightly scheduled ingest keeping the current season current, with every
   run recorded and queryable. **Runs on the VPS**, not a laptop.
+- The API is served on the VPS at `http://100.105.64.94:8001`, reachable from
+  the tailnet only.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
 - Alembic migrations (one empty initial revision; upgrade to head verified by test)
 - Typed config: `DATABASE_URL` and `TEST_DATABASE_URL` required, fail loudly if missing
@@ -207,10 +209,11 @@ Two deliberate consequences:
 
 ## Next
 
-1. Deciding whether anything needs write access, and therefore auth
-2. Whichever narratives the endpoints turn out not to answer
-3. Alerting on a stale season, rather than having to look at
+1. Whichever narratives the endpoints turn out not to answer
+2. Alerting on a stale season, rather than having to look at
    `/ingest-runs/health`
+3. A frontend, if and when there is something to read the API. That is the
+   decision that would force the auth question.
 
 ### Prior seasons
 
@@ -347,6 +350,34 @@ anything**, so Docker needs to start at login for the schedule to be
 reliable. Output goes to `logs/scheduled-ingest.log`, trimmed when it grows
 past 2MB.
 
+### Why the API is tailnet-only, and why owners have opaque ids
+
+The API has no authentication. Binding it publicly would hand every season,
+every player line and every league member's name to anyone who found the
+host, so `scripts/serve_api.sh` binds the Tailscale address and nothing else.
+It falls back to loopback when the tailnet address cannot be read, which
+fails closed rather than open. Verified: reachable on the tailnet, refused on
+the public IP.
+
+Related, and the reason this mattered enough to check: ESPN identifies an
+owner by their SWID GUID, which is **half of the cookie pair that
+authenticates a real ESPN account**. Three endpoints were returning it
+verbatim, and the stored value for one of the 46 owners is the very cookie
+this project authenticates with. Responses now carry this database's own
+opaque owner id. The GUID is still stored, because identity across seasons
+depends on it, but it no longer leaves.
+
+That is a deliberate exception to keying paths on ESPN's identifiers. For
+leagues, teams and players an ESPN id is meaningful and harmless. For owners
+it is credential-adjacent, so the surrogate wins. Tests assert both that
+nothing GUID-shaped appears in any owner-bearing response and that the opaque
+id still correlates across endpoints, since an id nobody can join on would be
+safe but useless.
+
+Before this could go public, three things would have to happen: authentication
+in front of it, a decision about what league members' data should be visible
+at all, and a second look at anything else ESPN-derived in the responses.
+
 ### Deployment: sharing a host with the live stack
 
 `aisha-vps` already runs production Full Court Press, and that shaped every
@@ -372,7 +403,8 @@ So the rebuild is deliberately isolated rather than installed in place:
   cannot reach the other's containers.
 - systemd units named `fcp-core-ingest.*`, distinct from the existing
   `fcp-snapshot-refresh.*`.
-- The API is not exposed. Caddy was not touched, so nothing new is public.
+- The API listens on the tailnet address only, on port 8001. Caddy was not
+  touched, so nothing new is public.
 
 Only this project's secrets were copied over. The local `.env` also holds
 Anthropic, Supabase, Resend and DeepSeek keys, which were deliberately left

@@ -165,6 +165,19 @@ scripts/      small operational helpers (currently: test-db bootstrap for Docker
 uvicorn app.main:create_app --factory
 ```
 
+On the VPS it runs as a service, bound to the Tailscale address only:
+
+```bash
+sudo cp deploy/fcp-core-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fcp-core-api.service
+```
+
+There is no authentication. That bind address is the only thing keeping it
+private, so do not put it behind a public reverse proxy without adding auth
+first. Owner responses carry this database's own id rather than ESPN's SWID
+GUID, which is half of the cookie pair that authenticates an ESPN account.
+
 Read-only access to whatever has been ingested. Interactive documentation is
 at `/docs`; the generated schema is at `/openapi.json`.
 
