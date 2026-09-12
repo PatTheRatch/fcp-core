@@ -24,12 +24,15 @@ from app.ingest import ingest_season
 from app.main import create_app
 from tests.fakes import (
     BOX_LINE,
+    attach_transactions,
     fake_box,
     fake_card,
     fake_player,
     fake_team,
+    fake_transaction,
     league_with_days,
     owner_dict,
+    tx_item,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -84,7 +87,7 @@ def _seeded_league() -> Any:
         home_stats={"PTS": {"value": 30.0, "result": None}},
     )
 
-    return league_with_days(
+    espn = league_with_days(
         teams=[home, away],
         boxes={1: [day1], 2: [bye]},
         days={1: {1: [day1], 2: [day2]}, 2: {3: [bye]}},
@@ -103,6 +106,29 @@ def _seeded_league() -> Any:
                 {1: dict(BOX_LINE, PTS=30.0), 2: dict(BOX_LINE, PTS=10.0)},
             ),
         },
+    )
+    # Two teams bid on the same player on day 2; one wins, one fails.
+    return attach_transactions(
+        espn,
+        {
+            2: [
+                fake_transaction(
+                    "tx-win",
+                    team_id=3,
+                    bid=17,
+                    status="EXECUTED",
+                    items=[tx_item(555, "ADD", to_team=3), tx_item(6450, "DROP", from_team=3)],
+                ),
+                fake_transaction(
+                    "tx-lose",
+                    team_id=21,
+                    bid=9,
+                    status="FAILED_INVALIDPLAYERSOURCE",
+                    items=[tx_item(555, "ADD", to_team=21)],
+                ),
+            ]
+        },
+        {555: "Wanted Guy"},
     )
 
 
@@ -338,3 +364,46 @@ def test_owner_ids_correlate_across_endpoints(client: TestClient) -> None:
     from_records = {o["owner_id"] for o in owners}
     assert from_teams, "no owners came back from the teams route"
     assert from_teams <= from_records, "the same owner must have the same id everywhere"
+
+
+def test_transactions_list_both_sides_of_a_move(client: TestClient) -> None:
+    body = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/transactions").json()
+    assert body["total"] >= 1
+    # Both the winning and losing claim are returned; pick the one that landed.
+    claim = next(t for t in body["items"] if t["status"] == "EXECUTED")
+    assert claim["bid_amount"] == 17
+    moves = {i["item_type"]: i for i in claim["items"]}
+    assert moves["ADD"]["player_name"] == "Wanted Guy"
+    assert moves["ADD"]["from_team"] is None, "free agency is not a team"
+    assert moves["ADD"]["to_team"] == "Through The Wire"
+
+
+def test_transactions_can_be_filtered(client: TestClient) -> None:
+    base = f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/transactions"
+    executed = client.get(base, params={"status": "EXECUTED"}).json()
+    assert executed["total"] >= 1
+    assert all(t["status"] == "EXECUTED" for t in executed["items"])
+
+    big = client.get(base, params={"min_bid": 15}).json()
+    assert all(t["bid_amount"] >= 15 for t in big["items"])
+
+
+def test_a_losing_bid_is_still_reported(client: TestClient) -> None:
+    """The whole reason failed claims are stored."""
+    body = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/transactions",
+        params={"status": "FAILED_INVALIDPLAYERSOURCE"},
+    ).json()
+    assert body["total"] == 1
+    assert body["items"][0]["bid_amount"] == 9
+
+
+def test_contested_claims_name_the_winner_and_count_the_losers(client: TestClient) -> None:
+    claims = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/contested-claims").json()
+    assert claims, "the seed data has a contested player"
+    fight = claims[0]
+    assert fight["player_name"] == "Wanted Guy"
+    assert fight["winning_team"] == "Through The Wire"
+    assert fight["winning_bid"] == 17
+    assert fight["losing_bids"] == 1
+    assert fight["highest_losing_bid"] == 9

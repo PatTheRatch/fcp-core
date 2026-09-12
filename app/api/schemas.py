@@ -320,3 +320,41 @@ class IngestHealthOut(BaseModel):
     last_status: str | None = Field(description="Status of the most recent run, successful or not")
     stale: bool = Field(description="True when no run has succeeded within the staleness window")
     staleness_threshold_hours: int
+
+
+class TransactionItemOut(BaseModel):
+    """One player moving. A null team on either side means free agency."""
+
+    player_id: int = Field(description="ESPN player id")
+    player_name: str
+    item_type: str = Field(description="ADD, DROP or TRADE")
+    from_team: str | None
+    to_team: str | None
+
+
+class TransactionOut(BaseModel):
+    """A waiver claim, a pickup or a trade.
+
+    Failed and cancelled moves are included. A losing bid records who wanted
+    a player and what they offered, which a successful claim never shows.
+    """
+
+    id: int
+    scoring_period: int
+    processed_at: datetime | None
+    team: str | None
+    type: str = Field(description="WAIVER, FREEAGENT, TRADE_ACCEPT and so on")
+    status: str | None = Field(description="EXECUTED, CANCELED, PENDING or a FAILED_* reason")
+    bid_amount: int | None = Field(description="FAAB offered. Meaningful even when it failed")
+    items: list[TransactionItemOut]
+
+
+class ContestedClaimOut(BaseModel):
+    """A player several teams bid on, on the same day."""
+
+    scoring_period: int
+    player_name: str
+    winning_team: str | None
+    winning_bid: int | None
+    losing_bids: int = Field(description="How many other teams bid and did not get him")
+    highest_losing_bid: int | None
