@@ -56,13 +56,28 @@ def _install_timeout_patch() -> None:
     _TIMEOUT_PATCHED = True
 
 
-def fetch_league(settings: ESPNSettings) -> League:
-    """Fetch one ESPN league."""
+def fetch_league(settings: ESPNSettings, season: int | None = None) -> League:
+    """Fetch one ESPN league, defaulting to the configured season.
+
+    Pass `season` to read a prior year. ESPN serves past seasons from a
+    different endpoint (`leagueHistory`), which `espn-api` selects on the
+    year, so nothing else here changes.
+    """
     _install_timeout_patch()
 
     return League(
         league_id=settings.espn_league_id,
-        year=settings.espn_season,
+        year=settings.espn_season if season is None else season,
         espn_s2=settings.espn_s2,
         swid=settings.espn_swid,
     )
+
+
+def prior_seasons(league: League) -> list[int]:
+    """Seasons before this one that ESPN still holds for the league.
+
+    Taken from the league's own `previousSeasons` rather than guessed by
+    probing years.
+    """
+    seasons = getattr(league, "previousSeasons", None) or []
+    return sorted(int(year) for year in seasons)

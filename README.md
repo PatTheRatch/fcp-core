@@ -86,7 +86,9 @@ ESPN does not return a matchup record for a category league.
 ## Ingest a league season
 
 ```bash
-python scripts/ingest_league.py
+python scripts/ingest_league.py                  # the configured season
+python scripts/ingest_league.py --season 2023    # one prior season
+python scripts/ingest_league.py --all-seasons    # every season ESPN holds
 ```
 
 Persists one whole season to `DATABASE_URL`: league settings and scoring
@@ -96,7 +98,8 @@ posted in each matchup, a box score line per player per scoring period, and
 where every player sat in every team's lineup on every day.
 
 Safe to re-run: an already-stored season is updated in place, a new season is
-inserted alongside it, and earlier seasons are never modified. It makes one
+inserted alongside it, and earlier seasons are never modified. `--all-seasons`
+reads the league's own `previousSeasons`, so the list is not guessed. It makes one
 ESPN call per matchup period, so a full season is a couple of dozen requests
 plus one per scoring period for the daily lineups and a handful of batched
 player-card calls, and takes roughly two and a half minutes.

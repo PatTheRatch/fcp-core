@@ -164,10 +164,61 @@ Two deliberate consequences:
 
 ## Next
 
-1. Ingesting prior seasons, which the schema already allows
-2. Narrative endpoints beyond the bench report: streaks, category trends,
-   head-to-head histories
-3. Deciding whether anything needs write access, and therefore auth
+1. Narrative endpoints beyond the bench report: streaks, category trends,
+   head-to-head histories across seasons
+2. Deciding whether anything needs write access, and therefore auth
+
+### Prior seasons
+
+The league's own `previousSeasons` lists what ESPN still holds, so the season
+list is read rather than guessed by probing years. Past seasons come from a
+different endpoint (`leagueHistory`), which `espn-api` selects on the year.
+
+The schema's season-scoping earned itself here. Across the eight seasons the
+league ran with 10, 12, 14 and 16 teams, and regular seasons of 16 to 20
+matchup periods:
+
+| season | teams | regular season periods |
+|---|---|---|
+| 2019 | 10 | 20 |
+| 2020 | 10 | 18 |
+| 2021 | 10 | 18 |
+| 2022 | 12 | 16 |
+| 2023 | 16 | 18 |
+| 2024 | 14 | 19 |
+| 2025 | 12 | 17 |
+| 2026 | 14 | 19 |
+
+Two things had to be solved to make older seasons work.
+
+**The period-to-day mapping does not exist before 2025.** `League.matchup_ids`
+is built from `pointsByScoringPeriod`, which ESPN populates for 2025 and 2026
+and leaves empty for 2019 to 2024, on both endpoints. It is now discovered by
+probing: ESPN returns a daily roster only when the requested day falls inside
+the requested matchup period, so an empty response means "try the next
+period". Walking days in order costs one request per day plus one per period
+boundary, and the discovery was validated against 2025, where the real
+mapping exists, by reproducing it exactly.
+
+**The weekly aggregate roster is nearly empty before 2025.** It holds 341 to
+430 rows for older seasons against 4436 for 2026. Player stats were scoped to
+it, which silently cut coverage: 2023 first loaded 22073 player lines instead
+of 28147, and reconciliation sat at 175 of 336 sides. Player stats are now
+scoped to the union of the weekly and daily roster tables, and daily lineups
+run first because they are the only complete account of who a team held.
+
+Reconciliation across all eight seasons, summing started players against the
+separately stored team totals:
+
+| season | sides agreeing |
+|---|---|
+| 2019, 2020, 2022, 2023, 2024, 2025, 2026 | all of them |
+| 2021 | 196 of 200 |
+
+The four 2021 exceptions are ESPN omitting days from its own player cards for
+that COVID-shortened season. Al Horford's 2021 card returns 74 scoring
+periods and simply has no entry for days 43, 45 or 48, though the team totals
+counted his production. Verified upstream, not a parsing fault.
 
 ## Correction, now resolved: daily lineups and bench
 

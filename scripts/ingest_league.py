@@ -1,89 +1,117 @@
 #!/usr/bin/env python3
-"""Fetch one ESPN league season and persist its structure.
+"""Fetch ESPN league seasons and persist them.
 
 Usage:
-    python scripts/ingest_league.py
+    python scripts/ingest_league.py                  # the configured season
+    python scripts/ingest_league.py --season 2023    # one prior season
+    python scripts/ingest_league.py --all-seasons    # every season ESPN holds
 
 Reads the same ESPN_* variables as scripts/espn_probe.py and writes to
-DATABASE_URL. Persists the season's structure, its teams and owners, its
-matchup periods and matchups, and a roster snapshot per team per period.
+DATABASE_URL. Each season persists its structure, teams and owners, matchup
+periods and matchups, per-category matchup detail, a box score line per
+player per day, and where every player sat each day.
 
 Safe to re-run: a season already stored is updated in place, and a season not
-yet stored is inserted alongside the others. Makes one ESPN call per matchup
-period, so a full season is a couple of dozen requests.
+yet stored is inserted alongside the others. Earlier seasons are never
+modified by a later one.
+
+Roughly one ESPN call per matchup period and one per scoring period, plus a
+few batched player-card calls, so a full season takes a couple of minutes.
 """
 
+import argparse
+import time
+from collections.abc import Sequence
+
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
-from app.db.models import DailyLineupSlot, MatchupPeriod, PlayerGameStat
+from app.db.models import (
+    DailyLineupSlot,
+    LeagueSeason,
+    MatchupPeriod,
+    PlayerGameStat,
+)
 from app.db.session import make_engine, make_session_factory
-from app.espn import fetch_league, get_espn_settings
+from app.espn import fetch_league, get_espn_settings, prior_seasons
 from app.ingest import ingest_season
 
 
+def _report(session: Session, stored: LeagueSeason) -> None:
+    matchups = sum(len(p.matchups) for p in stored.matchup_periods)
+    rosters = sum(len(m.roster_slots) for p in stored.matchup_periods for m in p.matchups)
+    stats = sum(len(m.team_stats) for p in stored.matchup_periods for m in p.matchups)
+    lineups = session.scalar(
+        select(func.count())
+        .select_from(DailyLineupSlot)
+        .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
+        .where(MatchupPeriod.league_season_id == stored.id)
+    )
+    games = session.scalar(
+        select(func.count())
+        .select_from(PlayerGameStat)
+        .where(PlayerGameStat.season == stored.season)
+    )
+    window = [
+        (p.period, p.first_scoring_period, p.final_scoring_period) for p in stored.matchup_periods
+    ]
+    print(f"  {stored.season}: {stored.name!r}")
+    print(
+        f"    teams {len(stored.teams)}  periods {len(stored.matchup_periods)}"
+        f"  matchups {matchups}  categories {len(stored.categories)}"
+    )
+    print(f"    roster snapshots {rosters}  matchup statistics {stats}")
+    print(f"    player game lines {games}  daily lineup slots {lineups}")
+    if window:
+        first, last = window[0], window[-1]
+        print(
+            f"    day windows: period {first[0]} = {first[1]}-{first[2]}, "
+            f"period {last[0]} = {last[1]}-{last[2]}"
+        )
+
+
+def _ingest_one(factory: sessionmaker[Session], season: int) -> None:
+    started = time.monotonic()
+    league = fetch_league(get_espn_settings(), season=season)
+    with factory() as session:
+        stored = ingest_season(session, league)
+        session.commit()
+        _report(session, stored)
+    print(f"    done in {time.monotonic() - started:.0f}s")
+
+
+def _seasons_to_ingest(args: argparse.Namespace) -> Sequence[int]:
+    configured = get_espn_settings().espn_season
+    if args.season is not None:
+        return [args.season]
+    if not args.all_seasons:
+        return [configured]
+
+    # The league itself lists the seasons ESPN still holds.
+    current = fetch_league(get_espn_settings())
+    return [*prior_seasons(current), configured]
+
+
 def main() -> None:
-    espn_settings = get_espn_settings()
-    league = fetch_league(espn_settings)
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--season", type=int, help="Ingest one specific season")
+    group.add_argument(
+        "--all-seasons",
+        action="store_true",
+        help="Ingest every season ESPN holds for the league, oldest first",
+    )
+    args = parser.parse_args()
+
+    seasons = _seasons_to_ingest(args)
+    print(f"Ingesting {len(seasons)} season(s): {', '.join(str(s) for s in seasons)}")
 
     engine = make_engine(get_settings().database_url)
     try:
-        session_factory = make_session_factory(engine)
-        with session_factory() as session:
-            stored = ingest_season(session, league)
-            session.commit()
-
-            print(f"Stored {stored.name!r} season {stored.season}")
-            print(f"  league_season id: {stored.id}")
-            print(f"  teams: {stored.team_count}  scoring: {stored.scoring_type}")
-            print(
-                f"  periods: {stored.regular_season_periods} regular season, "
-                f"{stored.total_matchup_periods} including playoffs"
-            )
-            print(f"  trade deadline: {stored.trade_deadline}")
-            categories = ", ".join(c.abbreviation for c in stored.categories)
-            print(f"  categories ({len(stored.categories)}): {categories}")
-
-            matchups = sum(len(p.matchups) for p in stored.matchup_periods)
-            rosters = sum(len(m.roster_slots) for p in stored.matchup_periods for m in p.matchups)
-            print(f"  teams stored: {len(stored.teams)}")
-            print(f"  matchup periods: {len(stored.matchup_periods)}  matchups: {matchups}")
-            print(f"  roster snapshots: {rosters}")
-            stats = sum(len(m.team_stats) for p in stored.matchup_periods for m in p.matchups)
-            scored = sum(
-                1
-                for p in stored.matchup_periods
-                for m in p.matchups
-                for s in m.team_stats
-                if s.league_season_category_id is not None
-            )
-            print(f"  matchup statistics: {stats} ({scored} scored categories)")
-
-            games = session.scalar(
-                select(func.count())
-                .select_from(PlayerGameStat)
-                .where(PlayerGameStat.season == stored.season)
-            )
-            played = session.scalar(
-                select(func.count())
-                .select_from(PlayerGameStat)
-                .where(PlayerGameStat.season == stored.season, PlayerGameStat.played)
-            )
-            print(f"  player game lines: {games} ({played} with a stat line)")
-
-            lineups = session.scalar(
-                select(func.count())
-                .select_from(DailyLineupSlot)
-                .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
-                .where(MatchupPeriod.league_season_id == stored.id)
-            )
-            benched = session.scalar(
-                select(func.count())
-                .select_from(DailyLineupSlot)
-                .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
-                .where(MatchupPeriod.league_season_id == stored.id, ~DailyLineupSlot.started)
-            )
-            print(f"  daily lineup slots: {lineups} ({benched} not started)")
+        factory = make_session_factory(engine)
+        for season in seasons:
+            _ingest_one(factory, season)
     finally:
         engine.dispose()
 

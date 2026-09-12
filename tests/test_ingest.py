@@ -696,3 +696,117 @@ def test_started_players_reconcile_with_the_team_total(session: Session) -> None
         select(DailyLineupSlot).where(DailyLineupSlot.started == False)  # noqa: E712
     ).one()
     assert benched.player.name == "P200"
+
+
+def test_windows_are_discovered_when_espn_omits_them(session: Session) -> None:
+    """Seasons before 2025 return no period-to-day mapping, so it is probed.
+
+    The fake mirrors ESPN's actual behaviour: asking for a day under the
+    wrong matchup period yields no lineups at all, which is the signal the
+    probe advances on.
+    """
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+    weekly = fake_box(home, away, home_lineup=[starter])
+
+    # Period 1 covers days 1-2, period 2 covers day 3.
+    days = {
+        1: {
+            1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])],
+            2: [fake_box(home, away, home_lineup=[starter], away_lineup=[])],
+        },
+        2: {3: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]},
+    }
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [weekly], 2: [weekly]},
+        days=days,
+        windows={},  # exactly what ESPN gives for 2019 to 2024
+        reg_season_count=1,
+        matchup_period_count=2,
+        cards={100: fake_card(100, "Starter", {1: BOX_LINE, 2: BOX_LINE, 3: BOX_LINE})},
+    )
+
+    ingest_season(session, espn)
+
+    periods = {p.period: p for p in session.scalars(select(MatchupPeriod)).all()}
+    assert (periods[1].first_scoring_period, periods[1].final_scoring_period) == (1, 2)
+    assert (periods[2].first_scoring_period, periods[2].final_scoring_period) == (3, 3)
+
+    by_day = {
+        s.scoring_period: s.matchup_period.period
+        for s in session.scalars(select(DailyLineupSlot)).all()
+    }
+    assert by_day == {1: 1, 2: 1, 3: 2}, "each day attributed to the right period"
+
+
+def test_discovery_stops_rather_than_probing_past_the_last_period(session: Session) -> None:
+    """A day beyond the final period must not spin or mis-attribute."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+    weekly = fake_box(home, away, home_lineup=[starter])
+
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [weekly]},
+        days={1: {1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]}},
+        windows={},
+        reg_season_count=1,
+        matchup_period_count=1,
+        # Day 9 has a stat line but belongs to no period ESPN will admit to.
+        cards={100: fake_card(100, "Starter", {1: BOX_LINE, 9: BOX_LINE})},
+    )
+
+    ingest_season(session, espn)
+
+    days = {s.scoring_period for s in session.scalars(select(DailyLineupSlot)).all()}
+    assert days == {1}, "the unattributable day is left out, not guessed at"
+
+
+def test_two_seasons_of_the_same_league_keep_their_own_shape(session: Session) -> None:
+    """The point of the season-scoped schema, now that prior seasons load.
+
+    The real league went from 10 teams in 2019 to 14 in 2026, with the
+    regular season changing length too.
+    """
+    small = [fake_team(1, "Alpha"), fake_team(2, "Beta")]
+    big = [fake_team(1, "Alpha Renamed"), fake_team(2, "Beta"), fake_team(3, "Gamma")]
+
+    ingest_season(
+        session,
+        league_with_days(
+            teams=small,
+            boxes={1: [fake_box(small[0], small[1])]},
+            days={},
+            windows={},
+            reg_season_count=1,
+            matchup_period_count=1,
+        ),
+    )
+    session.commit()
+
+    later = league_with_days(
+        teams=big,
+        boxes={1: [fake_box(big[0], big[1])]},
+        days={},
+        windows={},
+        reg_season_count=2,
+        matchup_period_count=2,
+    )
+    later.year = 2027
+    later.settings.team_count = 3
+    ingest_season(session, later)
+    session.commit()
+
+    seasons = {s.season: s for s in session.scalars(select(LeagueSeason)).all()}
+    assert sorted(seasons) == [2026, 2027]
+    assert len(seasons[2026].teams) == 2
+    assert len(seasons[2027].teams) == 3
+    assert seasons[2026].regular_season_periods == 1
+    assert seasons[2027].regular_season_periods == 2
+
+    # A renamed team in the later season must not rewrite the earlier one.
+    earlier_names = {t.espn_team_id: t.name for t in seasons[2026].teams}
+    later_names = {t.espn_team_id: t.name for t in seasons[2027].teams}
+    assert earlier_names[1] == "Alpha"
+    assert later_names[1] == "Alpha Renamed"
