@@ -28,6 +28,7 @@ from app.db.models import (
     Owner,
     Player,
     PlayerGameStat,
+    PlayerSeasonStat,
     RosterSlot,
     Team,
     Transaction,
@@ -79,9 +80,14 @@ def session_factory(test_database_url: str) -> Iterator[sessionmaker[Session]]:
 
 @pytest.fixture
 def session(session_factory: sessionmaker[Session]) -> Iterator[Session]:
-    """A clean slate per test: every table is emptied first."""
+    """A clean slate per test.
+
+    Both roots have to be named. Cascading from `leagues` misses `players`
+    and `owners`, which are global by design and have no foreign key back to
+    a league, so their rows survived into the next test.
+    """
     with session_factory() as session:
-        session.execute(text("TRUNCATE leagues RESTART IDENTITY CASCADE"))
+        session.execute(text("TRUNCATE leagues, players, owners RESTART IDENTITY CASCADE"))
         session.commit()
         yield session
         session.rollback()
@@ -1089,3 +1095,79 @@ def test_each_season_keeps_its_own_draft(session: Session) -> None:
         p.league_season.season: p.bid_amount for p in session.scalars(select(DraftPick)).all()
     }
     assert by_season == {2026: 40, 2027: 85}
+
+
+def test_the_projection_and_the_actual_total_are_both_stored(session: Session) -> None:
+    """Both arrive on the same card, so both are kept."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[starter])]},
+        days={1: {1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]}},
+        windows={1: ["1"]},
+        matchup_period_count=1,
+        cards={
+            100: fake_card(
+                100,
+                "Starter",
+                {1: BOX_LINE},
+                projected={"PTS": 1755.0, "REB": 817.0, "GP": 71.0},
+                total={"PTS": 1600.0, "REB": 736.0, "GP": 64.0},
+            )
+        },
+    )
+
+    ingest_season(session, espn)
+
+    rows = {r.kind: r for r in session.scalars(select(PlayerSeasonStat)).all()}
+    assert set(rows) == {"projected", "total"}
+    assert rows["projected"].points == 1755.0
+    assert rows["projected"].games_played == 71.0
+    assert rows["total"].points == 1600.0
+    assert rows["total"].games_played == 64.0
+    assert rows["projected"].raw_totals["REB"] == 817.0
+
+
+def test_rolling_windows_are_not_mistaken_for_a_season(session: Session) -> None:
+    """last_7 describes a moment, not a season, and must not be stored."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+    card = fake_card(100, "Starter", {1: BOX_LINE}, projected={"PTS": 10.0}, total={"PTS": 20.0})
+    card.stats["2026_last_7"] = {"total": {"PTS": 99.0}, "date": None, "team": None}
+    card.stats["2026_last_30"] = {"total": {"PTS": 98.0}, "date": None, "team": None}
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[starter])]},
+        days={1: {1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]}},
+        windows={1: ["1"]},
+        matchup_period_count=1,
+        cards={100: card},
+    )
+
+    ingest_season(session, espn)
+
+    kinds = {r.kind for r in session.scalars(select(PlayerSeasonStat)).all()}
+    assert kinds == {"projected", "total"}, "no last_7 or last_30 rows"
+
+
+def test_season_rollups_are_not_duplicated_on_reingest(session: Session) -> None:
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+
+    def build() -> Any:
+        return league_with_days(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_lineup=[starter])]},
+            days={1: {1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]}},
+            windows={1: ["1"]},
+            matchup_period_count=1,
+            cards={100: fake_card(100, "Starter", {1: BOX_LINE})},
+        )
+
+    ingest_season(session, build())
+    session.commit()
+    ingest_season(session, build())
+    session.commit()
+
+    assert len(session.scalars(select(PlayerSeasonStat)).all()) == 2

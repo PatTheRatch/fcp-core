@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     NON_STARTING_SLOTS,
+    SEASON_STAT_KINDS,
     DailyLineupSlot,
     DraftPick,
     League,
@@ -32,6 +33,7 @@ from app.db.models import (
     Owner,
     Player,
     PlayerGameStat,
+    PlayerSeasonStat,
     RosterSlot,
     Team,
     Transaction,
@@ -558,6 +560,24 @@ def _scoring_period_entries(espn_player: Any) -> list[tuple[int, dict[str, Any]]
     return entries
 
 
+def _season_rollups(espn_player: Any, season: int) -> list[tuple[str, dict[str, Any]]]:
+    """The season-level entries on a card: the projection and the actual total.
+
+    Keyed "<season>_<kind>" alongside the numeric per-day keys. Rolling
+    windows like "last_7" are ignored: they describe a moment rather than a
+    season, and mean nothing once it has ended.
+    """
+    found: list[tuple[str, dict[str, Any]]] = []
+    for key, payload in (getattr(espn_player, "stats", None) or {}).items():
+        text = str(key)
+        if not isinstance(payload, dict):
+            continue
+        for kind in SEASON_STAT_KINDS:
+            if text == f"{season}_{kind}":
+                found.append((kind, payload))
+    return found
+
+
 def ingest_player_stats(
     session: Session,
     league_season: LeagueSeason,
@@ -611,6 +631,31 @@ def ingest_player_stats(
             player = players.get(int(getattr(espn_player, "playerId", 0) or 0))
             if player is None:
                 continue
+
+            for kind, payload in _season_rollups(espn_player, season):
+                totals = payload.get("total") or {}
+                if not totals:
+                    continue
+                rollup = session.scalar(
+                    select(PlayerSeasonStat).where(
+                        PlayerSeasonStat.player_id == player.id,
+                        PlayerSeasonStat.season == season,
+                        PlayerSeasonStat.kind == kind,
+                    )
+                )
+                if rollup is None:
+                    rollup = PlayerSeasonStat(player_id=player.id, season=season, kind=kind)
+                    session.add(rollup)
+                rollup.games_played = float(totals["GP"]) if totals.get("GP") is not None else None
+                rollup.raw_totals = dict(totals)
+                for abbreviation, column in _PLAYER_STAT_COLUMNS.items():
+                    if column == "personal_fouls" or column in (
+                        "offensive_rebounds",
+                        "defensive_rebounds",
+                    ):
+                        continue
+                    raw = totals.get(abbreviation)
+                    setattr(rollup, column, float(raw) if raw is not None else None)
 
             for scoring_period, payload in _scoring_period_entries(espn_player):
                 if not scope.covers_day(scoring_period):

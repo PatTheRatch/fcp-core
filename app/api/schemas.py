@@ -382,3 +382,16 @@ class DraftValueOut(BaseModel):
     season_points: float
     points_per_dollar: float
     games_played: int
+
+
+class ProjectionGapOut(BaseModel):
+    """A player against ESPN's preseason forecast for them."""
+
+    player_name: str
+    drafted_by: str | None
+    paid: int | None = Field(description="Auction price, null if undrafted")
+    projected_points: float
+    actual_points: float
+    difference: float = Field(description="Actual minus projected. Negative is a miss")
+    projected_games: float | None
+    actual_games: float | None

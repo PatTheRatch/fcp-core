@@ -21,10 +21,11 @@ from app.api.schemas import (
     NotableMatchupsOut,
     OwnerRecordOut,
     OwnerSeasonOut,
+    ProjectionGapOut,
     StreakOut,
     TeamCategoryProfileOut,
 )
-from app.db.models import League
+from app.db.models import DraftPick, League, Player, PlayerSeasonStat, Team
 
 router = APIRouter(tags=["narratives"])
 
@@ -230,4 +231,91 @@ def get_head_to_head(
         for h in narratives.head_to_head(
             session, league_id, include_playoffs=include_playoffs, min_meetings=min_meetings
         )
+    ]
+
+
+@router.get(
+    "/leagues/{league_id}/seasons/{season}/projection-gaps",
+    summary="Who beat their preseason projection and who did not",
+)
+def get_projection_gaps(
+    league_season: LeagueSeasonDep,
+    session: SessionDep,
+    order: str = Query(default="misses", description="'misses' or 'beats' first"),
+    drafted_only: bool = Query(
+        default=True, description="Only players someone paid for at the draft"
+    ),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[ProjectionGapOut]:
+    """ESPN's own forecast against what happened.
+
+    Mostly a health story rather than a scouting one: the largest misses
+    belong to players who were projected a full season and did not get one.
+    The games columns are returned alongside so that is visible rather than
+    mistaken for a collapse in form.
+    """
+    projected = (
+        select(
+            PlayerSeasonStat.player_id.label("player_id"),
+            PlayerSeasonStat.points.label("points"),
+            PlayerSeasonStat.games_played.label("games"),
+        )
+        .where(
+            PlayerSeasonStat.season == league_season.season,
+            PlayerSeasonStat.kind == "projected",
+        )
+        .subquery()
+    )
+    actual = (
+        select(
+            PlayerSeasonStat.player_id.label("player_id"),
+            PlayerSeasonStat.points.label("points"),
+            PlayerSeasonStat.games_played.label("games"),
+        )
+        .where(
+            PlayerSeasonStat.season == league_season.season,
+            PlayerSeasonStat.kind == "total",
+        )
+        .subquery()
+    )
+
+    difference = (actual.c.points - projected.c.points).label("difference")
+    query = (
+        select(
+            Player.name,
+            Team.name,
+            DraftPick.bid_amount,
+            projected.c.points,
+            actual.c.points,
+            projected.c.games,
+            actual.c.games,
+        )
+        .select_from(projected)
+        .join(actual, actual.c.player_id == projected.c.player_id)
+        .join(Player, Player.id == projected.c.player_id)
+        .outerjoin(
+            DraftPick,
+            (DraftPick.player_id == projected.c.player_id)
+            & (DraftPick.league_season_id == league_season.id),
+        )
+        .outerjoin(Team, Team.id == DraftPick.team_id)
+        .where(projected.c.points.is_not(None), actual.c.points.is_not(None))
+        .order_by(difference.asc() if order == "misses" else difference.desc())
+        .limit(limit)
+    )
+    if drafted_only:
+        query = query.where(DraftPick.bid_amount.is_not(None))
+
+    return [
+        ProjectionGapOut(
+            player_name=name,
+            drafted_by=team,
+            paid=paid,
+            projected_points=float(proj_pts or 0.0),
+            actual_points=float(act_pts or 0.0),
+            difference=float((act_pts or 0.0) - (proj_pts or 0.0)),
+            projected_games=proj_gp,
+            actual_games=act_gp,
+        )
+        for name, team, paid, proj_pts, act_pts, proj_gp, act_gp in session.execute(query)
     ]

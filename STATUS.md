@@ -26,6 +26,9 @@
 - Teams, owners, matchup periods, matchups and rosters persisted: `teams`,
   `owners`, `team_owners`, `matchup_periods`, `matchups`, `players`,
   `roster_slots` (migration 0003).
+- Season projections and totals persisted: `player_season_stats` (migration
+  0010). ESPN's preseason forecast beside what actually happened. Free: both
+  arrive on the player cards already fetched.
 - Draft persisted: `draft_picks` (migration 0009). Auction prices, keeper
   flags, and who nominated each player. Costs no ESPN request: the draft
   arrives with the league itself.
@@ -84,6 +87,7 @@ Narrative routes, all derived rather than ingested:
 | `.../contested-claims` | players several teams bid on, and what winning cost |
 | `.../draft` | the draft board in pick order, with auction prices |
 | `.../draft-value` | what each pick cost against what the player returned |
+| `.../projection-gaps` | who beat their preseason forecast and who did not |
 
 Operational routes:
 
@@ -217,6 +221,26 @@ Gilgeous-Alexander cost 79 and returned 26.8. Giannis cost 70 and returned
 
 A drafted player already known to us keeps the name we have; the draft does
 not rename anyone.
+
+### What projections turned out to measure
+
+Mostly health, not scouting. The 2026 misses are dominated by players who
+were forecast a full season and did not get one:
+
+| player | paid | projected | actual | projected games | actual games |
+|---|---|---|---|---|---|
+| Trae Young | 42 | 1852 | 269 | 75 | 15 |
+| Anthony Davis | 55 | 1778 | 407 | 64 | 20 |
+| Giannis Antetokounmpo | 70 | 2236 | 993 | 71 | 36 |
+
+The endpoint returns the games columns alongside the points for that reason.
+Without them a 1583 point shortfall reads as a collapse in form rather than
+fifteen games played.
+
+ESPN's own season total is stored next to our daily lines even though the two
+overlap, because they can disagree: ESPN omits days from its own cards for
+some seasons, and keeping both makes the discrepancy visible rather than
+picking a winner silently.
 
 ### What the transactions endpoint taught us
 

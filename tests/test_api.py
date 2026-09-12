@@ -101,11 +101,15 @@ def _seeded_league() -> Any:
                 6450,
                 "Kawhi Leonard",
                 {1: dict(BOX_LINE, PTS=12.0), 2: dict(BOX_LINE, PTS=40.0), 3: None},
+                projected={"PTS": 900.0, "GP": 70.0},
+                total={"PTS": 52.0, "GP": 2.0},
             ),
             4871144: fake_card(
                 4871144,
                 "Alperen Sengun",
                 {1: dict(BOX_LINE, PTS=30.0), 2: dict(BOX_LINE, PTS=10.0)},
+                projected={"PTS": 10.0, "GP": 5.0},
+                total={"PTS": 40.0, "GP": 2.0},
             ),
         },
     )
@@ -450,3 +454,29 @@ def test_draft_value_can_ignore_cheap_picks(client: TestClient) -> None:
         f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/draft-value", params={"min_paid": 50}
     ).json()
     assert [p["player_name"] for p in body] == ["Kawhi Leonard"]
+
+
+def test_projection_gaps_rank_misses_and_beats(client: TestClient) -> None:
+    """Kawhi was projected 900 and scored 52; Sengun was projected 10 and scored 40."""
+    base = f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/projection-gaps"
+    misses = client.get(base, params={"order": "misses"}).json()
+    assert misses[0]["player_name"] == "Kawhi Leonard"
+    assert misses[0]["difference"] < 0
+    assert misses[0]["paid"] == 100, "the draft price rides along"
+
+    beats = client.get(base, params={"order": "beats"}).json()
+    assert beats[0]["player_name"] == "Alperen Sengun"
+    assert beats[0]["difference"] > 0
+
+
+def test_projection_gaps_can_include_undrafted_players(client: TestClient) -> None:
+    drafted = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/projection-gaps",
+        params={"drafted_only": True},
+    ).json()
+    everyone = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/projection-gaps",
+        params={"drafted_only": False},
+    ).json()
+    assert all(p["paid"] is not None for p in drafted)
+    assert len(everyone) >= len(drafted)

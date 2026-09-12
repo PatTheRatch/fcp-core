@@ -672,3 +672,56 @@ class DraftPick(Base):
 
     league_season: Mapped[LeagueSeason] = relationship(back_populates="draft_picks")
     player: Mapped[Player] = relationship()
+
+
+#: The season rollups ESPN puts on a player card, keyed as "<season>_<kind>".
+#: Rolling windows (last_7 and friends) are deliberately not among them: they
+#: describe a moment, not a season, and are meaningless once it has ended.
+SEASON_STAT_KINDS = ("projected", "total")
+
+
+class PlayerSeasonStat(Base):
+    """A player's whole season, either as forecast or as it happened.
+
+    `kind` is "projected" for ESPN's preseason forecast and "total" for what
+    the player actually did. Both come free with the player cards already
+    fetched for the daily lines.
+
+    The actual totals are partly redundant with summing `player_game_stats`,
+    and kept anyway: ESPN omits days from its own cards for some seasons, so
+    its total and our sum can disagree. Storing both makes that visible
+    rather than hiding it behind whichever one was asked for.
+    """
+
+    __tablename__ = "player_season_stats"
+    __table_args__ = (
+        UniqueConstraint("player_id", "season", "kind", name="uq_player_season_stats_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: "projected" or "total".
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+
+    games_played: Mapped[float | None] = mapped_column(Float)
+    minutes: Mapped[float | None] = mapped_column(Float)
+    points: Mapped[float | None] = mapped_column(Float)
+    rebounds: Mapped[float | None] = mapped_column(Float)
+    assists: Mapped[float | None] = mapped_column(Float)
+    steals: Mapped[float | None] = mapped_column(Float)
+    blocks: Mapped[float | None] = mapped_column(Float)
+    turnovers: Mapped[float | None] = mapped_column(Float)
+    three_pointers_made: Mapped[float | None] = mapped_column(Float)
+    field_goals_made: Mapped[float | None] = mapped_column(Float)
+    field_goals_attempted: Mapped[float | None] = mapped_column(Float)
+    free_throws_made: Mapped[float | None] = mapped_column(Float)
+    free_throws_attempted: Mapped[float | None] = mapped_column(Float)
+
+    #: Everything ESPN sent. A projection carries 31 stats against 45 on a
+    #: total, so the two are not the same shape.
+    raw_totals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+    player: Mapped[Player] = relationship()

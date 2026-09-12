@@ -179,15 +179,31 @@ def stat_block(
     }
 
 
-def fake_card(player_id: int, name: str, periods: dict[int, dict[str, Any] | None]) -> Any:
+def fake_card(
+    player_id: int,
+    name: str,
+    periods: dict[int, dict[str, Any] | None],
+    *,
+    season: int = 2026,
+    projected: dict[str, Any] | None = None,
+    total: dict[str, Any] | None = None,
+) -> Any:
     """A player card: scoring period -> stat line, or None for a day not played.
 
     Also carries the season rollups ESPN mixes into the same dict, which the
     ingest has to ignore.
     """
     stats: dict[str, Any] = {
-        "2026_total": {"total": {"PTS": 1.0}, "date": None, "team": None},
-        "2026_projected": {"total": {"PTS": 2.0}, "date": None, "team": None},
+        f"{season}_total": {
+            "total": total if total is not None else {"PTS": 1.0},
+            "date": None,
+            "team": None,
+        },
+        f"{season}_projected": {
+            "total": projected if projected is not None else {"PTS": 2.0},
+            "date": None,
+            "team": None,
+        },
     }
     for period, line in periods.items():
         stats[str(period)] = {
