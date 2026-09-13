@@ -193,11 +193,42 @@ claim than one from five.
 Turnovers invert into a ceiling rather than a floor: to win them more often
 you commit fewer, so a higher win rate means a lower number.
 
-**For 2027, at sixteen teams, in an ordinary week:** clear 525 points, 189
-rebounds, 115 assists and stay under 62 turnovers to win each about half the
-time. Those come from 2023, the only sixteen team season played, across 272
-comparable sides. The All-Star fortnight is a different question and a much
-larger number: 654 points, 235 rebounds.
+### Era: the game moves too
+
+A target read from a sixteen team season is the right shape but the wrong
+year. The only sixteen team season on record is 2023, four years before the
+2027 draft, and the NBA has kept scoring since.
+
+Measured free of league structure, from the per-game output of established
+starters, players with 40+ games at 28+ minutes. That population exists in
+every season regardless of how many fantasy teams shared it, so it isolates
+the game from the roster dilution targets already handle.
+
+Only five of nine categories actually drift:
+
+| category | per year | r squared | 2023 to 2027 |
+|---|---|---|---|
+| 3PM | +1.59% | 0.54 | x1.063 |
+| AST | +1.30% | 0.78 | x1.052 |
+| PTS | +1.02% | 0.84 | x1.041 |
+| FG% | +0.46% | 0.58 | x1.023 |
+| FT% | +0.30% | 0.77 | x1.015 |
+| REB, STL, BLK, TO | noise | 0.01 to 0.20 | x1.000 |
+
+Rebounds, steals, blocks and turnovers do not move in any way a straight
+line can find, so they are left alone. Scaling by noise would be worse than
+not scaling. Every target reports the multiplier applied, and it is exactly
+1.0 where nothing was.
+
+The shooting rates mattered more than expected. They are pooled across all
+eight seasons for sample, which quietly anchored them to a lower-shooting
+era: field goal percentage has gone from .467 to .477 since 2019.
+
+**For 2027, at sixteen teams, in an ordinary week:** clear 546 points, 189
+rebounds, 121 assists, 54 threes, shoot .486 and .802, and stay under 62
+turnovers to win each about half the time. Counting figures come from 2023,
+the only sixteen team season played, across 272 comparable sides, brought
+forward where the category drifts.
 
 A subtlety the tests caught. The season being drafted for already exists in
 the database, with a size and no results. Matching on size alone found that

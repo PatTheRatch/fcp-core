@@ -35,6 +35,7 @@ from every season, which gives them a far larger sample for free.
 """
 
 from dataclasses import dataclass
+from statistics import fmean
 
 from sqlalchemy import Float, Integer, cast, func, select
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ from app.db.models import (
     MatchupPeriod,
     MatchupTeamStat,
 )
+from app.draft.era import category_trends
 from app.draft.valuation import INVERTED_CATEGORIES, PERCENTAGE_COMPONENTS
 
 #: Categories whose value is a rate, so league size does not move them and
@@ -75,6 +77,10 @@ class CategoryTarget:
     #: The matchup period length this target describes, in scoring periods.
     #: A week for the usual target; 14 asks about the All-Star fortnight.
     period_days: int
+    #: What the raw historical figure was multiplied by to bring it forward
+    #: to this season. Exactly 1.0 where the category does not really drift,
+    #: so a reader can see which targets were adjusted and which were not.
+    era_scale: float
 
 
 def _seasons_with_results(session: Session) -> list[tuple[int, int]]:
@@ -200,6 +206,7 @@ def category_targets(
     *,
     win_probability: float = 0.5,
     period_days: int | None = None,
+    adjust_for_era: bool = True,
 ) -> list[CategoryTarget]:
     """What to aim for in each scored category, to win it that often.
 
@@ -209,6 +216,12 @@ def category_targets(
 
     `period_days` defaults to the ordinary week. Pass 14 to ask what the
     All-Star fortnight demands, which is a different and much larger number.
+
+    Figures are brought forward to this season where the category genuinely
+    drifts. The only sixteen team season on record is 2023, and the game has
+    kept scoring since, so a 2027 target read from it raw would be too low.
+    Categories whose year to year movement is noise are left alone; see
+    `app.draft.era`.
     """
     if not 0.0 < win_probability < 1.0:
         raise ValueError("win_probability must sit strictly between 0 and 1")
@@ -220,9 +233,13 @@ def category_targets(
     ).all()
 
     sized_count, sized_seasons = _sized_seasons(session, int(league_season.team_count))
-    all_seasons = [int(season) for season in session.scalars(select(LeagueSeason.season)).all()]
+    # Rates pool every season that was actually played. A season with no
+    # results contributes nothing and must not widen the basis.
+    all_seasons = sorted({season for _, season in _seasons_with_results(session)})
 
     days = period_days if period_days is not None else modal_period_days(session, all_seasons)
+    abbreviations = [category.abbreviation for category in categories]
+    trends = category_trends(session, abbreviations) if adjust_for_era else {}
 
     targets: list[CategoryTarget] = []
     for category in categories:
@@ -237,6 +254,15 @@ def category_targets(
         if value is None:
             continue
 
+        # Bring the figure forward from the middle of the seasons it came
+        # from to the season being asked about. Categories whose year to
+        # year movement is noise come back with a scale of exactly 1.0.
+        scale = 1.0
+        trend = trends.get(category.abbreviation)
+        if trend is not None and seasons:
+            scale = trend.scale(round(fmean(seasons)), int(league_season.season))
+            value *= scale
+
         targets.append(
             CategoryTarget(
                 abbreviation=category.abbreviation,
@@ -247,6 +273,7 @@ def category_targets(
                 basis_team_count=0 if pooled else sized_count,
                 basis_seasons=tuple(seasons),
                 period_days=days,
+                era_scale=scale,
             )
         )
     return targets

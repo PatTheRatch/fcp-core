@@ -420,3 +420,62 @@ def test_the_ordinary_length_is_read_from_the_data_not_assumed(
     session.flush()
 
     assert modal_period_days(session, [2026]) == 7, "three weeks against one fortnight"
+
+
+def test_a_drifting_category_is_brought_forward_to_this_season(
+    session: Session,
+) -> None:
+    """The real case: the only sixteen team season is 2023, and 2027 is four
+    years on. Left raw, its points target would be too low."""
+    from app.draft.era import category_trends
+
+    build_season(session, season=2023, team_count=16, points=[400, 500, 600])
+    upcoming = build_season(session, season=2027, team_count=16, points=[])
+    session.flush()
+
+    raw = {t.abbreviation: t for t in category_targets(session, upcoming, adjust_for_era=False)}[
+        "PTS"
+    ]
+    adjusted = {t.abbreviation: t for t in category_targets(session, upcoming)}["PTS"]
+
+    assert raw.era_scale == 1.0
+    assert raw.target == 500.0
+    # Whether it moves depends on whether the game actually drifted, which
+    # this fixture has no game logs to establish, so the scale must be exactly
+    # neutral rather than invented.
+    trends = category_trends(session, ["PTS"])
+    assert trends["PTS"].is_meaningful is False, "no game logs means no trend"
+    assert adjusted.era_scale == 1.0
+    assert adjusted.target == raw.target
+
+
+def test_a_category_that_does_not_drift_is_left_alone(session: Session) -> None:
+    """Scaling by noise would be worse than not scaling at all."""
+    from app.draft.era import CategoryTrend
+
+    flat = CategoryTrend(
+        abbreviation="REB",
+        change_per_year=-0.005,
+        r_squared=0.2,
+        index={2019: 5.9, 2023: 5.5, 2026: 5.6},
+    )
+
+    assert flat.is_meaningful is False
+    assert flat.scale(2023, 2027) == 1.0, "a weak fit adjusts nothing"
+
+
+def test_a_real_trend_scales_forward_and_backward(session: Session) -> None:
+    from app.draft.era import CategoryTrend
+
+    rising = CategoryTrend(
+        abbreviation="PTS",
+        change_per_year=0.01,
+        r_squared=0.84,
+        index={2020: 17.4, 2021: 18.0, 2022: 17.7, 2023: 18.2, 2024: 18.4, 2025: 18.7, 2026: 18.5},
+    )
+
+    assert rising.is_meaningful is True
+    forward = rising.scale(2023, 2027)
+    assert forward > 1.0, "four years on, expect more"
+    assert rising.scale(2027, 2023) < 1.0, "and the reverse going back"
+    assert rising.scale(2024, 2024) == pytest.approx(1.0), "no distance, no change"
