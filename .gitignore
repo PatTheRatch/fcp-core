@@ -12,3 +12,6 @@ backups/
 
 # Generated season reports, one HTML file per team per season.
 reports/
+
+# Draft watch logs.
+draft-watch*.jsonl
