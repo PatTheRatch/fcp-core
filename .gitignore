@@ -9,3 +9,6 @@ dist/
 *.egg-info/
 logs/
 backups/
+
+# Generated season reports, one HTML file per team per season.
+reports/

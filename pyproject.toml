@@ -50,6 +50,12 @@ select = [
     "RUF", # ruff-specific
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# The report generator writes typography, not code: en dashes in "13–6", a
+# real minus sign in the nine-cat formula, curly apostrophes in prose. Ruff
+# flags those as ambiguous characters, which is exactly what they are not here.
+"scripts/season_report.py" = ["RUF001"]
+
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 python_version = "3.12"
