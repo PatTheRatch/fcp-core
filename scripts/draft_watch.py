@@ -34,6 +34,7 @@ Read-only. It sends no picks and makes no changes.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
@@ -230,6 +231,10 @@ def watch(
 
 
 def main() -> int:
+    # A draft is watched against a clock, so a buffered pipe would hide the
+    # very thing being measured.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     source = ap.add_mutually_exclusive_group(required=True)
     source.add_argument("--league-id", help="league id, or a draft URL containing one")
