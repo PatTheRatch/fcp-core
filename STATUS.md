@@ -129,9 +129,64 @@ Notes on the design:
 - Run it locally with
   `uvicorn app.main:create_app --factory`, then read `/docs`.
 
+## The draft framework
+
+Being built bottom up, because each layer is only trustworthy if the one
+under it is. Every piece is a pure function over data already ingested, so
+each can be checked against a season that has already happened.
+
+| | state |
+|---|---|
+| 1. Valuation: projections to comparable value | done |
+| 2. Targets: what totals actually win a category here | next |
+| 3. Market model: what this league pays for value | after |
+| 4. Optimizer: best roster under a budget | after |
+| 5. Live draft room: state, remaining pool, re-solve | last |
+
+**Why this differs from the previous attempt.** That one simulated what we
+can now measure. It ran Monte Carlo over imagined drafts to guess category
+targets and auction prices, because it had no league history to read. We
+have eight seasons: 1274 real auction prices, and every category result of
+every matchup. Simulation stays useful for a question history cannot answer,
+such as a rule change, but it should not be the first resort.
+
+### Valuation
+
+Standard nine-category z-scoring, with the three details that decide whether
+it is any use:
+
+- **Turnovers are inverted.** ESPN's own `isReverseItem` says false for
+  turnovers and the box scores disagree, which we confirmed earlier.
+- **Percentages are weighted by volume.** Contribution is made shots above
+  what the pool would have made on the same attempts, so a perfect shooter
+  on two attempts moves nothing and a high-volume poor shooter is a
+  negative.
+- **The pool is the players who get drafted**, not everyone with a
+  projection. Scoring against the whole field drags the mean down and
+  flatters replacement level, so the board is scored once, narrowed to
+  teams x roster slots, then scored again.
+
+Value is computed on season totals rather than per-game rates. A player only
+helps on the nights they play, so games missed are a real cost, and totals
+carry that for free.
+
+**Checked against 2026 rather than assumed.** Valuing the field on ESPN's
+preseason projections and comparing with what the league actually paid, over
+the 175 drafted players who had one:
+
+| | |
+|---|---|
+| Pearson | 0.85 |
+| Spearman | 0.78 |
+
+That is the model agreeing with the room, which is what makes the
+disagreements worth looking at. Against a simple fit, the league paid about
+53 over the curve for Cade Cunningham and 45 for Giannis, and got Onyeka
+Okongwu about 21 under it.
+
 ## Building now
 
-- Deciding what to build on top of the stored season
+- The draft framework, layer by layer (see above)
 
 ### Why the schema is season-scoped
 
