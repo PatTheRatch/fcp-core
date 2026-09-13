@@ -164,8 +164,7 @@ def join_shape(conn: psycopg.Connection) -> None:
     if len(rates) > 3:
         spread = statistics.pstdev(rates)
         deltas = [abs(rates[i] - rates[i - 1]) for i in range(1, len(rates))]
-        print(f"  std dev {spread:.1f}, mean successive change "
-              f"{statistics.mean(deltas):.1f}")
+        print(f"  std dev {spread:.1f}, mean successive change {statistics.mean(deltas):.1f}")
         print("  A wide spread with large successive changes indicates the join")
         print("  tracks the schedule. A narrow spread would indicate drift.")
 
@@ -211,18 +210,21 @@ def q1_best_available(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    header = (f"{'season':>7} {'teams':>6} {'days':>6} {'FA/day':>7} "
-              f"{'best PTS':>9} {'med PTS':>8} {'best COMP':>10} "
-              f"{'med COMP':>9} {'max PTS':>8}")
+    header = (
+        f"{'season':>7} {'teams':>6} {'days':>6} {'FA/day':>7} "
+        f"{'best PTS':>9} {'med PTS':>8} {'best COMP':>10} "
+        f"{'med COMP':>9} {'max PTS':>8}"
+    )
     print(header)
     print("-" * len(header))
-    for (season, teams, days, avg_fa, med_pts, avg_pts, med_comp, avg_comp,
-         max_pts) in rows:
+    for season, teams, days, avg_fa, med_pts, avg_pts, med_comp, avg_comp, max_pts in rows:
         flag = "  (COVID)" if season == COVID_SEASON else ""
-        print(f"{season:>7} {teams:>6} {int(days):>6} {float(avg_fa):>7.0f} "
-              f"{float(avg_pts):>9.1f} {float(med_pts):>8.1f} "
-              f"{float(avg_comp):>10.1f} {float(med_comp):>9.1f} "
-              f"{int(max_pts):>8}{flag}")
+        print(
+            f"{season:>7} {teams:>6} {int(days):>6} {float(avg_fa):>7.0f} "
+            f"{float(avg_pts):>9.1f} {float(med_pts):>8.1f} "
+            f"{float(avg_comp):>10.1f} {float(med_comp):>9.1f} "
+            f"{int(max_pts):>8}{flag}"
+        )
 
 
 def q2_replacement_gap(conn: psycopg.Connection) -> None:
@@ -302,17 +304,20 @@ def q2_replacement_gap(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    header = (f"{'season':>7} {'teams':>6} {'days':>6} {'best FA':>8} "
-              f"{'median rost':>12} {'vs worst':>9} {'vs low-min':>11} "
-              f"{'vs median':>10}")
+    header = (
+        f"{'season':>7} {'teams':>6} {'days':>6} {'best FA':>8} "
+        f"{'median rost':>12} {'vs worst':>9} {'vs low-min':>11} "
+        f"{'vs median':>10}"
+    )
     print(header)
     print("-" * len(header))
-    for (season, teams, days, e_worst, e_lowmin, e_median, best_fa,
-         median_rost) in rows:
+    for season, teams, days, e_worst, e_lowmin, e_median, best_fa, median_rost in rows:
         flag = "  (COVID)" if season == COVID_SEASON else ""
-        print(f"{season:>7} {teams:>6} {int(days):>6} {float(best_fa):>8.1f} "
-              f"{float(median_rost):>12.1f} {float(e_worst):>9.1f} "
-              f"{float(e_lowmin):>11.1f} {float(e_median):>10.1f}{flag}")
+        print(
+            f"{season:>7} {teams:>6} {int(days):>6} {float(best_fa):>8.1f} "
+            f"{float(median_rost):>12.1f} {float(e_worst):>9.1f} "
+            f"{float(e_lowmin):>11.1f} {float(e_median):>10.1f}{flag}"
+        )
 
 
 def q3_by_league_size(conn: psycopg.Connection) -> None:
@@ -373,13 +378,17 @@ def q3_by_league_size(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    header = (f"{'teams':>6} {'seasons':>8} {'best PTS/day':>13} "
-              f"{'best COMP/day':>14} {'edge vs median':>15}")
+    header = (
+        f"{'teams':>6} {'seasons':>8} {'best PTS/day':>13} "
+        f"{'best COMP/day':>14} {'edge vs median':>15}"
+    )
     print(header)
     print("-" * len(header))
     for teams, seasons, best_comp, best_pts, edge in rows:
-        print(f"{int(teams):>6} {int(seasons):>8} {float(best_pts):>13.1f} "
-              f"{float(best_comp):>14.1f} {float(edge):>15.1f}")
+        print(
+            f"{int(teams):>6} {int(seasons):>8} {float(best_pts):>13.1f} "
+            f"{float(best_comp):>14.1f} {float(edge):>15.1f}"
+        )
 
 
 def q4_post_draft_share(conn: psycopg.Connection) -> None:
@@ -424,15 +433,16 @@ def q4_post_draft_share(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    print(f"{'season':>7} {'teams':>6} {'slot-days':>10} {'drafted':>9} "
-          f"{'drafted%':>9} {'acquired%':>10}")
+    print(
+        f"{'season':>7} {'teams':>6} {'slot-days':>10} {'drafted':>9} "
+        f"{'drafted%':>9} {'acquired%':>10}"
+    )
     print("-" * 62)
     for season, teams, slot_days, drafted in rows:
         sd, dr = int(slot_days), int(drafted)
         pct = 100.0 * dr / sd if sd else 0.0
         flag = "  (COVID)" if season == COVID_SEASON else ""
-        print(f"{season:>7} {teams:>6} {sd:>10} {dr:>9} {pct:>8.1f}% "
-              f"{100 - pct:>9.1f}%{flag}")
+        print(f"{season:>7} {teams:>6} {sd:>10} {dr:>9} {pct:>8.1f}% {100 - pct:>9.1f}%{flag}")
 
 
 def roster_consumption(conn: psycopg.Connection) -> None:
@@ -487,16 +497,20 @@ def roster_consumption(conn: psycopg.Connection) -> None:
         b["drafted"].append(float(drafted))
         teams_by_season[s] = int(team_count)
 
-    print(f"{'season':>7} {'teams':>6} {'median used':>12} {'median drafted':>15} "
-          f"{'median added':>13}")
+    print(
+        f"{'season':>7} {'teams':>6} {'median used':>12} {'median drafted':>15} "
+        f"{'median added':>13}"
+    )
     print("-" * 56)
     for season in sorted(buckets):
         used = buckets[season]["used"]
         drafted = buckets[season]["drafted"]
-        print(f"{season:>7} {teams_by_season[season]:>6} "
-              f"{statistics.median(used):>12.1f} "
-              f"{statistics.median(drafted):>15.1f} "
-              f"{statistics.median(used) - statistics.median(drafted):>13.1f}")
+        print(
+            f"{season:>7} {teams_by_season[season]:>6} "
+            f"{statistics.median(used):>12.1f} "
+            f"{statistics.median(drafted):>15.1f} "
+            f"{statistics.median(used) - statistics.median(drafted):>13.1f}"
+        )
 
 
 def main() -> None:

@@ -98,6 +98,22 @@ Standard deviation is 23.4 with a mean successive change of 38.4.
 Confirmed independently per player: **87–100%** of Shai Gilgeous-Alexander's
 games land on days he was held (2019 is the outlier at 41.5%).
 
+**Since confirmed exactly, so this caveat can be retired.** Two checks settle
+it beyond shape. First, `scoring_period` maps one-to-one onto a calendar date
+in 1326 of 1328 season-period pairs; the two exceptions are 2026 periods 162
+and 169, where a West Coast game tips at midnight Eastern and spills into the
+next date. `scoring_period` *is* the day, and is therefore an exact join key.
+
+Second, and decisively: summing the daily lines of *started* players through
+this join reproduces the independently stored team category totals in
+`matchup_team_stats` for 2026 of 2030 sides across all eight seasons, to the
+point. A join misaligned by even one day could not do that. The four
+exceptions are all 2021, where ESPN omits days from its own player cards.
+
+A date column on `daily_lineup_slots` is therefore not needed for
+correctness. It would be a convenience for human-readable queries, nothing
+more.
+
 **SQL for the audit:**
 
 ```sql
