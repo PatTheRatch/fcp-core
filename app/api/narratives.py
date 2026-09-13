@@ -26,6 +26,7 @@ from app.api.schemas import (
     TeamCategoryProfileOut,
 )
 from app.db.models import DraftPick, League, Player, PlayerSeasonStat, Team
+from app.draft.projections import projection_problem
 
 router = APIRouter(tags=["narratives"])
 
@@ -253,7 +254,17 @@ def get_projection_gaps(
     belong to players who were projected a full season and did not get one.
     The games columns are returned alongside so that is visible rather than
     mistaken for a collapse in form.
+
+    A season whose stored projection is not a forecast is refused outright:
+    for 2023 the "projection" was captured forty games in, and this view
+    would report every player beating a forecast made of his own results.
     """
+    problem = projection_problem(league_season.season)
+    if problem:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{league_season.season} has no usable preseason projection: {problem}",
+        )
     projected = (
         select(
             PlayerSeasonStat.player_id.label("player_id"),

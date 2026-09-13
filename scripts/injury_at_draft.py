@@ -104,7 +104,7 @@ from sqlalchemy.orm import Session
 from app.db.models import DraftPick, LeagueSeason, Player, PlayerGameStat, PlayerSeasonStat
 from scripts.board_calibration import (
     BUCKETS,
-    COVID_SEASON,
+    UNUSABLE,
     Compared,
     collect,
 )
@@ -224,14 +224,17 @@ def _median_projected(session: Session, season: int) -> float:
     return (values[mid - 1] + values[mid]) / 2
 
 
-def classify(compared: Compared, early: int, season_games: int,
-             projected: float, median_projected: float) -> str:
+def classify(
+    compared: Compared, early: int, season_games: int, projected: float, median_projected: float
+) -> str:
     if early == 0:
         return "OUT_AT_DRAFT"
     if projected > 0 and season_games < LOST_SEASON_SHARE * projected:
         return "HURT_LATER"
-    if projected > 0 and median_projected > 0 and (
-        projected < DISCOUNTED_SHARE_OF_MEDIAN * median_projected
+    if (
+        projected > 0
+        and median_projected > 0
+        and (projected < DISCOUNTED_SHARE_OF_MEDIAN * median_projected)
     ):
         return "DISCOUNTED"
     return "HEALTHY"
@@ -335,8 +338,7 @@ def _class_table(rows: Sequence[Classified]) -> list[str]:
     lines = [
         f"| {'class':<13} | {'n':>4} | {'mean board':>10} | {'mean paid':>9} "
         f"| {'mean error':>10} | {'abs error':>9} | {'share':>6} |",
-        f"|{'-' * 15}|{'-' * 6}|{'-' * 12}|{'-' * 11}|{'-' * 12}|"
-        f"{'-' * 11}|{'-' * 8}|",
+        f"|{'-' * 15}|{'-' * 6}|{'-' * 12}|{'-' * 11}|{'-' * 12}|{'-' * 11}|{'-' * 8}|",
     ]
     for klass in CLASSES:
         if klass not in agg:
@@ -399,9 +401,11 @@ def report(rows: Sequence[Classified], session: Session) -> str:
         add(f"| first {cutoff} | {drafted} | {out_n} | {out_n / drafted:.1%} |")
     entered, left = _nested_check(session)
     add("")
-    add(f"Players ADDED to the class as the window grows: **{entered}** "
+    add(
+        f"Players ADDED to the class as the window grows: **{entered}** "
         f"(must be 0 for nesting). Removed as the window grows: **{left}** "
-        f"(players who returned by the longer cutoff).")
+        f"(players who returned by the longer cutoff)."
+    )
     add("")
 
     add("## Class outcomes, per season")
@@ -413,19 +417,18 @@ def report(rows: Sequence[Classified], session: Session) -> str:
         season_rows = [r for r in rows if r.compared.season == season]
         if not season_rows:
             continue
-        flag = " — COVID-shortened" if season == COVID_SEASON else ""
+        flag = f" — {UNUSABLE[season]}" if season in UNUSABLE else ""
         teams = season_rows[0].compared.team_count
         add(f"### {season} ({teams} teams){flag}")
         add("")
         out.extend(_class_table(season_rows))
         add("")
 
-    add("## Pooled by team count (2020 excluded)")
+    add("## Pooled by team count (seasons with unusable projections excluded)")
     add("")
     for teams in sorted({r.compared.team_count for r in rows}):
         group = [
-            r for r in rows
-            if r.compared.team_count == teams and r.compared.season != COVID_SEASON
+            r for r in rows if r.compared.team_count == teams and r.compared.season not in UNUSABLE
         ]
         if not group:
             continue
@@ -440,8 +443,10 @@ def report(rows: Sequence[Classified], session: Session) -> str:
     ordered = sorted(rows, key=lambda r: r.compared.error)
     add("### Ten largest overpays (mean error most negative)")
     add("")
-    add("| season | name | class | games<=14 | season games | proj games "
-        "| board | paid | error | keeper |")
+    add(
+        "| season | name | class | games<=14 | season games | proj games "
+        "| board | paid | error | keeper |"
+    )
     add("|---|---|---|---|---|---|---|---|---|---|")
     for r in ordered[:10]:
         c = r.compared
@@ -453,8 +458,10 @@ def report(rows: Sequence[Classified], session: Session) -> str:
     add("")
     add("### Ten largest underpays (mean error most positive)")
     add("")
-    add("| season | name | class | games<=14 | season games | proj games "
-        "| board | paid | error | keeper |")
+    add(
+        "| season | name | class | games<=14 | season games | proj games "
+        "| board | paid | error | keeper |"
+    )
     add("|---|---|---|---|---|---|---|---|---|---|")
     for r in ordered[-10:][::-1]:
         c = r.compared
@@ -470,13 +477,9 @@ def report(rows: Sequence[Classified], session: Session) -> str:
     add("These are the errors injury cannot explain. Each is a player the room")
     add("saw play early and often, priced well away from board.")
     add("")
-    add("| season | name | board | paid | error | games<=14 | season games "
-        "| proj games |")
+    add("| season | name | board | paid | error | games<=14 | season games | proj games |")
     add("|---|---|---|---|---|---|---|---|")
-    big = [
-        r for r in rows
-        if r.klass == "HEALTHY" and abs(r.compared.error) >= 20
-    ]
+    big = [r for r in rows if r.klass == "HEALTHY" and abs(r.compared.error) >= 20]
     for r in sorted(big, key=lambda r: r.compared.error):
         c = r.compared
         add(
@@ -497,10 +500,7 @@ def report(rows: Sequence[Classified], session: Session) -> str:
     add("|---|---|---|---|---|")
     total_freed = 0
     for season in SEASONS:
-        group = [
-            r for r in rows
-            if r.compared.season == season and r.klass == "OUT_AT_DRAFT"
-        ]
+        group = [r for r in rows if r.compared.season == season and r.klass == "OUT_AT_DRAFT"]
         if not group:
             continue
         board_sum = sum(r.compared.predicted for r in group)
@@ -532,8 +532,7 @@ def report(rows: Sequence[Classified], session: Session) -> str:
     add("")
     for teams in sorted({r.compared.team_count for r in rows}):
         group = [
-            r for r in rows
-            if r.compared.team_count == teams and r.compared.season != COVID_SEASON
+            r for r in rows if r.compared.team_count == teams and r.compared.season not in UNUSABLE
         ]
         if not group:
             continue

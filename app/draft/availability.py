@@ -44,12 +44,16 @@ from sqlalchemy import Float, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import PlayerSeasonStat
+from app.draft.projections import UNUSABLE_PROJECTIONS
 from app.draft.valuation import PlayerProjection
 
 #: Seasons excluded from the league-wide figure. 2019-20 was suspended in
 #: March and resumed as a bubble for some teams only, which puts its 0.710
 #: far outside every other season and describes nothing repeatable.
-DISTORTED_SEASONS = (2020,)
+#: Seasons whose projections are not forecasts, from the shared registry.
+#: 2023 was only ever excluded here by accident -- its snapshot projections
+#: all fall under MIN_PROJECTED_GAMES -- and an accident is not a rule.
+DISTORTED_SEASONS = tuple(sorted(UNUSABLE_PROJECTIONS))
 
 #: Players need a real projected workload before their availability says
 #: anything; a player projected for ten games who plays five is noise.

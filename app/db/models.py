@@ -714,9 +714,16 @@ SEASON_STAT_KINDS = ("projected", "total")
 class PlayerSeasonStat(Base):
     """A player's whole season, either as forecast or as it happened.
 
-    `kind` is "projected" for ESPN's preseason forecast and "total" for what
-    the player actually did. Both come free with the player cards already
-    fetched for the daily lines.
+    `kind` is "projected" for what ESPN's player card labels the season's
+    projection and "total" for what the player actually did. Both come free
+    with the player cards already fetched for the daily lines.
+
+    "Projected" is a preseason forecast for most seasons and not for all:
+    ESPN retains whatever projection it last served, and for 2023 that is a
+    rest-of-season projection captured mid-year. Nothing on the row records
+    which. `app.draft.projections` is the registry of seasons where it is
+    not a forecast, and everything that reads these lines as one consults
+    it.
 
     The actual totals are partly redundant with summing `player_game_stats`,
     and kept anyway: ESPN omits days from its own cards for some seasons, so

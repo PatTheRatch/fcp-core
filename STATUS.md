@@ -288,12 +288,53 @@ A tier multiplier fitted across seasons would help on average at 14 teams
 and be wrong by about 0.2 at the top in any given year. Whether to fit one
 is an open decision, recorded here rather than made quietly.
 
-The largest overpays point at a second cause with its own fix: Jaylen Brown
-$28 to $1, Kyrie Irving $32 to $5, Brook Lopez $31 to $4, Jonathan Isaac
-$27 to $5 -- players known to be hurt at draft time whose projection still
-assumed a full season. The room knew; the board did not. That is the
-injury-aware valuation this framework always intended, now with a measured
-cost attached.
+The largest overpays looked like a second cause, and were two.
+`scripts/injury_at_draft.py` (written on the VPS, reviewed and merged)
+classes every drafted player by games actually played -- zero in the first
+fourteen scoring periods means the room knew he was out -- and attributes
+the board's error to each class. Known-hurt players are 5.3% of the
+board's absolute error at 14 teams; HEALTHY players are 88.7%. Removing
+the known-hurt from the tier calibration moves no bucket by more than
+0.03. So injury explains neither the light top nor the heavy bottom: the
+compression is the market, and the tier-curve question stands on its own.
+An injury-aware board is still worth having -- $85 of 2026's budget and
+$69 of 2025's went to players the room already knew were out -- but it is
+a 5% fix, not the fix. `daily_lineup_slots.injury_status` is NOT how to
+build it: one ingest-time snapshot, not a time series.
+
+The other half of the overpay list was our own data. See the next section.
+
+### 2023's projections are not projections
+
+Six of the ten largest overpays were 2023 players the room saw play all
+year -- Brook Lopez $31 to $4 and 78 games -- with projected games of 37
+to 41. Every 2023 projected line is like that: median 39 games against 63
+to 74 in every real preseason year, with per-game rates untouched. Each
+player's projected-to-actual games ratio sits at 0.59 with an interquartile
+range of 0.18, tighter than any true forecast year (0.27 to 0.34), and his
+projected per-game rate matches his actual at 1.005 with half the spread of
+any other season. That is a rest-of-season projection captured on one date
+about 41% of the way through the year, which ESPN then kept as *the*
+projection. It is 60% hindsight. The 2023 board was built on it, the
+16-team calibration figures were built on it -- which is why they looked
+milder, not because 16 teams is gentler -- and the projection-gaps view
+would report every 2023 player beating a forecast made of his own results.
+
+`app/draft/projections.py` is now the registry of seasons whose stored
+projections are not a forecast, with the reason for each (2020 and 2023),
+and a rule, `looks_like_snapshot`, that flags the 2023 shape from the
+numbers alone so a future season with the same problem fails a test rather
+than a glance. The projection loader refuses those seasons unless told it
+is studying them; availability derives its exclusions from the registry
+rather than from the accident that 2023's snapshot games all fell under a
+threshold; the projection-gaps view answers 422 with the reason; both
+calibration scripts exclude and label them. The model's docstring no longer
+promises a preseason forecast it cannot keep.
+
+What this does to the earlier findings: the 14-team tier figures are
+unchanged to the digit, because 2023 was never in them. The 16-team row is
+gone, because its only season was 2023. The tier-curve decision is exactly
+where it was, on cleaner evidence.
 
 ### The deployment gap, and the guard
 

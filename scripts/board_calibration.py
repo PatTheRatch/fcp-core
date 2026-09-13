@@ -72,6 +72,7 @@ from sqlalchemy.orm import Session
 from app.db.models import LeagueSeason, Player
 from app.draft import pool
 from app.draft.market import PriceBoard, price_board
+from app.draft.projections import UNUSABLE_PROJECTIONS
 from app.draft.valuation import value_players
 
 #: (label, first rank, last rank) with rank 1-based and inclusive.
@@ -85,7 +86,12 @@ BUCKETS: tuple[tuple[str, int, int], ...] = (
     ("101+", 101, 10_000),
 )
 
+#: Kept as a name other scripts import; the rule itself is the registry.
 COVID_SEASON = 2020
+#: Seasons whose stored projections are not a forecast and so cannot be
+#: calibrated against. 2020 (COVID) and 2023 (a mid-season snapshot, which
+#: made the 16-team figures look better than the board is).
+UNUSABLE = UNUSABLE_PROJECTIONS
 SEASONS: tuple[int, ...] = tuple(range(2019, 2027))
 REPORT_PATH = Path("reports/board_calibration.md")
 
@@ -131,7 +137,9 @@ def _board_for(session: Session, league_season: LeagueSeason) -> PriceBoard:
     `acquisition_budget` (the latter is the FAAB pot and is half the size).
     """
     categories = pool.season_categories(session, league_season)
-    projections = pool.load_projections(session, league_season.season, kind="projected")
+    projections = pool.load_projections(
+        session, league_season.season, kind="projected", allow_unusable=True
+    )
     slots = pool.roster_size_for(league_season)
     values = value_players(projections, categories)
     return price_board(
@@ -166,9 +174,7 @@ def collect(session: Session) -> list[SeasonResult]:
 
         names = {
             int(espn_id): str(name)
-            for espn_id, name in session.execute(
-                select(Player.espn_player_id, Player.name)
-            ).all()
+            for espn_id, name in session.execute(select(Player.espn_player_id, Player.name)).all()
         }
 
         compared: list[Compared] = []
@@ -218,10 +224,7 @@ def _fmt_bucket_rows(rows: Iterable[Compared]) -> list[str]:
         f"| {'mean error':>10} | {'MAE':>6} | {'ratio':>6} |"
     )
     lines.append(header)
-    lines.append(
-        f"|{'-' * 10}|{'-' * 6}|{'-' * 11}|{'-' * 13}|{'-' * 12}|"
-        f"{'-' * 8}|{'-' * 8}|"
-    )
+    lines.append(f"|{'-' * 10}|{'-' * 6}|{'-' * 11}|{'-' * 13}|{'-' * 12}|{'-' * 8}|{'-' * 8}|")
     for label, lo, hi in BUCKETS:
         bucket = [c for c in rows if lo <= c.rank <= hi]
         if not bucket:
@@ -261,7 +264,7 @@ def report(results: Sequence[SeasonResult]) -> str:
     add("| season | teams | board | drafted | matched | off-board | off-board $ | total $ |")
     add("|---|---|---|---|---|---|---|---|")
     for r in results:
-        flag = "  *(COVID)*" if r.season == COVID_SEASON else ""
+        flag = "  *(unusable projections)*" if r.season in UNUSABLE else ""
         add(
             f"| {r.season}{flag} | {r.team_count} | {r.board_size} | {r.drafted} "
             f"| {len(r.compared)} | {len(r.off_board)} | ${r.off_board_money} "
@@ -270,7 +273,7 @@ def report(results: Sequence[SeasonResult]) -> str:
     add("")
 
     for r in results:
-        flag = " — COVID-shortened season" if r.season == COVID_SEASON else ""
+        flag = f" — {UNUSABLE[r.season]}" if r.season in UNUSABLE else ""
         add(f"## {r.season} ({r.team_count} teams){flag}")
         add("")
         out.extend(_fmt_bucket_rows(r.compared))
@@ -280,10 +283,11 @@ def report(results: Sequence[SeasonResult]) -> str:
     add("")
     add("Pooled across seasons, split by team count: a fixed pot shared wider")
     add("means the same player is worth fewer dollars in a bigger league, so")
-    add("mixing sizes would blur the answer. 2020 excluded here.")
+    add("mixing sizes would blur the answer. Seasons with unusable projections")
+    add(f"({', '.join(str(y) for y in sorted(UNUSABLE))}) excluded here.")
     add("")
     for teams in sorted({r.team_count for r in results}):
-        seasons = [r for r in results if r.team_count == teams and r.season != COVID_SEASON]
+        seasons = [r for r in results if r.team_count == teams and r.season not in UNUSABLE]
         if not seasons:
             continue
         pooled = [c for r in seasons for c in r.compared]
@@ -298,11 +302,11 @@ def report(results: Sequence[SeasonResult]) -> str:
     add("Included so the team-count split above can be sanity-checked against")
     add("the naive pool. Do not read conclusions off this table.")
     add("")
-    non_covid = [c for r in results if r.season != COVID_SEASON for c in r.compared]
+    non_covid = [c for r in results if r.season not in UNUSABLE for c in r.compared]
     out.extend(_fmt_bucket_rows(non_covid))
     add("")
     with_covid = [c for r in results for c in r.compared]
-    add("Including 2020:")
+    add("Including the unusable seasons, for reference only:")
     add("")
     out.extend(_fmt_bucket_rows(with_covid))
     add("")

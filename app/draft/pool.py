@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import LeagueSeason, LeagueSeasonCategory, Player, PlayerSeasonStat
 from app.draft.lineup import lineup_from_settings
+from app.draft.projections import projection_problem
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
 
 #: Stats a valuation needs beyond the scored categories themselves: the made
@@ -30,7 +31,12 @@ def season_categories(session: Session, league_season: LeagueSeason) -> list[str
 
 
 def load_projections(
-    session: Session, season: int, *, kind: str = "projected", min_games: float = 0.0
+    session: Session,
+    season: int,
+    *,
+    kind: str = "projected",
+    min_games: float = 0.0,
+    allow_unusable: bool = False,
 ) -> list[PlayerProjection]:
     """Every player with a stored season line, as projections.
 
@@ -38,9 +44,21 @@ def load_projections(
     happened, which is what makes a backtest possible: value the field on
     what was known beforehand, then score it against what followed.
 
+    A season whose stored projections are not a forecast (see
+    `app.draft.projections`) is refused with the reason, because a board
+    built on it looks right and is not. `allow_unusable` is for the
+    calibration scripts, which load it on purpose and flag it in their
+    output; nothing that plans a draft should pass it.
+
     Raw totals are used rather than the parsed columns, because a valuation
     needs the shooting components and those are not all promoted to columns.
     """
+    problem = projection_problem(season)
+    if kind == "projected" and problem and not allow_unusable:
+        raise ValueError(
+            f"{season} projections are not usable as a forecast: {problem}. "
+            "Pass allow_unusable=True only to study them, never to draft on them."
+        )
     rows = session.execute(
         select(Player.espn_player_id, Player.name, PlayerSeasonStat)
         .join(PlayerSeasonStat, PlayerSeasonStat.player_id == Player.id)
