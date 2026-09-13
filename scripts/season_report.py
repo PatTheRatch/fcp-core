@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import os
 import re
 from decimal import Decimal
@@ -472,6 +473,13 @@ def _bench(cur: Cur, season_id: int, team_id: int, season: int) -> Row:
 
     Only BE counts. An IR slot is not a decision the manager got wrong, and a
     bench day for a player whose NBA team did not play costs nothing.
+
+    Only periods in which the team had a matchup count either: a team knocked
+    out in week 20 still sets lineups in weeks 21 and 22, and nothing it
+    benches there costs it anything. Counting those would charge eliminated
+    teams for weeks they could not lose. ESPN gives such a team a one-sided
+    matchup row with category stats attached, so the test is for an opponent,
+    not for a matchup.
     """
     cur.execute(
         f"""
@@ -482,6 +490,12 @@ def _bench(cur: Cur, season_id: int, team_id: int, season: int) -> Row:
           ON g.player_id = d.player_id AND g.scoring_period = d.scoring_period
          AND g.season = %s AND g.played
         WHERE mp.league_season_id = %s AND NOT d.started AND d.slot = 'BE'
+          AND EXISTS (
+                SELECT 1 FROM matchups m
+                WHERE m.matchup_period_id = mp.id
+                  AND m.home_team_id IS NOT NULL AND m.away_team_id IS NOT NULL
+                  AND d.team_id IN (m.home_team_id, m.away_team_id)
+          )
         GROUP BY 1 ORDER BY comp DESC
         """,
         (season, season_id),
@@ -502,6 +516,12 @@ def _bench(cur: Cur, season_id: int, team_id: int, season: int) -> Row:
          AND g.season = %s AND g.played
         JOIN players p ON p.id = d.player_id
         WHERE mp.league_season_id = %s AND d.team_id = %s AND NOT d.started AND d.slot = 'BE'
+          AND EXISTS (
+                SELECT 1 FROM matchups m
+                WHERE m.matchup_period_id = mp.id
+                  AND m.home_team_id IS NOT NULL AND m.away_team_id IS NOT NULL
+                  AND d.team_id IN (m.home_team_id, m.away_team_id)
+          )
         ORDER BY comp DESC LIMIT 6
         """,
         (season, season_id, team_id),
@@ -803,7 +823,42 @@ def _findings(d: Row) -> list[tuple[str, str]]:
     return out
 
 
-def render(d: Row) -> str:
+#: Where a written note may be placed. A note file keyed by anything else is
+#: rejected at load rather than silently dropped.
+NOTE_SLOTS = (
+    "lede",
+    "profile",
+    "ledger",
+    "draft",
+    "production",
+    "trades",
+    "wire",
+    "bench",
+    "last",
+    "closing",
+)
+
+
+def load_notes(path: Path) -> dict[str, str]:
+    """Read written commentary: a JSON object of slot name to one or more paragraphs.
+
+    Notes are optional and per team. Without them a report is the tables and
+    the rule-derived findings, which is what most teams want; with them the
+    same page carries prose in the named slots. Paragraphs are split on a
+    blank line. The text is trusted as HTML so a note can carry emphasis.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise SystemExit(f"{path}: expected a JSON object of slot name to text")
+    unknown = sorted(set(raw) - set(NOTE_SLOTS))
+    if unknown:
+        raise SystemExit(
+            f"{path}: unknown slot(s) {', '.join(unknown)}. Valid: {', '.join(NOTE_SLOTS)}"
+        )
+    return {k: str(v) for k, v in raw.items()}
+
+
+def render(d: Row, notes: dict[str, str] | None = None) -> str:
     team = d["team"]
     record = record_line(d["record"])
     cats = f"{team['categories_won']}–{team['categories_lost']}"
@@ -814,8 +869,18 @@ def render(d: Row) -> str:
     wv_rank = next((i + 1 for i, r in enumerate(wv) if r["name"] == team["name"]), None)
     wv_mine = next((r for r in wv if r["name"] == team["name"]), None)
 
+    written = notes or {}
     parts: list[str] = []
     add = parts.append
+
+    def note(slot: str, *, lede: bool = False) -> None:
+        """Drop written commentary into a slot, if any was supplied."""
+        text = written.get(slot)
+        if not text:
+            return
+        cls = "read lede" if lede else "read"
+        body = "".join(f"<p>{para.strip()}</p>" for para in text.split("\n\n") if para.strip())
+        add(f'<div class="{cls}">{body}</div>')
 
     add(f"<title>{e(team['name'])}, {d['season']}</title>")
     add(HEAD)
@@ -858,10 +923,12 @@ def render(d: Row) -> str:
         cls = ' class="hi"' if hi else ""
         add(f"<div{cls}><dt>{e(label)}</dt><dd>{value}</dd></div>")
     add("</dl>")
+    note("lede", lede=True)
 
     # -- identity ---------------------------------------------------------
     add('<section><div class="shead"><h2>Category profile</h2>')
     add('<span class="tag">Win rate, every matchup</span></div>')
+    note("profile")
     add('<div class="cats">')
     for r in d["rates"]:
         under = " under" if r["pct"] < 50 else ""
@@ -911,6 +978,7 @@ def render(d: Row) -> str:
     # -- ledger -----------------------------------------------------------
     add('<section><div class="shead"><h2>Week by week</h2>')
     add(f'<span class="tag">{len(d["weeks"])} matchups</span></div>')
+    note("ledger")
     add('<div class="ledger"><div class="lg">')
     add('<div class="hd"></div><div class="hd l">Opponent</div>')
     for c in CATS:
@@ -948,6 +1016,7 @@ def render(d: Row) -> str:
         spend = sum(p["cost"] or 0 for p in d["draft"])
         add('<section><div class="shead"><h2>The draft</h2>')
         add(f'<span class="tag">${spend} · {len(d["draft"])} players</span></div>')
+        note("draft")
         add(
             '<div class="wrap"><table><thead><tr>'
             "<th>Player</th><th>Cost</th><th>Games</th><th>Banked</th><th>Per $</th>"
@@ -982,6 +1051,7 @@ def render(d: Row) -> str:
         share = 100 * d["acquired_comp"] / total if total else 0
         add('<section><div class="shead"><h2>Where the production came from</h2>')
         add(f'<span class="tag">{share:.0f}% acquired after the draft</span></div>')
+        note("production")
         add(
             '<div class="wrap"><table><thead><tr>'
             "<th>Player</th><th>Games</th><th>Banked</th><th>Origin</th>"
@@ -1003,6 +1073,7 @@ def render(d: Row) -> str:
             f'<span class="tag">{len(d["trades"])} reconstructed · '
             f"ESPN counts {reported}</span></div>"
         )
+        note("trades")
         add('<div class="trades">')
         for tr in d["trades"]:
             got = ", ".join(e(r["name"]) for r in tr["in"]) or "—"
@@ -1045,6 +1116,7 @@ def render(d: Row) -> str:
         f'<span class="tag">{d["waivers"]["won"]} claims won · '
         f"{d['waivers']['failed']} failed</span></div>"
     )
+    note("wire")
     add(
         f"<p>${d['waivers']['spent']} of FAAB across {d['waivers']['won']} winning claims. "
         f"Top bid ${d['waivers']['top_bid'] or 0}. {e(wv_line)}</p>"
@@ -1071,6 +1143,7 @@ def render(d: Row) -> str:
     b = d["bench"]
     add('<section><div class="shead"><h2>The bench</h2>')
     add(f'<span class="tag">{b["days"]} wasted player-days</span></div>')
+    note("bench")
     add(
         f"<p>{num(b['comp'])} of production sat on the bench across {b['days']} player-days — "
         f"{ordinal(b['rank'])} most of {b['of']} teams.</p>"
@@ -1103,6 +1176,7 @@ def render(d: Row) -> str:
             f'<span class="tag">Week {week["period"]} · {e(week["opponent"])} · '
             f"{e(week['score'])}</span></div>"
         )
+        note("last")
         add(
             f"<p>{lw['mine_started']} starting slots set against {lw['theirs_started']}. "
             f"{lw['mine_played']} of yours produced a game; "
@@ -1155,6 +1229,12 @@ def render(d: Row) -> str:
         for heading, body in findings:
             add(f"<li><div><h3>{e(heading)}</h3><p>{e(body)}</p></div></li>")
         add("</ol></section>")
+
+    if written.get("closing"):
+        add('<section class="narrow"><div class="shead"><h2>Last word</h2>')
+        add('<span class="tag">Written</span></div>')
+        note("closing")
+        add("</section>")
 
     add(
         "<footer>Full Court Press · compiled from daily lineups, per-category matchup detail "
@@ -1238,6 +1318,12 @@ section.narrow{max-width:700px}
   letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
 p{margin:0 0 16px;max-width:66ch}
 .note{color:var(--muted);font-size:15px}
+.read{max-width:66ch;margin:0 0 4px}
+.read p{margin:0 0 16px}
+.read p:last-child{margin-bottom:0}
+.read.lede{margin:34px 0 0;border-left:3px solid var(--accent);padding-left:22px}
+.read.lede p{font-size:20px;line-height:1.55}
+.read.lede p:first-child::first-line{font-weight:600}
 .note.caption{margin-top:18px}
 .wrap{overflow-x:auto;margin:22px 0 10px}
 table{border-collapse:collapse;width:100%;min-width:560px;
@@ -1337,10 +1423,20 @@ def main() -> None:
     ap.add_argument("--team", help="team name, exactly as ESPN holds it")
     ap.add_argument("--all", action="store_true", help="every team in the season")
     ap.add_argument("--out", default="reports", help="directory for the HTML (default: reports/)")
+    ap.add_argument(
+        "--notes",
+        type=Path,
+        help="JSON file of written commentary for the team, keyed by slot "
+        f"({', '.join(NOTE_SLOTS)}). Only valid with --team.",
+    )
     args = ap.parse_args()
 
     if not args.team and not args.all:
         ap.error("pass --team NAME or --all")
+    if args.notes and args.all:
+        ap.error("--notes is per team, so pass it with --team rather than --all")
+
+    notes = load_notes(args.notes) if args.notes else None
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1353,7 +1449,7 @@ def main() -> None:
         for name in names:
             data = gather(conn, args.season, name)
             path = out / f"{slug(name)}-{args.season}.html"
-            path.write_text(render(data), encoding="utf-8")
+            path.write_text(render(data, notes), encoding="utf-8")
             print(f"{name}: {path}")
 
 
