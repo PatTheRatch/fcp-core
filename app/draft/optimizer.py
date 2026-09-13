@@ -16,14 +16,17 @@ total is just the sum of everyone on it. And ESPN's projections run about
 13% optimistic on games, so each player's season is scaled by the measured
 availability before being spread across the season's matchup periods.
 
-The solver is a greedy seed followed by swap improvement: fill the roster by
-value per dollar, then keep making the single swap that most raises expected
-wins until none does. It is not guaranteed optimal, and it is fast, needs no
-dependency, handles the non-linear objective directly, and is easy to read.
-If it ever proves too weak the objective is already in the right shape for
-a proper solver.
+The solver is swap improvement from several starting rosters: fill a roster,
+then keep making the single swap that most raises expected wins until none
+does, and keep the best of the runs. A single greedy start by value per
+dollar turned out to be a trap. Against 2026 it reached 5.95 expected wins
+while every one of twelve random starts did better, the best by 0.30, so
+the search now begins from the greedy roster and a fixed set of shuffled
+ones. Not guaranteed optimal; fast, dependency-free, handles the non-linear
+objective directly, and deterministic for a given seed.
 """
 
+import random
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -151,60 +154,71 @@ def _plan(
     )
 
 
-def optimize(
-    candidates: Sequence[Candidate],
-    distributions: Sequence[CategoryDistribution],
+#: Shuffled starting rosters tried in addition to the greedy one. Twelve was
+#: enough for the best run to appear repeatedly against 2026; each costs
+#: well under a second.
+DEFAULT_RESTARTS = 12
+
+
+def _greedy(
+    ordered: Sequence[Candidate],
     *,
-    budget: int,
+    keep: Sequence[Candidate],
     roster_slots: int,
-    punt: Iterable[str] = (),
-    locked: Iterable[int] = (),
-    excluded: Iterable[int] = (),
-    minimum_bid: int = 1,
-) -> RosterPlan:
-    """The roster that maximises expected weekly category wins under a budget.
+    budget: int,
+    minimum_bid: int,
+) -> list[Candidate]:
+    """Fill a roster in the given order, always leaving the floor bids.
 
-    `locked` players are kept whatever happens, which is how a live draft
-    room feeds back what has already been bought. `excluded` players are
-    gone to someone else. Both exist so the same optimizer serves the plan
-    before the draft and the re-solve during it.
+    A shuffled order can take an expensive player early and then find
+    nothing affordable in the rest of its sequence, which would leave the
+    roster short. So after the ordered pass, any open slot is filled with
+    the cheapest remaining player who fits. A short roster is never a valid
+    start: it would score its missing slots as zero and could still win the
+    comparison on the strength of one star.
     """
-    punted = frozenset(punt)
-    keep = frozenset(locked)
-    gone = frozenset(excluded)
-    pool = [c for c in candidates if c.player_id not in gone]
-    by_id = {c.player_id: c for c in pool}
-
-    roster: list[Candidate] = [by_id[pid] for pid in keep if pid in by_id]
-    if len(roster) > roster_slots:
-        roster = roster[:roster_slots]
-
-    # Greedy seed by value per dollar, always leaving enough for the floor
-    # bids on whatever slots remain.
-    def worth(candidate: Candidate) -> float:
-        value = sum(candidate.weekly.get(k, 0.0) for k in candidate.weekly)
-        return value / max(1, candidate.price)
-
+    roster = list(keep)[:roster_slots]
     chosen = {c.player_id for c in roster}
     spent = sum(c.price for c in roster)
-    for candidate in sorted(pool, key=worth, reverse=True):
-        if len(roster) >= roster_slots:
-            break
-        if candidate.player_id in chosen:
-            continue
+    # The floor is what the cheapest remaining players actually cost, not a
+    # nominal minimum bid. Reserving $1 a slot when the cheapest man left
+    # costs $3 is how a roster ends up short with money unspent.
+    ascending = sorted((c.price for c in ordered), reverse=False)
+
+    def floor_for(open_slots: int) -> int:
+        cheapest = ascending[:open_slots]
+        return max(sum(cheapest), open_slots * minimum_bid)
+
+    def try_add(candidate: Candidate) -> None:
+        nonlocal spent
+        if len(roster) >= roster_slots or candidate.player_id in chosen:
+            return
         slots_after = roster_slots - len(roster) - 1
-        if spent + candidate.price + slots_after * minimum_bid > budget:
-            continue
+        if spent + candidate.price + floor_for(slots_after) > budget:
+            return
         roster.append(candidate)
         chosen.add(candidate.player_id)
         spent += candidate.price
 
-    if not roster:
-        return _plan([], distributions, punted)
+    for candidate in ordered:
+        try_add(candidate)
+    for candidate in sorted(ordered, key=lambda c: c.price):
+        try_add(candidate)
+    return roster
 
-    # Swap improvement: the single change that most raises expected wins,
-    # repeated until nothing does.
-    best = _plan(roster, distributions, punted)
+
+def _swap_improve(
+    roster: Sequence[Candidate],
+    pool: Sequence[Candidate],
+    distributions: Sequence[CategoryDistribution],
+    *,
+    punt: frozenset[str],
+    keep: frozenset[int],
+    budget: int,
+) -> RosterPlan:
+    """Repeat the single best swap until no swap raises expected wins."""
+    best = _plan(roster, distributions, punt)
+    chosen = set(best.player_ids)
     while True:
         improved: RosterPlan | None = None
         for index, outgoing in enumerate(best.players):
@@ -216,10 +230,71 @@ def optimize(
                     continue
                 trial = list(best.players)
                 trial[index] = incoming
-                plan = _plan(trial, distributions, punted)
+                plan = _plan(trial, distributions, punt)
                 if plan.expected_wins > (improved or best).expected_wins + 1e-9:
                     improved = plan
         if improved is None:
             return best
-        chosen = set(improved.player_ids)
         best = improved
+        chosen = set(best.player_ids)
+
+
+def optimize(
+    candidates: Sequence[Candidate],
+    distributions: Sequence[CategoryDistribution],
+    *,
+    budget: int,
+    roster_slots: int,
+    punt: Iterable[str] = (),
+    locked: Iterable[int] = (),
+    excluded: Iterable[int] = (),
+    minimum_bid: int = 1,
+    restarts: int = DEFAULT_RESTARTS,
+    seed: int = 0,
+) -> RosterPlan:
+    """The roster that maximises expected weekly category wins under a budget.
+
+    `locked` players are kept whatever happens, which is how a live draft
+    room feeds back what has already been bought. `excluded` players are
+    gone to someone else. Both exist so the same optimizer serves the plan
+    before the draft and the re-solve during it.
+
+    `restarts` shuffled starts are tried beside the greedy one and the best
+    result kept. `seed` fixes the shuffles, so the same inputs always give
+    the same roster.
+    """
+    punted = frozenset(punt)
+    keep = frozenset(locked)
+    gone = frozenset(excluded)
+    pool = [c for c in candidates if c.player_id not in gone]
+    by_id = {c.player_id: c for c in pool}
+    kept = [by_id[pid] for pid in keep if pid in by_id]
+    if not pool:
+        return _plan(kept[:roster_slots], distributions, punted)
+
+    def worth(candidate: Candidate) -> float:
+        return sum(candidate.weekly.values()) / max(1, candidate.price)
+
+    starts: list[list[Candidate]] = [sorted(pool, key=worth, reverse=True)]
+    shuffler = random.Random(seed)
+    for _ in range(max(0, restarts)):
+        shuffled = pool[:]
+        shuffler.shuffle(shuffled)
+        starts.append(shuffled)
+
+    # A start has to fill the roster. One that could not is never compared:
+    # it would score its empty slots as nothing and could still win on the
+    # strength of a single star, which is not a roster anyone can field.
+    required = min(roster_slots, len(pool) + len(kept))
+
+    best: RosterPlan | None = None
+    for ordered in starts:
+        roster = _greedy(
+            ordered, keep=kept, roster_slots=roster_slots, budget=budget, minimum_bid=minimum_bid
+        )
+        if len(roster) < required:
+            continue
+        plan = _swap_improve(roster, pool, distributions, punt=punted, keep=keep, budget=budget)
+        if best is None or plan.expected_wins > best.expected_wins + 1e-9:
+            best = plan
+    return best if best is not None else _plan([], distributions, punted)

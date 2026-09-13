@@ -140,8 +140,8 @@ each can be checked against a season that has already happened.
 | 1. Valuation: projections to comparable value | done |
 | 2. Targets: what totals actually win a category here | done |
 | 3. Market model: what this league pays for value | done |
-| 4. Optimizer: best roster under a budget | next |
-| 5. Live draft room: state, remaining pool, re-solve | last |
+| 4. Optimizer: best roster under a budget | done |
+| 5. Live draft room: state, remaining pool, re-solve | next |
 
 **Why this differs from the previous attempt.** That one simulated what we
 can now measure. It ran Monte Carlo over imagined drafts to guess category
@@ -149,6 +149,65 @@ targets and auction prices, because it had no league history to read. We
 have eight seasons: 1274 real auction prices, and every category result of
 every matchup. Simulation stays useful for a question history cannot answer,
 such as a rule change, but it should not be the first resort.
+
+### Optimizer
+
+The objective is expected categories won per week, not total value. A
+category won by a hair counts the same as one won by a mile, so piling value
+into a category already won is wasted. For each category the probability of
+beating an opponent comes from the measured opponent distribution, so it is
+this league's, at this size, in this era, and the sum is what gets
+maximised.
+
+Two measured facts keep the arithmetic honest. Managers start **98.4%** of
+their roster's production, because daily lineups with three utility slots
+leave almost nobody with a game on the bench, so a weekly total is just the
+sum of everyone rostered. And projections run 13% optimistic on games, so
+each season is scaled by measured availability before being spread across
+matchup periods.
+
+**The solver is swap improvement from several starts.** A single greedy
+start by value per dollar turned out to be a trap: against 2026 it reached
+5.95 expected wins while every one of twelve random starts beat it, the best
+by 0.30. It also produced a stars-and-scrubs roster, three stars and ten
+one-dollar fillers, that implicitly punted turnovers and field goal
+percentage. The search now runs from the greedy roster and twelve shuffled
+ones, deterministic for a given seed, and lands on a balanced roster
+instead.
+
+Two bugs the restarts exposed. A shuffled start could take an expensive
+player early, find nothing affordable later, and leave the roster short,
+which then won the comparison on the strength of one star. Short rosters are
+now rejected. And the floor reservation used a nominal dollar a slot when the
+cheapest man left cost three, which is how a roster ends up short with money
+unspent. It now reserves what the cheapest remaining players actually cost.
+
+**Backtested with no hindsight.** A 2026 roster built from preseason
+projections, then scored on what those players actually did against what
+opponents actually posted:
+
+| | expected | realised |
+|---|---|---|
+| single greedy start | 5.95 | 4.61 |
+| multi-start | 6.28 | **5.85** |
+| real league best | | 5.58 |
+| real league median | | 4.47 |
+
+Built with zero knowledge of the season, the multi-start roster would have
+been the best team in the league. The gap from expected to realised is
+projection error, which is a property of the projections and not the
+solver.
+
+**On concentration, one season is not evidence.** Capping any single player
+at a quarter of the budget realised 4.88 against 5.85 uncapped. But the
+entire gap is Anthony Davis at $48 playing 20 games, and the availability
+analysis predicts precisely this: injuries do not persist and do not vary by
+tier, so spreading the money buys a different lottery ticket, not a safer
+one. Recorded as inconclusive rather than as a result.
+
+Not yet modelled: positional eligibility. With three utility slots and daily
+lineups it is loosely binding, and the backtest roster fielded fine, but a
+roster of thirteen centres would pass the optimizer today.
 
 ### Market model
 
