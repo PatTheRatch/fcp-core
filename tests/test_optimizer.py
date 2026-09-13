@@ -6,9 +6,20 @@ and roster size bind, that punting drops a category from the sum, and that
 locked and excluded players behave as a live draft room needs them to.
 """
 
+from collections.abc import Mapping, Sequence
+
 import pytest
 
-from app.draft.optimizer import Candidate, fieldable, optimize, roster_totals, score
+from app.draft.lineup import DEFAULT_LINEUP
+from app.draft.optimizer import (
+    Candidate,
+    RosterPlan,
+    _plan,
+    fieldable,
+    optimize,
+    roster_totals,
+    score,
+)
 from app.draft.targets import CategoryDistribution
 
 
@@ -294,3 +305,115 @@ def test_a_swap_that_would_break_the_centre_cap_is_refused() -> None:
     )
 
     assert sum(1 for p in plan.players if p.position == "C") <= 2
+
+
+def _reference_swap_improve(
+    roster: Sequence[Candidate],
+    pool: Sequence[Candidate],
+    distributions: Sequence[CategoryDistribution],
+    *,
+    punt: frozenset[str],
+    keep: frozenset[int],
+    budget: int,
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
+) -> RosterPlan:
+    """The obvious swap loop, written for clarity and nothing else.
+
+    Every trial is rebuilt from scratch and its fieldability checked before
+    it is scored. That is roughly twenty-five times slower than the real one
+    on a full pool, and it is the definition the fast version has to match.
+    """
+    best = _plan(roster, distributions, punt)
+    chosen = set(best.player_ids)
+    while True:
+        improved: RosterPlan | None = None
+        for index, outgoing in enumerate(best.players):
+            if outgoing.player_id in keep:
+                continue
+            budget_left = budget - (best.cost - outgoing.price)
+            for incoming in pool:
+                if incoming.player_id in chosen or incoming.price > budget_left:
+                    continue
+                trial = list(best.players)
+                trial[index] = incoming
+                if not fieldable(trial, lineup, limits):
+                    continue
+                plan = _plan(trial, distributions, punt)
+                if plan.expected_wins > (improved or best).expected_wins + 1e-9:
+                    improved = plan
+        if improved is None:
+            return best
+        best = improved
+        chosen = set(best.player_ids)
+
+
+@pytest.mark.parametrize("punt", [(), ("TO",), ("FG%", "TO")])
+@pytest.mark.parametrize("restarts", [0, 3])
+def test_the_fast_search_reaches_the_same_roster_as_the_obvious_one(
+    monkeypatch: pytest.MonkeyPatch, punt: tuple[str, ...], restarts: int
+) -> None:
+    """The speed work must not have changed a single answer.
+
+    `_swap_improve` carries the roster's line across trials instead of
+    re-summing it, and checks fieldability only for a trial that has already
+    beaten the incumbent. Both are meant to be pure savings. This pins that:
+    the same pool, seed and punt set must give the same players and the same
+    expected wins, to the float.
+
+    Local search is chaotic -- one different tie-break early leads somewhere
+    else entirely -- so an equality here is a real signal rather than a
+    coincidence.
+    """
+    pool = [
+        cand(
+            i,
+            price=1 + (i * 7) % 40,
+            PTS=40.0 + (i * 13) % 60,
+            REB=10.0 + (i * 5) % 30,
+            TO=2.0 + (i % 7),
+            FGM=5.0 + (i % 9),
+            FGA=12.0 + (i % 11),
+        )
+        for i in range(1, 41)
+    ]
+    lineup = ("UT",) * 5
+    kwargs = dict(budget=100, roster_slots=5, lineup=lineup, restarts=restarts, punt=punt, seed=7)
+
+    fast = optimize(pool, [PTS, REB, TO, FG], **kwargs)  # type: ignore[arg-type]
+    monkeypatch.setattr("app.draft.optimizer._swap_improve", _reference_swap_improve)
+    slow = optimize(pool, [PTS, REB, TO, FG], **kwargs)  # type: ignore[arg-type]
+
+    assert fast.player_ids == slow.player_ids
+    assert fast.expected_wins == pytest.approx(slow.expected_wins, abs=1e-12)
+    assert fast.cost == slow.cost
+
+
+def test_carrying_the_roster_line_across_swaps_does_not_drift() -> None:
+    """The running total must still equal a total summed from scratch.
+
+    The search subtracts the outgoing player's line and adds the incoming
+    one rather than re-summing thirteen players. Repeated across a long
+    search that is an invitation to floating-point drift, and a drifting
+    total would quietly score the wrong roster highest.
+    """
+    pool = [
+        cand(
+            i,
+            price=1 + (i * 3) % 25,
+            PTS=30.0 + (i * 17) % 70,
+            REB=8.0 + (i * 11) % 25,
+            TO=1.5 + (i % 5),
+            FGM=4.0 + (i % 8),
+            FGA=9.0 + (i % 13),
+        )
+        for i in range(1, 36)
+    ]
+
+    plan = optimize(
+        pool, [PTS, REB, TO, FG], budget=90, roster_slots=6, lineup=("UT",) * 6, restarts=4
+    )
+
+    from_scratch = roster_totals(plan.players, ["PTS", "REB", "TO", "FG%"])
+    for category, value in from_scratch.items():
+        assert plan.totals[category] == pytest.approx(value, rel=1e-12)

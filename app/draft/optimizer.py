@@ -29,11 +29,15 @@ objective directly, and deterministic for a given seed.
 import random
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from math import erf, sqrt
 
 from app.draft.lineup import DEFAULT_LINEUP, can_field, within_position_limits
 from app.draft.market import PriceBoard
 from app.draft.targets import CategoryDistribution
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
+
+#: Folded into the z-score so the inner loop divides by nothing.
+_ROOT_TWO = sqrt(2.0)
 
 #: Stat keys a roster total needs: the counting categories, and the shooting
 #: components that the percentages are rebuilt from.
@@ -107,13 +111,27 @@ def candidates_from(
     return out
 
 
-def roster_totals(players: Iterable[Candidate], categories: Sequence[str]) -> dict[str, float]:
-    """Sum the roster's weekly lines, rebuilding percentages from components."""
+def _summed(players: Iterable[Candidate]) -> dict[str, float]:
+    """The roster's raw weekly line, stat key to total, percentages not yet built.
+
+    Kept separate from `roster_totals` because a swap changes it by one
+    subtraction and one addition, which is the whole reason the search is
+    fast enough to run between two bids.
+    """
     summed: dict[str, float] = {}
     for player in players:
         for key, value in player.weekly.items():
             summed[key] = summed.get(key, 0.0) + value
+    return summed
 
+
+def _totals_from(summed: Mapping[str, float], categories: Sequence[str]) -> dict[str, float]:
+    """Category totals from a raw line, rebuilding percentages from components.
+
+    A shooting percentage is made over attempted for the whole roster, never
+    the average of individual percentages, which would weight a player taking
+    two shots the same as one taking twenty.
+    """
     totals: dict[str, float] = {}
     for category in categories:
         if category in PERCENTAGE_COMPONENTS:
@@ -123,6 +141,11 @@ def roster_totals(players: Iterable[Candidate], categories: Sequence[str]) -> di
         else:
             totals[category] = summed.get(category, 0.0)
     return totals
+
+
+def roster_totals(players: Iterable[Candidate], categories: Sequence[str]) -> dict[str, float]:
+    """Sum the roster's weekly lines, rebuilding percentages from components."""
+    return _totals_from(_summed(players), categories)
 
 
 def score(
@@ -143,6 +166,57 @@ def score(
         if distribution.abbreviation not in punt:
             expected += probability
     return expected, probabilities
+
+
+#: A scored category reduced to the three numbers the inner loop needs:
+#: which key to read, how to turn a total into a z-score, and whether the
+#: category is flat (no spread, so every total is a coin flip).
+_Scored = tuple[str, float, float, bool]
+
+
+def _scored(distributions: Sequence[CategoryDistribution], punt: frozenset[str]) -> list[_Scored]:
+    """Flatten the distributions the search actually sums over.
+
+    `CategoryDistribution.win_probability` is the definition; this is the
+    same arithmetic with the per-call work hoisted out. The search evaluates
+    it millions of times, and a dataclass attribute lookup and two function
+    calls per category per trial is most of the cost.
+    """
+    out: list[_Scored] = []
+    for distribution in distributions:
+        if distribution.abbreviation in punt:
+            continue
+        flat = distribution.spread <= 0
+        # z = (total - mean) / spread, negated when less is better, then
+        # halved for the erf. Folded into one multiplier.
+        scale = 0.0 if flat else 1.0 / (distribution.spread * _ROOT_TWO)
+        if distribution.lower_is_better:
+            scale = -scale
+        out.append((distribution.abbreviation, distribution.mean, scale, flat))
+    return out
+
+
+def _expected_scored(totals: Mapping[str, float], scored: Sequence[_Scored]) -> float:
+    """Expected categories won, from the flattened distributions."""
+    expected = 0.0
+    for key, mean, scale, flat in scored:
+        if flat:
+            expected += 0.5
+        else:
+            expected += 0.5 + 0.5 * erf((totals.get(key, 0.0) - mean) * scale)
+    return expected
+
+
+def _expected(
+    totals: Mapping[str, float],
+    distributions: Sequence[CategoryDistribution],
+    punt: frozenset[str],
+) -> float:
+    """Expected categories won, without building the per-category breakdown.
+
+    `score` is the same number with the probabilities kept.
+    """
+    return _expected_scored(totals, _scored(distributions, punt))
 
 
 def fieldable(
@@ -244,31 +318,82 @@ def _swap_improve(
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
 ) -> RosterPlan:
-    """Repeat the single best swap until no swap raises expected wins."""
+    """Repeat the single best swap until no swap raises expected wins.
+
+    The result is the same roster the straightforward version reaches -- the
+    best fieldable swap, every sweep -- and there is a test that holds the
+    two to the same answer. The difference is how much work each trial costs,
+    and there are tens of thousands of trials per sweep.
+
+    Two things make it cheap. A swap changes the roster's line by one
+    subtraction and one addition, so the line is carried and adjusted rather
+    than summed from scratch. And fieldability, which is a bipartite matching
+    and by far the most expensive thing here, is checked only for a trial
+    that has already beaten the incumbent. Almost none do. Checking the
+    constraint first meant paying for a matching on every trial to reject it
+    on score a moment later.
+    """
+    categories = [d.abbreviation for d in distributions]
+    #: Split once rather than per trial: which categories are ratios, and
+    #: which are plain sums.
+    ratios = [(c, PERCENTAGE_COMPONENTS[c]) for c in categories if c in PERCENTAGE_COMPONENTS]
+    plain = [c for c in categories if c not in PERCENTAGE_COMPONENTS]
+    scored = _scored(distributions, punt)
+
     best = _plan(roster, distributions, punt)
     chosen = set(best.player_ids)
+    summed = _summed(best.players)
+
     while True:
-        improved: RosterPlan | None = None
+        threshold = best.expected_wins + 1e-9
+        swap: tuple[int, Candidate] | None = None
+
         for index, outgoing in enumerate(best.players):
             if outgoing.player_id in keep:
                 continue
             budget_left = budget - (best.cost - outgoing.price)
+            # The roster's line without this player, computed once for the
+            # whole inner loop rather than once per candidate.
+            without = {key: summed[key] - value for key, value in outgoing.weekly.items()}
+
             for incoming in pool:
                 if incoming.player_id in chosen or incoming.price > budget_left:
                     continue
+                weekly = incoming.weekly
+                totals = {key: without.get(key, 0.0) + weekly.get(key, 0.0) for key in plain}
+                for category, (made_key, attempted_key) in ratios:
+                    attempted = without.get(attempted_key, 0.0) + weekly.get(attempted_key, 0.0)
+                    made = without.get(made_key, 0.0) + weekly.get(made_key, 0.0)
+                    totals[category] = made / attempted if attempted else 0.0
+
+                expected = _expected_scored(totals, scored)
+                if expected <= threshold:
+                    continue
+                # Only now is a matching worth paying for. A swap that breaks
+                # the lineup is not a swap, whatever it does to the score.
                 trial = list(best.players)
                 trial[index] = incoming
-                # A swap that breaks the lineup is not a swap, whatever it
-                # would do to the score. Fieldability is a constraint.
                 if not fieldable(trial, lineup, limits):
                     continue
-                plan = _plan(trial, distributions, punt)
-                if plan.expected_wins > (improved or best).expected_wins + 1e-9:
-                    improved = plan
-        if improved is None:
+                # The margin is re-applied, not dropped: the obvious loop
+                # compares each further candidate against the incumbent plus
+                # 1e-9, and without that this accepts a swap better by a
+                # float's breadth and walks off to a different local optimum.
+                threshold = expected + 1e-9
+                swap = (index, incoming)
+
+        if swap is None:
             return best
-        best = improved
+        index, incoming = swap
+        players = list(best.players)
+        outgoing = players[index]
+        players[index] = incoming
+        best = _plan(players, distributions, punt)
         chosen = set(best.player_ids)
+        for key, value in outgoing.weekly.items():
+            summed[key] = summed[key] - value
+        for key, value in incoming.weekly.items():
+            summed[key] = summed.get(key, 0.0) + value
 
 
 def _repair_lineup(
