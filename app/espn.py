@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Any
 
 from espn_api.basketball import League
+from espn_api.basketball.constant import POSITION_MAP
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: espn-api issues its internal `requests.get()` calls with no timeout, so a
@@ -174,6 +175,70 @@ def player_names(league: League) -> dict[int, str]:
     """
     raw = getattr(league, "player_map", None) or {}
     return {int(k): str(v) for k, v in raw.items() if isinstance(k, int) and isinstance(v, str)}
+
+
+#: ESPN's `defaultPositionId` is one-based over the same order as
+#: POSITION_MAP, so id 5 is POSITION_MAP[4], the centre. `positionLimits` is
+#: keyed by that id, which is how "at most three centres" is expressed.
+_POSITION_ID_OFFSET = 1
+
+#: A limit of -1 means unlimited. ESPN also emits an entry for position id 0,
+#: which matches no player, so it is dropped rather than treated as a ban.
+_UNLIMITED = -1
+
+
+def position_name(default_position_id: int) -> str | None:
+    """The position a `defaultPositionId` names, or None if it names none."""
+    index = int(default_position_id) - _POSITION_ID_OFFSET
+    if index < 0:
+        return None
+    name = POSITION_MAP.get(index)
+    return str(name) if isinstance(name, str) else None
+
+
+def fetch_roster_settings(league: League) -> dict[str, Any]:
+    """The league's roster rules: lineup slots, bench, IR, position limits.
+
+    Read from ESPN rather than inferred. The lineup had been inferred by
+    counting slots in box scores, which happened to be right, and the
+    position limits were missed entirely: this league caps centres, at three
+    in 2025 and 2026 and four in 2027. Both are season settings and both
+    move, so neither can be a constant.
+    """
+    data = league.espn_request.league_get(params={"view": "mSettings"}) or {}
+    roster = (data.get("settings") or {}).get("rosterSettings") or {}
+    counts = roster.get("lineupSlotCounts") or {}
+
+    lineup: dict[str, int] = {}
+    bench = 0
+    injured_reserve = 0
+    for raw_slot, raw_count in counts.items():
+        count = int(raw_count or 0)
+        if count <= 0:
+            continue
+        name = POSITION_MAP.get(int(raw_slot))
+        if name == "BE":
+            bench = count
+        elif name == "IR":
+            injured_reserve = count
+        elif isinstance(name, str) and name:
+            lineup[name] = count
+
+    limits: dict[str, int] = {}
+    for raw_id, raw_limit in (roster.get("positionLimits") or {}).items():
+        limit = int(raw_limit)
+        if limit == _UNLIMITED:
+            continue
+        name = position_name(int(raw_id))
+        if name:
+            limits[name] = limit
+
+    return {
+        "lineup_slots": lineup,
+        "bench_slots": bench,
+        "injured_reserve_slots": injured_reserve,
+        "position_limits": limits,
+    }
 
 
 def prior_seasons(league: League) -> list[int]:

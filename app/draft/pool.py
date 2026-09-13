@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import LeagueSeason, LeagueSeasonCategory, Player, PlayerSeasonStat
+from app.draft.lineup import lineup_from_settings
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
 
 #: Stats a valuation needs beyond the scored categories themselves: the made
@@ -65,6 +66,7 @@ def load_projections(
                 games=games,
                 totals=totals,
                 eligible=frozenset(str(slot) for slot in (stat.eligible_slots or [])),
+                position=stat.primary_position,
             )
         )
     return pool
@@ -83,6 +85,23 @@ def drafted_prices(session: Session, league_season: LeagueSeason) -> dict[int, i
         )
     ).all()
     return {int(player_id): int(paid) for player_id, paid in rows}
+
+
+def lineup_for(league_season: LeagueSeason) -> tuple[str, ...]:
+    """The season's starting lineup, from its own stored settings."""
+    return lineup_from_settings(league_season.lineup_slots or {})
+
+
+def position_limits_for(league_season: LeagueSeason) -> dict[str, int]:
+    """The season's caps on primary position, e.g. {"C": 3}."""
+    return dict(league_season.position_limits or {})
+
+
+def roster_size_for(league_season: LeagueSeason) -> int:
+    """Starters plus bench. Injured reserve is not a roster place for the
+    draft: it holds players who are already hurt, not ones you draft into."""
+    starters = sum((league_season.lineup_slots or {}).values())
+    return int(starters) + int(league_season.bench_slots or 0)
 
 
 def roster_slots(session: Session, league_season: LeagueSeason) -> int:

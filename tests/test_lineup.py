@@ -102,3 +102,58 @@ def test_uncovered_slots_names_what_is_missing() -> None:
 
     assert "PG" in missing and "SG" in missing and "SF" in missing
     assert "C" not in missing, "a centre fills the centre slot"
+
+
+def test_a_lineup_is_built_from_the_league_settings() -> None:
+    """Three utility places are three requirements, not one."""
+    from app.draft.lineup import lineup_from_settings
+
+    built = lineup_from_settings(
+        {"PG": 1, "SG": 1, "SF": 1, "PF": 1, "C": 1, "G": 1, "F": 1, "UT": 3}
+    )
+
+    assert built == ("PG", "SG", "SF", "PF", "C", "G", "F", "UT", "UT", "UT")
+    assert built.count("UT") == 3
+
+
+def test_an_empty_settings_falls_back_rather_than_allowing_anything() -> None:
+    from app.draft.lineup import DEFAULT_LINEUP, lineup_from_settings
+
+    assert lineup_from_settings({}) == DEFAULT_LINEUP
+
+
+def test_a_league_with_different_slots_gets_a_different_lineup() -> None:
+    """The point of reading it: a setting that changes must be followed."""
+    from app.draft.lineup import lineup_from_settings
+
+    assert lineup_from_settings({"PG": 2, "UT": 1}) == ("PG", "PG", "UT")
+
+
+def test_position_limits_count_primary_position() -> None:
+    """This league caps centres, at three in 2026 and four in 2027."""
+    from app.draft.lineup import within_position_limits
+
+    assert within_position_limits(["C", "C", "C"], {"C": 3}) is True
+    assert within_position_limits(["C", "C", "C", "C"], {"C": 3}) is False
+    assert within_position_limits(["C", "C", "C", "C"], {"C": 4}) is True
+
+
+def test_a_forward_eligible_at_centre_is_not_a_centre() -> None:
+    """Counting eligibility instead of primary position would refuse legal rosters."""
+    from app.draft.lineup import within_position_limits
+
+    roster = ["C", "C", "C", "PF", "PF"]
+
+    assert within_position_limits(roster, {"C": 3}) is True
+
+
+def test_no_limits_means_no_constraint() -> None:
+    from app.draft.lineup import within_position_limits
+
+    assert within_position_limits(["C"] * 13, {}) is True
+
+
+def test_an_unknown_position_is_not_counted_against_a_cap() -> None:
+    from app.draft.lineup import within_position_limits
+
+    assert within_position_limits(["C", None, None], {"C": 1}) is True

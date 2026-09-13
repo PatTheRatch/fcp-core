@@ -52,6 +52,8 @@ class PlayerProjection:
     #: Lineup slots the player may occupy. Empty means unknown, which the
     #: optimizer treats as unable to start anywhere rather than as a wildcard.
     eligible: frozenset[str] = frozenset()
+    #: Primary position, which is what roster position limits count.
+    position: str | None = None
 
     def get(self, abbreviation: str) -> float:
         value = self.totals.get(abbreviation)

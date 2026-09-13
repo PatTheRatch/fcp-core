@@ -43,6 +43,25 @@ def _scoring_items(stat_ids: list[int]) -> list[dict[str, Any]]:
     return [{"statId": stat_id, "isReverseItem": False, "points": 1.0} for stat_id in stat_ids]
 
 
+#: Roster rules a fake league reports, matching this league's real ones.
+#: Read from ESPN in production, so the fake has to answer for them too.
+DEFAULT_ROSTER_SETTINGS = {
+    "lineupSlotCounts": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "11": 3,
+        "12": 3,
+        "13": 0,
+    },
+    "positionLimits": {"0": 0, "1": -1, "2": -1, "3": -1, "4": -1, "5": 3},
+}
+
+
 def fake_league(
     *,
     league_id: int = 3853870,
@@ -74,7 +93,11 @@ def fake_league(
         "scoringItems": _scoring_items(stat_ids if stat_ids is not None else NINE_CAT_STAT_IDS)
     }
     settings._raw_schedule_settings = {"matchupPeriodCount": reg_season_count}
-    return SimpleNamespace(league_id=league_id, year=season, settings=settings)
+    league = SimpleNamespace(league_id=league_id, year=season, settings=settings)
+    # The ingest reads roster rules straight from ESPN's mSettings view, so a
+    # fake league has to answer that request like the real one does.
+    attach_transactions(league, {})
+    return league
 
 
 def fake_player(
@@ -187,6 +210,8 @@ def fake_card(
     season: int = 2026,
     projected: dict[str, Any] | None = None,
     total: dict[str, Any] | None = None,
+    position: str = "PG",
+    eligible_slots: list[str] | None = None,
 ) -> Any:
     """A player card: scoring period -> stat line, or None for a day not played.
 
@@ -211,7 +236,15 @@ def fake_card(
             "date": datetime(2025, 10, 23, 0, 30) if line is not None else datetime(2025, 10, 24),
             "team": "TOR",
         }
-    return SimpleNamespace(playerId=player_id, name=name, stats=stats)
+    return SimpleNamespace(
+        playerId=player_id,
+        name=name,
+        stats=stats,
+        # The real card carries these; position limits count the first and
+        # lineup feasibility the second.
+        position=position,
+        eligibleSlots=list(eligible_slots or [position, "UT", "BE"]),
+    )
 
 
 def league_with_play(
@@ -284,6 +317,7 @@ def attach_transactions(
     league: Any,
     by_day: dict[int, list[dict[str, Any]]],
     names: dict[int, str] | None = None,
+    roster_settings: dict[str, Any] | None = None,
 ) -> Any:
     """Give a fake league the request layer the transaction fetch uses.
 
@@ -291,11 +325,16 @@ def attach_transactions(
     at the same level rather than stubbing the parsing above it.
     """
 
+    rules: dict[str, Any] = dict(roster_settings or DEFAULT_ROSTER_SETTINGS)
+
     def league_get(
         params: dict[str, Any] | None = None,
         headers: dict[str, Any] | None = None,
         extend: str = "",
     ) -> dict[str, Any]:
+        view = (params or {}).get("view")
+        if view == "mSettings":
+            return {"settings": {"rosterSettings": rules}}
         day = int((params or {}).get("scoringPeriodId") or 0)
         found = [dict(tx, scoringPeriodId=day) for tx in by_day.get(day, [])]
         return {"transactions": found}
