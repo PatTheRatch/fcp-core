@@ -39,7 +39,12 @@ from app.db.models import (
     Transaction,
     TransactionItem,
 )
-from app.espn import fetch_roster_settings, fetch_transactions, player_names
+from app.espn import (
+    fetch_draft_settings,
+    fetch_roster_settings,
+    fetch_transactions,
+    player_names,
+)
 
 
 def _epoch_ms_to_datetime(epoch_ms: Any) -> datetime | None:
@@ -138,6 +143,12 @@ def ingest_league_structure(session: Session, espn_league: ESPNLeague) -> League
     league_season.acquisition_budget = int(settings.acquisition_budget)
     league_season.median_scoring = bool(settings.median_scoring)
     league_season.trade_deadline = _epoch_ms_to_datetime(getattr(settings, "trade_deadline", None))
+    draft_rules = fetch_draft_settings(espn_league)
+    league_season.auction_budget = int(draft_rules["auction_budget"])
+    league_season.draft_type = draft_rules["draft_type"]
+    league_season.seconds_per_pick = draft_rules["seconds_per_pick"]
+    league_season.drafted_at = _epoch_ms_to_datetime(draft_rules["drafted_at"])
+    league_season.draft_order = list(draft_rules["draft_order"])
     roster_rules = fetch_roster_settings(espn_league)
     league_season.lineup_slots = dict(roster_rules["lineup_slots"])
     league_season.bench_slots = int(roster_rules["bench_slots"])

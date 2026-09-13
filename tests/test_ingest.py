@@ -1263,3 +1263,47 @@ def test_a_players_primary_position_is_stored(session: Session) -> None:
         select(PlayerSeasonStat).where(PlayerSeasonStat.kind == "projected")
     ).one()
     assert row.primary_position == "C"
+
+
+def test_draft_settings_are_read_and_are_not_the_faab_budget(session: Session) -> None:
+    """The auction budget is a different number from the acquisition budget.
+
+    `espn_api` exposes only `acquisition_budget`, the in-season FAAB pot,
+    which reads 100 in this league. The draft budget is 200 and lives in the
+    raw mSettings payload. Planning a draft against the FAAB pot halves the
+    budget and produces a roster nobody could have bought, so the two are
+    asserted to differ here rather than merely to be present.
+    """
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+
+    stored = ingest_season(session, espn)
+
+    assert stored.auction_budget == 200
+    assert stored.acquisition_budget != stored.auction_budget
+    assert stored.draft_type == "AUCTION"
+    assert stored.seconds_per_pick == 90
+    assert stored.draft_order == [3, 1, 2], "nomination order is kept in ESPN's order"
+    assert stored.drafted_at is not None
+    assert stored.drafted_at.tzinfo is not None, "stored with a timezone, like every other stamp"
+
+
+def test_a_league_without_draft_settings_stores_zero_rather_than_guessing(
+    session: Session,
+) -> None:
+    """A season ESPN has not published draft settings for leaves the budget at
+    zero. Nothing downstream may treat zero as a budget: it means unknown."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+    attach_transactions(espn, {}, draft_settings={})
+
+    stored = ingest_season(session, espn)
+
+    assert stored.auction_budget == 0
+    assert stored.draft_type is None
+    assert stored.seconds_per_pick is None
+    assert stored.draft_order == []

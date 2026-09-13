@@ -241,6 +241,31 @@ def fetch_roster_settings(league: League) -> dict[str, Any]:
     }
 
 
+def fetch_draft_settings(league: League) -> dict[str, Any]:
+    """The league's draft rules: budget, type, clock and nomination order.
+
+    None of this is on `League.settings`. `espn_api` exposes
+    `acquisition_budget`, which is the in-season FAAB pot (100 here) and not
+    the auction budget (200 here); reading the first as the second halves
+    every plan. The raw mSettings payload carries both, under separate keys.
+
+    A second mSettings request beside `fetch_roster_settings` is one extra
+    call per season ingest, against a couple of hundred.
+    """
+    data = league.espn_request.league_get(params={"view": "mSettings"}) or {}
+    draft = (data.get("settings") or {}).get("draftSettings") or {}
+    order = [int(team_id) for team_id in (draft.get("pickOrder") or [])]
+    return {
+        "auction_budget": int(draft.get("auctionBudget") or 0),
+        "draft_type": str(draft["type"]) if draft.get("type") else None,
+        "seconds_per_pick": int(draft["timePerSelection"])
+        if draft.get("timePerSelection")
+        else None,
+        "drafted_at": draft.get("date"),
+        "draft_order": order,
+    }
+
+
 def prior_seasons(league: League) -> list[int]:
     """Seasons before this one that ESPN still holds for the league.
 

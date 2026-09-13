@@ -61,6 +61,17 @@ DEFAULT_ROSTER_SETTINGS = {
     "positionLimits": {"0": 0, "1": -1, "2": -1, "3": -1, "4": -1, "5": 3},
 }
 
+#: The auction budget here is deliberately NOT the acquisition budget the fake
+#: league carries. Reading one as the other halves every draft plan, and a
+#: fixture where the two match would hide that.
+DEFAULT_DRAFT_SETTINGS = {
+    "auctionBudget": 200,
+    "type": "AUCTION",
+    "timePerSelection": 90,
+    "date": 1760806800000,
+    "pickOrder": [3, 1, 2],
+}
+
 
 def fake_league(
     *,
@@ -318,6 +329,7 @@ def attach_transactions(
     by_day: dict[int, list[dict[str, Any]]],
     names: dict[int, str] | None = None,
     roster_settings: dict[str, Any] | None = None,
+    draft_settings: dict[str, Any] | None = None,
 ) -> Any:
     """Give a fake league the request layer the transaction fetch uses.
 
@@ -326,6 +338,9 @@ def attach_transactions(
     """
 
     rules: dict[str, Any] = dict(roster_settings or DEFAULT_ROSTER_SETTINGS)
+    draft: dict[str, Any] = dict(
+        DEFAULT_DRAFT_SETTINGS if draft_settings is None else draft_settings
+    )
 
     def league_get(
         params: dict[str, Any] | None = None,
@@ -334,7 +349,7 @@ def attach_transactions(
     ) -> dict[str, Any]:
         view = (params or {}).get("view")
         if view == "mSettings":
-            return {"settings": {"rosterSettings": rules}}
+            return {"settings": {"rosterSettings": rules, "draftSettings": draft}}
         day = int((params or {}).get("scoringPeriodId") or 0)
         found = [dict(tx, scoringPeriodId=day) for tx in by_day.get(day, [])]
         return {"transactions": found}

@@ -90,7 +90,22 @@ class LeagueSeason(Base):
     playoff_matchup_period_length: Mapped[int] = mapped_column(Integer, nullable=False)
     keeper_count: Mapped[int] = mapped_column(Integer, nullable=False)
     uses_faab: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    #: The in-season FAAB pot, 100 in every season so far. NOT the draft
+    #: budget: see `auction_budget`, which is double it.
     acquisition_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: What each manager spends at the draft, 200 in every season so far.
+    #: Zero means the season has not been ingested since this was added, and
+    #: the draft code refuses to plan against it rather than assuming.
+    auction_budget: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: AUCTION or SNAKE, as ESPN reports it.
+    draft_type: Mapped[str | None] = mapped_column(String)
+    #: The clock on one nomination, in seconds.
+    seconds_per_pick: Mapped[int | None] = mapped_column(Integer)
+    drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: ESPN team ids in nomination order.
+    draft_order: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     median_scoring: Mapped[bool] = mapped_column(Boolean, nullable=False)
     trade_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
