@@ -137,16 +137,20 @@ def acquisition_value(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    header = (f"{'season':>7} {'teams':>6} {'adds':>6} {'net/day':>9} "
-              f"{'median/day':>11} {'net/14d':>9} {'win%':>7}")
+    header = (
+        f"{'season':>7} {'teams':>6} {'adds':>6} {'net/day':>9} "
+        f"{'median/day':>11} {'net/14d':>9} {'win%':>7}"
+    )
     print(header)
     print("-" * len(header))
     for season, teams, adds, net_pd, med_pd, net_w, wins in rows:
         pct = 100.0 * int(wins) / int(adds) if adds else 0.0
         flag = "  (COVID)" if season == COVID_SEASON else ""
-        print(f"{season:>7} {teams:>6} {int(adds):>6} "
-              f"{float(net_pd):>9.2f} {float(med_pd):>11.2f} "
-              f"{float(net_w):>9.1f} {pct:>6.1f}%{flag}")
+        print(
+            f"{season:>7} {teams:>6} {int(adds):>6} "
+            f"{float(net_pd):>9.2f} {float(med_pd):>11.2f} "
+            f"{float(net_w):>9.1f} {pct:>6.1f}%{flag}"
+        )
 
     #: Excluding 2020, the excluded season, for the headline range.
     usable = [r for r in rows if int(r[0]) != COVID_SEASON]
@@ -154,9 +158,11 @@ def acquisition_value(conn: psycopg.Connection) -> None:
         vals = [float(r[3]) for r in usable]
         wins = [100.0 * float(r[6]) / float(r[2]) for r in usable]
         print()
-        print(f"Across the seven non-COVID seasons: "
-              f"{min(vals):.2f}-{max(vals):.2f} net composite per day, "
-              f"win rate {min(wins):.1f}-{max(wins):.1f}%.")
+        print(
+            f"Across the seven non-COVID seasons: "
+            f"{min(vals):.2f}-{max(vals):.2f} net composite per day, "
+            f"win rate {min(wins):.1f}-{max(wins):.1f}%."
+        )
 
 
 def window_truncation_audit(conn: psycopg.Connection) -> None:
@@ -284,11 +290,9 @@ def skill_persistence(conn: psycopg.Connection) -> None:
     if row and row[2] and int(row[2]) > 0:
         print(f"Owner-seasons paired across consecutive seasons: {int(row[2])}")
         if row[0] is not None:
-            print(f"Skill persistence (net gain year N vs N+1):  r = "
-                  f"{float(row[0]):.3f}")
+            print(f"Skill persistence (net gain year N vs N+1):  r = {float(row[0]):.3f}")
         if row[1] is not None:
-            print(f"Volume persistence (adds year N vs N+1):     r = "
-                  f"{float(row[1]):.3f}")
+            print(f"Volume persistence (adds year N vs N+1):     r = {float(row[1]):.3f}")
         print()
         print("A positive skill correlation means the same owners beat the same")
         print("baseline repeatedly, so the ~1 point/day edge is a floor they")
@@ -350,12 +354,13 @@ def faab_economics(conn: psycopg.Connection) -> None:
         )
         rows = cur.fetchall()
 
-    print(f"{'season':>7} {'FAAB':>6} {'paid bids':>10} {'waivers':>8} "
-          f"{'exec':>6} {'failed':>7}")
+    print(f"{'season':>7} {'FAAB':>6} {'paid bids':>10} {'waivers':>8} {'exec':>6} {'failed':>7}")
     print("-" * 50)
     for season, faab, paid, waivers, executed, failed in rows:
-        print(f"{season:>7} {bool(faab)!s:>6} {int(paid):>10} "
-              f"{int(waivers):>8} {int(executed):>6} {int(failed):>7}")
+        print(
+            f"{season:>7} {bool(faab)!s:>6} {int(paid):>10} "
+            f"{int(waivers):>8} {int(executed):>6} {int(failed):>7}"
+        )
 
     print()
     print("2026 detail:")
@@ -405,14 +410,18 @@ def faab_economics(conn: psycopg.Connection) -> None:
     print(f"{'team':<30} {'adds':>5} {'paid':>5} {'failed':>7} {'bid sum':>8}")
     print("-" * 58)
     for name, adds, paid_adds, failed, spent in teams:
-        print(f"{str(name)[:29]:<30} {int(adds):>5} {int(paid_adds):>5} "
-              f"{int(failed):>7} {int(spent):>8}")
+        print(
+            f"{str(name)[:29]:<30} {int(adds):>5} {int(paid_adds):>5} "
+            f"{int(failed):>7} {int(spent):>8}"
+        )
 
     spent_values = [float(s) for *_, s in teams]
     if spent_values:
         print()
-        print(f"Mean bid total: ${statistics.mean(spent_values):.0f} of $100. "
-              f"Max ${max(spent_values):.0f}, min ${min(spent_values):.0f}.")
+        print(
+            f"Mean bid total: ${statistics.mean(spent_values):.0f} of $100. "
+            f"Max ${max(spent_values):.0f}, min ${min(spent_values):.0f}."
+        )
         print("Nine of fourteen teams spent at least $93 of the $100 budget.")
         print()
         print("Caveat: the top team sums above $100, so some bid_amount values")

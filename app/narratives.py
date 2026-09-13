@@ -296,6 +296,12 @@ def bench_leaderboard(
         .join(Team, Team.id == DailyLineupSlot.team_id)
         .join(MatchupPeriod, MatchupPeriod.id == DailyLineupSlot.matchup_period_id)
         .join(
+            # This join matches only about 48% of lineup rows, which looks
+            # alarming and is correct. A rostered player has a game line only
+            # on days his team played, roughly 45% of scoring periods. Proven
+            # rather than assumed: summing started players' lines through this
+            # join reproduces the separately stored team totals in
+            # matchup_team_stats for 2026 of 2030 sides across eight seasons.
             PlayerGameStat,
             (PlayerGameStat.player_id == DailyLineupSlot.player_id)
             & (PlayerGameStat.scoring_period == DailyLineupSlot.scoring_period)

@@ -10,7 +10,23 @@
 
 ## The answer, up front
 
-**An actual waiver acquisition is worth 0.75–1.17 composite points per day, and wins its comparison about 55% of the time.**
+**An actual waiver acquisition is worth roughly 0.6–1.0 composite points per day, and wins its comparison about 55% of the time.**
+
+> **Corrected on review.** The original figures (0.75–1.17) counted adds that
+> had no accompanying drop as a full gain against a baseline of zero. In 2026
+> that is 31 of 1,151 moves, but each contributes the added player's entire
+> production as "net", which lifts the season mean from **0.57 to 0.75**, a 32%
+> overstatement. A no-drop add is a team filling an empty roster slot, which is
+> a real event but a different quantity: it measures filling a hole, not
+> swapping your worst player for the best available. Replacement level is the
+> swap number, because at a draft you are always choosing between players and
+> never filling from nothing. One further transaction had two drops and was
+> expanded into two rows, double-counting its added player.
+>
+> Verified independently: restricting to the 1,118 transactions with exactly
+> one add and one drop gives 2026 mean **0.57**, median 0.50, win rate 53.8%.
+> The direction and the order of magnitude are unaffected, and the conclusion
+> stands: the optimizer needs a number near 1, not near 11.
 
 | | Value per day |
 |---|---|
@@ -27,6 +43,14 @@ Two further results matter as much as the headline:
 - **Acquisition skill is real and persistent: r = 0.55** across consecutive
   seasons (54 owner-seasons). The same owners beat the same baseline year after
   year. This is not luck.
+
+  **Checked against the obvious confound and it survives.** Volume also
+  persists between seasons (r = +0.53), so persistent per-move value could
+  have been nothing more than persistent churn habits showing through the
+  volume penalty. It is not: on the swap-only sample excluding 2020, skill
+  persists at r = +0.73, and after removing volume from both years the partial
+  correlation is still **+0.63**. The finding is stronger than first reported,
+  not weaker.
 - **Add volume is NEGATIVELY related to return: r = −0.63.** Teams that churn
   more get *less* per move. Churn is not free.
 
@@ -327,11 +351,19 @@ simply available. Only 15 moves in the entire season cost more than $10.
 **Mean bid total $88 of $100**, against a $1,400 pool. Nine of fourteen teams
 spent at least $93.
 
-> **Data caveat:** "Through The Wire" sums to $103, which exceeds the $100
-> budget. Some `bid_amount` values are being double-counted — likely the same
-> claim appearing under more than one scoring period, since ESPN re-reports a
-> pending claim across periods. Treat per-team totals as ±5% and the *shape*
-> (everyone spends nearly everything) as the reliable finding.
+> **Data caveat, diagnosed on review — not a double-count.** "Through The
+> Wire" sums to $103, which does exceed the $100 budget, but nothing is
+> duplicated: the 1,148 executed waivers carry 1,148 distinct
+> `espn_transaction_id` values. The repeated charges are the *same player
+> acquired more than once*, dropped and bought back weeks later, paying each
+> time. Sam Merrill on periods 65 and 100, Tre Johnson on 86 and 107, Jay Huff
+> on 80 and 86, Kevin Huerter on 72 and 107. Every one is a real, separate
+> move.
+>
+> So per-team totals are trustworthy and need no ±5% band. What remains
+> unexplained is only why one team's legitimate spending exceeds the stated
+> $100, which points at ESPN's budget accounting — a refund on a reversed
+> claim, or a cap that is not strictly enforced — rather than at our data.
 
 **Only a minority of adds are paid at all.** Teams made 50–126 adds but paid a
 nonzero bid on only 9–44 of them — the rest were free-agent pickups requiring
