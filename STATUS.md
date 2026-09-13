@@ -141,7 +141,7 @@ each can be checked against a season that has already happened.
 | 2. Targets: what totals actually win a category here | done |
 | 3. Market model: what this league pays for value | done |
 | 4. Optimizer: best roster under a budget | done |
-| 5. Live draft room: state, remaining pool, re-solve | state machine and ceiling done; live feed next |
+| 5. Live draft room: state, remaining pool, re-solve | done; unproven against a live league until 2026-10-03 |
 
 **Why this differs from the previous attempt.** That one simulated what we
 can now measure. It ran Monte Carlo over imagined drafts to guess category
@@ -229,6 +229,39 @@ players still on the board at that moment, every marginal at $1 sat between
 twenty-fifth of a category a week. The projection could not know what he
 became. The ceiling reports `marginal_at_floor` so a reader sees the
 magnitude and not only the yes or no.
+
+### The live feed
+
+`scripts/draft_room.py` runs the room. Picks come from one of two places
+and typed commands work in both.
+
+Typed: `Jokic, Brighton Bears, 97` is a pick; `me Kawhi 12` is ours; `?
+Jokic` is what he is worth to us now; `undo`, `state`, `plan`, `next`.
+Names match loosely -- a surname or a typo will do -- and an ambiguous name
+is refused with the alternatives rather than guessed: `Jalen` alone gets
+"could be Jalen Wilson or Jalen Williams". Anyone off every list we hold is
+tracked by name, since the room only needs the money and the place.
+
+Page: `--page URL` opens the draft room in a headless browser with the
+ingest's own cookies and reads `document.body.innerText` every two seconds.
+`app/draft/feed.py` turns that text into a snapshot -- ticker, pick log,
+player on the block with the live offer and who holds it -- and is pure, so
+it is tested against text captured from the mock and can be adjusted from a
+saved snapshot rather than a live draft. The pick log is authoritative. The
+ticker is a cross-check: a team's money falling with no logged pick to
+explain it means a pick was missed, and the player who was on the block is
+offered as the explanation, applied only on `--trust-money`. When a new
+player comes up, his ceiling prints unasked.
+
+`--probe` opens the page, shows the first forty lines and what parsed, and
+exits. Run it before the draft. The pick log's exact text was seen rendered
+but never captured, so two shapes are accepted; if neither matches on the
+night, the probe is where that shows and the parser is where it is fixed.
+
+Two things are known and not proven. The page reader has only ever seen a
+mock, and a mock is a clone of this league but not this league. And there
+are no 2027 projections yet; `--pool-season 2026 --pool-kind projected`
+stands last year's in, and the room says so on every start, in capitals.
 
 ### What the mock draft taught us
 

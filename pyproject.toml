@@ -15,6 +15,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The live draft room reads the draft page in a headless browser, because
+# ESPN's read API carries none of a draft's picks until it is over. Install
+# with `pip install -e '.[live]' && playwright install chromium`. Everything
+# else works without it; the room falls back to typed entry.
+live = [
+    "playwright>=1.47",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",
