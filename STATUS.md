@@ -139,8 +139,8 @@ each can be checked against a season that has already happened.
 |---|---|
 | 1. Valuation: projections to comparable value | done |
 | 2. Targets: what totals actually win a category here | done |
-| 3. Market model: what this league pays for value | next |
-| 4. Optimizer: best roster under a budget | after |
+| 3. Market model: what this league pays for value | done |
+| 4. Optimizer: best roster under a budget | next |
 | 5. Live draft room: state, remaining pool, re-solve | last |
 
 **Why this differs from the previous attempt.** That one simulated what we
@@ -149,6 +149,70 @@ targets and auction prices, because it had no league history to read. We
 have eight seasons: 1274 real auction prices, and every category result of
 every matchup. Simulation stays useful for a question history cannot answer,
 such as a rule change, but it should not be the first resort.
+
+### Market model
+
+An auction is not a price per player, it is a fixed pot handed out until it
+is gone. In 2026 fourteen teams at two hundred dollars spent 2787 of 2800,
+99.5% of the budget. So prices are shares: a player is worth what they add
+above the last man rostered, and every dollar over the minimum bids is split
+between those surpluses. Budget consistent by construction.
+
+Against the 2026 draft the mean error is **$6.48 across 175 picks**.
+
+Measuring value above replacement rather than above the pool mean also
+straightens the curve. Priced against the mean, the league looks like it
+pays a falling rate for quality, 28 dollars a point down to 8. That was an
+artefact of where zero was put, not a market judgement.
+
+The residuals are the useful part. Four players took $170 more than the
+model allows, 6% of the league's entire budget, and all four are reputations
+the current projection no longer supports:
+
+| player | model | paid |
+|---|---|---|
+| Cade Cunningham | 28 | 83 |
+| Giannis Antetokounmpo | 23 | 70 |
+| Luka Doncic | 47 | 91 |
+| Victor Wembanyama | 71 | 100 |
+
+Going the other way, Onyeka Okongwu modelled at 23 went for 4.
+
+### Injuries: what can honestly be modelled
+
+Three things were measured before anything was built.
+
+**ESPN is optimistic.** Players deliver about 87% of projected games,
+steady between 0.84 and 0.93 once the suspended 2020 season is set aside.
+
+**It does not persist.** A player's availability one season predicts the
+next at a correlation of 0.014, over 658 player seasons. After a year below
+70% availability, the next year averages 0.839. After a year above 95%, it
+averages 0.844. Injury proneness is not a usable draft signal.
+
+**It does not vary by quality.** From best quartile to worst, availability
+runs 0.867, 0.872, 0.879, 0.881, against a spread of 0.21.
+
+So nobody can be singled out from history, which means the honest default is
+one factor for everyone. And a single factor is **scale invariant in
+z-space**: multiply every total by 0.87 and every z-score, ranking and price
+comes back identical. A test pins that, because it is the finding that
+decides what the injury-aware model can be.
+
+Two places an adjustment legitimately bites:
+
+- **Known injuries at draft time.** Someone already ruled out for two months
+  has a knowable availability, and that does move their price. It has to
+  come from a live status, not from history.
+- **Absolute production against targets.** Targets are real totals, so a
+  roster built on raw projections lands about 13% short of them. With no IR
+  slot there is nothing to do about it but plan for it.
+
+**A trap in our own data.** `daily_lineup_slots.injury_status` cannot be
+used for any of this. ESPN returns a player's status as of the request, so
+all 351 players in 2026 carry one status across all 160 days: Trae Young
+reads OUT on days he played thirty minutes. It is a snapshot smeared over a
+season, not a time series.
 
 ### Targets
 
