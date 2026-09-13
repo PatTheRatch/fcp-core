@@ -138,8 +138,8 @@ each can be checked against a season that has already happened.
 | | state |
 |---|---|
 | 1. Valuation: projections to comparable value | done |
-| 2. Targets: what totals actually win a category here | next |
-| 3. Market model: what this league pays for value | after |
+| 2. Targets: what totals actually win a category here | done |
+| 3. Market model: what this league pays for value | next |
 | 4. Optimizer: best roster under a budget | after |
 | 5. Live draft room: state, remaining pool, re-solve | last |
 
@@ -149,6 +149,45 @@ targets and auction prices, because it had no league history to read. We
 have eight seasons: 1274 real auction prices, and every category result of
 every matchup. Simulation stays useful for a question history cannot answer,
 such as a rule change, but it should not be the first resort.
+
+### Targets
+
+A target is a percentile of what opponents actually post, read from eight
+seasons of results rather than simulated. Clear the median and you win the
+category about half the time.
+
+**League size is the one thing that cannot be pooled**, and the data is
+emphatic. Counting categories fall about a fifth between a ten team league
+and a sixteen team one, because sixteen rosters share the same player pool
+and each is thinner:
+
+| category | 10 teams | 16 teams |
+|---|---|---|
+| PTS | 657 | 534 |
+| REB | 241 | 193 |
+| AST | 145 | 117 |
+| BLK | 26.3 | 20.2 |
+
+The two percentages do not move: field goal percentage is 0.473 at ten teams
+and 0.477 at sixteen. A rate does not care how many players produced it.
+
+So counting categories are read only from seasons of the same size, and rate
+categories from every season, which gives them roughly six times the sample
+for free. Every target reports which seasons it came from and how many
+results, because a target from one season of the right size is a weaker
+claim than one from five.
+
+Turnovers invert into a ceiling rather than a floor: to win them more often
+you commit fewer, so a higher win rate means a lower number.
+
+**For 2027, at sixteen teams:** clear 528 points, 190 rebounds, 117 assists
+and stay under 62 turnovers to win each about half the time. Those come from
+2023, the only sixteen team season played.
+
+A subtlety the tests caught. The season being drafted for already exists in
+the database, with a size and no results. Matching on size alone found that
+empty season and returned nothing, so only seasons that have actually been
+played count as a basis.
 
 ### Valuation
 
