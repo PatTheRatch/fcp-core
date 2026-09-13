@@ -28,13 +28,13 @@ record, and 2026 is the lowest-but-one with the season still unfinished.
 | Season | Teams | End retention (mean) | Median | Min | Max | Players used |
 |---|---|---|---|---|---|---|
 | 2019 | 10 | 29.2% | 30.8% | 7.7% | 53.8% | 62.6 |
-| 2020 | 10 | 46.2% | 46.2% | 15.4% | 69.2% | 52.1 |
-| 2021 | 10 | 33.8% | 38.5% | 7.7% | 61.5% | 66.0 |
-| 2022 | 12 | 40.4% | 46.2% | 15.4% | 61.5% | 58.0 |
-| 2023 | 16 | **51.9%** | 53.8% | 23.1% | 92.3% | 41.1 |
-| 2024 | 14 | 29.7% | 30.8% | 0.0% | 61.5% | 63.2 |
+| 2020 | 10 | 46.2% | 42.3% | 15.4% | 69.2% | 52.1 |
+| 2021 | 10 | 33.8% | 34.6% | 7.7% | 61.5% | 66.0 |
+| 2022 | 12 | 40.4% | 42.3% | 15.4% | 61.5% | 58.0 |
+| 2023 | 16 | **51.9%** | 50.0% | 23.1% | 92.3% | 41.1 |
+| 2024 | 14 | 29.7% | 26.9% | 0.0% | 61.5% | 63.2 |
 | 2025 | 12 | **23.1%** | 23.1% | 0.0% | 46.2% | 79.3 |
-| 2026 | 14 | 25.8% | 30.8% | 7.7% | 46.2% | 73.5 |
+| 2026 | 14 | 25.8% | 26.9% | 7.7% | 46.2% | 73.5 |
 
 **Read this as: roughly two thirds of a finished roster was never drafted by
 that team.** Four of thirteen drafted players is a good season. One team in
@@ -218,6 +218,14 @@ in-season acquisition budget as the primary lever, since that's where two
 thirds of your final roster comes from.
 
 ---
+
+## A correction to this table
+
+The median column originally took the upper of the two middle values. Every
+season in this league has an even number of teams, so that biased every
+median upward, by as much as 3.9 points. The means, minima and maxima were
+unaffected and the conclusions do not change: the 2026 median moves from
+30.8% to 26.9%, which is if anything slightly worse for the draft.
 
 ## Data notes
 

@@ -291,7 +291,7 @@ def category_distributions(
         .where(LeagueSeasonCategory.league_season_id == league_season.id)
         .order_by(LeagueSeasonCategory.position)
     ).all()
-    sized_count, sized_seasons = _sized_seasons(session, int(league_season.team_count))
+    _, sized_seasons = _sized_seasons(session, int(league_season.team_count))
     all_seasons = sorted({season for _, season in _seasons_with_results(session)})
     days = period_days if period_days is not None else modal_period_days(session, all_seasons)
     trends = (

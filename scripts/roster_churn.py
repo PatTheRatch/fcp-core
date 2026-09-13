@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import csv
 import os
+import statistics
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -256,7 +257,9 @@ def main() -> None:
             print(f"{season:>7} {len(teams):>6}   (no data)")
             continue
         ends.sort()
-        median = ends[len(ends) // 2]
+        # Every season in this league has an even number of teams, so taking
+        # the upper of the two middle values would bias every median upward.
+        median = statistics.median(ends)
         used = sum(len(t.ever_held) for t in teams) / len(teams)
         print(
             f"{season:>7} {len(teams):>6} {fmt_pct(sum(ends) / len(ends)):>9} "
@@ -278,9 +281,8 @@ def main() -> None:
     print("2019-2024 observe the season's bookends but not every day between.")
     print()
 
-    header = (
-        f"{'season':>7} {'coverage':>10} "
-        + " ".join(f"{int(th * 100):>3}%".rjust(13) for th in THRESHOLDS)
+    header = f"{'season':>7} {'coverage':>10} " + " ".join(
+        f"{int(th * 100):>3}%".rjust(13) for th in THRESHOLDS
     )
     print(header)
     print("-" * len(header))
@@ -302,15 +304,13 @@ def main() -> None:
         label = f"{density * 100:.0f}% dense" if not continuous else "daily"
         cells = []
         for th in THRESHOLDS:
-            hits: list[int] = [
-                h for h in (t.first_day_below(th) for t in teams) if h is not None
-            ]
+            hits: list[int] = [h for h in (t.first_day_below(th) for t in teams) if h is not None]
             if not hits or not continuous:
                 cells.append(f"{'--':>13}")
                 continue
             first = all_days[0]
             shares = sorted((h - first) / span for h in hits)
-            median = shares[len(shares) // 2]
+            median = statistics.median(shares)
             #: Report how many teams crossed at all: a column averaged over
             #: only the teams that crossed is a different population per
             #: threshold and can invert, which is exactly the trap here.
