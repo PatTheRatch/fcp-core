@@ -8,7 +8,7 @@ locked and excluded players behave as a live draft room needs them to.
 
 import pytest
 
-from app.draft.optimizer import Candidate, optimize, roster_totals, score
+from app.draft.optimizer import Candidate, fieldable, optimize, roster_totals, score
 from app.draft.targets import CategoryDistribution
 
 
@@ -27,10 +27,19 @@ def dist(
     )
 
 
-def cand(player_id: int, price: int, **weekly: float) -> Candidate:
+#: Eligible everywhere, so the arithmetic tests are not about positions.
+#: Those tests also pass a lineup of N utility slots for an N-man roster:
+#: the default lineup has ten starting slots, and a two-man roster can never
+#: fill it, which the constraint correctly refuses.
+ANY = frozenset({"PG", "SG", "SF", "PF", "C", "G", "F", "UT"})
+
+
+def cand(player_id: int, price: int, eligible: frozenset[str] = ANY, **weekly: float) -> Candidate:
     line = {"PTS": 0.0, "REB": 0.0, "TO": 0.0, "FGM": 0.0, "FGA": 0.0}
     line.update(weekly)
-    return Candidate(player_id=player_id, name=f"P{player_id}", price=price, weekly=line)
+    return Candidate(
+        player_id=player_id, name=f"P{player_id}", price=price, weekly=line, eligible=eligible
+    )
 
 
 PTS = dist("PTS", mean=100.0, spread=20.0)
@@ -85,7 +94,7 @@ def test_the_budget_binds() -> None:
         cand(4, 10, PTS=20.0),
     ]
 
-    plan = optimize(pool, [PTS], budget=170, roster_slots=2)
+    plan = optimize(pool, [PTS], budget=170, roster_slots=2, lineup=("UT",) * 2)
 
     assert plan.cost <= 170
     assert len(plan.players) == 2
@@ -94,7 +103,7 @@ def test_the_budget_binds() -> None:
 def test_the_roster_size_binds() -> None:
     pool = [cand(i, 1, PTS=10.0 * i) for i in range(1, 8)]
 
-    plan = optimize(pool, [PTS], budget=100, roster_slots=3)
+    plan = optimize(pool, [PTS], budget=100, roster_slots=3, lineup=("UT",) * 3)
 
     assert len(plan.players) == 3
 
@@ -112,7 +121,7 @@ def test_the_objective_is_wins_not_raw_value() -> None:
         cand(3, 10, PTS=60.0, REB=30.0),
     ]
 
-    plan = optimize(pool, [PTS, REB], budget=20, roster_slots=2)
+    plan = optimize(pool, [PTS, REB], budget=20, roster_slots=2, lineup=("UT",) * 2)
 
     assert plan.player_ids == {2, 3}, "balanced beats one dominant category"
     assert plan.expected_wins > score({"PTS": 260.0, "REB": 30.0}, [PTS, REB])[0]
@@ -121,7 +130,7 @@ def test_the_objective_is_wins_not_raw_value() -> None:
 def test_locked_players_are_kept_even_when_worse() -> None:
     pool = [cand(1, 5, PTS=1.0), cand(2, 5, PTS=100.0), cand(3, 5, PTS=100.0)]
 
-    plan = optimize(pool, [PTS], budget=20, roster_slots=2, locked=[1])
+    plan = optimize(pool, [PTS], budget=20, roster_slots=2, locked=[1], lineup=("UT",) * 2)
 
     assert 1 in plan.player_ids
 
@@ -129,7 +138,7 @@ def test_locked_players_are_kept_even_when_worse() -> None:
 def test_excluded_players_are_never_chosen() -> None:
     pool = [cand(1, 5, PTS=100.0), cand(2, 5, PTS=50.0), cand(3, 5, PTS=40.0)]
 
-    plan = optimize(pool, [PTS], budget=20, roster_slots=2, excluded=[1])
+    plan = optimize(pool, [PTS], budget=20, roster_slots=2, excluded=[1], lineup=("UT",) * 2)
 
     assert 1 not in plan.player_ids
     assert plan.player_ids == {2, 3}
@@ -144,16 +153,80 @@ def test_the_floor_is_always_affordable_for_every_slot() -> None:
         cand(4, 3, PTS=10.0),
     ]
 
-    plan = optimize(pool, [PTS], budget=100, roster_slots=3)
+    plan = optimize(pool, [PTS], budget=100, roster_slots=3, lineup=("UT",) * 3)
 
     assert len(plan.players) == 3
     assert plan.cost <= 100
 
 
 def test_an_empty_pool_yields_an_empty_plan() -> None:
-    plan = optimize([], [PTS], budget=100, roster_slots=3)
+    plan = optimize([], [PTS], budget=100, roster_slots=3, lineup=("UT",) * 3)
 
     assert plan.players == ()
     # Zero points is five sd below the mean, so this is a near-certain loss,
     # which is the honest answer for an empty roster.
     assert plan.expected_wins == pytest.approx(0.0, abs=1e-4)
+
+
+CENTRE = frozenset({"C", "UT"})
+GUARD = frozenset({"PG", "SG", "G", "UT"})
+WING = frozenset({"SF", "SG", "F", "UT"})
+BIG = frozenset({"PF", "C", "F", "UT"})
+
+
+def test_a_roster_that_cannot_be_fielded_is_not_a_roster() -> None:
+    """Thirteen centres score wonderfully on blocks and cannot start a game."""
+    assert fieldable([cand(i, 1, CENTRE) for i in range(13)]) is False
+    assert (
+        fieldable(
+            [
+                cand(1, 1, GUARD),
+                cand(2, 1, GUARD),
+                cand(3, 1, GUARD),
+                cand(4, 1, WING),
+                cand(5, 1, WING),
+                cand(6, 1, WING),
+                cand(7, 1, BIG),
+                cand(8, 1, BIG),
+                cand(9, 1, CENTRE),
+                cand(10, 1, CENTRE),
+            ]
+        )
+        is True
+    )
+
+
+def test_the_optimizer_refuses_to_build_thirteen_centres() -> None:
+    """Even when centres are the only players worth anything.
+
+    Ten of the eleven players are centres who dominate on blocks. The
+    optimizer must still reach for the guard, because without one the
+    roster cannot fill PG, SG or G and is not a roster at all.
+    """
+    blocks = dist("BLK", mean=10.0, spread=3.0)
+    pool = [cand(i, 5, CENTRE, BLK=20.0) for i in range(1, 11)]
+    pool.append(cand(99, 5, GUARD, BLK=0.0))
+
+    plan = optimize(pool, [blocks], budget=100, roster_slots=10, lineup=("PG", "C", "UT"))
+
+    assert 99 in plan.player_ids, "the guard is forced in to fill PG"
+    assert fieldable(plan.players, ("PG", "C", "UT"))
+
+
+def test_a_swap_that_breaks_the_lineup_is_not_taken() -> None:
+    """The only guard is the worst player; the optimizer still keeps him."""
+    points = dist("PTS", mean=50.0, spread=10.0)
+    guard = cand(1, 5, GUARD, PTS=1.0)
+    centres = [cand(i, 5, CENTRE, PTS=100.0) for i in range(2, 6)]
+
+    plan = optimize(
+        [guard, *centres], [points], budget=100, roster_slots=3, lineup=("PG", "C", "UT")
+    )
+
+    assert 1 in plan.player_ids, "dropping the guard for a better centre is illegal"
+    assert fieldable(plan.players, ("PG", "C", "UT"))
+
+
+def test_an_unknown_eligibility_cannot_start_anywhere() -> None:
+    """Empty eligibility is unknown, and unknown is treated as unable."""
+    assert fieldable([cand(1, 1, frozenset())] * 13) is False

@@ -140,6 +140,7 @@ def apply_availability(
                 name=projection.name,
                 games=projection.games * factor,
                 totals={key: value * factor for key, value in projection.totals.items()},
+                eligible=projection.eligible,
             )
         )
     return adjusted

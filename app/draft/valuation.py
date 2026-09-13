@@ -49,6 +49,9 @@ class PlayerProjection:
     name: str
     games: float
     totals: dict[str, float]
+    #: Lineup slots the player may occupy. Empty means unknown, which the
+    #: optimizer treats as unable to start anywhere rather than as a wildcard.
+    eligible: frozenset[str] = frozenset()
 
     def get(self, abbreviation: str) -> float:
         value = self.totals.get(abbreviation)

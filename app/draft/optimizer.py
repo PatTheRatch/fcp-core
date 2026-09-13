@@ -30,6 +30,7 @@ import random
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from app.draft.lineup import DEFAULT_LINEUP, can_field
 from app.draft.market import PriceBoard
 from app.draft.targets import CategoryDistribution
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
@@ -48,6 +49,9 @@ class Candidate:
     price: int
     #: Expected contribution per matchup period, by stat key.
     weekly: dict[str, float]
+    #: Lineup slots the player may occupy. A roster is only valid if its
+    #: players can cover every starting slot at once.
+    eligible: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,7 @@ def candidates_from(
                 name=projection.name,
                 price=price,
                 weekly=weekly,
+                eligible=projection.eligible,
             )
         )
     return out
@@ -135,6 +140,11 @@ def score(
         if distribution.abbreviation not in punt:
             expected += probability
     return expected, probabilities
+
+
+def fieldable(players: Iterable[Candidate], lineup: Sequence[str] = DEFAULT_LINEUP) -> bool:
+    """Whether this roster can cover every starting slot at once."""
+    return can_field({p.player_id: p.eligible for p in players}, lineup)
 
 
 def _plan(
@@ -215,6 +225,7 @@ def _swap_improve(
     punt: frozenset[str],
     keep: frozenset[int],
     budget: int,
+    lineup: Sequence[str] = DEFAULT_LINEUP,
 ) -> RosterPlan:
     """Repeat the single best swap until no swap raises expected wins."""
     best = _plan(roster, distributions, punt)
@@ -230,6 +241,10 @@ def _swap_improve(
                     continue
                 trial = list(best.players)
                 trial[index] = incoming
+                # A swap that breaks the lineup is not a swap, whatever it
+                # would do to the score. Fieldability is a constraint.
+                if not fieldable(trial, lineup):
+                    continue
                 plan = _plan(trial, distributions, punt)
                 if plan.expected_wins > (improved or best).expected_wins + 1e-9:
                     improved = plan
@@ -237,6 +252,30 @@ def _swap_improve(
             return best
         best = improved
         chosen = set(best.player_ids)
+
+
+def _repair_lineup(
+    roster: list[Candidate],
+    pool: Sequence[Candidate],
+    *,
+    budget: int,
+    keep: frozenset[int],
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+) -> list[Candidate] | None:
+    """Make an unfieldable start fieldable with one swap, cheapest first."""
+    chosen = {c.player_id for c in roster}
+    cost = sum(c.price for c in roster)
+    for index, outgoing in enumerate(roster):
+        if outgoing.player_id in keep:
+            continue
+        for incoming in sorted(pool, key=lambda c: c.price):
+            if incoming.player_id in chosen or cost - outgoing.price + incoming.price > budget:
+                continue
+            trial = list(roster)
+            trial[index] = incoming
+            if fieldable(trial, lineup):
+                return trial
+    return None
 
 
 def optimize(
@@ -251,6 +290,7 @@ def optimize(
     minimum_bid: int = 1,
     restarts: int = DEFAULT_RESTARTS,
     seed: int = 0,
+    lineup: Sequence[str] = DEFAULT_LINEUP,
 ) -> RosterPlan:
     """The roster that maximises expected weekly category wins under a budget.
 
@@ -294,7 +334,16 @@ def optimize(
         )
         if len(roster) < required:
             continue
-        plan = _swap_improve(roster, pool, distributions, punt=punted, keep=keep, budget=budget)
+        # An unfieldable start is repaired by one cheap swap if any swap does
+        # it, and abandoned otherwise; the other starts will usually manage.
+        if not fieldable(roster, lineup):
+            repaired = _repair_lineup(roster, pool, budget=budget, keep=keep, lineup=lineup)
+            if repaired is None:
+                continue
+            roster = repaired
+        plan = _swap_improve(
+            roster, pool, distributions, punt=punted, keep=keep, budget=budget, lineup=lineup
+        )
         if best is None or plan.expected_wins > best.expected_wins + 1e-9:
             best = plan
     return best if best is not None else _plan([], distributions, punted)

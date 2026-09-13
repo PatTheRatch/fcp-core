@@ -60,7 +60,11 @@ def load_projections(
             continue
         pool.append(
             PlayerProjection(
-                player_id=int(espn_player_id), name=str(name), games=games, totals=totals
+                player_id=int(espn_player_id),
+                name=str(name),
+                games=games,
+                totals=totals,
+                eligible=frozenset(str(slot) for slot in (stat.eligible_slots or [])),
             )
         )
     return pool

@@ -648,6 +648,9 @@ def ingest_player_stats(
                     session.add(rollup)
                 rollup.games_played = float(totals["GP"]) if totals.get("GP") is not None else None
                 rollup.raw_totals = dict(totals)
+                rollup.eligible_slots = [
+                    str(slot) for slot in (getattr(espn_player, "eligibleSlots", None) or [])
+                ]
                 for abbreviation, column in _PLAYER_STAT_COLUMNS.items():
                     if column == "personal_fouls" or column in (
                         "offensive_rebounds",

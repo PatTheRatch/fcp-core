@@ -724,4 +724,12 @@ class PlayerSeasonStat(Base):
     #: total, so the two are not the same shape.
     raw_totals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
+    #: Lineup slots the player may occupy that season, as ESPN names them:
+    #: PG, SG, SF, PF, C, G, F, G/F, PF/C, F/C, UT, BE, IR. Rides on the
+    #: season row because eligibility is set per season and it is what the
+    #: optimizer needs to refuse a roster nobody could field.
+    eligible_slots: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+
     player: Mapped[Player] = relationship()

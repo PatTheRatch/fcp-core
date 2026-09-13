@@ -205,9 +205,32 @@ analysis predicts precisely this: injuries do not persist and do not vary by
 tier, so spreading the money buys a different lottery ticket, not a safer
 one. Recorded as inconclusive rather than as a result.
 
-Not yet modelled: positional eligibility. With three utility slots and daily
-lineups it is loosely binding, and the backtest roster fielded fine, but a
-roster of thirteen centres would pass the optimizer today.
+**Positional eligibility is a hard constraint.** A roster is only a roster
+if its players can cover every starting slot at once, and this league's
+lineup is PG, SG, SF, PF, C, G, F and three UT. Eligibility comes from the
+player card, one list per player per season, and feasibility is a bipartite
+matching with augmenting paths, so a flexible player is moved aside to make
+room for a rigid one rather than greedily wedged in first. An unfieldable
+swap is not considered whatever it would do to the score, and an
+unfieldable start is repaired by one cheap swap or abandoned. Thirteen
+centres are refused, and a test says so. The constraint is visibly active:
+the capped roster changed shape once it was on, while the uncapped one
+happened to be fieldable already.
+
+**On whether the optimizer just loves one player.** Across the thirteen
+converged starting rosters, no player appears in more than seven and
+seventy-seven distinct players are used, so it does not fixate. But two
+plans compared on one season are only as independent as their rosters: the
+capped and uncapped rosters share six of thirteen players, 46%, so that
+comparison is half the same experiment and whichever shared player got hurt
+decides both. `app.draft.compare` reports overlap and player frequency so a
+comparison can say how much it shares instead of implying independence.
+
+A migration lesson, recorded because it reported success while failing.
+Adding a NOT NULL column to a populated table needs a server default;
+without one Postgres rejects it, alembic rolls back, and a grep for
+"Running" shows only the optimistic line. Check `alembic current` after any
+migration that adds a required column.
 
 ### Market model
 
