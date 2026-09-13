@@ -34,6 +34,7 @@ categories are read only from seasons of the same size, and rate categories
 from every season, which gives them a far larger sample for free.
 """
 
+import math
 from dataclasses import dataclass
 from statistics import fmean
 
@@ -198,6 +199,131 @@ def _percentile(
     ).one()
     value, sample = row
     return (float(value) if value is not None else None), int(sample or 0)
+
+
+@dataclass(frozen=True)
+class CategoryDistribution:
+    """What opponents post in one category, as a whole distribution.
+
+    A target answers "what do I need to win this often". The optimizer needs
+    the reverse, "how often does this total win", and for that it needs the
+    shape rather than one point on it. Mean and spread together give a
+    probability of winning for any total, which is what gets maximised.
+    """
+
+    abbreviation: str
+    mean: float
+    spread: float
+    lower_is_better: bool
+    sample: int
+    basis_seasons: tuple[int, ...]
+    period_days: int
+    era_scale: float
+
+    def win_probability(self, total: float) -> float:
+        """How often a roster posting `total` beats the opponent.
+
+        Normal on the opponent's distribution. For turnovers the sign flips,
+        since posting less than the opponent is the win.
+        """
+        if self.spread <= 0:
+            return 0.5
+        z = (total - self.mean) / self.spread
+        if self.lower_is_better:
+            z = -z
+        return _normal_cdf(z)
+
+
+def _normal_cdf(z: float) -> float:
+    """Standard normal CDF, via the error function."""
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def _moments(
+    session: Session,
+    abbreviation: str,
+    seasons: list[int],
+    period_days: int,
+) -> tuple[float | None, float | None, int]:
+    """Mean, standard deviation and sample of one category's posted totals."""
+    if not seasons:
+        return None, None, 0
+
+    row = session.execute(
+        select(
+            func.avg(cast(MatchupTeamStat.value, Float)),
+            func.stddev_pop(cast(MatchupTeamStat.value, Float)),
+            func.count(),
+        )
+        .join(Matchup, Matchup.id == MatchupTeamStat.matchup_id)
+        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
+        .join(LeagueSeason, LeagueSeason.id == MatchupPeriod.league_season_id)
+        .where(
+            MatchupTeamStat.abbreviation == abbreviation,
+            MatchupTeamStat.league_season_category_id.is_not(None),
+            MatchupPeriod.is_playoff.is_(False),
+            Matchup.away_team_id.is_not(None),
+            LeagueSeason.season.in_(seasons),
+            _period_length == period_days,
+        )
+    ).one()
+    mean, spread, sample = row
+    return (
+        float(mean) if mean is not None else None,
+        float(spread) if spread is not None else None,
+        int(sample or 0),
+    )
+
+
+def category_distributions(
+    session: Session,
+    league_season: LeagueSeason,
+    *,
+    period_days: int | None = None,
+    adjust_for_era: bool = True,
+) -> list[CategoryDistribution]:
+    """Every scored category's opponent distribution, on the same basis as
+    `category_targets`: same league size, same period length, same era
+    adjustment. Both mean and spread are scaled, since a category that
+    drifts up drifts its whole distribution."""
+    categories = session.scalars(
+        select(LeagueSeasonCategory)
+        .where(LeagueSeasonCategory.league_season_id == league_season.id)
+        .order_by(LeagueSeasonCategory.position)
+    ).all()
+    sized_count, sized_seasons = _sized_seasons(session, int(league_season.team_count))
+    all_seasons = sorted({season for _, season in _seasons_with_results(session)})
+    days = period_days if period_days is not None else modal_period_days(session, all_seasons)
+    trends = (
+        category_trends(session, [c.abbreviation for c in categories]) if adjust_for_era else {}
+    )
+
+    out: list[CategoryDistribution] = []
+    for category in categories:
+        pooled = category.abbreviation in RATE_CATEGORIES
+        seasons = all_seasons if pooled else sized_seasons
+        mean, spread, sample = _moments(session, category.abbreviation, seasons, days)
+        if mean is None or spread is None:
+            continue
+
+        scale = 1.0
+        trend = trends.get(category.abbreviation)
+        if trend is not None and seasons:
+            scale = trend.scale(round(fmean(seasons)), int(league_season.season))
+
+        out.append(
+            CategoryDistribution(
+                abbreviation=category.abbreviation,
+                mean=mean * scale,
+                spread=spread * scale,
+                lower_is_better=category.abbreviation in INVERTED_CATEGORIES,
+                sample=sample,
+                basis_seasons=tuple(seasons),
+                period_days=days,
+                era_scale=scale,
+            )
+        )
+    return out
 
 
 def category_targets(
