@@ -12,11 +12,51 @@ Before this existed, a roster of thirteen centres would have scored well on
 blocks and rebounds and been accepted.
 """
 
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 
-#: This league's daily starting lineup. Ten slots; three bench spots make
-#: the thirteen-man roster and are not part of the feasibility question.
+#: Fallback lineup, used only when a season has no stored roster rules.
+#: The real one comes from ESPN via `lineup_from_settings`, because it is a
+#: season setting and this league has already changed others between years.
 DEFAULT_LINEUP: tuple[str, ...] = ("PG", "SG", "SF", "PF", "C", "G", "F", "UT", "UT", "UT")
+
+#: Slot order for a readable lineup. Anything unrecognised follows.
+_SLOT_ORDER = ("PG", "SG", "SF", "PF", "C", "G", "F", "G/F", "PF/C", "F/C", "UT")
+
+
+def lineup_from_settings(lineup_slots: Mapping[str, int]) -> tuple[str, ...]:
+    """Expand ESPN's slot counts into one entry per startable place.
+
+    `{"PG": 1, "UT": 3}` becomes `("PG", "UT", "UT", "UT")`, because three
+    utility places are three separate requirements to cover.
+    """
+    if not lineup_slots:
+        return DEFAULT_LINEUP
+
+    def rank(slot: str) -> tuple[int, str]:
+        return (_SLOT_ORDER.index(slot) if slot in _SLOT_ORDER else len(_SLOT_ORDER), slot)
+
+    expanded: list[str] = []
+    for slot in sorted(lineup_slots, key=rank):
+        expanded.extend([slot] * max(0, int(lineup_slots[slot])))
+    return tuple(expanded)
+
+
+def within_position_limits(
+    positions: Iterable[str | None],
+    limits: Mapping[str, int],
+) -> bool:
+    """Whether a roster respects caps like "at most three centres".
+
+    Counted on primary position, which is what ESPN limits. A power forward
+    eligible at centre is not a centre for this purpose, so eligibility is
+    the wrong thing to count and would refuse legal rosters.
+    """
+    if not limits:
+        return True
+    counts = Counter(position for position in positions if position)
+    return all(counts.get(position, 0) <= limit for position, limit in limits.items())
+
 
 #: Slots that ESPN counts as a position but that are never lineup slots.
 _NON_LINEUP = frozenset({"BE", "IR"})

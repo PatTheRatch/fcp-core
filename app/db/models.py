@@ -94,6 +94,22 @@ class LeagueSeason(Base):
     median_scoring: Mapped[bool] = mapped_column(Boolean, nullable=False)
     trade_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    #: The daily starting lineup, slot name to how many, e.g. {"PG": 1,
+    #: "UT": 3}. Read from ESPN rather than inferred: it is a season setting.
+    lineup_slots: Mapped[dict[str, int]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    bench_slots: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: Injured reserve places. Zero for 2019 to 2026, and one from 2027,
+    #: which changes what an injury costs.
+    injured_reserve_slots: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: Caps on how many players of a primary position may be rostered, e.g.
+    #: {"C": 3}. This league limits centres, at three in 2025 and 2026 and
+    #: four in 2027, so it cannot be a constant.
+    position_limits: Mapped[dict[str, int]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
     #: What ESPN returned, kept verbatim. See the module docstring.
     raw_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -731,5 +747,8 @@ class PlayerSeasonStat(Base):
     eligible_slots: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    #: The player's primary position, which is what position limits count.
+    #: A power forward eligible at centre is not a centre for that purpose.
+    primary_position: Mapped[str | None] = mapped_column(String)
 
     player: Mapped[Player] = relationship()

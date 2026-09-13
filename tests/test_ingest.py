@@ -1171,3 +1171,95 @@ def test_season_rollups_are_not_duplicated_on_reingest(session: Session) -> None
     session.commit()
 
     assert len(session.scalars(select(PlayerSeasonStat)).all()) == 2
+
+
+def test_roster_rules_are_read_from_the_league_not_assumed(session: Session) -> None:
+    """Lineup, bench, IR and position caps are settings, and they move.
+
+    This league capped centres at four through 2024, three in 2025 and 2026,
+    and four again in 2027, and added an injured reserve place for the first
+    time in 2027. Any of those baked in as a constant would be wrong for
+    most seasons.
+    """
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+
+    stored = ingest_season(session, espn)
+
+    assert stored.lineup_slots == {
+        "PG": 1,
+        "SG": 1,
+        "SF": 1,
+        "PF": 1,
+        "C": 1,
+        "G": 1,
+        "F": 1,
+        "UT": 3,
+    }
+    assert stored.bench_slots == 3
+    assert stored.injured_reserve_slots == 0
+    assert stored.position_limits == {"C": 3}, "the centre cap is read, not assumed"
+
+
+def test_a_changed_roster_rule_is_followed(session: Session) -> None:
+    """The 2027 case: an IR place appears and the centre cap widens."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+    attach_transactions(
+        espn,
+        {},
+        None,
+        {
+            "lineupSlotCounts": {"0": 1, "4": 1, "11": 3, "12": 3, "13": 1},
+            "positionLimits": {"5": 4},
+        },
+    )
+
+    stored = ingest_season(session, espn)
+
+    assert stored.injured_reserve_slots == 1
+    assert stored.position_limits == {"C": 4}
+    assert stored.lineup_slots == {"PG": 1, "C": 1, "UT": 3}
+
+
+def test_an_unlimited_position_is_not_stored_as_a_cap(session: Session) -> None:
+    """ESPN writes -1 for unlimited and emits a position 0 matching nobody."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_days(
+        teams=[home, away], boxes={}, days={}, windows={}, matchup_period_count=1
+    )
+    attach_transactions(
+        espn,
+        {},
+        None,
+        {"lineupSlotCounts": {"0": 1, "12": 3}, "positionLimits": {"0": 0, "1": -1, "5": -1}},
+    )
+
+    stored = ingest_season(session, espn)
+
+    assert stored.position_limits == {}, "-1 is unlimited, and position 0 is nobody"
+
+
+def test_a_players_primary_position_is_stored(session: Session) -> None:
+    """Position limits count primary position, not eligibility."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    centre = fake_player(500, "Big Man", position="C", slot="C")
+    espn = league_with_days(
+        teams=[home, away],
+        boxes={1: [fake_box(home, away, home_lineup=[centre])]},
+        days={1: {1: [fake_box(home, away, home_lineup=[centre], away_lineup=[])]}},
+        windows={1: ["1"]},
+        matchup_period_count=1,
+        cards={500: fake_card(500, "Big Man", {1: BOX_LINE}, position="C")},
+    )
+
+    ingest_season(session, espn)
+
+    row = session.scalars(
+        select(PlayerSeasonStat).where(PlayerSeasonStat.kind == "projected")
+    ).one()
+    assert row.primary_position == "C"

@@ -39,7 +39,7 @@ from app.db.models import (
     Transaction,
     TransactionItem,
 )
-from app.espn import fetch_transactions, player_names
+from app.espn import fetch_roster_settings, fetch_transactions, player_names
 
 
 def _epoch_ms_to_datetime(epoch_ms: Any) -> datetime | None:
@@ -138,6 +138,11 @@ def ingest_league_structure(session: Session, espn_league: ESPNLeague) -> League
     league_season.acquisition_budget = int(settings.acquisition_budget)
     league_season.median_scoring = bool(settings.median_scoring)
     league_season.trade_deadline = _epoch_ms_to_datetime(getattr(settings, "trade_deadline", None))
+    roster_rules = fetch_roster_settings(espn_league)
+    league_season.lineup_slots = dict(roster_rules["lineup_slots"])
+    league_season.bench_slots = int(roster_rules["bench_slots"])
+    league_season.injured_reserve_slots = int(roster_rules["injured_reserve_slots"])
+    league_season.position_limits = dict(roster_rules["position_limits"])
     league_season.raw_settings = _raw_snapshot(settings)
     league_season.ingested_at = datetime.now(UTC)
 
@@ -651,6 +656,8 @@ def ingest_player_stats(
                 rollup.eligible_slots = [
                     str(slot) for slot in (getattr(espn_player, "eligibleSlots", None) or [])
                 ]
+                position = getattr(espn_player, "position", None)
+                rollup.primary_position = str(position) if position else None
                 for abbreviation, column in _PLAYER_STAT_COLUMNS.items():
                     if column == "personal_fouls" or column in (
                         "offensive_rebounds",

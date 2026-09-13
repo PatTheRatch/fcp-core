@@ -230,3 +230,67 @@ def test_a_swap_that_breaks_the_lineup_is_not_taken() -> None:
 def test_an_unknown_eligibility_cannot_start_anywhere() -> None:
     """Empty eligibility is unknown, and unknown is treated as unable."""
     assert fieldable([cand(1, 1, frozenset())] * 13) is False
+
+
+def test_the_optimizer_respects_the_centre_cap() -> None:
+    """Centres are the only players worth anything, and only three may be rostered."""
+    blocks = dist("BLK", mean=10.0, spread=3.0)
+    centres = [
+        Candidate(
+            player_id=i, name=f"C{i}", price=5, weekly={"BLK": 30.0}, eligible=CENTRE, position="C"
+        )
+        for i in range(1, 8)
+    ]
+    guards = [
+        Candidate(
+            player_id=100 + i,
+            name=f"G{i}",
+            price=5,
+            weekly={"BLK": 1.0},
+            eligible=GUARD,
+            position="PG",
+        )
+        for i in range(1, 8)
+    ]
+
+    plan = optimize(
+        [*centres, *guards],
+        [blocks],
+        budget=100,
+        roster_slots=5,
+        lineup=("PG", "C", "UT", "UT", "UT"),
+        limits={"C": 3},
+    )
+
+    rostered_centres = sum(1 for p in plan.players if p.position == "C")
+    assert rostered_centres <= 3, "the cap binds even when centres are all that score"
+    assert len(plan.players) == 5
+
+
+def test_a_swap_that_would_break_the_centre_cap_is_refused() -> None:
+    points = dist("PTS", mean=50.0, spread=10.0)
+    roster_pool = [
+        Candidate(
+            player_id=1, name="C1", price=5, weekly={"PTS": 90.0}, eligible=CENTRE, position="C"
+        ),
+        Candidate(
+            player_id=2, name="C2", price=5, weekly={"PTS": 90.0}, eligible=CENTRE, position="C"
+        ),
+        Candidate(
+            player_id=3, name="C3", price=5, weekly={"PTS": 90.0}, eligible=CENTRE, position="C"
+        ),
+        Candidate(
+            player_id=4, name="G1", price=5, weekly={"PTS": 1.0}, eligible=GUARD, position="PG"
+        ),
+    ]
+
+    plan = optimize(
+        roster_pool,
+        [points],
+        budget=100,
+        roster_slots=3,
+        lineup=("PG", "C", "UT"),
+        limits={"C": 2},
+    )
+
+    assert sum(1 for p in plan.players if p.position == "C") <= 2

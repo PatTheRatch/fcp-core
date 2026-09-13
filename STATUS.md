@@ -205,6 +205,29 @@ analysis predicts precisely this: injuries do not persist and do not vary by
 tier, so spreading the money buys a different lottery ticket, not a safer
 one. Recorded as inconclusive rather than as a result.
 
+**Roster rules come from ESPN, per season.** They are not constants and
+this league has already changed them:
+
+| season | centre cap | injured reserve |
+|---|---|---|
+| 2019 to 2024 | 4 | 0 |
+| 2025, 2026 | 3 | 0 |
+| 2027 | 4 | **1** |
+
+The starting lineup, bench size, IR places and position caps are all read
+from `rosterSettings` and stored on `league_seasons`. The lineup had been
+inferred by counting slots in box scores, which happened to be right, and
+the centre cap had been missed entirely. Position limits count **primary
+position**: a power forward eligible at centre is not a centre, so counting
+eligibility would refuse legal rosters.
+
+**Injured reserve changes the injury argument for 2027.** Every season on
+record had none, which is what the availability analysis assumed. From 2027
+there is one place, so a hurt player can be stashed rather than occupying a
+starting-eligible slot. It does not change the finding that availability is
+unpredictable; it does soften the cost of being wrong, and it is stored so
+the optimizer can use it rather than assume it.
+
 **Positional eligibility is a hard constraint.** A roster is only a roster
 if its players can cover every starting slot at once, and this league's
 lineup is PG, SG, SF, PF, C, G, F and three UT. Eligibility comes from the

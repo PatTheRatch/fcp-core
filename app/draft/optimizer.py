@@ -27,10 +27,10 @@ objective directly, and deterministic for a given seed.
 """
 
 import random
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from app.draft.lineup import DEFAULT_LINEUP, can_field
+from app.draft.lineup import DEFAULT_LINEUP, can_field, within_position_limits
 from app.draft.market import PriceBoard
 from app.draft.targets import CategoryDistribution
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
@@ -52,6 +52,8 @@ class Candidate:
     #: Lineup slots the player may occupy. A roster is only valid if its
     #: players can cover every starting slot at once.
     eligible: frozenset[str] = frozenset()
+    #: Primary position, which is what roster position limits count.
+    position: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,7 @@ def candidates_from(
                 price=price,
                 weekly=weekly,
                 eligible=projection.eligible,
+                position=projection.position,
             )
         )
     return out
@@ -142,9 +145,22 @@ def score(
     return expected, probabilities
 
 
-def fieldable(players: Iterable[Candidate], lineup: Sequence[str] = DEFAULT_LINEUP) -> bool:
-    """Whether this roster can cover every starting slot at once."""
-    return can_field({p.player_id: p.eligible for p in players}, lineup)
+def fieldable(
+    players: Iterable[Candidate],
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
+) -> bool:
+    """Whether this roster is legal: fills every slot, and respects the caps.
+
+    Two separate rules. The lineup asks whether the players can cover the
+    starting slots at once, which is a matching. The limits ask whether too
+    many share a primary position, which is a count. A roster of four
+    centres can field a lineup perfectly well and still be illegal.
+    """
+    roster = list(players)
+    if limits and not within_position_limits((p.position for p in roster), limits):
+        return False
+    return can_field({p.player_id: p.eligible for p in roster}, lineup)
 
 
 def _plan(
@@ -226,6 +242,7 @@ def _swap_improve(
     keep: frozenset[int],
     budget: int,
     lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
 ) -> RosterPlan:
     """Repeat the single best swap until no swap raises expected wins."""
     best = _plan(roster, distributions, punt)
@@ -243,7 +260,7 @@ def _swap_improve(
                 trial[index] = incoming
                 # A swap that breaks the lineup is not a swap, whatever it
                 # would do to the score. Fieldability is a constraint.
-                if not fieldable(trial, lineup):
+                if not fieldable(trial, lineup, limits):
                     continue
                 plan = _plan(trial, distributions, punt)
                 if plan.expected_wins > (improved or best).expected_wins + 1e-9:
@@ -261,8 +278,9 @@ def _repair_lineup(
     budget: int,
     keep: frozenset[int],
     lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
 ) -> list[Candidate] | None:
-    """Make an unfieldable start fieldable with one swap, cheapest first."""
+    """Make an illegal start legal with one swap, cheapest first."""
     chosen = {c.player_id for c in roster}
     cost = sum(c.price for c in roster)
     for index, outgoing in enumerate(roster):
@@ -273,7 +291,7 @@ def _repair_lineup(
                 continue
             trial = list(roster)
             trial[index] = incoming
-            if fieldable(trial, lineup):
+            if fieldable(trial, lineup, limits):
                 return trial
     return None
 
@@ -291,6 +309,7 @@ def optimize(
     restarts: int = DEFAULT_RESTARTS,
     seed: int = 0,
     lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
 ) -> RosterPlan:
     """The roster that maximises expected weekly category wins under a budget.
 
@@ -336,13 +355,22 @@ def optimize(
             continue
         # An unfieldable start is repaired by one cheap swap if any swap does
         # it, and abandoned otherwise; the other starts will usually manage.
-        if not fieldable(roster, lineup):
-            repaired = _repair_lineup(roster, pool, budget=budget, keep=keep, lineup=lineup)
+        if not fieldable(roster, lineup, limits):
+            repaired = _repair_lineup(
+                roster, pool, budget=budget, keep=keep, lineup=lineup, limits=limits
+            )
             if repaired is None:
                 continue
             roster = repaired
         plan = _swap_improve(
-            roster, pool, distributions, punt=punted, keep=keep, budget=budget, lineup=lineup
+            roster,
+            pool,
+            distributions,
+            punt=punted,
+            keep=keep,
+            budget=budget,
+            lineup=lineup,
+            limits=limits,
         )
         if best is None or plan.expected_wins > best.expected_wins + 1e-9:
             best = plan
