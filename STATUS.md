@@ -141,7 +141,7 @@ each can be checked against a season that has already happened.
 | 2. Targets: what totals actually win a category here | done |
 | 3. Market model: what this league pays for value | done |
 | 4. Optimizer: best roster under a budget | done |
-| 5. Live draft room: state, remaining pool, re-solve | next |
+| 5. Live draft room: state, remaining pool, re-solve | state machine and ceiling done; live feed next |
 
 **Why this differs from the previous attempt.** That one simulated what we
 can now measure. It ran Monte Carlo over imagined drafts to guess category
@@ -174,6 +174,85 @@ one-dollar fillers, that implicitly punted turnovers and field goal
 percentage. The search now runs from the greedy roster and twelve shuffled
 ones, deterministic for a given seed, and lands on a balanced roster
 instead.
+
+**It is fast enough to run between two bids.** A full solve at twelve
+restarts takes 0.8 seconds on the real 2026 pool; it took twenty. The two
+costs were found by profiling, not guessed. Fieldability -- a bipartite
+matching -- was being checked on every trial before the score, so 94,658
+matchings were paid for and almost all rejected on score a moment later. It
+is a constraint, not a filter, and is now checked only for a trial that has
+already beaten the incumbent, which cannot change the answer because the
+incumbent is only ever a fieldable roster. And the roster's line was being
+re-summed for all 92,000 trials when a swap changes it by one subtraction and
+one addition. A test holds the fast search to the obvious one across restart
+counts and punt sets. It caught a real divergence on the first attempt: the
+1e-9 tie-break margin had been dropped when re-arming the incumbent, and with
+a category punted -- where ties are commoner -- the search walked to a
+different local optimum.
+
+### The room
+
+`app/draft/room.py`. A `DraftState` is a value: budget, places, every
+team's picks. `apply` returns the next state and refuses what the rules
+refuse -- a duplicate, a bid below the floor, a bid that would strand a
+later place. Replaying all 182 picks of the 2026 draft through it refuses
+nothing, ends every team at thirteen and under budget, and leaves $4 in the
+room, which is what the database says.
+
+Three numbers, three questions. `max_bid` is the rules' ceiling: what a
+team holds less a floor bid for every other place it still owes. The
+*field ceiling* is the highest max_bid among the other teams; no player can
+go for more, whatever anyone thinks. The *bid ceiling* is a judgment: the
+highest price at which owning the player still leaves us a roster at least
+as good as the best roster without him, found by bisection because a plan
+with him can only get worse as his price rises. About eight solves, a few
+seconds at full restarts.
+
+The remaining board is repriced continuously by the ratio of discretionary
+money left (above the floors still owed) to board value left (what the
+players who will still be rostered were priced at, above the floor). It is
+exactly one at the open by construction. Replaying 2026 it read 0.86 after
+the first round, 0.54 by pick 56 and 0.32 by pick 91: the room overpaid its
+stars and the back half of the board went for a third of its price. A player
+we own is carried at what we paid, never at what the board said.
+
+**What the ceiling said about 2026, and why it is not a bug.** At pick 53,
+with Morant, Markkanen, Turner and Wiggins already bought, it would not pay
+$1 for Jalen Johnson -- who went for $40 and was the best pick in the draft.
+That is stable across 4, 12 and 24 restarts and a warm start from the
+baseline roster, so it is not search noise. Forcing him in displaced Walker
+Kessler: the roster was already winning PTS at 94% and REB at 89%, so his
+points were nearly worthless to a saturating sum, while losing 8.3 blocks a
+week dropped BLK from 0.92 to 0.83. Net -0.035. Sweeping the fourteen best
+players still on the board at that moment, every marginal at $1 sat between
+-0.04 and +0.04: by then no single player moved that roster by more than a
+twenty-fifth of a category a week. The projection could not know what he
+became. The ceiling reports `marginal_at_floor` so a reader sees the
+magnitude and not only the yes or no.
+
+### What the mock draft taught us
+
+Run 2026-09-13 against a mock cloned from this league. The read API does
+not carry a draft while it happens. `mDraftDetail` reports `inProgress:
+true` and 195 empty pick slots, and stays that way: 1,347 polls across an
+entire auction, zero picks, `mRoster` empty on every team. The uncached
+headers and pre-allocated slots that made it look pollable were a false
+lead. The draft client never polls either -- four requests to the fantasy
+API in the whole session -- because the board arrives over a websocket.
+When the mock ended, the league was deleted outright; mocks never persist.
+
+The page itself carries more than the API would have. Read from the DOM
+mid-draft: every team's remaining budget, the player on the block, the
+live high bid and who made it, every completed pick with its price, and
+ESPN's own pre-draft valuation. Remaining budgets are the most valuable
+input a room can have and the REST view would never have provided them even
+had it worked, since it records only completed picks. So the live feed is
+the browser, with typed entry as the override; the REST view remains how a
+finished draft is ingested, which is how all 182 picks of 2026 got here.
+
+`scripts/draft_watch.py` is the watcher that established this. It stays,
+because the next real draft is the first chance to see whether a live
+league behaves like a mock.
 
 Two bugs the restarts exposed. A shuffled start could take an expensive
 player early, find nothing affordable later, and leave the roster short,
@@ -464,6 +543,14 @@ Two deliberate consequences:
 - `scoring_type` is `H2H_CATEGORY`, with 9 scoring categories
   (statIds 0, 1, 2, 3, 6, 11, 17, 19, 20) in `settings._raw_scoring_settings`.
   `espn_api` exposes no parsed category list — the raw dict is the only source.
+- `settings.acquisition_budget` is the in-season FAAB pot, 100 every year. It
+  is NOT the auction budget, which is 200 and lives only in the raw
+  mSettings payload under `draftSettings.auctionBudget`. `espn_api` exposes
+  the first and not the second. Migration 0013 stores the auction budget
+  with the draft type, clock, date and nomination order.
+- 2027 is fifteen teams, not fourteen, with the centre cap back to four and
+  one injured reserve place, drafting 2026-10-03. Read from the settings,
+  not assumed.
 - `team.wins` / `losses` / `ties` are **category** tallies, not matchup records.
   They sum to 171 per team = 19 matchup periods x 9 categories. A matchup
   record has to be derived; it is not a field ESPN hands back.
