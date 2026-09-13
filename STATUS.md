@@ -263,6 +263,52 @@ mock, and a mock is a clone of this league but not this league. And there
 are no 2027 projections yet; `--pool-season 2026 --pool-kind projected`
 stands last year's in, and the room says so on every start, in capitals.
 
+### What the board gets wrong, measured
+
+`scripts/board_calibration.py` (written on the VPS, reviewed and merged)
+builds the board exactly as the room does for every season and joins it to
+what the league actually paid: eight auctions, about 1,900 priced picks.
+2020 is excluded from pooled figures because COVID truncated its projected
+games to 10-90 and the board priced stars at $5-11.
+
+At 14 teams the board is light by 52% on ranks 1-5, 35% on 6-15 and 29% on
+16-30, on the money at 31-60, and heavy by about 30% below that. The two
+14-team seasons agree closely (top-five ratios 1.59 and 1.45), so it is a
+stable curve, not a 2026 effect. Wembanyama at $61 against $100 is an
+ordinary member of it. The board sums to the pot by construction, so "light
+at the top" and "heavy at the bottom" are one finding: the curve is
+compressed.
+
+Two things stop this being a one-line fix. The board's *order* inside the
+top 60 is only moderately right -- Spearman 0.53 to 0.82 by season -- so a
+curve correction addresses perhaps half the error and the rest is
+projection quality. And the curve is not one shape: the top-five ratio runs
+from 0.99 in 2019 to 1.59 in 2024, and in 2026 ranks 21-30 sat above 11-20.
+A tier multiplier fitted across seasons would help on average at 14 teams
+and be wrong by about 0.2 at the top in any given year. Whether to fit one
+is an open decision, recorded here rather than made quietly.
+
+The largest overpays point at a second cause with its own fix: Jaylen Brown
+$28 to $1, Kyrie Irving $32 to $5, Brook Lopez $31 to $4, Jonathan Isaac
+$27 to $5 -- players known to be hurt at draft time whose projection still
+assumed a full season. The room knew; the board did not. That is the
+injury-aware valuation this framework always intended, now with a measured
+cost attached.
+
+### The deployment gap, and the guard
+
+The scheduled ingest on the VPS runs whatever is checked out at
+/opt/fcp-core against whatever schema the database has; the checkout is
+pulled by hand and the migration is a separate step. On 2026-09-13 the
+checkout reached main -- with the ORM's new `auction_budget` column --
+before the database was migrated. Nothing failed only because the nightly
+run had already happened and the migration was applied before the next one.
+`scheduled_ingest.sh` now refuses to run when `alembic current` is not at
+head, saying so in capitals in its log, and a test against a scratch
+database one revision behind proves it fires. The right deploy is still
+`git pull && alembic upgrade head`; the guard turns forgetting the second
+half into a loud failure rather than a quiet wrong write.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

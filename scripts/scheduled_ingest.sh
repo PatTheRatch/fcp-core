@@ -8,7 +8,8 @@
 # Exit codes matter here, because a scheduler is the only thing reading them:
 #   0   the ingest succeeded
 #   69  the database was unreachable, so nothing was attempted
-#   1   the ingest itself failed (the reason is in ingest_runs and the log)
+#   1   the ingest itself failed, or the database schema is behind the code
+#       (the reason is in the log; the latter says so in capitals)
 #
 # Every attempt is appended to logs/scheduled-ingest.log. The run is also
 # recorded in the ingest_runs table, but only once the database is up, which
@@ -65,6 +66,16 @@ finally:
     sleep 5
     waited=$((waited + 5))
 done
+
+# Refuse to run code against a schema it was not written for. The checkout
+# is deployed by hand and the migration is a separate step, so the two can
+# drift: on 2026-09-13 the ORM gained a column before the database did, and
+# only luck in the timing kept the nightly run from failing on it. Alembic
+# prints "(head)" beside the revision when the database is current.
+if ! "$PYTHON" -m alembic current 2>/dev/null | grep -q '(head)'; then
+    log "REFUSED: database schema is not at the latest migration; run '.venv/bin/alembic upgrade head' in $REPO_DIR"
+    exit 1
+fi
 
 log "starting: --recent $RECENT_DAYS"
 if "$PYTHON" scripts/ingest_league.py --recent "$RECENT_DAYS" >> "$LOG_FILE" 2>&1; then
