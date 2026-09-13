@@ -58,6 +58,9 @@ class SeasonTeam:
     team_id: int
     team_name: str
     owner: str
+    #: The ESPN GUID of the owner this roster is attributed to. The durable
+    #: identity; `owner` is only a label and can collide or change.
+    owner_guid: str = ""
     #: True when the team has more than one ESPN owner. The roster is still
     #: attributed to the primary owner, but flagging it keeps a co-managed
     #: team from reading as a clean single-owner result.
@@ -128,8 +131,8 @@ def load(conn: psycopg.Connection) -> dict[int, list[SeasonTeam]]:
         cur.execute(
             """
             SELECT tw.team_id,
-                   COALESCE(o.display_name,
-                            TRIM(CONCAT_WS(' ', o.first_name, o.last_name))),
+                   o.display_name,
+                   TRIM(CONCAT_WS(' ', o.first_name, o.last_name)),
                    o.espn_owner_id
             FROM team_owners tw
             JOIN owners o ON o.id = tw.owner_id
@@ -140,27 +143,49 @@ def load(conn: psycopg.Connection) -> dict[int, list[SeasonTeam]]:
         #: Pooling them would split one team's season across two "owners" and
         #: corrupt every per-owner average, so attribute the roster to the
         #: primary (first-listed) owner and mark the co-owned teams.
-        owners: dict[int, list[tuple[str, str]]] = defaultdict(list)
-        for team_id, name, guid in cur.fetchall():
-            if name:
-                owners[team_id].append((guid, name))
+        #:
+        #: Identity is the ESPN GUID: stable across seasons and unaffected by
+        #: a team being renamed. `display_name` is the ESPN handle and is
+        #: neither unique (two different owners are both "Anthony Turner") nor
+        #: stable, so it is never used as a key. For display, the real name is
+        #: preferred and the handle kept as a fallback and a disambiguator --
+        #: real names can collide too, but the handle is what a reader of this
+        #: league would actually recognise.
+        owners: dict[int, list[tuple[str, str, str]]] = defaultdict(list)
+        for team_id, handle, real_name, guid in cur.fetchall():
+            owners[team_id].append((guid, handle or "", real_name or ""))
 
-        def primary(team_id: int) -> tuple[str, bool]:
+        def primary(team_id: int) -> tuple[str, str, bool]:
             named = owners.get(team_id, [])
             if not named:
-                return "UNKNOWN", False
-            return named[0][1], len(named) > 1
+                return "UNKNOWN", "", False
+            guid, handle, real_name = named[0]
+            #: Normalise the double spaces ESPN's name fields sometimes carry.
+            real_name = " ".join(real_name.split())
+            handle = " ".join(handle.split())
+            #: ESPN's auto-generated "ESPNFAN<n>" handles are 16 characters and
+            #: add nothing a reader can use, so they are dropped rather than
+            #: truncating the column. Real handles stay: they are how people in
+            #: this league actually recognise each other.
+            if handle.upper().startswith("ESPNFAN"):
+                handle = ""
+            if real_name and handle:
+                label = f"{real_name} ({handle})"
+            else:
+                label = real_name or handle or "UNKNOWN"
+            return label, guid, len(named) > 1
 
         by_season: dict[int, dict[int, SeasonTeam]] = defaultdict(dict)
         season_ids: dict[int, int] = {}
         for season, team_id, team_name, league_season_id in team_rows:
             season_ids[season] = league_season_id
-            owner_name, co_owned = primary(team_id)
+            owner_name, owner_guid, co_owned = primary(team_id)
             by_season[season][team_id] = SeasonTeam(
                 season=season,
                 team_id=team_id,
                 team_name=team_name,
                 owner=owner_name,
+                owner_guid=owner_guid,
                 co_owned=co_owned,
             )
 
@@ -306,17 +331,23 @@ def main() -> None:
     by_owner: dict[str, list[SeasonTeam]] = defaultdict(list)
     for season in seasons:
         for team in seasons[season]:
-            by_owner[team.owner].append(team)
+            #: Pool on the GUID, never the label: two different owners in this
+            #: league are both named "Anthony Turner" and pooling them on the
+            #: name would silently merge two people into one record.
+            by_owner[team.owner_guid or team.owner].append(team)
 
     rows = []
-    for owner, teams in by_owner.items():
+    for owner_guid, teams in by_owner.items():
         ends = [t.retention(t.days[-1]) for t in teams if t.drafted and t.days]
         ends = [e for e in ends if e == e]
         if not ends:
             continue
+        #: Any team carries the label; they are all the same person.
+        label = next((t.owner for t in teams if t.owner), owner_guid)
         rows.append(
             (
-                owner,
+                label,
+                owner_guid,
                 len(teams),
                 sum(ends) / len(ends),
                 min(ends),
@@ -325,18 +356,18 @@ def main() -> None:
                 sum(1 for t in teams if t.co_owned),
             )
         )
-    rows.sort(key=lambda r: r[2], reverse=True)
+    rows.sort(key=lambda r: r[3], reverse=True)
 
     header = (
-        f"{'owner':<24} {'seasons':>8} {'ret%':>7} {'min':>7} {'max':>7} "
+        f"{'owner':<34} {'seasons':>8} {'ret%':>7} {'min':>7} {'max':>7} "
         f"{'players/szn':>12} {'co':>3}"
     )
     print(header)
     print("-" * len(header))
-    for owner, n, avg, lo, hi, used, co in rows:
+    for owner, _guid, n, avg, lo, hi, used, co in rows:
         mark = " *" if n == 1 else ""
         print(
-            f"{owner[:23]:<24} {n:>8} {fmt_pct(avg):>7} {fmt_pct(lo):>7} "
+            f"{owner[:33]:<34} {n:>8} {fmt_pct(avg):>7} {fmt_pct(lo):>7} "
             f"{fmt_pct(hi):>7} {used:>12.1f} {co:>3}{mark}"
         )
     print()
@@ -355,6 +386,7 @@ def main() -> None:
                 "team_id",
                 "team_name",
                 "owner",
+                "owner_guid",
                 "drafted",
                 "retained_end",
                 "retention_end",
@@ -376,6 +408,7 @@ def main() -> None:
                         team.team_id,
                         team.team_name,
                         team.owner,
+                        team.owner_guid,
                         len(team.drafted),
                         len(team.retained_on(last)),
                         f"{team.retention(last):.4f}",

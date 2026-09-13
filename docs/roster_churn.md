@@ -102,35 +102,36 @@ Yes, substantially — but read the caveats before drawing conclusions.
 
 | Owner | Seasons | End retention | Range | Players/szn |
 |---|---|---|---|---|
-| turn0263 | 6 | 57.7% | 46–69% | 30.2 |
-| RickeyWalletz | 6 | 43.6% | 31–54% | 59.5 |
-| ESPNfan8781886161 | 5 | 41.5% | 23–54% | 56.8 |
-| ESPNFAN2587496090 | 5 | 40.0% | 15–54% | 60.0 |
-| ESPNFAN4831571721 | 3 | 38.5% | 38–39% | 56.7 |
-| iverson3018 | 3 | 38.5% | 15–54% | 63.3 |
-| Keegz701 | 3 | 33.3% | 23–46% | 58.7 |
-| espn33516351 | 3 | 30.8% | 15–46% | 67.0 |
-| ctownsgreatest | 3 | 30.8% | 23–39% | 86.0 |
-| TommyTopGuns | 4 | 28.8% | 23–46% | 74.0 |
-| ESPNFAN1131139449 | 4 | 28.8% | 15–39% | 69.8 |
-| espn40808309 | 3 | 25.6% | 15–39% | 66.3 |
-| espn81519416 | **8** | **18.3%** | 0–46% | 77.1 |
+| Anthony Turner | 6 | 57.7% | 46–69% | 30.2 |
+| Brandon Draper | 6 | 43.6% | 31–54% | 59.5 |
+| Anthony Demetriou | 5 | 41.5% | 23–54% | 56.8 |
+| Yohan Udunuwara | 5 | 40.0% | 15–54% | 60.0 |
+| Malachi Chadwick | 3 | 38.5% | 38–39% | 56.7 |
+| Juan Vergara | 3 | 38.5% | 15–54% | 63.3 |
+| Keegan D | 3 | 33.3% | 23–46% | 58.7 |
+| allen vega | 3 | 30.8% | 15–46% | 67.0 |
+| **Patrick McDowell** | **3** | **30.8%** | 23–39% | **86.0** |
+| Tom Foley | 4 | 28.8% | 23–46% | 74.0 |
+| Tom Walker | 4 | 28.8% | 15–39% | 69.8 |
+| Derrick Anderson | 3 | 25.6% | 15–39% | 66.3 |
+| Darnell Odom | **8** | **18.3%** | 0–46% | 77.1 |
 
 **The spread is real: 18.3% to 57.7% across long-tenured owners — a 3× gap.**
 
 Two archetypes emerge, and they are genuinely different strategies rather than
 just different luck:
 
-- **turn0263** (6 seasons) retains 57.7% of his draft while using only **30
-  players a season** — roughly half the league norm. Maximum stability; picks,
-  and sticks.
-- **espn81519416** (8 seasons, the only owner present all eight years) retains
+- **Anthony Turner** (6 seasons) retains 57.7% of his draft while using only
+  **30 players a season** — roughly half the league norm. Maximum stability;
+  picks, and sticks.
+- **Darnell Odom** (8 seasons, the only owner present all eight years) retains
   18.3% and turns over **77 players a season**. Almost no attachment to his own
   draft; he is effectively redrafting in-season.
 
-`ctownsgreatest` (Patrick) sits at 30.8% retention, 86 players used — one of the
-highest churn rates among multi-season owners, so you are firmly in the
-"in-season is where I do my work" camp already.
+**Patrick** sits at 30.8% retention, 86 players used — one of the highest churn
+rates among multi-season owners, so he is already firmly in the "in-season is
+where I do my work" camp, and he pays for it in draft retention: only 3 owners
+run hotter.
 
 **Caveats, stated plainly:**
 
@@ -138,8 +139,15 @@ highest churn rates among multi-season owners, so you are firmly in the
    a single good or bad year. They're marked `*` in the script output.
 2. Some retention is forced, not chosen — injuries drive drops. High churn is
    not automatically a strategy; it can be damage control.
-3. 5 teams have co-owners; those rosters are attributed to the primary owner and
-   flagged, so a co-managed team's number is the team's, not one person's.
+- **Owners are identified by ESPN GUID, not by name or handle.** `display_name`
+  is an ESPN handle that is neither unique (two different owners are both named
+  "Anthony Turner") nor stable, so it is never used as a key. Reports show the
+  real name with the handle where it helps a reader recognise someone; the
+  auto-generated 16-character `ESPNFAN<n>` handles carry no information and are
+  dropped. The CSV keeps both the label and the GUID.
+- **5 teams have co-owners**; those rosters are attributed to the primary owner
+  and flagged (`co` column), so a co-managed team's number is the team's, not one
+  person's.
 
 ---
 
