@@ -624,6 +624,7 @@ def gather(conn: psycopg.Connection[Any], season: int, team_name: str) -> Row:
             "manager": _manager(cur, tid),
             "weeks": weeks,
             "record": (wins, losses, ties),
+            "regular_matchups": len(regular),
             "playoffs": playoffs,
             "rates": _category_rates(cur, season_id, tid),
             "volume": _volume_ranks(cur, season_id, tid),
@@ -728,11 +729,31 @@ def record_line(record: tuple[int, int, int]) -> str:
     return f"{wins}–{losses}" + (f"–{ties}" if ties else "")
 
 
+def category_line(team: Row) -> str:
+    """The category record: what this league is actually decided on."""
+    won, lost, tied = team["categories_won"], team["categories_lost"], team["categories_tied"]
+    return f"{won}–{lost}" + (f"–{tied}" if tied else "")
+
+
+def per_week_line(d: Row) -> str:
+    """Categories won per matchup, out of nine. Empty when it cannot be computed.
+
+    `teams.categories_won` counts the regular season only, so it is divided by
+    the regular-season matchup count and never by the full schedule.
+    """
+    matchups = d["regular_matchups"]
+    if not matchups:
+        return ""
+    per = d["team"]["categories_won"] / matchups
+    return f", {per:.1f} of {len(CATS)} a week"
+
+
 def _headline(d: Row) -> str:
     """One line of fact, assembled from the record. No adjectives."""
     team = d["team"]
     bits = [
-        f"{record_line(d['record'])} in the regular season",
+        f"{category_line(team)} in the categories{per_week_line(d)}",
+        f"{record_line(d['record'])} in matchups",
         f"Seeded {ordinal(team['standing'])}",
         f"Finished {ordinal(team['final_standing'])}",
     ]
@@ -900,34 +921,45 @@ def render(d: Row, notes: dict[str, str] | None = None) -> str:
     add("</header>")
 
     # -- season line ------------------------------------------------------
+    per_matchup = (
+        f"{team['categories_won'] / d['regular_matchups']:.1f}<small> of {len(CATS)}</small>"
+        if d["regular_matchups"]
+        else "—"
+    )
     line = [
-        ("Regular season", record, False),
-        ("Seed", f"{ordinal(team['standing'])}", False),
-        ("Finish", f"{ordinal(team['final_standing'])}", False),
-        ("Categories", cats, True),
+        ("Categories won", cats, "hi wide"),
+        ("Per matchup", per_matchup, "hi"),
+        ("Matchups", record, ""),
+        ("Seed", f"{ordinal(team['standing'])}", ""),
+        ("Finish", f"{ordinal(team['final_standing'])}", ""),
         (
             "Adds / drops",
             f"{team['acquisitions'] or 0}<small> / {team['drops'] or 0}</small>",
-            False,
+            "",
         ),
-        ("Trades", str(team["trades"] or 0), False),
+        ("Trades", str(team["trades"] or 0), ""),
         (
             "FAAB spent",
             f"${team['acquisition_budget_spent'] or 0}"
             f"<small> / {team['acquisition_budget']}</small>",
-            False,
+            "",
         ),
     ]
     add('<dl class="line">')
-    for label, value, hi in line:
-        cls = ' class="hi"' if hi else ""
+    for label, value, style in line:
+        cls = f' class="{style}"' if style else ""
         add(f"<div{cls}><dt>{e(label)}</dt><dd>{value}</dd></div>")
     add("</dl>")
+    add(
+        f'<p class="note strip-note">Categories and matchups are the '
+        f"{d['regular_matchups']} regular-season weeks. The category profile and "
+        "week-by-week ledger below cover every matchup, playoffs included.</p>"
+    )
     note("lede", lede=True)
 
     # -- identity ---------------------------------------------------------
     add('<section><div class="shead"><h2>Category profile</h2>')
-    add('<span class="tag">Win rate, every matchup</span></div>')
+    add('<span class="tag">Nine categories, every matchup</span></div>')
     note("profile")
     add('<div class="cats">')
     for r in d["rates"]:
@@ -977,7 +1009,9 @@ def render(d: Row, notes: dict[str, str] | None = None) -> str:
 
     # -- ledger -----------------------------------------------------------
     add('<section><div class="shead"><h2>Week by week</h2>')
-    add(f'<span class="tag">{len(d["weeks"])} matchups</span></div>')
+    cat_cells = sum(1 for w in d["weeks"] for c in w["cells"] if c != "-")
+    cat_won = sum(1 for w in d["weeks"] for c in w["cells"] if c == "W")
+    add(f'<span class="tag">{cat_won} of {cat_cells} categories won</span></div>')
     note("ledger")
     add('<div class="ledger"><div class="lg">')
     add('<div class="hd"></div><div class="hd l">Opponent</div>')
@@ -1299,14 +1333,15 @@ h1,h2,h3,.disp{font-family:Oswald,"Arial Narrow",sans-serif;font-weight:600;
   text-transform:uppercase;letter-spacing:-.005em}
 .mast .sub{margin:12px 0 0;color:var(--muted);font-size:17px;max-width:62ch}
 .mast .sub b{color:var(--ink);font-weight:600}
-.line{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+.line{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));
   border-bottom:1px solid var(--rule)}
 .line div{padding:18px 16px 16px;border-right:1px solid var(--rule)}
+.line div.wide{grid-column:span 2}
 .line div:last-child{border-right:0}
 .line dt{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--faint);margin:0}
-.line dd{font-family:Oswald,sans-serif;font-weight:600;font-size:30px;line-height:1.1;
-  margin:4px 0 0;font-variant-numeric:tabular-nums}
+.line dd{font-family:Oswald,sans-serif;font-weight:600;font-size:29px;line-height:1.1;
+  margin:4px 0 0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .line dd small{font-size:14px;color:var(--muted);font-weight:400}
 .line .hi dd{color:var(--accent)}
 section{margin-top:64px}
@@ -1318,6 +1353,7 @@ section.narrow{max-width:700px}
   letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
 p{margin:0 0 16px;max-width:66ch}
 .note{color:var(--muted);font-size:15px}
+.strip-note{margin:12px 0 0;font-size:13px}
 .read{max-width:66ch;margin:0 0 4px}
 .read p{margin:0 0 16px}
 .read p:last-child{margin-bottom:0}
