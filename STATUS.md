@@ -156,7 +156,20 @@ A target is a percentile of what opponents actually post, read from eight
 seasons of results rather than simulated. Clear the median and you win the
 category about half the time.
 
-**League size is the one thing that cannot be pooled**, and the data is
+**Two things cannot be pooled.** The first is matchup period length. Most
+periods are a week, but every season has one All-Star fortnight, and it
+posts about a third more of everything: 794 median points against 607.
+There is also a short six day opening week at 502. Mixing them compares
+unlike things, and because the fortnight sits in the upper tail it inflates
+exactly the targets a manager cares about, by 1% at the 75th percentile and
+2.3% at the 90th. Targets read from one period length, the most common by
+default, and `period_days=14` asks about the fortnight instead.
+
+Dividing by days would be wrong rather than helpful. The fortnight has
+fourteen days but nowhere near fourteen days of basketball, which is why it
+is up a third and not double.
+
+The second is league size, and the data is
 emphatic. Counting categories fall about a fifth between a ten team league
 and a sixteen team one, because sixteen rosters share the same player pool
 and each is thinner:
@@ -180,9 +193,11 @@ claim than one from five.
 Turnovers invert into a ceiling rather than a floor: to win them more often
 you commit fewer, so a higher win rate means a lower number.
 
-**For 2027, at sixteen teams:** clear 528 points, 190 rebounds, 117 assists
-and stay under 62 turnovers to win each about half the time. Those come from
-2023, the only sixteen team season played.
+**For 2027, at sixteen teams, in an ordinary week:** clear 525 points, 189
+rebounds, 115 assists and stay under 62 turnovers to win each about half the
+time. Those come from 2023, the only sixteen team season played, across 272
+comparable sides. The All-Star fortnight is a different question and a much
+larger number: 654 points, 235 rebounds.
 
 A subtlety the tests caught. The season being drafted for already exists in
 the database, with a size and no results. Matching on size alone found that

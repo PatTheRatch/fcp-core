@@ -5,7 +5,20 @@ category you have to beat the team opposite, so a target is simply a
 percentile of what opponents post: clear the median and you win about half
 the time.
 
-The one thing that cannot be pooled is league size. Counting categories
+Two things cannot be pooled. The first is **matchup period length**. Most
+periods are a week, but every season has one fortnight over the All-Star
+break, and it posts about a third more of everything: 794 median points
+against 607. There is also a short opening week of six days at 502. Mixing
+them compares unlike things, and because the fortnight sits in the upper
+tail it inflates exactly the targets a manager cares about, by 1% at the
+75th percentile and 2.3% at the 90th. Targets are therefore read from
+periods of one length, the most common one by default.
+
+Dividing by days would be wrong rather than helpful: the All-Star fortnight
+has fourteen days but nowhere near fourteen days of basketball, which is
+why it is up a third rather than double.
+
+The second is league size. Counting categories
 fall about a fifth between a ten team league and a sixteen team one, because
 sixteen rosters share the same pool of players and each one is thinner:
 
@@ -23,7 +36,7 @@ from every season, which gives them a far larger sample for free.
 
 from dataclasses import dataclass
 
-from sqlalchemy import Float, cast, func, select
+from sqlalchemy import Float, Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -59,6 +72,9 @@ class CategoryTarget:
     #: a different claim from one drawn from five.
     basis_team_count: int
     basis_seasons: tuple[int, ...]
+    #: The matchup period length this target describes, in scoring periods.
+    #: A week for the usual target; 14 asks about the All-Star fortnight.
+    period_days: int
 
 
 def _seasons_with_results(session: Session) -> list[tuple[int, int]]:
@@ -103,16 +119,51 @@ def _sized_seasons(session: Session, team_count: int) -> tuple[int, list[int]]:
     return nearest, [season for size, season in rows if size == nearest]
 
 
+#: A matchup period's length in scoring periods, as a SQL expression.
+#: Lower case deliberately. Named as a constant, Ruff reads a comparison
+#: against it as a yoda condition and swaps the operands, which puts a
+#: plain int on the left and quietly turns a SQL clause into a Python bool.
+_period_length = cast(
+    MatchupPeriod.final_scoring_period - MatchupPeriod.first_scoring_period + 1,
+    Integer,
+)
+
+
+def modal_period_days(session: Session, seasons: list[int]) -> int:
+    """The most common matchup period length, which is the ordinary week.
+
+    Taken from the data rather than assumed to be seven: a league that moved
+    to a different schedule should not silently keep answering about weeks.
+    """
+    if not seasons:
+        return 7
+    row = session.execute(
+        select(_period_length.label("days"), func.count())
+        .join(LeagueSeason, LeagueSeason.id == MatchupPeriod.league_season_id)
+        .where(
+            MatchupPeriod.is_playoff.is_(False),
+            MatchupPeriod.first_scoring_period.is_not(None),
+            LeagueSeason.season.in_(seasons),
+        )
+        .group_by(_period_length)
+        .order_by(func.count().desc())
+        .limit(1)
+    ).first()
+    return int(row[0]) if row and row[0] else 7
+
+
 def _percentile(
     session: Session,
     abbreviation: str,
     seasons: list[int],
     fraction: float,
+    period_days: int,
 ) -> tuple[float | None, int]:
     """One category's percentile across the given seasons, with its sample.
 
-    Restricted to contested regular season matchups. Byes have no opponent
-    to beat, and the playoffs are a different bracket.
+    Restricted to contested regular season matchups of one period length.
+    Byes have no opponent to beat, the playoffs are a different bracket, and
+    a fortnight is not a week.
     """
     if not seasons:
         return None, 0
@@ -128,6 +179,7 @@ def _percentile(
             MatchupPeriod.is_playoff.is_(False),
             Matchup.away_team_id.is_not(None),
             LeagueSeason.season.in_(seasons),
+            _period_length == period_days,
         )
         .subquery()
     )
@@ -147,12 +199,16 @@ def category_targets(
     league_season: LeagueSeason,
     *,
     win_probability: float = 0.5,
+    period_days: int | None = None,
 ) -> list[CategoryTarget]:
     """What to aim for in each scored category, to win it that often.
 
     A target is the percentile of opposing totals you have to clear, so
     `win_probability=0.5` is the median opponent and 0.75 is a category you
     intend to win most weeks.
+
+    `period_days` defaults to the ordinary week. Pass 14 to ask what the
+    All-Star fortnight demands, which is a different and much larger number.
     """
     if not 0.0 < win_probability < 1.0:
         raise ValueError("win_probability must sit strictly between 0 and 1")
@@ -166,6 +222,8 @@ def category_targets(
     sized_count, sized_seasons = _sized_seasons(session, int(league_season.team_count))
     all_seasons = [int(season) for season in session.scalars(select(LeagueSeason.season)).all()]
 
+    days = period_days if period_days is not None else modal_period_days(session, all_seasons)
+
     targets: list[CategoryTarget] = []
     for category in categories:
         lower_is_better = category.abbreviation in INVERTED_CATEGORIES
@@ -175,7 +233,7 @@ def category_targets(
 
         pooled = category.abbreviation in RATE_CATEGORIES
         seasons = all_seasons if pooled else sized_seasons
-        value, sample = _percentile(session, category.abbreviation, seasons, fraction)
+        value, sample = _percentile(session, category.abbreviation, seasons, fraction, days)
         if value is None:
             continue
 
@@ -188,6 +246,7 @@ def category_targets(
                 sample=sample,
                 basis_team_count=0 if pooled else sized_count,
                 basis_seasons=tuple(seasons),
+                period_days=days,
             )
         )
     return targets

@@ -287,3 +287,136 @@ def test_the_season_being_drafted_for_does_not_count_as_its_own_basis(
     assert points.target == 500.0
     assert points.basis_seasons == (2023,), "the unplayed season is not a basis"
     assert points.sample == 3
+
+
+def build_two_period_lengths(session: Session, *, season: int, team_count: int) -> LeagueSeason:
+    """A season of ordinary weeks plus one All-Star fortnight.
+
+    The fortnight posts far more of everything, which is the distortion under
+    test: pooling it with the weeks drags every target upward.
+    """
+    league = session.scalar(select(League).where(League.espn_league_id == LEAGUE_ID))
+    if league is None:
+        league = League(espn_league_id=LEAGUE_ID)
+        session.add(league)
+        session.flush()
+
+    league_season = LeagueSeason(
+        league_id=league.id,
+        season=season,
+        name=f"S{season}",
+        scoring_type="H2H_CATEGORY",
+        team_count=team_count,
+        regular_season_periods=4,
+        total_matchup_periods=4,
+        playoff_team_count=2,
+        playoff_matchup_period_length=1,
+        keeper_count=0,
+        uses_faab=True,
+        acquisition_budget=100,
+        median_scoring=False,
+        raw_settings={},
+    )
+    session.add(league_season)
+    session.flush()
+
+    category = LeagueSeasonCategory(
+        league_season_id=league_season.id,
+        stat_id=0,
+        abbreviation="PTS",
+        position=0,
+        is_reverse=False,
+    )
+    session.add(category)
+    home = Team(
+        league_season_id=league_season.id,
+        espn_team_id=1,
+        name="H",
+        categories_won=0,
+        categories_lost=0,
+        categories_tied=0,
+    )
+    away = Team(
+        league_season_id=league_season.id,
+        espn_team_id=2,
+        name="A",
+        categories_won=0,
+        categories_lost=0,
+        categories_tied=0,
+    )
+    session.add_all([home, away])
+    session.flush()
+
+    # Three ordinary weeks at 100/200/300, then a fortnight at 900.
+    plan = [(7, 100.0), (7, 200.0), (7, 300.0), (14, 900.0)]
+    day = 1
+    for index, (length, value) in enumerate(plan):
+        period = MatchupPeriod(
+            league_season_id=league_season.id,
+            period=index + 1,
+            is_playoff=False,
+            first_scoring_period=day,
+            final_scoring_period=day + length - 1,
+        )
+        day += length
+        session.add(period)
+        session.flush()
+        matchup = Matchup(
+            matchup_period_id=period.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            winner="HOME",
+            home_categories_won=1,
+            home_categories_lost=0,
+            categories_tied=0,
+        )
+        session.add(matchup)
+        session.flush()
+        session.add(
+            MatchupTeamStat(
+                matchup_id=matchup.id,
+                team_id=home.id,
+                abbreviation="PTS",
+                value=value,
+                result="WIN",
+                league_season_category_id=category.id,
+            )
+        )
+    session.flush()
+    return league_season
+
+
+def test_the_all_star_fortnight_is_left_out_of_the_weekly_target(
+    session: Session,
+) -> None:
+    """A fortnight posts about a third more, so pooling it inflates the target."""
+    ls = build_two_period_lengths(session, season=2026, team_count=12)
+
+    weekly = {t.abbreviation: t for t in category_targets(session, ls)}["PTS"]
+
+    assert weekly.period_days == 7, "the ordinary week is the default"
+    assert weekly.target == 200.0, "median of 100, 200, 300 and not the 900 fortnight"
+    assert weekly.sample == 3
+
+
+def test_the_fortnight_can_be_asked_about_directly(session: Session) -> None:
+    """Useful in season, when the double week is the thing being planned for."""
+    ls = build_two_period_lengths(session, season=2026, team_count=12)
+
+    fortnight = {t.abbreviation: t for t in category_targets(session, ls, period_days=14)}["PTS"]
+
+    assert fortnight.period_days == 14
+    assert fortnight.target == 900.0
+    assert fortnight.target > 200.0, "a fortnight demands far more than a week"
+
+
+def test_the_ordinary_length_is_read_from_the_data_not_assumed(
+    session: Session,
+) -> None:
+    """A league on a different schedule should not keep being told about weeks."""
+    from app.draft.targets import modal_period_days
+
+    build_two_period_lengths(session, season=2026, team_count=12)
+    session.flush()
+
+    assert modal_period_days(session, [2026]) == 7, "three weeks against one fortnight"
