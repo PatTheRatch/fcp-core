@@ -319,6 +319,20 @@ def show_state(room: Room, state: DraftState) -> None:
         )
 
 
+def market_price(room: Room, state: DraftState, player_id: int) -> tuple[int | None, str]:
+    """What he will probably go for, and where that guess came from."""
+    row = room.bbm.get(player_id)
+    floor = state.minimum_bid
+    if row is not None and row.espn_dollars is not None:
+        factor = inflation(state, room.candidates)
+        price = floor + round(max(0.0, row.espn_dollars - floor) * factor)
+        return max(floor, price), "ESPN drafts, repriced for the room"
+    board = next(
+        (c.price for c in reprice(state, room.candidates) if c.player_id == player_id), None
+    )
+    return board, "our board; no market price on file"
+
+
 def show_ceiling(
     room: Room, state: DraftState, ceiling: Ceiling, name: str, board: BoardSnapshot | None = None
 ) -> None:
@@ -361,17 +375,22 @@ def show_ceiling(
                 "games; worth more to a roster that can stash him on IR"
             )
     # Two different numbers, and the clock needs both: what he is worth to
-    # us, above; and what he will probably go for, here -- the board's price
-    # for him, repriced for the money left in the room.
-    going = next(
-        (c.price for c in reprice(state, room.candidates) if c.player_id == ceiling.player_id),
-        None,
-    )
+    # us, above; and what he will probably go for, here. The going price is
+    # the market's, not ours: what ESPN drafts pay for him on average, since
+    # this league drafts on ESPN and sees ESPN's values on the block, repriced
+    # for the money left in the room. Our board's price is a valuation, and
+    # for exactly the players worth swinging on it is the wrong guess -- it
+    # had Kawhi at $47 in 2027 where ESPN drafts pay $13, and this league
+    # paid $12 for him in 2026. The board stands in only when no market
+    # number is on file.
+    going, source = market_price(room, state, ceiling.player_id)
     if going is not None:
-        if ceiling.price is None or going > ceiling.price:
-            say(f"  expected to go for about ${going} -- more than he is worth to us; let him go")
-        else:
-            say(f"  expected to go for about ${going} -- inside our ceiling")
+        verdict = (
+            "more than he is worth to us; let him go"
+            if ceiling.price is None or going > ceiling.price
+            else "inside our ceiling"
+        )
+        say(f"  expected to go for about ${going} ({source}) -- {verdict}")
     if board and board.on_block and board.on_block.player == name:
         block = board.on_block
         bits = []
