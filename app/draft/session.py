@@ -49,7 +49,6 @@ from app.draft.room import (
     Pick,
     bid_ceiling,
     inflation,
-    reprice,
     resolve,
 )
 from app.draft.targets import CategoryDistribution
@@ -362,7 +361,9 @@ class DraftSession:
         picks = self._state.picks
         if self._priced is None or self._priced[0] != picks:
             market = market_prices(self.room, self._state)
-            board = {c.player_id: c.price for c in reprice(self._state, self.room.candidates)}
+            board = {
+                c.player_id: self.room.board.get(c.player_id, c.price) for c in self.room.candidates
+            }
             self._priced = (picks, market, board)
         return self._priced[1], self._priced[2]
 

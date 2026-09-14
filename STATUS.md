@@ -679,6 +679,31 @@ the empty-room plan expects about 6.35 categories a week, above what any
 team in the league has averaged; the absolute number is optimistic even
 where the comparisons between players hold.
 
+### Pricing the room like an auction
+
+Two faults, found because the plan's model roster had Doncic at $52. First,
+the optimizer planned at board prices -- valuations -- while the room pays
+the going price; its "target roster" was buying players it would never get.
+Second, the fitted going price was not an auction: it priced the top 195 of
+the 2027 pool at $2,833 of a $3,000 room, and the missing money was the
+stars' known shortfall.
+
+The going price (`app/draft/live.py`) now ranks players by the ESPN-average /
+board blend and shares out the money this league actually spends: 24.2% of
+all places at $1, 7.6% at $2 (17-32% by season), 98.8% of the budget used,
+the rest in proportion to the blend, recomputed from the live state. Scored
+on 712 drafted players with each season's parameters from the others:
+
+    fitted blend                 misses $5.42; $40+ stars $5.40 low; $1-2 $3.00
+    sized to the room            misses $5.14; $40+ stars $2.60 low; $1-2 $1.70
+
+Candidates now carry the going price, so ceilings and plans are bought at
+what players cost; the board survives as `Room.board` for the blend and for
+display. For 2027: 47 players at $1 and 15 at $2 in the top 195, Doncic $77
+(the room paid $69-91 in five of his six drafts), Wembanyama $118 -- above
+the league record of $101, flagged on the plan as a range. The model's
+unrestricted roster stopped punting free throws once it paid real prices.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

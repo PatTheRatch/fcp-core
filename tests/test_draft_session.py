@@ -178,7 +178,7 @@ def test_ceilings_are_ready_for_the_likeliest_nominations_and_never_stale(
 def test_the_card_carries_market_bbm_and_the_injury_discount() -> None:
     session = DraftSession(make_room())
     card = session.card(2)
-    assert card["market_source"].startswith("ESPN average")
+    assert card["market_source"].startswith("ESPN average and our board, sized")
     assert card["bbm"]["league_total"] == 41
     assert card["bbm"]["league_per_game"] == 52
     assert card["bbm"]["injury_discount"] == 11
@@ -249,3 +249,41 @@ def test_the_screen_is_served() -> None:
     client = TestClient(create_draft_app(DraftSession(make_room())))
     page = client.get("/")
     assert page.status_code == 200 and "Draft Room" in page.text
+
+
+def test_going_prices_share_the_rooms_money_and_price_a_quarter_at_a_dollar() -> None:
+    """An auction is a fixed pot, and a quarter of the places go for $1."""
+    from app.draft.live import DOLLAR_ONE_SHARE, SPEND_RATE, market_prices
+
+    names = {i: f"Player {i}" for i in range(1, 61)}
+    candidates = [
+        Candidate(
+            player_id=i,
+            name=names[i],
+            price=max(1, 70 - i),
+            weekly={"PTS": float(100 - i), "FGM": 0.0, "FGA": 0.0, "FTM": 0.0, "FTA": 0.0},
+            eligible=frozenset({"UT"}),
+            position="SF",
+        )
+        for i in names
+    ]
+    teams = {1: "A", 2: "B", 3: "C", 4: "D"}
+    state = DraftState.open(budget=200, roster_slots=10, teams=teams, me=1)
+    room = Room(
+        season=2027,
+        state=state,
+        candidates=candidates,
+        distributions=[PTS],
+        lineup=("UT",),
+        limits={},
+        names={c.name: c.player_id for c in candidates},
+        team_names=teams,
+        punt=(),
+        restarts=1,
+    )
+    prices = market_prices(room, state)
+    rostered = sorted((p for p, _ in prices.values() if p is not None), reverse=True)[:40]
+
+    assert sum(1 for p in rostered if p == 1) == round(DOLLAR_ONE_SHARE * 40)
+    assert sum(rostered) == pytest.approx(800 * SPEND_RATE, abs=15)
+    assert rostered[0] > rostered[-1]

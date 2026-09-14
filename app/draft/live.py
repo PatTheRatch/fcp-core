@@ -8,7 +8,7 @@ disagree about the pool, the board, the opponents or the plan.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from sqlalchemy import select as sql_select
@@ -26,9 +26,7 @@ from app.draft.optimizer import Candidate, candidates_from
 from app.draft.room import (
     Allocation,
     DraftState,
-    inflation,
     plan_allocation,
-    reprice,
 )
 from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
@@ -68,6 +66,10 @@ class Room:
     per_game_dollars: dict[int, float] = field(default_factory=dict)
     #: One line about the pool, for the header.
     pool_note: str = ""
+    #: Our board's price for each player: the valuation, before sizing to the
+    #: room. Candidates carry the going price, which is what the optimizer
+    #: plans with; this is kept for the blend and for display.
+    board: dict[int, int] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +180,32 @@ def load_room(
             me=my_id,
             nomination_order=league_season.draft_order or (),
         )
-        allocation = None
         lineup = pool.lineup_for(league_season)
         limits = pool.position_limits_for(league_season)
+        bbm_view = Room(
+            season=season,
+            state=state,
+            candidates=candidates,
+            distributions=list(distributions),
+            lineup=lineup,
+            limits=limits,
+            names=names,
+            team_names=teams,
+            punt=tuple(punt),
+            restarts=restarts,
+            bbm=bbm_rows,
+            board={c.player_id: c.price for c in candidates},
+        )
+        # Plan at what players will cost, not at what they are worth: priced
+        # at the board, the model built rosters around a $52 Doncic the room
+        # has paid $69-91 for in five of six drafts.
+        going = market_prices(bbm_view, state)
+        board_prices = dict(bbm_view.board)
+        candidates = [
+            replace(c, price=going.get(c.player_id, (c.price, ""))[0] or c.price)
+            for c in candidates
+        ]
+        allocation = None
         if plan == "history":
             shape = winning_shape(session, roster_slots=slots, budget=state.budget)
             allocation = Allocation.from_prices(shape, state, slack=plan_slack)
@@ -211,6 +236,7 @@ def load_room(
             bbm=bbm_rows,
             per_game_dollars=_per_game(bbm_rows, bbm_per_game),
             pool_note=pool_note,
+            board=board_prices,
         )
 
 
@@ -230,49 +256,85 @@ def _per_game(rows: dict[int, BBMRow], path: Path | None) -> dict[int, float]:
     return out
 
 
-#: What this league pays, from ESPN's average auction price and our board.
-#: Fitted on 712 drafted players in 2019, 2021, 2022, 2024 and 2025 against
-#: the prices this league actually paid, and scored season by season with
-#: each season held out of its own fit (scripts/price_scorecard.py):
+#: How the going price is built, measured against 712 drafted players in
+#: 2019, 2021, 2022, 2024 and 2025, each season scored with numbers taken
+#: from the others (scripts/price_scorecard.py and the note in STATUS.md):
 #:
-#:     ESPN average price alone     misses $6.14 a player, $4.40 too low
-#:     our board alone              misses $6.71
-#:     half and half, fitted        misses $5.42, unbiased
+#:     ESPN average price alone              misses $6.14 a player, $4.40 low
+#:     our board alone                       misses $6.71
+#:     half and half, fitted                 misses $5.42; stars $5.40 low
+#:     half and half, sized to the room      misses $5.14; stars $2.60 low
 #:
-#: ESPN's average comes from leagues of ten and twelve, which pay less for
-#: the middle of the board than this one does; the board knows this
-#: league's size and spending shape but not the reputations the room pays
-#: for. Each covers the other's blind spot. The misses that remain are the
-#: stars: $11 a player at $40 and up, where Doncic went for $91.
+#: Sizing to the room is what an auction is: a fixed pot, a quarter of the
+#: roster places bought for a dollar. The fitted blend priced the top 195 of
+#: the 2027 pool at $2,833 of a $3,000 room, and the missing money is exactly
+#: the stars' shortfall. So players are ranked by the blend, the bottom
+#: `DOLLAR_ONE_SHARE` of places go for $1 and the next `DOLLAR_TWO_SHARE` for
+#: $2, and the money the room will actually spend is shared above that in
+#: proportion to the blend.
 MARKET_WEIGHT = 0.5
-MARKET_INTERCEPT = 0.56
-MARKET_SLOPE = 1.133
+#: Shares of all picks that went for $1 and $2, 2019-2026 (17-32% by season).
+DOLLAR_ONE_SHARE = 0.242
+DOLLAR_TWO_SHARE = 0.076
+#: Share of the league's budget actually spent at the draft, 2019-2026.
+SPEND_RATE = 0.988
+#: Where the shared-out money starts: above the $1 and $2 places.
+_BODY_FLOOR = 3
 
 
 def market_prices(room: Room, state: DraftState) -> dict[int, tuple[int | None, str]]:
-    """What each player still on the board will probably go for, and why.
+    """What each player still available will probably go for, and why.
 
-    Where ESPN's average auction price is on file: the fitted blend of it
-    and our board (see `MARKET_WEIGHT`), both repriced for the money left in
-    the room. Where it is not, our board alone, which is what the blend
-    falls back to for rookies and fringe players ESPN drafts never priced.
+    Ranked by the half-and-half blend of ESPN's average auction price and
+    our board (the board alone for a player ESPN drafts never priced), then
+    sized to the room: of the places still open, the expected number of
+    remaining $1 and $2 buys go to the bottom of the ranking, and the money
+    the room is expected to spend from here is shared across the rest in
+    proportion to the blend. Recomputed from the live state, so as the room
+    spends and the dollar players come off the board the prices follow.
     """
     floor = state.minimum_bid
-    factor = inflation(state, room.candidates)
-    board = {c.player_id: c.price for c in reprice(state, room.candidates)}
-    out: dict[int, tuple[int | None, str]] = {}
-    for player_id, price in board.items():
-        row = room.bbm.get(player_id)
+    taken = state.taken
+    total_places = state.roster_slots * len(state.teams)
+    bought = [p.price for p in state.picks]
+    ones_left = max(0, round(DOLLAR_ONE_SHARE * total_places) - sum(1 for x in bought if x <= 1))
+    twos_left = max(0, round(DOLLAR_TWO_SHARE * total_places) - sum(1 for x in bought if x == 2))
+    open_places = state.open_slots
+    unspent = (1 - SPEND_RATE) * state.budget * len(state.teams)
+    money = max(float(open_places * floor), state.dollars_left - unspent)
+
+    blended: list[tuple[float, int, str]] = []
+    for c in room.candidates:
+        if c.player_id in taken:
+            continue
+        board = room.board.get(c.player_id, c.price)
+        row = room.bbm.get(c.player_id)
         if row is not None and row.espn_dollars is not None:
-            espn = floor + max(0.0, row.espn_dollars - floor) * factor
-            blended = MARKET_WEIGHT * espn + (1 - MARKET_WEIGHT) * price
-            going = round(MARKET_INTERCEPT + MARKET_SLOPE * blended)
-            out[player_id] = (
-                max(floor, going),
-                "ESPN average and our board, fitted to this league",
-            )
+            value = MARKET_WEIGHT * max(1.0, row.espn_dollars) + (1 - MARKET_WEIGHT) * board
+            source = "ESPN average and our board, sized to the room"
         else:
-            out[player_id] = (price, "our board; no ESPN average on file")
+            value = float(board)
+            source = "our board, sized to the room; no ESPN average on file"
+        blended.append((value, c.player_id, source))
+    blended.sort(reverse=True)
+
+    rostered = blended[:open_places]
+    ones = min(ones_left, len(rostered))
+    twos = min(twos_left, len(rostered) - ones)
+    body = rostered[: len(rostered) - ones - twos]
+    spare = money - ones * floor - twos * 2 - _BODY_FLOOR * len(body)
+    weight = sum(max(0.0, v - _BODY_FLOOR) for v, _, _ in body)
+
+    out: dict[int, tuple[int | None, str]] = {}
+    for value, player_id, source in body:
+        share = spare * max(0.0, value - _BODY_FLOOR) / weight if weight > 0 and spare > 0 else 0.0
+        out[player_id] = (max(_BODY_FLOOR, round(_BODY_FLOOR + share)), source)
+    for _, player_id, source in rostered[len(body) : len(body) + twos]:
+        out[player_id] = (2, source)
+    for _, player_id, source in rostered[len(body) + twos :]:
+        out[player_id] = (floor, source)
+    for _, player_id, source in blended[open_places:]:
+        out[player_id] = (floor, source)
     return out
 
 

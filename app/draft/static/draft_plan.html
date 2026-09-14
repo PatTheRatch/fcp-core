@@ -123,7 +123,7 @@
       <li><span class="n">1</span><p><b>Draft balanced.</b> Balanced drafts won 53.1% of categories to top-heavy's 48.0% across 98 team-seasons, in 6 of 8 seasons. Top-heavy lost even when its stars stayed healthy.</p></li>
       <li><span class="n">2</span><p><b>Pay for the middle.</b> $10–25 players produce about 28 a game; $1–2 picks produce 19, the same as a waiver pickup, and half are dropped within a month. The wire cannot replace the middle tier.</p></li>
       <li><span class="n">3</span><p><b>Buy rebounds, blocks and FG% with real money.</b> The waiver pool adds almost no blocks and hurts FG%. <b>Leave steals and threes for the end</b> — they are what cheap players and the wire actually supply.</p></li>
-      <li><span class="n">4</span><p><b>Take a star only inside the price.</b> This league pays about 1.5× for stars. Going prices run about $11 low on $40+ players, so expect stars to go higher than listed.</p></li>
+      <li><span class="n">4</span><p><b>Take a star only inside the price.</b> This league pays about 1.5× for stars, and the going price is sized to that: it prices the room's real $3,000 with a quarter of the places at $1. Wembanyama at $118 would be a league record ($101 is the most anyone has paid), so read the very top as a range.</p></li>
       <li><span class="n">5</span><p><b>Your picks, your call.</b> The room drafts like an average manager and has not beaten your drafts. Use these numbers to size bids, not to overrule a read you believe in.</p></li>
     </ol>
     <div class="ladder">
@@ -180,7 +180,7 @@
   </section>
 
   <section id="builds">
-    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best rosters from an empty room, balanced and punting FT%. Both already concede free throws — the model leans punt FT%, and this league's history has no evidence either way on punting. The expected-wins figure is optimistic; no team here has averaged over 6.</p></div>
+    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best rosters from an empty room, bought at going prices, not board prices: one unrestricted, one punting FT%. This league's history has no evidence either way on punting. The expected-wins figure is optimistic; no team here has averaged over 6.</p></div>
     <div class="builds" id="builds-grid"></div>
   </section>
 
@@ -193,7 +193,7 @@
   <section id="notes">
     <div class="sec-head"><h2>Read before bidding</h2></div>
     <ul class="caveats">
-      <li><b>Going price</b> is ESPN's average auction price blended with our board, fitted to what this league paid. It misses by about $5 a player on average, and $11 on stars, where it runs low.</li>
+      <li><b>Going price</b> ranks players by ESPN's average auction price blended with our board, then shares the money this league actually spends: 24% of places at $1, 8% at $2, 98.8% of the budget used. Tested on past drafts it misses by about $5 a player, and $10 on $40+ stars, where it runs about $3 low.</li>
       <li><b>Our ceiling</b> is from an empty room and snaps to the spending ladder's places ($60, $46, $30, $16, $9). Read it as the tier a player qualifies for. On draft day the room recomputes it after every pick.</li>
       <li><b>BBM</b> is Basketball Monster's league value on total games, exported <span id="exported"></span>. Refresh the exports the week of the draft; injuries and roles move in preseason.</li>
       <li>ESPN has not published 2027 projections yet. When it does, re-run the plan.</li>
@@ -310,7 +310,7 @@ $("builds-grid").innerHTML = Object.entries(PLAN.builds).map(([label, b]) => {
     return `<div class="prob"><span>${k}</span><div class="track"><div class="fill ${v < 0.25 ? "low" : ""}" style="width:${Math.round(v * 100)}%"></div></div><span>${Math.round(v * 100)}%</span></div>`;
   }).join("");
   const roster = b.roster.map((r) => `<div><span>${esc(r.name)}</span><span class="num">$${r.price}</span></div>`).join("");
-  return `<div class="build"><div><span class="eyebrow">${esc(label)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
+  return `<div class="build"><div><span class="eyebrow">${esc(label === "balanced" ? "No punt" : label)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
     <div class="probs" aria-label="Chance of winning each category">${probs}</div><div class="roster">${roster}</div></div>`;
 }).join("");
 

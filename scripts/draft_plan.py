@@ -124,7 +124,7 @@ def main() -> int:
                 "eligible": sorted(e for e in c.eligible if e in ("PG", "SG", "SF", "PF", "C")),
                 "going": going_price,
                 "going_source": source,
-                "board": c.price,
+                "board": room.board.get(c.player_id, c.price),
                 "ceiling": ceiling.price,
                 "capped": ceiling.capped,
                 "marginal": (
