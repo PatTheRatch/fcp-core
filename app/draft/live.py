@@ -293,16 +293,7 @@ def market_prices(room: Room, state: DraftState) -> dict[int, tuple[int | None, 
     proportion to the blend. Recomputed from the live state, so as the room
     spends and the dollar players come off the board the prices follow.
     """
-    floor = state.minimum_bid
     taken = state.taken
-    total_places = state.roster_slots * len(state.teams)
-    bought = [p.price for p in state.picks]
-    ones_left = max(0, round(DOLLAR_ONE_SHARE * total_places) - sum(1 for x in bought if x <= 1))
-    twos_left = max(0, round(DOLLAR_TWO_SHARE * total_places) - sum(1 for x in bought if x == 2))
-    open_places = state.open_slots
-    unspent = (1 - SPEND_RATE) * state.budget * len(state.teams)
-    money = max(float(open_places * floor), state.dollars_left - unspent)
-
     blended: list[tuple[float, int, str]] = []
     for c in room.candidates:
         if c.player_id in taken:
@@ -317,8 +308,31 @@ def market_prices(room: Room, state: DraftState) -> dict[int, tuple[int | None, 
             source = "our board, sized to the room; no ESPN average on file"
         blended.append((value, c.player_id, source))
     blended.sort(reverse=True)
+    return size_to_room(blended, state)
 
-    rostered = blended[:open_places]
+
+def size_to_room(
+    blended: Sequence[tuple[float, int, str]], state: DraftState
+) -> dict[int, tuple[int | None, str]]:
+    """Share the money the room will spend across players ranked by value.
+
+    `blended` is (value, player id, source), most valuable first, players
+    still available only. Of the places still open, the expected number of
+    remaining $1 and $2 buys go to the bottom; the money the room is
+    expected to spend from here is shared across the rest in proportion to
+    value. Shared by the live room and the redraft, so a replay prices a
+    past season exactly the way the room prices this one.
+    """
+    floor = state.minimum_bid
+    total_places = state.roster_slots * len(state.teams)
+    bought = [p.price for p in state.picks]
+    ones_left = max(0, round(DOLLAR_ONE_SHARE * total_places) - sum(1 for x in bought if x <= 1))
+    twos_left = max(0, round(DOLLAR_TWO_SHARE * total_places) - sum(1 for x in bought if x == 2))
+    open_places = state.open_slots
+    unspent = (1 - SPEND_RATE) * state.budget * len(state.teams)
+    money = max(float(open_places * floor), state.dollars_left - unspent)
+
+    rostered = list(blended[:open_places])
     ones = min(ones_left, len(rostered))
     twos = min(twos_left, len(rostered) - ones)
     body = rostered[: len(rostered) - ones - twos]

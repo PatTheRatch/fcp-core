@@ -66,12 +66,13 @@ is the right side to be wrong on.
 from __future__ import annotations
 
 import argparse
+import json
 import multiprocessing
 import sys
 import time
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from sqlalchemy import select
@@ -91,6 +92,7 @@ from app.db.models import (
 from app.db.session import make_engine, make_session_factory
 from app.draft import availability, pool
 from app.draft.bbm import load_bbm
+from app.draft.live import MARKET_WEIGHT, size_to_room
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
 from app.draft.room import (
@@ -197,7 +199,7 @@ def load(  # type: ignore[no-untyped-def]
         # projected in 2026, against ESPN's 0.88); do not discount twice.
         factor = bbm_availability
 
-    board = apply_tier_curve(
+    board_prices = apply_tier_curve(
         price_board(
             value_players(projections, categories),
             teams=ls.team_count,
@@ -208,7 +210,7 @@ def load(  # type: ignore[no-untyped-def]
     )
     candidates = candidates_from(
         projections,
-        board,
+        board_prices,
         periods=pool.effective_weeks(session, before=season),
         availability=factor,
         keys=categories,
@@ -237,6 +239,35 @@ def load(  # type: ignore[no-untyped-def]
         me=my_id,
         nomination_order=ls.draft_order or (),
     )
+    # Price the pool the way the live room does: ranked by ESPN's average
+    # auction price for the season blended with the board, then sized to the
+    # room's money with the league's share of $1 and $2 buys. ESPN's averages
+    # come from the price scorecard's cache; without them, the board alone.
+    cache = Path("logs/price-cache") / f"{season}.json"
+    averages: dict[int, float] = {}
+    if cache.exists():
+        averages = {
+            int(k): float(v["aav"])
+            for k, v in json.loads(cache.read_text()).items()
+            if v.get("aav")
+        }
+    ranked = sorted(
+        (
+            (
+                MARKET_WEIGHT * max(1.0, averages[c.player_id]) + (1 - MARKET_WEIGHT) * c.price
+                if c.player_id in averages
+                else float(c.price),
+                c.player_id,
+                "",
+            )
+            for c in candidates
+        ),
+        reverse=True,
+    )
+    going = size_to_room(ranked, state)
+    candidates = [
+        replace(c, price=going.get(c.player_id, (c.price, ""))[0] or c.price) for c in candidates
+    ]
     return (
         ls,
         state,
