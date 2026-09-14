@@ -71,6 +71,7 @@ import time
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -88,6 +89,7 @@ from app.db.models import (
 )
 from app.db.session import make_engine, make_session_factory
 from app.draft import availability, pool
+from app.draft.bbm import load_bbm
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
 from app.draft.room import DraftState, Pick, bid_ceiling, reprice, resolve
@@ -138,7 +140,15 @@ def say(text: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 
-def load(session: Session, season: int, me: str, *, pool_kind: str = "projected"):  # type: ignore[no-untyped-def]
+def load(  # type: ignore[no-untyped-def]
+    session: Session,
+    season: int,
+    me: str,
+    *,
+    pool_kind: str = "projected",
+    bbm: Path | None = None,
+    bbm_availability: float = 1.0,
+):
     ls = session.scalars(select(LeagueSeason).where(LeagueSeason.season == season)).one()
     teams = {
         int(t.espn_team_id): t
@@ -149,7 +159,17 @@ def load(session: Session, season: int, me: str, *, pool_kind: str = "projected"
 
     categories = pool.season_categories(session, ls)
     slots = pool.roster_size_for(ls)
-    projections = pool.load_projections(session, season, kind=pool_kind)
+    if bbm is not None:
+        loaded = load_bbm(session, bbm, season)
+        projections = loaded.projections
+        say(
+            f"BBM {bbm.name}: {loaded.matched} matched ({loaded.fuzzy} loosely), "
+            f"{len(loaded.ambiguous)} ambiguous and {len(loaded.unmatched)} unmatched dropped; "
+            f"eligibility from ESPN for {loaded.espn_eligibility}, from BBM position for "
+            f"{loaded.derived_eligibility}"
+        )
+    else:
+        projections = pool.load_projections(session, season, kind=pool_kind)
     distributions = category_distributions(session, ls, before=season, adjust_for_era=False)
 
     # Availability measured only on seasons before this one.
@@ -159,6 +179,10 @@ def load(session: Session, season: int, me: str, *, pool_kind: str = "projected"
         factor = availability.measured_availability(session).factor
     finally:
         availability.DISTORTED_SEASONS = original
+    if bbm is not None:
+        # BBM's games already price availability (0.96 realized over
+        # projected in 2026, against ESPN's 0.88); do not discount twice.
+        factor = bbm_availability
 
     board = apply_tier_curve(
         price_board(
@@ -414,6 +438,17 @@ def main() -> int:
         "to test the objective alone",
     )
     ap.add_argument(
+        "--bbm",
+        type=Path,
+        help="draft on a Basketball Monster projection export instead of ESPN's projections",
+    )
+    ap.add_argument(
+        "--bbm-availability",
+        type=float,
+        default=1.0,
+        help="availability factor for BBM games, which already price it (default 1.0)",
+    )
+    ap.add_argument(
         "--cap-at-market",
         type=float,
         help="never bid more than the market's price times this (e.g. 1.15): the market as a prior",
@@ -423,7 +458,12 @@ def main() -> int:
     factory = make_session_factory(make_engine(get_settings().database_url))
     with factory() as session:
         ls, state, candidates, dists, lineup, limits, picks, factor = load(
-            session, args.season, args.me, pool_kind=args.pool_kind
+            session,
+            args.season,
+            args.me,
+            pool_kind=args.pool_kind,
+            bbm=args.bbm,
+            bbm_availability=args.bbm_availability,
         )
         say(
             f"{args.season}: {len(picks)} picks, {len(candidates)} priced players, "

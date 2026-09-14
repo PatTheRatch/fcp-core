@@ -435,6 +435,7 @@ def optimize(
     seed: int = 0,
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
+    starts: Iterable[Iterable[int]] = (),
 ) -> RosterPlan:
     """The roster that maximises expected weekly category wins under a budget.
 
@@ -442,6 +443,15 @@ def optimize(
     room feeds back what has already been bought. `excluded` players are
     gone to someone else. Both exist so the same optimizer serves the plan
     before the draft and the re-solve during it.
+
+    `starts` are rosters, as player ids, to begin the search from as well
+    as the greedy and shuffled ones. A bid ceiling compares the best roster
+    with a player against the best without him, and two independent local
+    searches differ by more than most players are worth: measured on the
+    2026 pool at two restarts, the same player's marginal came out -0.10
+    and +0.11 on consecutive runs. Starting the with-him search from the
+    without-him roster makes the two neighbours rather than strangers, and
+    the comparison stops measuring the search.
 
     `restarts` shuffled starts are tried beside the greedy one and the best
     result kept. `seed` fixes the shuffles, so the same inputs always give
@@ -459,12 +469,21 @@ def optimize(
     def worth(candidate: Candidate) -> float:
         return sum(candidate.weekly.values()) / max(1, candidate.price)
 
-    starts: list[list[Candidate]] = [sorted(pool, key=worth, reverse=True)]
+    ordered_pool = sorted(pool, key=worth, reverse=True)
+    orders: list[list[Candidate]] = [ordered_pool]
+    for warm in starts:
+        # The warm roster first, in value order, then everyone else: the
+        # greedy fill rebuilds it as far as the budget allows and patches
+        # the rest, which is what a start should be.
+        wanted = frozenset(warm)
+        head = [c for c in ordered_pool if c.player_id in wanted]
+        if head:
+            orders.append(head + [c for c in ordered_pool if c.player_id not in wanted])
     shuffler = random.Random(seed)
     for _ in range(max(0, restarts)):
         shuffled = pool[:]
         shuffler.shuffle(shuffled)
-        starts.append(shuffled)
+        orders.append(shuffled)
 
     # A start has to fill the roster. One that could not is never compared:
     # it would score its empty slots as nothing and could still win on the
@@ -472,7 +491,7 @@ def optimize(
     required = min(roster_slots, len(pool) + len(kept))
 
     best: RosterPlan | None = None
-    for ordered in starts:
+    for ordered in orders:
         roster = _greedy(
             ordered, keep=kept, roster_slots=roster_slots, budget=budget, minimum_bid=minimum_bid
         )

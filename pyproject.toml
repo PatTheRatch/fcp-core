@@ -22,6 +22,11 @@ dependencies = [
 live = [
     "playwright>=1.47",
 ]
+# Basketball Monster exports are legacy .xls; xlrd is the one reader for those
+# and only app/draft/bbm.py imports it.
+projections = [
+    "xlrd>=2.0",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",

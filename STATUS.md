@@ -483,10 +483,65 @@ hold, no login. The same fantasy card also carries ESPN's own pre-draft
 auction value, which we never captured. Both are the next inputs to
 measure, and the redraft is now the test either has to pass.
 
+**Were ESPN's projections the problem? Partly, and then something else.**
+The manager drafts on Basketball Monster's projections, not ESPN's, and
+supplied the 2026 export. `app/draft/bbm.py` reads it into the same
+`PlayerProjection` the room consumes, matching names to our ids (422 of
+593; the rest are rookies and fringe our tables have never seen) and
+taking eligibility from ESPN's line where we hold one and from BBM's
+position otherwise, which puts 140 players on the board ESPN never
+projected -- Jarrett Allen among them. BBM's games already price
+availability: realised over projected runs 0.96 against ESPN's 0.88, with
+Curry at 56 not 72 and Morant at 48 not 67, so a BBM board takes an
+availability factor of one, not 0.881, or it discounts twice.
+
+Replaying 2026 on BBM's projections the room went **58-110**. Worse than
+on ESPN's. That was too bad to be a finding, and it was not one: it was
+the search. In an empty $200 room Jalen Johnson's marginal at a $1 bid
+read -0.096 at two restarts and +0.11 to +0.18 at four, eight, sixteen
+and warm-started. A ceiling compared two *independent* local searches,
+and at the two restarts the replay ran for speed the noise between them
+(about 0.1 to 0.3 wins) exceeded most players' true marginal. The room
+was passing on anyone whose signal was smaller than the noise and buying
+whoever the noise broke upward for -- LeBron, twice. `optimize` now takes
+warm-start rosters and the ceiling seeds every with-him search from the
+without-him roster, so the two are neighbours rather than strangers; it
+can only raise the with-him side, so a ceiling now errs generous rather
+than refusing a player worth having. Tested. Johnson's ceiling at pick 53
+rose from $11 to $25.
+
+With the noise gone, the four runs against the roster actually drafted
+(99-69):
+
+    ESPN projections, noisy ceilings     81-88
+    ESPN projections, warm-started       78-90
+    BBM projections, noisy ceilings      58-110
+    BBM projections, warm-started        71-99
+
+The projections are not the difference. The pattern across every run is
+the same: the room spends about $150 on the first two or three stars
+nominated whose ceiling clears the price -- Wembanyama $101, Jackson $30,
+Ball $21 -- and fills ten places with $2 players. A ceiling-only bidder
+has no budget plan, so it builds stars-and-scrubs by construction, which
+is the strategy the league's own history says loses. The ceiling answers
+"is he worth this much given what the rest of my money buys at board
+prices"; it never asks whether buying him now leaves a plan the rest of
+the money can execute. That is the next design step: a ceiling measured
+against a plan -- the pre-draft optimal roster's allocation -- rather than
+against a board, so a star early is bought only if the plan had a star
+there at that price. It is not built, and nothing in the room should be
+trusted as a bid until it is and the redraft passes.
+
+The 2027 BBM export carries an age for every one of its 572 players,
+injury risk, and ESPN's and Yahoo's own dollar values for 2027. That is
+every input the room needs for the draft, available now, and it settles
+the projection watcher: there is nothing to wait for.
+
 Until then the room's ceilings are a *reasoned* number and not a
 *verified* one, and the readout should be read with that in mind: it is
 best at saying what a player is worth relative to the board, and worst
-exactly where the board is wrong about a player.
+exactly where the board is wrong about a player -- or where the money
+already spent has made the board irrelevant.
 
 ### What the mock draft taught us
 

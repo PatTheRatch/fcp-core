@@ -299,6 +299,7 @@ def resolve(
     seed: int = 0,
     lock: Mapping[int, int] | None = None,
     exclude: Iterable[int] = (),
+    starts: Iterable[Iterable[int]] = (),
 ) -> RosterPlan:
     """The best roster we can still finish from here.
 
@@ -325,6 +326,7 @@ def resolve(
         seed=seed,
         lineup=lineup,
         limits=limits,
+        starts=starts,
     )
 
 
@@ -379,7 +381,12 @@ def bid_ceiling(
     if not any(c.player_id == player_id for c in candidates):
         raise DraftError(f"player {player_id} is not on the board")
 
-    def solve(*, lock: Mapping[int, int] | None = None, exclude: Iterable[int] = ()) -> RosterPlan:
+    def solve(
+        *,
+        lock: Mapping[int, int] | None = None,
+        exclude: Iterable[int] = (),
+        starts: Iterable[Iterable[int]] = (),
+    ) -> RosterPlan:
         return resolve(
             state,
             candidates,
@@ -391,14 +398,20 @@ def bid_ceiling(
             seed=seed,
             lock=lock,
             exclude=exclude,
+            starts=starts,
         )
 
     baseline = solve(exclude=[player_id])
+    # Every with-him search starts from the without-him roster as well as
+    # from the usual seeds, so the comparison measures the player and not
+    # the search. It can only raise the with-him side, so a ceiling errs
+    # generous rather than refusing a player worth having.
+    warm = [tuple(baseline.player_ids)]
     ceiling = state.mine.max_bid(state.minimum_bid)
     field_max = state.field_ceiling()
 
     def with_price(price: int) -> float:
-        plan = solve(lock={player_id: price})
+        plan = solve(lock={player_id: price}, starts=warm)
         # A plan that could not actually fit him is not a plan with him.
         if player_id not in plan.player_ids:
             return float("-inf")

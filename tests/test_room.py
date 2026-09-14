@@ -242,3 +242,36 @@ def test_a_drafted_or_unknown_player_has_no_ceiling() -> None:
         bid_ceiling(state, 1, BOARD, [PTS], lineup=LINEUP)
     with pytest.raises(DraftError, match="not on the board"):
         bid_ceiling(state, 99, BOARD, [PTS], lineup=LINEUP)
+
+
+def test_a_warm_start_is_never_worse_than_the_roster_it_started_from() -> None:
+    """A seeded roster is reconstructed and improved, never discarded.
+
+    The greedy fill by value-per-dollar and a couple of shuffles can miss a
+    roster that a warm start hands them directly. Whatever the search does
+    from there, the answer cannot score below the seed itself, because the
+    seed is one of the starts and the best start is kept.
+    """
+    from app.draft.optimizer import _plan, optimize
+
+    pool = [cand(i, price=1 + (i * 7) % 20, pts=20.0 + (i * 13) % 80) for i in range(1, 25)]
+    by_id = {c.player_id: c for c in pool}
+    # A deliberately unusual but legal roster the greedy would not build.
+    seed_ids = (3, 11, 17)
+    seed_score = _plan([by_id[i] for i in seed_ids], [PTS], frozenset()).expected_wins
+
+    plan = optimize(
+        pool, [PTS], budget=40, roster_slots=3, lineup=("UT",) * 3, restarts=0, starts=[seed_ids]
+    )
+
+    assert plan.expected_wins >= seed_score - 1e-9
+    assert len(plan.players) == 3 and plan.cost <= 40
+
+
+def test_the_ceiling_is_warm_started_from_the_baseline() -> None:
+    """With the with-him search seeded from the without-him roster, adding a
+    player for the floor bid to an empty room can never read as harmful: the
+    seed plus him is one of the candidates, and it is at least the baseline
+    with a real player in a place that held one."""
+    ceiling = bid_ceiling(room(), 2, BOARD, [PTS], lineup=LINEUP, restarts=0)
+    assert ceiling.marginal_at_floor >= -1e-9
