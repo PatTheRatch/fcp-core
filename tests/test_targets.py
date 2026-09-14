@@ -25,7 +25,7 @@ from app.db.models import (
     Team,
 )
 from app.db.session import make_engine, make_session_factory
-from app.draft.targets import category_targets
+from app.draft.targets import category_distributions, category_targets
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEAGUE_ID = 77
@@ -479,3 +479,22 @@ def test_a_real_trend_scales_forward_and_backward(session: Session) -> None:
     assert forward > 1.0, "four years on, expect more"
     assert rising.scale(2027, 2023) < 1.0, "and the reverse going back"
     assert rising.scale(2024, 2024) == pytest.approx(1.0), "no distance, no change"
+
+
+def test_before_keeps_a_replayed_season_out_of_its_own_opponents(session: Session) -> None:
+    """A backtest of 2025 must not measure 2025 against opponents that
+    include 2025's own results. `before=2025` restricts the basis to
+    seasons strictly earlier; without it the replayed season leaks in."""
+    build_season(session, season=2024, team_count=10, points=[400, 400, 400, 400])
+    later = build_season(session, season=2025, team_count=10, points=[800, 800, 800, 800])
+    session.commit()
+
+    clean = category_distributions(session, later, before=2025, adjust_for_era=False)
+    leaky = category_distributions(session, later, adjust_for_era=False)
+    clean_pts = next(d for d in clean if d.abbreviation == "PTS")
+    leaky_pts = next(d for d in leaky if d.abbreviation == "PTS")
+
+    assert clean_pts.basis_seasons == (2024,)
+    assert clean_pts.mean == pytest.approx(400.0)
+    assert 2025 in leaky_pts.basis_seasons
+    assert leaky_pts.mean > clean_pts.mean, "with 2025 included, its own 800s pull the mean up"

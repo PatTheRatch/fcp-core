@@ -314,9 +314,7 @@ def _key(r: TeamSeason) -> tuple[int, int]:
     return (r.season, r.team_id)
 
 
-def _label_quartiles(
-    rows: Sequence[TeamSeason], key: str
-) -> dict[tuple[int, int], str]:
+def _label_quartiles(rows: Sequence[TeamSeason], key: str) -> dict[tuple[int, int], str]:
     """Label each team-season's quartile PER TEAM COUNT, then pool.
 
     Cutting inside each team count keeps league size from driving the ranking:
@@ -356,8 +354,7 @@ def _quartile_table(
         f"| {label_name:<13} | {'n':>3} | {'cat win rate':>12} "
         f"| {'mean finish':>11} | {'playoff %':>9} | {'title %':>8} "
         f"| {'mean top3 share':>15} |",
-        f"|{'-' * 15}|{'-' * 5}|{'-' * 14}|{'-' * 13}|{'-' * 11}|{'-' * 10}"
-        f"|{'-' * 17}|",
+        f"|{'-' * 15}|{'-' * 5}|{'-' * 14}|{'-' * 13}|{'-' * 11}|{'-' * 10}|{'-' * 17}|",
     ]
     for label in QUARTILE_ORDER:
         group = [r for r in rows if labels.get(_key(r)) == label]
@@ -376,15 +373,12 @@ def _quartile_table(
     return lines
 
 
-def _spread_table(
-    rows: Sequence[TeamSeason], labels: dict[tuple[int, int], str]
-) -> list[str]:
+def _spread_table(rows: Sequence[TeamSeason], labels: dict[tuple[int, int], str]) -> list[str]:
     """Spread of category win rate within each quartile, not just the mean."""
     lines = [
         f"| {'quartile':<13} | {'n':>3} | {'mean':>6} | {'min':>6} | {'max':>6} "
         f"| {'range':>6} | {'stdev':>6} |",
-        f"|{'-' * 15}|{'-' * 5}|{'-' * 8}|{'-' * 8}|{'-' * 8}|{'-' * 8}"
-        f"|{'-' * 8}|",
+        f"|{'-' * 15}|{'-' * 5}|{'-' * 8}|{'-' * 8}|{'-' * 8}|{'-' * 8}|{'-' * 8}|",
     ]
     for label in QUARTILE_ORDER:
         group = [r for r in rows if labels.get(_key(r)) == label]
@@ -407,9 +401,19 @@ def load_team_seasons(conn: psycopg.Connection) -> list[TeamSeason]:
 
     out: list[TeamSeason] = []
     for (
-        season, team_count, team_id, name, spent, by_price,
-        total_ninecat, star_ninecat,
-        cw, cl, ct, final_standing, playoff_count,
+        season,
+        team_count,
+        team_id,
+        name,
+        spent,
+        by_price,
+        total_ninecat,
+        star_ninecat,
+        cw,
+        cl,
+        ct,
+        final_standing,
+        playoff_count,
     ) in raw:
         prices = _prices_from(conn, season, team_id)
         spent_int = int(spent)
@@ -418,9 +422,7 @@ def load_team_seasons(conn: psycopg.Connection) -> list[TeamSeason]:
         top3 = sum(ordered[:TOP_N_PICKS]) / spent_int if spent_int else 0.0
         hhi = sum((p / spent_int) ** 2 for p in prices) if spent_int else 0.0
         total_prod = float(total_ninecat or 0.0)
-        exec_share = (
-            float(star_ninecat or 0.0) / total_prod if total_prod > 0 else 0.0
-        )
+        exec_share = float(star_ninecat or 0.0) / total_prod if total_prod > 0 else 0.0
         decided = int(cw) + int(cl) + int(ct)
         out.append(
             TeamSeason(
@@ -463,18 +465,14 @@ def _prices_from(conn: psycopg.Connection, season: int, team_id: int) -> list[in
                 """
             )
             for row_season, row_team, amount in cur.fetchall():
-                _PRICE_CACHE.setdefault(
-                    (int(row_season), int(row_team)), []
-                ).append(int(amount))
+                _PRICE_CACHE.setdefault((int(row_season), int(row_team)), []).append(int(amount))
     return _PRICE_CACHE.get((season, team_id), [])
 
 
 def load_replacements(conn: psycopg.Connection) -> list[Replacement]:
     with conn.cursor() as cur:
         cur.execute(REPLACEMENT_SQL)
-        return [
-            Replacement(int(s), int(tc), float(v)) for s, tc, v in cur.fetchall()
-        ]
+        return [Replacement(int(s), int(tc), float(v)) for s, tc, v in cur.fetchall()]
 
 
 def load_star_surplus(conn: psycopg.Connection) -> dict[tuple[int, int], float]:
@@ -531,8 +529,7 @@ def report(
             continue
         seasons = sorted({r.season for r in group})
         local = _label_quartiles(group, "top3_share")
-        add(f"**{size} teams** — seasons {', '.join(str(s) for s in seasons)}, "
-            f"n={len(group)}")
+        add(f"**{size} teams** — seasons {', '.join(str(s) for s in seasons)}, n={len(group)}")
         add("")
         out.extend(_quartile_table(group, local, "strategy"))
         add("")
@@ -551,8 +548,7 @@ def report(
             continue
         seasons = sorted({r.season for r in group})
         local = _label_quartiles(group, "exec_share")
-        add(f"**{size} teams** — seasons {', '.join(str(s) for s in seasons)}, "
-            f"n={len(group)}")
+        add(f"**{size} teams** — seasons {', '.join(str(s) for s in seasons)}, n={len(group)}")
         add("")
         out.extend(_quartile_table(group, local, "execution"))
         add("")
@@ -569,20 +565,25 @@ def report(
     if top_strat:
         landed = [r for r in top_strat if _key(r) in top_exec]
         add(f"- Chose top-heavy: **{len(top_strat)}**")
-        add(f"- Of those, landed in top execution: **{len(landed)}** "
-            f"({100.0 * len(landed) / len(top_strat):.0f}%)")
-        add(f"- **Bust rate (chose top-heavy, did not get it): "
-            f"{100.0 * (len(top_strat) - len(landed)) / len(top_strat):.0f}%**")
+        add(
+            f"- Of those, landed in top execution: **{len(landed)}** "
+            f"({100.0 * len(landed) / len(top_strat):.0f}%)"
+        )
+        add(
+            f"- **Bust rate (chose top-heavy, did not get it): "
+            f"{100.0 * (len(top_strat) - len(landed)) / len(top_strat):.0f}%**"
+        )
         add("")
         missed_playoffs = [r for r in top_strat if not r.made_playoffs]
-        add(f"Of the {len(top_strat)} top-heavy choosers, "
-            f"{len(missed_playoffs)} missed the playoffs.")
+        add(
+            f"Of the {len(top_strat)} top-heavy choosers, "
+            f"{len(missed_playoffs)} missed the playoffs."
+        )
         titles = [r for r in top_strat if r.won_title]
         add(f"Titles won by top-heavy choosers: {len(titles)}.")
         if landed:
             lw = statistics.fmean(r.cat_win_rate for r in landed)
-            mw = statistics.fmean(r.cat_win_rate for r in top_strat
-                                  if _key(r) not in top_exec)
+            mw = statistics.fmean(r.cat_win_rate for r in top_strat if _key(r) not in top_exec)
             add(f"Mean category win rate when the plan worked: **{lw:.3f}**")
             add(f"Mean category win rate when it did not: **{mw:.3f}**")
     add("")
@@ -610,8 +611,7 @@ def report(
     add(f"production minus {TOP_N_PICKS} x that replacement level. If stars are")
     add("worth more in a thinner pool, surplus should rise with team count.")
     add("")
-    add("| teams | seasons | replacement (mean) | star surplus (mean) "
-        "| surplus per star |")
+    add("| teams | seasons | replacement (mean) | star surplus (mean) | surplus per star |")
     add("|---|---|---|---|---|")
     for size in TEAM_SIZES:
         reps = [r.value for r in replacements if r.team_count == size]
@@ -621,8 +621,10 @@ def report(
         n_seasons = len({r.season for r in replacements if r.team_count == size})
         mean_rep = statistics.fmean(reps)
         mean_sur = statistics.fmean(sur)
-        add(f"| {size} | {n_seasons} | {mean_rep:>0.0f} | {mean_sur:>0.0f} "
-            f"| {mean_sur / TOP_N_PICKS:>0.0f} |")
+        add(
+            f"| {size} | {n_seasons} | {mean_rep:>0.0f} | {mean_sur:>0.0f} "
+            f"| {mean_sur / TOP_N_PICKS:>0.0f} |"
+        )
     add("")
 
     add("## 6. Named tables: 2023 (16 teams) and 2026 (14 teams)")
@@ -638,8 +640,10 @@ def report(
             continue
         add(f"### {season} — {group[0].team_count} teams")
         add("")
-        add("| finish | team | top1 share | top3 share | HHI | exec share "
-            "| cat win rate | played | title |")
+        add(
+            "| finish | team | top1 share | top3 share | HHI | exec share "
+            "| cat win rate | played | title |"
+        )
         add("|---|---|---|---|---|---|---|---|---|")
         for r in group:
             add(

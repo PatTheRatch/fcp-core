@@ -84,13 +84,18 @@ class CategoryTarget:
     era_scale: float
 
 
-def _seasons_with_results(session: Session) -> list[tuple[int, int]]:
+def _seasons_with_results(session: Session, *, before: int | None = None) -> list[tuple[int, int]]:
     """(team count, season) for every season that actually has results.
 
     A season with no contested matchups yet is useless as a basis, and the
     season being drafted for is always one of those: it exists, it has a
     size, and it has not been played. Excluding it here is what stops a
     brand new season matching its own size and finding nothing.
+
+    `before` keeps only seasons strictly earlier than the one given. A
+    backtest replaying a season that has since been played needs this,
+    or the opponents it is measured against would include the very results
+    it is trying to predict.
     """
     return [
         (int(size), int(season))
@@ -107,17 +112,20 @@ def _seasons_with_results(session: Session) -> list[tuple[int, int]]:
             .group_by(LeagueSeason.team_count, LeagueSeason.season)
             .order_by(LeagueSeason.season)
         ).all()
+        if before is None or int(season) < before
     ]
 
 
-def _sized_seasons(session: Session, team_count: int) -> tuple[int, list[int]]:
+def _sized_seasons(
+    session: Session, team_count: int, *, before: int | None = None
+) -> tuple[int, list[int]]:
     """Played seasons at this league size, or the nearest size that exists.
 
     Returns the size actually used alongside its seasons, so a caller can
     see when a target is borrowed from a different sized league rather than
     assuming it matched.
     """
-    rows = _seasons_with_results(session)
+    rows = _seasons_with_results(session, before=before)
     if not rows:
         return team_count, []
 
@@ -281,18 +289,25 @@ def category_distributions(
     *,
     period_days: int | None = None,
     adjust_for_era: bool = True,
+    before: int | None = None,
 ) -> list[CategoryDistribution]:
     """Every scored category's opponent distribution, on the same basis as
     `category_targets`: same league size, same period length, same era
     adjustment. Both mean and spread are scaled, since a category that
-    drifts up drifts its whole distribution."""
+    drifts up drifts its whole distribution.
+
+    `before` restricts the basis to seasons strictly earlier than the one
+    given, for a backtest of a season that has since been played. The era
+    trend is not restricted by it; a backtest that wants no hindsight at
+    all passes `adjust_for_era=False` as well.
+    """
     categories = session.scalars(
         select(LeagueSeasonCategory)
         .where(LeagueSeasonCategory.league_season_id == league_season.id)
         .order_by(LeagueSeasonCategory.position)
     ).all()
-    _, sized_seasons = _sized_seasons(session, int(league_season.team_count))
-    all_seasons = sorted({season for _, season in _seasons_with_results(session)})
+    _, sized_seasons = _sized_seasons(session, int(league_season.team_count), before=before)
+    all_seasons = sorted({s for _, s in _seasons_with_results(session, before=before)})
     days = period_days if period_days is not None else modal_period_days(session, all_seasons)
     trends = (
         category_trends(session, [c.abbreviation for c in categories]) if adjust_for_era else {}

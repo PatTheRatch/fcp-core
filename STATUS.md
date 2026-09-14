@@ -426,6 +426,68 @@ he comes inside the ceiling. Ninety-eight team-seasons across four sizes
 is thin, and the 16-team row is one year. What would change the reading:
 two 15-team seasons in which the balanced quartile stops winning.
 
+### What "worth" means, and the redraft that tested it
+
+The room's ceiling for a player is the highest price at which the best
+roster we can still complete with him is at least as good -- expected
+categories won per week against the measured opponent distribution -- as
+the best we can complete without him. It is not what he produces; it is
+what he produces *relative to what the same money buys elsewhere at the
+board's prices*. Three things can make it wrong: the objective, the
+projections, and the prices of the alternatives.
+
+`scripts/redraft.py` replays a real draft in its real order with our team
+bidding on the ceiling, everyone else paying what they paid, and scores
+the roster we would have ended with on what actually happened -- real
+game lines, real weekly opponents, nine categories, drafted rosters only.
+No hindsight: the season's own preseason projections, the tier curve
+fitted without it, opponent distributions from seasons strictly before it
+(`before=`, added to `category_distributions` for this), availability
+measured before it.
+
+**Replaying 2026, the room's roster goes 81-88 against our real
+opponents. The roster we actually drafted goes 99-69.** The room bought
+Curry, LeBron, Durant, Draymond, Brook Lopez and Paul George -- every
+ageing star the market was discounting, at a dollar over the discount --
+and passed on Jalen Johnson at $40 with a ceiling of $12. Its thirteen
+delivered 78% of their projection; the thirteen we drafted delivered 89%
+and included the season's two largest overperformers (Johnson 1.33, Kawhi
+1.30). The room bought 2,300 more projected production and got 900 less.
+
+What that is and is not. A hindsight variant, drafting on the season's
+actual totals, still finished 92-78 -- but scored on realised weekly lines
+the objective rated that roster and ours near-equal (4.62 to 4.56), and
+seven wins over 171 categories is one standard deviation of noise. The
+hindsight run also leans on season totals that include the 20-27% of
+every player's production landing after the fantasy regular season, which
+is uniform across rosters and so shifts nothing between them. The
+objective is therefore *not shown* to be broken. The real-world failure is
+18 wins over 171, nearly three sigma, and it sits in the inputs:
+projections 20-40% too high on the old stars the room bought, one
+availability factor for everyone, and the market's discount thrown away.
+
+Three fixes were tested and ruled out here, so nobody retries them.
+Roster weekly variance does not explain it: the room's roster was no more
+volatile week to week than ours, and adding roster variance to P(win)
+moved neither rating by more than 0.05. Capping bids at 1.15x the market
+price made it worse (67-103): a bargain by market price is not a good
+player. Prior-year games played does not predict the shortfall: across
+all usable seasons, players with 70+ games the year before delivered 0.82
+of projection and players with under 40 delivered 0.77, and in 2026 the
+order reversed.
+
+What is left standing is age, which our data lacks and which ESPN's
+public athlete endpoint (`sports.core.api.espn.com/v2/sports/basketball/
+leagues/nba/athletes/{id}`) supplies as `dateOfBirth` for the same id we
+hold, no login. The same fantasy card also carries ESPN's own pre-draft
+auction value, which we never captured. Both are the next inputs to
+measure, and the redraft is now the test either has to pass.
+
+Until then the room's ceilings are a *reasoned* number and not a
+*verified* one, and the readout should be read with that in mind: it is
+best at saying what a player is worth relative to the board, and worst
+exactly where the board is wrong about a player.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
