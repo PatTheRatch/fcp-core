@@ -30,7 +30,17 @@ Lift `_trades` out of `scripts/season_report.py` into a typed module:
 `reconstruct_trades(session, season, team_id) -> list[Trade]` with both
 sides and the day. The report calls the module. Tests on a fixture season
 (a two-team swap, a 2-for-1, a one-sided "part missing").
-**Done when:** the report's trade section is byte-identical before and after.
+The current reconstruction is known to over-detect before 2026: summed over
+teams it finds 107 trade sides in 2024 and 153 in 2025, against ESPN's
+`teams.trades` totals of 48 and 56 (2026 is close: 52 against 64). Likely
+cause: pre-2026 waiver moves lacking transaction rows, so the "no executed
+waiver explains it" exclusion misses them. Fix it here.
+**Done when:** (1) per season, reconstructed trade sides are within ESPN's
+`teams.trades` total or explicitly below it (a lower bound), with a table of
+both in the module docstring for 2019-2026; (2) a per-team check that no
+team shows more reconstructed trades than `teams.trades` without a stated
+reason; (3) tests on a fixture season (a two-team swap, a 2-for-1, a
+one-sided "part missing", and a waiver pickup that must NOT count).
 
 ### S3. Weekly roster lines: `app/scoring/lines.py`
 `team_week_line(session, team_id, period, players=None) -> CategoryLine`:
