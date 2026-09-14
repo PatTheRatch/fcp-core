@@ -70,6 +70,7 @@ from app.draft.room import (
     Pick,
     bid_ceiling,
     inflation,
+    reprice,
     resolve,
 )
 from app.draft.targets import CategoryDistribution, category_distributions
@@ -238,6 +239,18 @@ def show_ceiling(
         f"  marginal at $1 {ceiling.marginal_at_floor:+.3f}"
     )
     say(line)
+    # Two different numbers, and the clock needs both: what he is worth to
+    # us, above; and what he will probably go for, here -- the board's price
+    # for him, repriced for the money left in the room.
+    going = next(
+        (c.price for c in reprice(state, room.candidates) if c.player_id == ceiling.player_id),
+        None,
+    )
+    if going is not None:
+        if ceiling.price is None or going > ceiling.price:
+            say(f"  expected to go for about ${going} -- more than he is worth to us; let him go")
+        else:
+            say(f"  expected to go for about ${going} -- inside our ceiling")
     if board and board.on_block and board.on_block.player == name:
         block = board.on_block
         bits = []
@@ -553,6 +566,7 @@ def main() -> int:
         pool_kind=args.pool_kind,
         punt=args.punt,
         restarts=args.restarts,
+        tier_curve=not args.no_tier_curve,
     )
     state = room.state
     say(
