@@ -181,3 +181,13 @@ def test_the_projection_gaps_view_refuses_a_snapshot_season(
     app.dependency_overrides.clear()
     assert response.status_code == 422
     assert "mid-season" in response.json()["detail"]
+
+
+def test_a_season_total_spreads_over_more_weeks_than_the_regular_season() -> None:
+    """Production keeps coming through the fantasy playoffs, so a season
+    total is divided by the weeks it actually covers, not the schedule."""
+    from app.draft.pool import DEFAULT_EFFECTIVE_WEEKS, weeks_from
+
+    assert weeks_from(23_400.0, [900.0, 1000.0, 1100.0]) == 23.4
+    assert weeks_from(0.0, [1000.0]) == DEFAULT_EFFECTIVE_WEEKS
+    assert weeks_from(1000.0, []) == DEFAULT_EFFECTIVE_WEEKS

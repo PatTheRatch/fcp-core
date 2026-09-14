@@ -207,7 +207,11 @@ def load(  # type: ignore[no-untyped-def]
         LEAGUE_TIER_CURVE,
     )
     candidates = candidates_from(
-        projections, board, periods=ls.regular_season_periods, availability=factor, keys=categories
+        projections,
+        board,
+        periods=pool.effective_weeks(session, before=season),
+        availability=factor,
+        keys=categories,
     )
 
     picks = [

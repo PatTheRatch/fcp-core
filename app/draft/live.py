@@ -161,7 +161,7 @@ def load_room(
         candidates = candidates_from(
             projections,
             board,
-            periods=league_season.regular_season_periods,
+            periods=pool.effective_weeks(session),
             availability=availability,
             keys=categories,
         )

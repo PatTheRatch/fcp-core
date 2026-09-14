@@ -180,7 +180,7 @@
   </section>
 
   <section id="builds">
-    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best rosters from an empty room, bought at going prices, not board prices: one unrestricted, one punting FT%. This league's history has no evidence either way on punting. The expected-wins figure is optimistic; no team here has averaged over 6.</p></div>
+    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best roster from an empty room, bought at going prices. Categories it wins under 25% of weeks are marked as conceded. <b>Read this as the model's idea, not a finding:</b> the evidence for drafting balanced is about spreading money, and this league's history has not yet been tested on whether conceding categories wins.</p></div>
     <div class="builds" id="builds-grid"></div>
   </section>
 
@@ -303,14 +303,22 @@ const ir = P.filter((p) => p.bbm_per_game !== null && p.bbm_total !== null && p.
 fill("list-ir", ir, (p) => row(p, pill("info", `$${p.bbm_per_game} per game`)));
 
 // builds
-$("builds-grid").innerHTML = Object.entries(PLAN.builds).map(([label, b]) => {
+const seenRosters = new Set();
+$("builds-grid").innerHTML = Object.entries(PLAN.builds).filter(([, b]) => {
+  const key = b.roster.map((r) => r.name).sort().join("|");
+  if (seenRosters.has(key)) return false;
+  seenRosters.add(key);
+  return true;
+}).map(([label, b]) => {
   const order = ["PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%"];
+  const conceded = order.filter((k) => (b.win_probability[k] ?? 1) < 0.25);
   const probs = order.filter((k) => k in b.win_probability).map((k) => {
     const v = b.win_probability[k];
     return `<div class="prob"><span>${k}</span><div class="track"><div class="fill ${v < 0.25 ? "low" : ""}" style="width:${Math.round(v * 100)}%"></div></div><span>${Math.round(v * 100)}%</span></div>`;
   }).join("");
   const roster = b.roster.map((r) => `<div><span>${esc(r.name)}</span><span class="num">$${r.price}</span></div>`).join("");
-  return `<div class="build"><div><span class="eyebrow">${esc(label === "balanced" ? "No punt" : label)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
+  const name = conceded.length ? `Concedes ${conceded.join(", ")}` : "No category conceded";
+  return `<div class="build"><div><span class="eyebrow">${esc(name)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
     <div class="probs" aria-label="Chance of winning each category">${probs}</div><div class="roster">${roster}</div></div>`;
 }).join("");
 

@@ -79,7 +79,7 @@ def candidates_from(
     projections: Sequence[PlayerProjection],
     board: PriceBoard,
     *,
-    periods: int,
+    periods: float,
     availability: float,
     keys: Iterable[str],
 ) -> list[Candidate]:
@@ -89,7 +89,7 @@ def candidates_from(
     model already decided they will not be rostered.
     """
     wanted = tuple(keys)
-    divisor = max(1, periods)
+    divisor = max(1.0, periods)
     out: list[Candidate] = []
     for projection in projections:
         price = board.price_of(projection.player_id)

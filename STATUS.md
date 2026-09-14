@@ -704,6 +704,34 @@ display. For 2027: 47 players at $1 and 15 at $2 in the top 195, Doncic $77
 the league record of $101, flagged on the plan as a range. The model's
 unrestricted roster stopped punting free throws once it paid real prices.
 
+### Weekly lines were overstated by a quarter
+
+A projection is a season total and categories are won in a week, so the
+optimizer divides one into the other. It divided by the league's regular-
+season matchup periods (19). But production keeps coming through the fantasy
+playoffs: league-wide points over a median seven-day week come to 23.2-23.8
+in every season measured, so every roster's weekly line was 23% too high.
+That is most of why the optimizer expected six and more categories a week.
+It surfaced because re-ingesting 2027 (to pick up the centre limit, which the
+commissioner has since set to 3 -- ESPN counts it by primary position, so
+C/PF counts and PF/C does not) also picked up ESPN's unfinished 2027 schedule
+of 15 regular-season periods, which would have overstated lines by 56%.
+
+`pool.effective_weeks` now measures the divisor from game logs (23.8 across
+2019-2026 excluding 2020; `before=` for replays), and the room and the
+redraft use it. Every redraft figure recorded above predates this and is
+now stale.
+
+Consequences, measured the same day. A typical 2027 roster now scores 4.37
+expected categories a week, where an average team should sit; before it was
+about 6. On BBM's 2026 projections the model's score for each drafted roster
+correlates 0.78 with what that roster won held all season (0.74 before; ESPN
+projections 0.36). The model's best empty-room roster scores 5.09 -- top 5%
+of random rosters -- and it is a three-category punt: FT% 0%, 3PM 2%, PTS
+20%, with FG% 99%, REB 92%, BLK 84%, STL 83%. The league's evidence for
+balance is about spreading money, which this roster does; whether conceding
+categories wins in this league has not been tested.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
