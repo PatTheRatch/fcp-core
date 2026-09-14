@@ -654,6 +654,31 @@ leagues; the board misses the reputations the room pays for. The blend
 is now the room's going price. What it still misses is stars: $11 a
 player at $40 and up. BBM's generic dollars for 2026 missed $7.20.
 
+### Opponents for a fifteen-team league
+
+The ceilings measure every player against the league's weekly opponent
+distribution, and 2027 is fifteen teams, a size never played. It was
+borrowing the fourteen-team seasons raw, and extrapolating the NBA-wide
+shooting trend onto fantasy percentages. Fitting each counting category's
+weekly mean on league size and season together (2020 excluded), every extra
+team lowers weekly totals 3.8-4.9%, the same in every category. Rates were
+the other error: opponent FG% came out .486, above any season the league has
+posted (.462-.483), because the league's own series is flat (+0.0006 a year)
+while the trend it borrowed is measured on NBA starters.
+
+`app/draft/targets.py` now scales a borrowed counting distribution by the
+fitted size effect (`size_scale`) and reads rates from the three most recent
+seasons with no era scaling. 2027's opponent came down 4-5% in counting
+categories and to .479 FG%, .796 FT%. Measured on the 2027 BBM pool it moved
+ceilings for bigs, not stars: Mobley $30 to $16, Gobert $16 to $9.
+
+Two things the check exposed and did not change. Ceilings snap to the
+spending plan's places ($60, $46, $30, $16, $9): with the plan inside the
+optimizer, a player's ceiling is largely which place he qualifies for. And
+the empty-room plan expects about 6.35 categories a week, above what any
+team in the league has averaged; the absolute number is optimistic even
+where the comparisons between players hold.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

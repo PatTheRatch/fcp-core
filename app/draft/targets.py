@@ -30,8 +30,36 @@ sixteen rosters share the same pool of players and each one is thinner:
 
 The two percentages do not move at all, 0.473 against 0.477 for field goals,
 because a rate does not care how many players produced it. So counting
-categories are read only from seasons of the same size, and rate categories
-from every season, which gives them a far larger sample for free.
+categories are read from seasons of the same size, and rate categories
+from the most recent seasons of any size.
+
+A SIZE THE LEAGUE HAS NEVER PLAYED
+
+The 2027 league has fifteen teams, a size with no history. Borrowing the
+nearest size raw (fourteen) overstated what a fifteen-team opponent posts,
+because every extra team thins every roster. Fitting each counting category's
+weekly mean on league size and season together, across the played seasons
+except 2020, the effect is steady and the same in every category:
+
+| category | per extra team |
+|---|---|
+| PTS, REB | -3.8% |
+| TO, 3PM, BLK | -4.3% to -4.4% |
+| AST, STL | -4.7%, -4.9% |
+
+So a counting distribution borrowed from another size is scaled by that
+fitted effect for the difference (`size_scale`). Against the raw fourteen-team
+borrow, 2027's opponent came down 1-8% by category, and it moved ceilings:
+Mobley $30 to $16, Gobert $16 to $9, measured on the 2027 BBM pool.
+
+RATES ARE NOT BROUGHT FORWARD
+
+Rates used to pool every season and then take the NBA-wide trend, which is
+measured on established starters (`app.draft.era`). That put 2027's opponent
+field-goal percentage at .486, above any season the league has posted (.462
+to .483, with no trend of its own: +0.0006 a year). Fantasy rosters select
+their shooters, and the league's own series is flat. Rates now read the most
+recent `RECENT_RATE_SEASONS` played seasons and are not era scaled.
 """
 
 import math
@@ -54,6 +82,13 @@ from app.draft.valuation import INVERTED_CATEGORIES, PERCENTAGE_COMPONENTS
 #: Categories whose value is a rate, so league size does not move them and
 #: every season can be pooled. Measured, not assumed: see the module docstring.
 RATE_CATEGORIES = tuple(PERCENTAGE_COMPONENTS)
+
+#: How many of the most recent played seasons a rate category reads.
+RECENT_RATE_SEASONS = 3
+
+#: Seasons left out of the league-size fit: 2020 was cut short by COVID and
+#: its weeks are not comparable.
+SIZE_FIT_EXCLUDED = (2020,)
 
 
 @dataclass(frozen=True)
@@ -82,6 +117,9 @@ class CategoryTarget:
     #: to this season. Exactly 1.0 where the category does not really drift,
     #: so a reader can see which targets were adjusted and which were not.
     era_scale: float
+    #: What a counting figure borrowed from another league size was
+    #: multiplied by for the difference. 1.0 when the size matched.
+    size_scale: float = 1.0
 
 
 def _seasons_with_results(session: Session, *, before: int | None = None) -> list[tuple[int, int]]:
@@ -227,6 +265,7 @@ class CategoryDistribution:
     basis_seasons: tuple[int, ...]
     period_days: int
     era_scale: float
+    size_scale: float = 1.0
 
     def win_probability(self, total: float) -> float:
         """How often a roster posting `total` beats the opponent.
@@ -283,6 +322,75 @@ def _moments(
     )
 
 
+def _season_means(
+    session: Session, abbreviation: str, seasons: list[int], period_days: int
+) -> list[tuple[int, int, float]]:
+    """(season, team count, mean weekly total) for each season given."""
+    rows = session.execute(
+        select(
+            LeagueSeason.season,
+            LeagueSeason.team_count,
+            func.avg(cast(MatchupTeamStat.value, Float)),
+        )
+        .join(MatchupPeriod, MatchupPeriod.league_season_id == LeagueSeason.id)
+        .join(Matchup, Matchup.matchup_period_id == MatchupPeriod.id)
+        .join(MatchupTeamStat, MatchupTeamStat.matchup_id == Matchup.id)
+        .where(
+            MatchupTeamStat.abbreviation == abbreviation,
+            MatchupTeamStat.league_season_category_id.is_not(None),
+            MatchupPeriod.is_playoff.is_(False),
+            Matchup.away_team_id.is_not(None),
+            LeagueSeason.season.in_(seasons),
+            _period_length == period_days,
+        )
+        .group_by(LeagueSeason.season, LeagueSeason.team_count)
+    ).all()
+    return [(int(a), int(b), float(c)) for a, b, c in rows if c is not None and float(c) > 0]
+
+
+def size_effect(session: Session, abbreviation: str, seasons: list[int], period_days: int) -> float:
+    """A counting category's fractional change in log weekly mean per extra team.
+
+    Fitted on season means as log(mean) = a + b * teams + c * season, so the
+    game's own drift is not mistaken for league size. Falls back to a fit on
+    size alone when the seasons cannot separate the two, and to zero -- no
+    adjustment -- when fewer than two sizes have been played.
+    """
+    points = [
+        (season, teams, math.log(mean))
+        for season, teams, mean in _season_means(session, abbreviation, seasons, period_days)
+        if season not in SIZE_FIT_EXCLUDED
+    ]
+    if len({teams for _, teams, _ in points}) < 2:
+        return 0.0
+    if len(points) >= 4:
+        slope = _fit_two(points)
+        if slope is not None:
+            return slope
+    xs = [float(teams) for _, teams, _ in points]
+    ys = [value for _, _, value in points]
+    mean_x, mean_y = fmean(xs), fmean(ys)
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    return sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)) / sxx
+
+
+def _fit_two(points: list[tuple[int, int, float]]) -> float | None:
+    """The team-count coefficient of y = a + b*teams + c*season, or None if singular."""
+    xs1 = [float(t) for _, t, _ in points]
+    xs2 = [float(s) for s, _, _ in points]
+    ys = [y for _, _, y in points]
+    m1, m2, my = fmean(xs1), fmean(xs2), fmean(ys)
+    s11 = sum((a - m1) ** 2 for a in xs1)
+    s22 = sum((b - m2) ** 2 for b in xs2)
+    s12 = sum((a - m1) * (b - m2) for a, b in zip(xs1, xs2, strict=True))
+    s1y = sum((a - m1) * (y - my) for a, y in zip(xs1, ys, strict=True))
+    s2y = sum((b - m2) * (y - my) for b, y in zip(xs2, ys, strict=True))
+    determinant = s11 * s22 - s12 * s12
+    if abs(determinant) < 1e-9:
+        return None
+    return (s1y * s22 - s2y * s12) / determinant
+
+
 def category_distributions(
     session: Session,
     league_season: LeagueSeason,
@@ -306,8 +414,10 @@ def category_distributions(
         .where(LeagueSeasonCategory.league_season_id == league_season.id)
         .order_by(LeagueSeasonCategory.position)
     ).all()
-    _, sized_seasons = _sized_seasons(session, int(league_season.team_count), before=before)
+    target_size = int(league_season.team_count)
+    sized_count, sized_seasons = _sized_seasons(session, target_size, before=before)
     all_seasons = sorted({s for _, s in _seasons_with_results(session, before=before)})
+    recent_seasons = all_seasons[-RECENT_RATE_SEASONS:]
     days = period_days if period_days is not None else modal_period_days(session, all_seasons)
     trends = (
         category_trends(session, [c.abbreviation for c in categories]) if adjust_for_era else {}
@@ -316,26 +426,32 @@ def category_distributions(
     out: list[CategoryDistribution] = []
     for category in categories:
         pooled = category.abbreviation in RATE_CATEGORIES
-        seasons = all_seasons if pooled else sized_seasons
+        seasons = recent_seasons if pooled else sized_seasons
         mean, spread, sample = _moments(session, category.abbreviation, seasons, days)
         if mean is None or spread is None:
             continue
 
         scale = 1.0
         trend = trends.get(category.abbreviation)
-        if trend is not None and seasons:
+        if trend is not None and seasons and not pooled:
             scale = trend.scale(round(fmean(seasons)), int(league_season.season))
+
+        sized = 1.0
+        if not pooled and sized_count != target_size:
+            effect = size_effect(session, category.abbreviation, all_seasons, days)
+            sized = math.exp(effect * (target_size - sized_count))
 
         out.append(
             CategoryDistribution(
                 abbreviation=category.abbreviation,
-                mean=mean * scale,
-                spread=spread * scale,
+                mean=mean * scale * sized,
+                spread=spread * scale * sized,
                 lower_is_better=category.abbreviation in INVERTED_CATEGORIES,
                 sample=sample,
                 basis_seasons=tuple(seasons),
                 period_days=days,
                 era_scale=scale,
+                size_scale=sized,
             )
         )
     return out
@@ -373,10 +489,12 @@ def category_targets(
         .order_by(LeagueSeasonCategory.position)
     ).all()
 
-    sized_count, sized_seasons = _sized_seasons(session, int(league_season.team_count))
-    # Rates pool every season that was actually played. A season with no
+    target_size = int(league_season.team_count)
+    sized_count, sized_seasons = _sized_seasons(session, target_size)
+    # Rates read the most recent seasons actually played. A season with no
     # results contributes nothing and must not widen the basis.
     all_seasons = sorted({season for _, season in _seasons_with_results(session)})
+    recent_seasons = all_seasons[-RECENT_RATE_SEASONS:]
 
     days = period_days if period_days is not None else modal_period_days(session, all_seasons)
     abbreviations = [category.abbreviation for category in categories]
@@ -390,19 +508,26 @@ def category_targets(
         fraction = 1.0 - win_probability if lower_is_better else win_probability
 
         pooled = category.abbreviation in RATE_CATEGORIES
-        seasons = all_seasons if pooled else sized_seasons
+        seasons = recent_seasons if pooled else sized_seasons
         value, sample = _percentile(session, category.abbreviation, seasons, fraction, days)
         if value is None:
             continue
 
         # Bring the figure forward from the middle of the seasons it came
         # from to the season being asked about. Categories whose year to
-        # year movement is noise come back with a scale of exactly 1.0.
+        # year movement is noise come back with a scale of exactly 1.0, and
+        # rates are never brought forward (see the module docstring).
         scale = 1.0
         trend = trends.get(category.abbreviation)
-        if trend is not None and seasons:
+        if trend is not None and seasons and not pooled:
             scale = trend.scale(round(fmean(seasons)), int(league_season.season))
             value *= scale
+
+        sized = 1.0
+        if not pooled and sized_count != target_size:
+            effect = size_effect(session, category.abbreviation, all_seasons, days)
+            sized = math.exp(effect * (target_size - sized_count))
+            value *= sized
 
         targets.append(
             CategoryTarget(
@@ -415,6 +540,7 @@ def category_targets(
                 basis_seasons=tuple(seasons),
                 period_days=days,
                 era_scale=scale,
+                size_scale=sized,
             )
         )
     return targets

@@ -6,6 +6,7 @@ size, that rate categories pool every season, and that turnovers invert into
 a ceiling rather than a floor.
 """
 
+import math
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -498,3 +499,51 @@ def test_before_keeps_a_replayed_season_out_of_its_own_opponents(session: Sessio
     assert clean_pts.mean == pytest.approx(400.0)
     assert 2025 in leaky_pts.basis_seasons
     assert leaky_pts.mean > clean_pts.mean, "with 2025 included, its own 800s pull the mean up"
+
+
+def test_a_borrowed_size_is_scaled_for_the_teams_it_does_not_have(session: Session) -> None:
+    """The real case: fifteen teams, a size never played. Every extra team
+    thins every roster, so a fourteen-team borrow overstates the opponent."""
+    # Four percent fewer points per extra team, on a flat era.
+    for season, teams in ((2021, 10), (2022, 12), (2023, 14), (2024, 12), (2025, 14)):
+        mean = 1000.0 * math.exp(-0.04 * (teams - 10))
+        build_season(session, season=season, team_count=teams, points=[round(mean)] * 3)
+    upcoming = build_season(session, season=2027, team_count=15, points=[])
+    session.flush()
+
+    target = {t.abbreviation: t for t in category_targets(session, upcoming)}["PTS"]
+    borrowed = 1000.0 * math.exp(-0.04 * 4)
+
+    assert target.basis_team_count == 14
+    assert target.size_scale == pytest.approx(math.exp(-0.04), abs=0.003)
+    assert target.target == pytest.approx(borrowed * math.exp(-0.04), rel=0.005)
+
+    dist = next(d for d in category_distributions(session, upcoming) if d.abbreviation == "PTS")
+    assert dist.size_scale == pytest.approx(target.size_scale)
+    assert dist.mean < borrowed, "fifteen teams post less than fourteen"
+
+
+def test_a_matching_size_is_not_scaled(session: Session) -> None:
+    build_season(session, season=2023, team_count=10, points=[900, 1000, 1100])
+    build_season(session, season=2024, team_count=14, points=[700, 800, 900])
+    ls = build_season(session, season=2027, team_count=14, points=[])
+    session.flush()
+
+    target = {t.abbreviation: t for t in category_targets(session, ls)}["PTS"]
+    assert target.size_scale == 1.0
+    assert target.target == 800.0
+
+
+def test_rates_read_only_recent_seasons_and_are_not_brought_forward(session: Session) -> None:
+    """Opponent FG% was being extrapolated to .486, above any season played."""
+    for season, pct in ((2021, 0.40), (2022, 0.47), (2023, 0.48), (2024, 0.49)):
+        build_season(
+            session, season=season, team_count=12, points=[1, 2, 3], field_goal_pct=[pct] * 3
+        )
+    upcoming = build_season(session, season=2027, team_count=12, points=[])
+    session.flush()
+
+    rate = next(d for d in category_distributions(session, upcoming) if d.abbreviation == "FG%")
+    assert rate.basis_seasons == (2022, 2023, 2024)
+    assert rate.era_scale == 1.0
+    assert rate.mean == pytest.approx(0.48)
