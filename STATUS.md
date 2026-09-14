@@ -336,6 +336,35 @@ unchanged to the digit, because 2023 was never in them. The 16-team row is
 gone, because its only season was 2023. The tier-curve decision is exactly
 where it was, on cleaner evidence.
 
+### The tier curve, fitted
+
+Decided and shipped on 2026-09-14. `app/draft/tiers.py` holds a multiplier
+per rank tier -- 1.27, 1.32, 1.13, 0.89, 0.71, 0.87 across 1-5, 6-15,
+16-30, 31-60, 61-100, 101+ -- applied to the above-floor part of each
+board price and rescaled so the board still sums to the pot. Nothing it
+does can create or destroy money, and nobody drops below the floor; both
+are tested.
+
+Fitted on every usable season before 2026 and tested on 2026 as if unseen:
+mean absolute error over drafted players 11.3 to 7.5, top-five ratio 1.45
+to 1.01. Wembanyama $61 becomes $79 against the $100 paid; Jokic $70
+becomes $90 against $91. Leave-one-season-out it beats the raw board in
+five of six years; 2019, when the room paid the board almost exactly, is
+the year it over-corrects. Fitting on 14-team seasons alone was tried and
+was worse held out. Pooling on a normalised rank axis (rank over players
+rostered) was tried and added nothing over plain rank.
+
+The draft room applies it by default and says so on start; `--no-tier-curve`
+prices from value alone. `scripts/fit_tier_curve.py` refits on demand and
+prints the constant to paste, with the held-out and leave-one-out tables
+beside it, so a refit after the 2027 draft is a run, a paste and a commit.
+
+The bet, plainly: the room keeps paying the star premium it has paid in
+four of the last five drafts. If it does not, this board bids too high in
+round one. The in-draft repricing then corrects from a high start instead
+of a low one, which is the better side to be wrong on when the stars are
+the part of the draft you cannot get back.
+
 ### The deployment gap, and the guard
 
 The scheduled ingest on the VPS runs whatever is checked out at

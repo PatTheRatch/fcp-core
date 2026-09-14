@@ -73,6 +73,7 @@ from app.draft.room import (
     resolve,
 )
 from app.draft.targets import CategoryDistribution, category_distributions
+from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import value_players
 
 
@@ -121,6 +122,7 @@ def load_room(
     pool_kind: str,
     punt: Sequence[str],
     restarts: int,
+    tier_curve: bool = True,
 ) -> Room:
     factory = make_session_factory(make_engine(get_settings().database_url))
     with factory() as session:
@@ -159,6 +161,10 @@ def load_room(
             budget_per_team=league_season.auction_budget,
             roster_slots=slots,
         )
+        if tier_curve:
+            # Reshape to how this league actually spends: about half again on
+            # the top five, less below rank 60. See app/draft/tiers.py.
+            board = apply_tier_curve(board, LEAGUE_TIER_CURVE)
         availability = measured_availability(session).factor
         candidates = candidates_from(
             projections,
@@ -533,6 +539,11 @@ def main() -> int:
     )
     ap.add_argument("--pool-season", type=int, help="stand in another season's lines")
     ap.add_argument("--pool-kind", default="projected", choices=("projected", "total"))
+    ap.add_argument(
+        "--no-tier-curve",
+        action="store_true",
+        help="price from value alone, without reshaping to how this league spends",
+    )
     args = ap.parse_args()
 
     room = load_room(
@@ -548,6 +559,11 @@ def main() -> int:
         f"{args.season} draft room · {len(state.teams)} teams · ${state.budget} · "
         f"{state.roster_slots} places · {len(room.candidates)} priced players · we are "
         f"{room.team_names[state.me]}"
+    )
+    say(
+        "board reshaped to this league's spending (tier curve on)"
+        if not args.no_tier_curve
+        else "board priced from value alone (tier curve off)"
     )
     if room.stand_in:
         say(
