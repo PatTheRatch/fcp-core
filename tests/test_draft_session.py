@@ -178,7 +178,7 @@ def test_ceilings_are_ready_for_the_likeliest_nominations_and_never_stale(
 def test_the_card_carries_market_bbm_and_the_injury_discount() -> None:
     session = DraftSession(make_room())
     card = session.card(2)
-    assert card["market_source"].startswith("ESPN drafts")
+    assert card["market_source"].startswith("ESPN average")
     assert card["bbm"]["league_total"] == 41
     assert card["bbm"]["league_per_game"] == 52
     assert card["bbm"]["injury_discount"] == 11

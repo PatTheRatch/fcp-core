@@ -636,6 +636,24 @@ BBM exports live in `data/bbm/` inside the project (git-ignored): a process
 the app launches cannot read `~/Documents` under macOS privacy rules, and
 hung silently trying.
 
+### How good "expected to go for" is
+
+Scored on 1,274 drafted players against what this league actually paid
+(`scripts/price_scorecard.py`). ESPN's player cards still carry the average
+auction price across ESPN leagues for 2019-2025 (zeroed for 2026), and
+ESPN's own dollar value from 2023 -- which for 2026 looks refreshed after
+the season, so it is not used. Over the 712 players with both an ESPN
+average and a board price, each season held out of its own fit:
+
+    ESPN average price alone      misses $6.14 a player, runs $4.40 low
+    our board alone               misses $6.71
+    half and half, fitted         misses $5.42, unbiased, 59% within $5
+
+ESPN's average runs low because it comes from ten- and twelve-team
+leagues; the board misses the reputations the room pays for. The blend
+is now the room's going price. What it still misses is stars: $11 a
+player at $40 and up. BBM's generic dollars for 2026 missed $7.20.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

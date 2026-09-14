@@ -230,16 +230,32 @@ def _per_game(rows: dict[int, BBMRow], path: Path | None) -> dict[int, float]:
     return out
 
 
+#: What this league pays, from ESPN's average auction price and our board.
+#: Fitted on 712 drafted players in 2019, 2021, 2022, 2024 and 2025 against
+#: the prices this league actually paid, and scored season by season with
+#: each season held out of its own fit (scripts/price_scorecard.py):
+#:
+#:     ESPN average price alone     misses $6.14 a player, $4.40 too low
+#:     our board alone              misses $6.71
+#:     half and half, fitted        misses $5.42, unbiased
+#:
+#: ESPN's average comes from leagues of ten and twelve, which pay less for
+#: the middle of the board than this one does; the board knows this
+#: league's size and spending shape but not the reputations the room pays
+#: for. Each covers the other's blind spot. The misses that remain are the
+#: stars: $11 a player at $40 and up, where Doncic went for $91.
+MARKET_WEIGHT = 0.5
+MARKET_INTERCEPT = 0.56
+MARKET_SLOPE = 1.133
+
+
 def market_prices(room: Room, state: DraftState) -> dict[int, tuple[int | None, str]]:
     """What each player still on the board will probably go for, and why.
 
-    The market's price where one is on file: what ESPN drafts pay on
-    average, since this league drafts on ESPN and sees ESPN's values on the
-    block, repriced for the money left in the room. Our board's price is a
-    valuation, and for exactly the players worth swinging on it is the wrong
-    guess -- it had Kawhi at $47 in 2027 where ESPN drafts pay $13, and this
-    league paid $12 for him in 2026. The board stands in only when no market
-    number is on file.
+    Where ESPN's average auction price is on file: the fitted blend of it
+    and our board (see `MARKET_WEIGHT`), both repriced for the money left in
+    the room. Where it is not, our board alone, which is what the blend
+    falls back to for rookies and fringe players ESPN drafts never priced.
     """
     floor = state.minimum_bid
     factor = inflation(state, room.candidates)
@@ -248,10 +264,15 @@ def market_prices(room: Room, state: DraftState) -> dict[int, tuple[int | None, 
     for player_id, price in board.items():
         row = room.bbm.get(player_id)
         if row is not None and row.espn_dollars is not None:
-            going = floor + round(max(0.0, row.espn_dollars - floor) * factor)
-            out[player_id] = (max(floor, going), "ESPN drafts, repriced for the room")
+            espn = floor + max(0.0, row.espn_dollars - floor) * factor
+            blended = MARKET_WEIGHT * espn + (1 - MARKET_WEIGHT) * price
+            going = round(MARKET_INTERCEPT + MARKET_SLOPE * blended)
+            out[player_id] = (
+                max(floor, going),
+                "ESPN average and our board, fitted to this league",
+            )
         else:
-            out[player_id] = (price, "our board; no market price on file")
+            out[player_id] = (price, "our board; no ESPN average on file")
     return out
 
 
