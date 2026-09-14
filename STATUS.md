@@ -617,6 +617,25 @@ precomputations were running. A nomination gives ninety. Three workers is
 the default. Room loading moved to `app/draft/live.py`, shared with the
 typed room.
 
+### The draft screen, and rehearsing on 2026
+
+`app/draft/static/draft.html` is one self-contained page the service
+serves at `/`: the block card (market price, our ceiling, plan cap, what we
+can bid, a verdict, BBM total and per-game value, the injury-discount flag,
+age and injury risk), pick entry with name autocomplete, undo, our roster
+and open plan places, the board with ceilings as they land, every team's
+money, and the pick log. It redraws from the event stream.
+
+`--rehearse 2026` replays the league's real 2026 auction into the 2027 room
+(`app/draft/rehearsal.py`): each nomination sits on the block for
+`--seconds`, and unless we enter him as ours he sells to his real buyer at
+his real price. Verified in the browser on 2026-09-14: nominations advance
+and sell, buying from the card applies and refits the plan, keyboard entry
+for another team works, pause holds the clock while ceilings land. The
+BBM exports live in `data/bbm/` inside the project (git-ignored): a process
+the app launches cannot read `~/Documents` under macOS privacy rules, and
+hung silently trying.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

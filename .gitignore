@@ -15,3 +15,6 @@ reports/
 
 # Draft watch logs.
 draft-watch*.jsonl
+
+# Local draft inputs (BBM exports) and draft logs; never committed.
+data/

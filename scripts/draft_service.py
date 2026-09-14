@@ -15,8 +15,21 @@ this mid-draft loses nothing. Start a fresh draft -- after a mock, say --
 with a new --log path, or move the old file aside; the service never
 deletes one.
 
-Without --page, picks come in through POST /api/picks and nothing reads
-ESPN. The room options (--plan, --restarts, --punt ...) are the same as
+Open http://127.0.0.1:8765 for the draft screen.
+
+REHEARSING
+
+    python scripts/draft_service.py --season 2027 --me "Through The Wire" \\
+        --bbm ...total.xls --bbm-per-game ...pergame.xls --rehearse 2026 --seconds 20
+
+replays the league's real 2026 auction, nomination by nomination, into the
+2027 room: each player sits on the block for --seconds, and unless we
+enter him as ours he goes to the team that really bought him at what they
+paid. The log defaults to logs/rehearsal-<season>-<time>.jsonl so a
+rehearsal never touches the real draft's log.
+
+Without --page or --rehearse, picks come in through the screen or POST
+/api/picks and nothing reads ESPN. The room options (--plan, --restarts, --punt ...) are the same as
 scripts/draft_room.py's.
 """
 
@@ -24,11 +37,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
 
+from app.config import get_settings
+from app.db.session import make_engine, make_session_factory
 from app.draft.live import RoomError, load_room
+from app.draft.rehearsal import Rehearsal, load_nominations
 from app.draft.service import PageFeed, create_draft_app
 from app.draft.session import DraftLog, DraftSession, process_executor
 
@@ -43,6 +60,8 @@ def main() -> int:
     ap.add_argument("--trust-money", action="store_true", help="apply picks inferred from budgets")
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between page reads")
     ap.add_argument("--log", type=Path, help="pick log (default logs/draft-<season>.jsonl)")
+    ap.add_argument("--rehearse", type=int, help="replay this season's real draft into the room")
+    ap.add_argument("--seconds", type=float, default=20.0, help="seconds per rehearsal nomination")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--workers", type=int, default=3, help="processes computing ceilings")
@@ -70,7 +89,15 @@ def main() -> int:
     except RoomError as exc:
         raise SystemExit(str(exc)) from exc
 
-    log_path = args.log or Path("logs") / f"draft-{args.season}.jsonl"
+    if args.page and args.rehearse:
+        raise SystemExit("--page and --rehearse are two different feeds; pick one")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    default_log = (
+        Path("logs") / f"rehearsal-{args.rehearse}-{stamp}.jsonl"
+        if args.rehearse
+        else Path("logs") / f"draft-{args.season}.jsonl"
+    )
+    log_path = args.log or default_log
     session = DraftSession(
         room, log=DraftLog(log_path), executor=process_executor(room, args.workers)
     )
@@ -83,10 +110,20 @@ def main() -> int:
     for warning in session.replay_warnings:
         print(f"  {warning}", flush=True)
 
+    rehearsal = None
     if args.page:
         PageFeed(session, args.page, interval=args.interval, trust_money=args.trust_money).start()
+    elif args.rehearse:
+        factory = make_session_factory(make_engine(get_settings().database_url))
+        with factory() as db:
+            nominations = load_nominations(db, args.rehearse, room.team_names)
+        rehearsal = Rehearsal(session, nominations, seconds=args.seconds)
+        rehearsal.start()
+        print(f"rehearsing {len(nominations)} nominations from {args.rehearse}", flush=True)
 
-    uvicorn.run(create_draft_app(session), host=args.host, port=args.port, log_level="warning")
+    print(f"draft screen: http://{args.host}:{args.port}", flush=True)
+    app = create_draft_app(session, rehearsal=rehearsal)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
 

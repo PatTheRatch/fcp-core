@@ -6,6 +6,8 @@ design; a draft is neither. So this is a separate app bound to localhost,
 started by `scripts/draft_service.py`, with nothing shared with
 `app.main` except the room it loads.
 
+    GET  /                      the draft screen
+    POST /api/rehearsal/{pause|resume|skip}   when rehearsing a past draft
     GET  /api/state             everything the screen draws, with a version
     GET  /api/events            server-sent events: the state, each time the version moves
     POST /api/picks             a pick, by name or id
@@ -26,15 +28,21 @@ import json
 import threading
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.draft.feed import BoardSnapshot, OnBlock, inferred_picks, new_picks, parse_board
 from app.draft.room import DraftError
 from app.draft.session import DraftSession, UnknownNameError
+
+if TYPE_CHECKING:
+    from app.draft.rehearsal import Rehearsal
+
+SCREEN = Path(__file__).parent / "static" / "draft.html"
 
 
 class PickIn(BaseModel):
@@ -52,8 +60,24 @@ class BlockIn(BaseModel):
     high_bidder: str | None = None
 
 
-def create_draft_app(session: DraftSession, *, poll: float = 0.25) -> FastAPI:
+def create_draft_app(
+    session: DraftSession, *, poll: float = 0.25, rehearsal: Rehearsal | None = None
+) -> FastAPI:
     app = FastAPI(title="FCP Draft", version="0.1.0")
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def screen() -> str:
+        # Read per request, so an edit to the page shows on refresh.
+        return SCREEN.read_text()
+
+    @app.post("/api/rehearsal/{action}")
+    def rehearse(action: str) -> dict[str, Any]:
+        if rehearsal is None:
+            raise HTTPException(status_code=404, detail="not rehearsing")
+        try:
+            return rehearsal.control(action)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     def _name_error(exc: UnknownNameError) -> HTTPException:
         return HTTPException(

@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft Room</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --panel-2: #1e232b; --line: #2a3039;
+    --text: #e8ebef; --muted: #8b94a1; --faint: #5d6672;
+    --accent: #f5a524; --good: #3fb872; --bad: #ef5a5a; --info: #5aa9ef; --me: #2a3a2f;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); }
+
+  header { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; letter-spacing: .02em; }
+  .stat { display: flex; flex-direction: column; }
+  .stat b { font-size: 16px; } .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .pill { padding: 3px 9px; border-radius: 999px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+  .pill.ok { color: var(--good); border-color: #2f5a41; } .pill.warn { color: var(--accent); border-color: #6a4f1c; }
+  .pill.err { color: var(--bad); border-color: #6a2a2a; }
+  .spacer { flex: 1; }
+
+  main { display: grid; grid-template-columns: minmax(420px, 1.35fr) minmax(320px, 1fr) minmax(300px, .9fr);
+    gap: 12px; padding: 12px; align-items: start; }
+  @media (max-width: 1200px) { main { grid-template-columns: 1fr 1fr; } .col3 { grid-column: span 2; } }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } .col3 { grid-column: auto; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; }
+
+  /* the card */
+  .card-name { font-size: 26px; font-weight: 700; line-height: 1.15; }
+  .card-sub { color: var(--muted); margin: 2px 0 12px; }
+  .bignums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .big { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .big b { display: block; font-size: 24px; font-family: var(--mono); }
+  .big span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .big.hero { border-color: #6a4f1c; } .big.hero b { color: var(--accent); }
+  .verdict { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; font-weight: 600; }
+  .verdict.good { background: #16301f; color: var(--good); } .verdict.bad { background: #331a1a; color: var(--bad); }
+  .verdict.wait { background: var(--panel-2); color: var(--muted); font-weight: 400; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .fact { background: var(--panel-2); border-radius: 6px; padding: 3px 8px; font-size: 13px; }
+  .fact.flag { background: #3a2c10; color: var(--accent); }
+  .risk-E, .risk-H { color: var(--bad); } .risk-M { color: var(--accent); } .risk-L { color: var(--good); }
+  .empty { color: var(--faint); padding: 18px 0; text-align: center; }
+  .offer { font-size: 13px; color: var(--info); margin-bottom: 8px; }
+
+  /* entry */
+  .entry { display: grid; grid-template-columns: 1fr 190px 80px; gap: 6px; }
+  .entry input, .entry select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; }
+  .entry input:focus, .entry select:focus { outline: 2px solid var(--info); outline-offset: -1px; }
+  .buttons { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: #1a1204; border-color: var(--accent); font-weight: 700; }
+  button.small { padding: 3px 8px; font-size: 12px; }
+  .suggest { position: relative; }
+  .suggest ul { position: absolute; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px; list-style: none; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; z-index: 10; max-height: 260px; overflow: auto; }
+  .suggest li { padding: 5px 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .suggest li.active, .suggest li:hover { background: var(--line); }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 6px; border-bottom: 1px solid #20252d; }
+  td.r, th.r { text-align: right; }
+  tr.me td { background: var(--me); }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--panel-2); }
+  .scroll { max-height: 420px; overflow: auto; }
+  .roster { font-size: 12px; color: var(--muted); padding: 2px 6px 8px; }
+
+  .places { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .place { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; }
+  .place.top { border-color: var(--accent); color: var(--accent); }
+
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #331a1a; color: #ffd6d6;
+    border: 1px solid #6a2a2a; border-radius: 8px; padding: 10px 14px; z-index: 50; max-width: 90vw; }
+  .toast.ok { background: #16301f; color: #c9f2d7; border-color: #2f5a41; }
+  .toast button { margin-left: 6px; }
+  .rehearse { display: flex; gap: 6px; align-items: center; }
+  .count { font-size: 20px; color: var(--accent); min-width: 34px; text-align: right; }
+  kbd { font-family: var(--mono); font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Draft Room</h1>
+  <div class="stat"><b class="num" id="h-pick">–</b><span>pick</span></div>
+  <div class="stat"><b class="num" id="h-mine">–</b><span>our money</span></div>
+  <div class="stat"><b class="num" id="h-field">–</b><span>field max bid</span></div>
+  <div class="stat"><b class="num" id="h-infl">–</b><span>inflation</span></div>
+  <div class="stat"><b id="h-nom">–</b><span>to nominate</span></div>
+  <div class="spacer"></div>
+  <div class="rehearse" id="rehearse" hidden>
+    <span class="pill warn" id="r-label">rehearsal</span>
+    <b class="num count" id="r-count"></b>
+    <button class="small" id="r-pause">Pause</button>
+    <button class="small" id="r-skip" title="sell him now to his real buyer">Sell now</button>
+  </div>
+  <span class="pill" id="feed">connecting…</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>On the block <span class="faint" id="block-hint"></span></h2>
+      <div id="card"><div class="empty">Nobody on the block. Click a player on the board, or type one below.</div></div>
+    </section>
+
+    <section>
+      <h2>Enter a pick <span class="faint"><kbd>/</kbd> to type · <kbd>Enter</kbd> to save</span></h2>
+      <form class="entry" id="e-form" autocomplete="off">
+        <div class="suggest">
+          <input id="e-player" placeholder="Player" autocomplete="off">
+          <ul id="e-suggest" hidden></ul>
+        </div>
+        <select id="e-team"></select>
+        <input id="e-price" class="num" type="number" min="1" placeholder="$">
+        <button type="submit" hidden></button>
+      </form>
+      <div class="buttons">
+        <button class="primary" id="e-save">Save pick</button>
+        <button id="e-block">Put on block</button>
+        <button id="e-undo">Undo last pick</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Our roster <span class="faint" id="mine-sum"></span></h2>
+      <div id="mine"></div>
+      <div id="plan-places"></div>
+      <div class="buttons"><button class="small" id="plan-btn">Best finish from here</button></div>
+      <div id="plan"></div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>Board <span class="faint">most expensive still available</span></h2>
+      <input id="b-search" placeholder="Search players" autocomplete="off"
+        style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;margin-bottom:8px">
+      <div class="scroll"><table><thead><tr>
+        <th>Player</th><th class="r">Going</th><th class="r">Ceiling</th><th class="r">BBM</th><th></th>
+      </tr></thead><tbody id="board"></tbody></table></div>
+    </section>
+  </div>
+
+  <div class="col3">
+    <section>
+      <h2>Teams <span class="faint">by max bid</span></h2>
+      <table><thead><tr><th>Team</th><th class="r">Left</th><th class="r">Open</th><th class="r">Max</th></tr></thead>
+      <tbody id="teams"></tbody></table>
+    </section>
+    <section>
+      <h2>Picks <span class="faint">latest first</span></h2>
+      <div class="scroll" style="max-height:300px"><table><tbody id="picks"></tbody></table></div>
+    </section>
+  </div>
+</main>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (v) => v === null || v === undefined ? "–" : "$" + v;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let S = null;             // latest snapshot
+let viewing = null;       // player id shown in the card when not the block
+let openTeam = null;
+let toastTimer = null;
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(typeof body.detail === "string" ? body.detail : body.detail?.message || response.statusText), { detail: body.detail });
+  return body;
+}
+
+function toast(message, ok = false, alternatives = []) {
+  const el = $("toast");
+  el.className = "toast" + (ok ? " ok" : "");
+  el.innerHTML = esc(message) + alternatives.map((a) => ` <button class="small" data-alt="${esc(a)}">${esc(a)}</button>`).join("");
+  el.hidden = false;
+  el.querySelectorAll("[data-alt]").forEach((b) => b.onclick = () => { $("e-player").value = b.dataset.alt; el.hidden = true; $("e-price").focus(); });
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.hidden = true, alternatives.length ? 9000 : 3500);
+}
+
+// -- live state -------------------------------------------------------------
+
+function connect() {
+  const events = new EventSource("/api/events");
+  events.addEventListener("state", (e) => { S = JSON.parse(e.data); render(); });
+  events.onerror = () => { $("feed").textContent = "service not reachable — retrying"; $("feed").className = "pill err"; };
+}
+
+function render() {
+  const me = S.teams.find((t) => t.is_me);
+  $("h-pick").textContent = `${S.pick_number} / ${S.total_picks}`;
+  $("h-mine").textContent = `$${me.remaining} · ${me.open_slots} open`;
+  $("h-field").textContent = money(S.field_ceiling);
+  $("h-infl").textContent = S.inflation.toFixed(2);
+  $("h-nom").textContent = S.to_nominate ? S.to_nominate.name : "–";
+  renderFeed(); renderCard(); renderTeams(me); renderPicks(); renderMine(me); renderTeamSelect(); refreshBoard();
+}
+
+function renderFeed() {
+  const f = S.feed || {}, el = $("feed");
+  const r = f.rehearsal;
+  $("rehearse").hidden = !r;
+  if (r) {
+    $("r-label").textContent = r.done ? "rehearsal finished" : `rehearsal · nomination ${r.nomination} of ${r.of}`;
+    $("r-count").textContent = r.seconds_left ?? "";
+    $("r-pause").textContent = r.paused ? "Resume" : "Pause";
+  }
+  if (f.mode === "page") {
+    el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}` : `ESPN page not connected${f.error ? ": " + f.error : ""}`;
+    el.className = "pill " + (f.connected ? "ok" : "err");
+    if (f.unlogged) toast("Money moved but the log did not show: " + f.unlogged.join("; "));
+    if (f.problems) toast("Could not apply: " + f.problems.join("; "));
+  } else {
+    el.textContent = f.mode === "rehearsal" ? "rehearsal feed" : "typed entry";
+    el.className = "pill";
+  }
+  if (f.ceiling_error) { el.textContent += " · ceiling error"; el.className = "pill err"; el.title = f.ceiling_error; }
+}
+
+// -- the card -----------------------------------------------------------------
+
+async function renderCard() {
+  const block = S.block;
+  let card = null, offer = "";
+  if (block && block.player) {
+    card = block.player; viewing = null;
+    $("block-hint").textContent = "";
+    if (block.current_offer) offer = `Current offer $${block.current_offer}${block.high_bidder ? " · " + block.high_bidder : ""}`;
+  } else if (block && block.name) {
+    $("card").innerHTML = `<div class="card-name">${esc(block.name)}</div><div class="card-sub">Not on our board — no projection. Enter the pick when he sells.</div>`;
+    return;
+  } else if (viewing !== null) {
+    $("block-hint").textContent = "(viewing, not on the block)";
+    try { card = await api(`/api/players/${viewing}`); } catch (e) { return; }
+  }
+  if (!card) {
+    $("block-hint").textContent = "";
+    $("card").innerHTML = `<div class="empty">Nobody on the block. Click a player on the board, or type one below.</div>`;
+    return;
+  }
+  $("card").innerHTML = cardHtml(card, offer);
+  const buy = $("c-buy");
+  if (buy) buy.onclick = () => { $("e-player").value = card.name; $("e-team").value = String(S.me); $("e-price").focus(); };
+}
+
+function cardHtml(c, offer) {
+  const ce = c.ceiling || {}, b = c.bbm, me = S.teams.find((t) => t.is_me);
+  const slots = ["PG", "SG", "SF", "PF", "C"].filter((p) => (c.eligible || []).includes(p) || c.position === p);
+  const where = slots.join("/") || c.position || "";
+  if (c.taken) {
+    return `<div class="card-name">${esc(c.name)}</div><div class="card-sub">${esc(where)}</div>
+      <div class="verdict wait">Sold to ${esc(c.taken.team)} for $${c.taken.price}</div>`;
+  }
+  let verdict;
+  if (ce.status !== "ready") verdict = `<div class="verdict wait">Working out our ceiling…</div>`;
+  else if (ce.price === null) verdict = `<div class="verdict bad">Do not bid — he adds less than the floor bid buys elsewhere</div>`;
+  else if (ce.verdict.startsWith("inside")) verdict = `<div class="verdict good">Inside our ceiling — worth up to $${ce.price}${ce.capped ? " (the plan's cap)" : ""}</div>`;
+  else verdict = `<div class="verdict bad">Likely goes for more than ${ce.capped ? "our plan allows" : "he's worth to us"} — let him go past $${ce.price}</div>`;
+
+  const facts = [];
+  if (b) {
+    if (b.age) facts.push(`<span class="fact">age ${b.age.toFixed(1)}</span>`);
+    facts.push(`<span class="fact">${Math.round(b.games)} games</span>`);
+    if (b.injury_risk) facts.push(`<span class="fact">injury risk <b class="risk-${esc(b.injury_risk)}">${esc(b.injury_risk)}</b></span>`);
+    if (b.injury) facts.push(`<span class="fact">${esc(b.injury)}</span>`);
+    if (b.league_total !== null) facts.push(`<span class="fact">BBM league <b>$${b.league_total}</b>${b.league_per_game !== null ? ` total · $${b.league_per_game} per game` : ""}</span>`);
+    if (b.espn_avg !== null) facts.push(`<span class="fact">ESPN avg $${b.espn_avg}</span>`);
+    if (b.yahoo_avg !== null) facts.push(`<span class="fact">Yahoo avg $${b.yahoo_avg}</span>`);
+    if (b.injury_discount) facts.push(`<span class="fact flag">injury discount $${b.injury_discount} — worth more if you can stash him on IR</span>`);
+  }
+  return `
+    <div class="card-name">${esc(c.name)}</div>
+    <div class="card-sub">${esc(where)} · going price from ${esc(c.market_source)}</div>
+    ${offer ? `<div class="offer">${esc(offer)}</div>` : ""}
+    <div class="bignums">
+      <div class="big hero"><b>${money(c.market_price)}</b><span>expected to go</span></div>
+      <div class="big"><b>${ce.status === "ready" ? money(ce.price) : "…"}</b><span>our ceiling</span></div>
+      <div class="big"><b>${money(S.plan ? S.plan.cap : null)}</b><span>plan cap</span></div>
+      <div class="big"><b>${money(me.max_bid)}</b><span>we can bid</span></div>
+    </div>
+    ${verdict}
+    <div class="facts">${facts.join("")}</div>
+    <div class="muted" style="font-size:12px">field can bid ${money(S.field_ceiling)} · our board prices him ${money(c.board_price)}${ce.marginal_at_floor !== undefined && ce.marginal_at_floor !== null ? ` · adds ${ce.marginal_at_floor.toFixed(2)} cats/week at $1` : ""}</div>
+    <div class="buttons"><button class="small" id="c-buy">We won him →</button></div>`;
+}
+
+// -- board, teams, picks, roster ----------------------------------------------
+
+let boardTimer = null, boardVersion = -1;
+function refreshBoard(force = false) {
+  if (!force && S.version === boardVersion) return;
+  clearTimeout(boardTimer);
+  boardTimer = setTimeout(async () => {
+    boardVersion = S.version;
+    const q = $("b-search").value.trim();
+    const rows = await api(`/api/players?limit=60&q=${encodeURIComponent(q)}`).catch(() => []);
+    $("board").innerHTML = rows.map((p) => {
+      const ce = p.ceiling;
+      const ceiling = ce.status === "ready" ? (ce.price === null ? `<span class="faint">no</span>` : `$${ce.price}`) : `<span class="faint">…</span>`;
+      const good = ce.status === "ready" && ce.price !== null && p.market_price !== null && p.market_price <= ce.price;
+      return `<tr class="click" data-id="${p.player_id}">
+        <td>${esc(p.name)} <span class="faint">${esc(p.position || "")}</span></td>
+        <td class="r num">${money(p.market_price)}</td>
+        <td class="r num" style="color:${good ? "var(--good)" : "inherit"}">${ceiling}</td>
+        <td class="r num faint">${p.bbm && p.bbm.league_total !== null ? "$" + p.bbm.league_total : ""}</td>
+        <td class="r"><button class="small" data-block="${p.player_id}">block</button></td></tr>`;
+    }).join("") || `<tr><td class="empty" colspan="5">No players match</td></tr>`;
+    $("board").querySelectorAll("tr[data-id]").forEach((tr) => tr.onclick = (e) => {
+      if (e.target.dataset.block) return;
+      viewing = Number(tr.dataset.id);
+      if (!(S.block && S.block.player)) renderCard(); else { toast("Someone is on the block; clear it to view others.", true); }
+    });
+    $("board").querySelectorAll("[data-block]").forEach((b) => b.onclick = () => putOnBlock({ player_id: Number(b.dataset.block) }));
+  }, force ? 0 : 150);
+}
+
+function renderTeams(me) {
+  const teams = [...S.teams].sort((a, b) => b.max_bid - a.max_bid);
+  $("teams").innerHTML = teams.map((t) => `
+    <tr class="click ${t.is_me ? "me" : ""}" data-team="${t.team_id}">
+      <td>${esc(t.name)}</td><td class="r num">$${t.remaining}</td><td class="r num">${t.open_slots}</td><td class="r num">$${t.max_bid}</td></tr>
+    ${openTeam === t.team_id ? `<tr><td colspan="4" class="roster">${t.roster.map((p) => `${esc(p.name)} $${p.price}`).join(" · ") || "nobody yet"}</td></tr>` : ""}`).join("");
+  $("teams").querySelectorAll("[data-team]").forEach((tr) => tr.onclick = () => {
+    const id = Number(tr.dataset.team); openTeam = openTeam === id ? null : id; renderTeams(me);
+  });
+}
+
+function renderPicks() {
+  $("picks").innerHTML = [...S.picks].reverse().map((p) => `
+    <tr><td class="num faint">${p.number}</td><td>${esc(p.name)}</td><td class="muted">${esc(p.team)}</td><td class="r num">$${p.price}</td></tr>`).join("")
+    || `<tr><td class="empty">No picks yet</td></tr>`;
+}
+
+function renderMine(me) {
+  $("mine-sum").textContent = `$${me.budget_spent ?? (S.budget - me.remaining)} spent · $${me.remaining} left`;
+  $("mine").innerHTML = me.roster.length
+    ? `<table>${me.roster.map((p) => `<tr><td>${esc(p.name)}</td><td class="r num">$${p.price}</td></tr>`).join("")}</table>`
+    : `<div class="faint">Nobody yet.</div>`;
+  if (S.plan) {
+    const places = S.plan.open_places;
+    $("plan-places").innerHTML = `<div class="muted" style="margin-top:10px;font-size:12px">Spending plan (${esc(S.plan.source)}) — open places; one player capped at $${S.plan.cap}</div>
+      <div class="places">${places.map((v, i) => `<span class="place ${i === 0 ? "top" : ""}">$${v}</span>`).join("")}</div>`;
+  } else {
+    $("plan-places").innerHTML = `<div class="faint" style="margin-top:8px">No spending plan: bidding on the ceiling alone.</div>`;
+  }
+}
+
+function renderTeamSelect() {
+  const sel = $("e-team"), current = sel.value;
+  const options = [...S.teams].sort((a, b) => (b.is_me - a.is_me) || a.name.localeCompare(b.name));
+  const html = options.map((t) => `<option value="${t.team_id}">${esc(t.name)}${t.is_me ? " (us)" : ""}</option>`).join("");
+  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; sel.value = current || String(S.me); }
+}
+
+// -- actions ------------------------------------------------------------------
+
+async function savePick() {
+  const player = $("e-player").value.trim(), price = Number($("e-price").value);
+  if (!player || !price) { toast("Player and price, please."); return; }
+  try {
+    S = await api("/api/picks", { method: "POST", body: JSON.stringify({ player, team_id: Number($("e-team").value), price }) });
+    const last = S.picks[S.picks.length - 1];
+    toast(`${last.name} → ${last.team} for $${last.price}`, true);
+    $("e-player").value = ""; $("e-price").value = ""; $("e-team").value = String(S.me); hideSuggest();
+    render(); $("e-player").focus();
+  } catch (e) { toast(e.message, false, e.detail?.alternatives || []); }
+}
+
+async function putOnBlock(body) {
+  try { S = await api("/api/block", { method: "POST", body: JSON.stringify(body) }); viewing = null; render(); }
+  catch (e) { toast(e.message, false, e.detail?.alternatives || []); }
+}
+
+$("e-save").onclick = savePick;
+$("e-block").onclick = () => { const p = $("e-player").value.trim(); if (p) putOnBlock({ player: p }); else putOnBlock({}); };
+$("e-undo").onclick = async () => {
+  const last = S && S.picks[S.picks.length - 1];
+  if (!last) return;
+  if (!confirm(`Undo ${last.name} to ${last.team} for $${last.price}?`)) return;
+  S = await api("/api/undo", { method: "POST" }); render(); toast("Undone", true);
+};
+$("plan-btn").onclick = async () => {
+  $("plan").innerHTML = `<div class="faint">Solving…</div>`;
+  const plan = await api("/api/plan");
+  $("plan").innerHTML = `<div class="muted" style="font-size:12px;margin:8px 0 4px">${plan.expected_wins.toFixed(2)} expected categories a week · $${plan.cost}</div>
+    <table>${plan.players.map((p) => `<tr><td>${esc(p.name)}</td><td class="muted">${p.owned ? "owned" : "target"}</td><td class="r num">$${p.price}</td></tr>`).join("")}</table>`;
+};
+$("b-search").oninput = () => refreshBoard(true);
+$("r-pause").onclick = () => api("/api/rehearsal/" + (S.feed.rehearsal.paused ? "resume" : "pause"), { method: "POST" });
+$("r-skip").onclick = () => api("/api/rehearsal/skip", { method: "POST" });
+
+// autocomplete
+let suggestions = [], active = -1, suggestTimer = null;
+function hideSuggest() { $("e-suggest").hidden = true; active = -1; }
+$("e-player").oninput = () => {
+  clearTimeout(suggestTimer);
+  const q = $("e-player").value.trim();
+  if (q.length < 2) { hideSuggest(); return; }
+  suggestTimer = setTimeout(async () => {
+    suggestions = await api(`/api/players?limit=8&q=${encodeURIComponent(q)}`).catch(() => []);
+    active = suggestions.length ? 0 : -1;
+    drawSuggest();
+  }, 120);
+};
+function drawSuggest() {
+  const ul = $("e-suggest");
+  ul.innerHTML = suggestions.map((p, i) => `<li class="${i === active ? "active" : ""}" data-i="${i}"><span>${esc(p.name)}</span><span class="faint num">${money(p.market_price)}</span></li>`).join("");
+  ul.hidden = !suggestions.length;
+  ul.querySelectorAll("li").forEach((li) => li.onmousedown = (e) => { e.preventDefault(); choose(Number(li.dataset.i)); });
+}
+function choose(i) { $("e-player").value = suggestions[i].name; hideSuggest(); $("e-price").focus(); }
+$("e-player").onkeydown = (e) => {
+  if ($("e-suggest").hidden) return;
+  if (e.key === "ArrowDown") { active = Math.min(active + 1, suggestions.length - 1); drawSuggest(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); drawSuggest(); e.preventDefault(); }
+  else if (e.key === "Enter" || e.key === "Tab") { if (active >= 0) { e.preventDefault(); choose(active); } }
+  else if (e.key === "Escape") hideSuggest();
+};
+$("e-player").onblur = () => setTimeout(hideSuggest, 100);
+// Enter in the price box saves, whether or not the browser submits the form itself.
+$("e-price").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); savePick(); } };
+$("e-form").onsubmit = (e) => { e.preventDefault(); if (document.activeElement === $("e-player") && !$("e-price").value) { $("e-price").focus(); return; } savePick(); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) { e.preventDefault(); $("e-player").focus(); }
+});
+
+connect();
+</script>
+</body>
+</html>

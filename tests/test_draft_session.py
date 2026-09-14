@@ -6,6 +6,7 @@ process, which exercises the same scheduling a process pool gets on draft
 day.
 """
 
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -218,3 +219,33 @@ def test_the_service_takes_picks_by_name_and_refuses_what_the_rules_refuse(
     assert [p["name"] for p in found] == ["Ausar Thompson"]
 
     assert client.get("/api/plan").json()["players"]
+
+
+def test_a_rehearsal_sells_what_we_pass_on_and_leaves_what_we_buy() -> None:
+    from app.draft.rehearsal import Nomination, Rehearsal
+
+    session = DraftSession(make_room())
+    nominations = [
+        Nomination(1, "Nikola Jokic", 2, 12),
+        Nomination(2, "Kawhi Leonard", 1, 4),  # our real pick: someone else takes him
+        Nomination(3, "Jalen Johnson", 3, 5),
+    ]
+    rehearsal = Rehearsal(session, nominations, seconds=0.5)
+    rehearsal.start()
+    deadline = time.monotonic() + 5
+    while session.state.picks == () and time.monotonic() < deadline:
+        time.sleep(0.02)
+    session.apply(3, 1, 6)  # we buy Johnson before he comes up
+    rehearsal.join(timeout=10)
+
+    owners = {p.player_id: p.team_id for p in session.state.picks}
+    assert owners[1] == 2, "sold to the team that really bought him"
+    assert owners[2] != 1, "our real pick is not ours unless we enter it"
+    assert owners[3] == 1, "what we bought stays bought"
+    assert session.snapshot()["feed"]["rehearsal"]["done"]
+
+
+def test_the_screen_is_served() -> None:
+    client = TestClient(create_draft_app(DraftSession(make_room())))
+    page = client.get("/")
+    assert page.status_code == 200 and "Draft Room" in page.text

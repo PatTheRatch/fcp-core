@@ -6,6 +6,17 @@
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:create_app", "--factory", "--port", "8000"],
       "port": 8000
+    },
+    {
+      "name": "draft-rehearsal",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "scripts/draft_service.py", "--season", "2027", "--me", "Through The Wire",
+        "--bbm", "data/bbm/BBM_Projections_2027_total.xls",
+        "--bbm-per-game", "data/bbm/BBM_Projections_2027_pergame.xls",
+        "--rehearse", "2026", "--seconds", "20", "--port", "8765"
+      ],
+      "port": 8765
     }
   ]
 }
