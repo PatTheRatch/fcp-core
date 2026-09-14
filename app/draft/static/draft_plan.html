@@ -1,0 +1,328 @@
+<title>Through The Wire Draft Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F2F5F7; --surface: #FFFFFF; --sunk: #E7ECF0; --line: #D5DDE3;
+    --ink: #14212B; --muted: #55646F; --faint: #83919B;
+    --accent: #1B5E8C; --accent-soft: #DCE9F3;
+    --buy: #23794F; --buy-soft: #DDF0E5; --warn: #9A6A00; --warn-soft: #F6ECCF; --stop: #B23A30; --stop-soft: #F6DEDB;
+    --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1419; --surface: #16202A; --sunk: #1C2833; --line: #2A3845;
+      --ink: #E4ECF2; --muted: #9AABB8; --faint: #6E7F8C;
+      --accent: #5AA8DA; --accent-soft: #173247;
+      --buy: #5CC08C; --buy-soft: #16301F; --warn: #E0AE45; --warn-soft: #33290F; --stop: #EE7C70; --stop-soft: #3A1C19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0E1419; --surface: #16202A; --sunk: #1C2833; --line: #2A3845;
+    --ink: #E4ECF2; --muted: #9AABB8; --faint: #6E7F8C;
+    --accent: #5AA8DA; --accent-soft: #173247;
+    --buy: #5CC08C; --buy-soft: #16301F; --warn: #E0AE45; --warn-soft: #33290F; --stop: #EE7C70; --stop-soft: #3A1C19;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--ground); color: var(--ink); font: 15px/1.5 var(--body); margin: 0; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px 80px; display: grid; gap: 28px; }
+  h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: .01em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(34px, 6vw, 48px); line-height: 1; text-transform: uppercase; }
+  h2 { font-size: 26px; text-transform: uppercase; line-height: 1.1; }
+  h3 { font-size: 19px; text-transform: uppercase; }
+  p { margin: 0; max-width: 68ch; }
+  .muted { color: var(--muted); }
+  .eyebrow { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  header { display: grid; gap: 12px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 14px; }
+  .facts b { color: var(--ink); font-weight: 600; }
+
+  .plan { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 18px; }
+  .rules { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .rules li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
+  .rules .n { font: 700 18px/1.2 var(--display); color: var(--accent); }
+  .rules b { font-weight: 600; }
+
+  .ladder { display: grid; gap: 8px; }
+  .bars { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; align-items: end; height: 118px; }
+  .bar { background: var(--accent); border-radius: 3px 3px 0 0; position: relative; min-height: 3px; }
+  .bar span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font: 500 11px var(--mono); color: var(--muted); padding-bottom: 2px; white-space: nowrap; }
+  .bar.top { background: var(--accent); } .bar.rest { background: color-mix(in srgb, var(--accent) 45%, var(--sunk)); }
+  .ladder-foot { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; font: 500 11px var(--mono); color: var(--faint); text-align: center; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .check { background: var(--sunk); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .check b { font-family: var(--mono); font-weight: 500; }
+
+  nav.jump { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--ground) 92%, transparent); backdrop-filter: blur(6px); padding: 10px 0; margin: 0 -18px; padding-left: 18px; padding-right: 18px; display: flex; gap: 6px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+  nav.jump a { flex: none; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 500; }
+  nav.jump a:hover { border-color: var(--accent); }
+
+  section { display: grid; gap: 12px; scroll-margin-top: 60px; }
+  .sec-head { display: grid; gap: 4px; }
+  .legend { font-size: 13px; color: var(--muted); }
+
+  .list { display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: minmax(0, 1.6fr) auto auto; gap: 6px 16px; padding: 11px 14px; border-top: 1px solid var(--line); align-items: center; }
+  .row:first-child { border-top: 0; }
+  .who { display: grid; gap: 3px; min-width: 0; }
+  .who .name { font-weight: 600; }
+  .who .meta { font-size: 12.5px; color: var(--muted); }
+  .risk { font-weight: 600; } .risk.E, .risk.H { color: var(--stop); } .risk.M { color: var(--warn); } .risk.L { color: var(--buy); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--sunk); color: var(--muted); }
+  .chip.pos { background: var(--buy-soft); color: var(--buy); }
+  .chip.neg { background: var(--stop-soft); color: var(--stop); }
+  .prices { display: grid; grid-template-columns: repeat(3, 52px); gap: 4px; text-align: right; }
+  .price { display: grid; }
+  .price b { font: 600 20px/1 var(--display); font-variant-numeric: tabular-nums; }
+  .price span { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .verdict { font-size: 12.5px; font-weight: 600; padding: 5px 9px; border-radius: 6px; white-space: nowrap; text-align: center; min-width: 118px; }
+  .verdict.buy { background: var(--buy-soft); color: var(--buy); }
+  .verdict.warn { background: var(--warn-soft); color: var(--warn); }
+  .verdict.stop { background: var(--stop-soft); color: var(--stop); }
+  .verdict.info { background: var(--accent-soft); color: var(--accent); }
+  @media (max-width: 640px) {
+    .row { grid-template-columns: 1fr auto; }
+    .verdict { grid-column: 1 / -1; justify-self: start; min-width: 0; }
+  }
+
+  .builds { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .build { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; align-content: start; }
+  .probs { display: grid; gap: 5px; }
+  .prob { display: grid; grid-template-columns: 40px 1fr 38px; gap: 8px; align-items: center; font: 500 12px var(--mono); }
+  .track { height: 8px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+  .fill { height: 100%; background: var(--accent); }
+  .fill.low { background: var(--stop); }
+  .roster { font-size: 13px; color: var(--muted); columns: 2; column-gap: 16px; }
+  .roster div { break-inside: avoid; display: flex; justify-content: space-between; gap: 6px; }
+
+  .search { width: 100%; font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  .caveats { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; max-width: 72ch; }
+  footer { color: var(--faint); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">2026–27 auction · 15 teams · nine categories</span>
+    <h1>Through The Wire<br>Draft Plan</h1>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <div class="plan">
+    <h2>The game plan</h2>
+    <ol class="rules">
+      <li><span class="n">1</span><p><b>Draft balanced.</b> Balanced drafts won 53.1% of categories to top-heavy's 48.0% across 98 team-seasons, in 6 of 8 seasons. Top-heavy lost even when its stars stayed healthy.</p></li>
+      <li><span class="n">2</span><p><b>Pay for the middle.</b> $10–25 players produce about 28 a game; $1–2 picks produce 19, the same as a waiver pickup, and half are dropped within a month. The wire cannot replace the middle tier.</p></li>
+      <li><span class="n">3</span><p><b>Buy rebounds, blocks and FG% with real money.</b> The waiver pool adds almost no blocks and hurts FG%. <b>Leave steals and threes for the end</b> — they are what cheap players and the wire actually supply.</p></li>
+      <li><span class="n">4</span><p><b>Take a star only inside the price.</b> This league pays about 1.5× for stars. Going prices run about $11 low on $40+ players, so expect stars to go higher than listed.</p></li>
+      <li><span class="n">5</span><p><b>Your picks, your call.</b> The room drafts like an average manager and has not beaten your drafts. Use these numbers to size bids, not to overrule a read you believe in.</p></li>
+    </ol>
+    <div class="ladder">
+      <h3>The spending ladder</h3>
+      <p class="muted">How this league's best category teams spread $200, most expensive player first. One player is capped at <b id="cap"></b> while the top place is open.</p>
+      <div class="bars" id="bars" role="img" aria-label="Spending ladder"></div>
+      <div class="ladder-foot" id="ladder-foot"></div>
+      <div class="checks" id="checks"></div>
+    </div>
+  </div>
+
+  <nav class="jump" aria-label="Sections">
+    <a href="#stars">Stars</a><a href="#targets">Targets</a><a href="#bbm">BBM likes</a><a href="#letgo">Let go</a><a href="#nominate">Nominate early</a><a href="#late">Late steals &amp; threes</a><a href="#bigs">Cheap bigs</a><a href="#ir">IR stash</a><a href="#builds">Builds</a><a href="#all">Find a player</a><a href="#notes">Read before bidding</a>
+  </nav>
+
+  <section id="stars">
+    <div class="sec-head"><h2>Stars</h2><p class="legend">Expected to go for $40 or more. <b>Bid up to</b> is the lower of our ceiling and BBM's league value.</p></div>
+    <div class="list" id="list-stars"></div>
+  </section>
+
+  <section id="targets">
+    <div class="sec-head"><h2>Targets</h2><p class="legend">$8–39 players where our ceiling and BBM's league value both clear the going price by $5 or more. The best value-for-money buys on the board.</p></div>
+    <div class="list" id="list-targets"></div>
+  </section>
+
+  <section id="bbm">
+    <div class="sec-head"><h2>BBM likes, we're lukewarm</h2><p class="legend">BBM values them $8+ above the going price; our ceiling is lower, usually because they duplicate what the model's best roster already has. On a roster short of their categories, they move up.</p></div>
+    <div class="list" id="list-bbm"></div>
+  </section>
+
+  <section id="letgo">
+    <div class="sec-head"><h2>Let go</h2><p class="legend">Both our ceiling and BBM's value sit well below the going price. Someone else will pay it.</p></div>
+    <div class="list" id="list-letgo"></div>
+  </section>
+
+  <section id="nominate">
+    <div class="sec-head"><h2>Nominate early</h2><p class="legend">Big names the room will overpay for. Putting them up early drains other budgets before your targets come up.</p></div>
+    <div class="list" id="list-nominate"></div>
+  </section>
+
+  <section id="late">
+    <div class="sec-head"><h2>Late steals &amp; threes</h2><p class="legend">Going for $7 or less and strong in steals or threes — the categories to fill at the end.</p></div>
+    <div class="list" id="list-late"></div>
+  </section>
+
+  <section id="bigs">
+    <div class="sec-head"><h2>Cheap bigs</h2><p class="legend">Going for $8 or less with real rebounds and blocks. Most cost you free throws.</p></div>
+    <div class="list" id="list-bigs"></div>
+  </section>
+
+  <section id="ir">
+    <div class="sec-head"><h2>IR stash</h2><p class="legend">BBM's per-game value beats its full-season value by $8 or more: a missed-games discount. You have one IR slot, so pick one.</p></div>
+    <div class="list" id="list-ir"></div>
+  </section>
+
+  <section id="builds">
+    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best rosters from an empty room, balanced and punting FT%. Both already concede free throws — the model leans punt FT%, and this league's history has no evidence either way on punting. The expected-wins figure is optimistic; no team here has averaged over 6.</p></div>
+    <div class="builds" id="builds-grid"></div>
+  </section>
+
+  <section id="all">
+    <div class="sec-head"><h2>Find a player</h2><p class="legend">All players priced at $3 or more by the market or BBM.</p></div>
+    <input class="search" id="search" type="search" placeholder="Type a name" autocomplete="off">
+    <div class="list" id="list-all"></div>
+  </section>
+
+  <section id="notes">
+    <div class="sec-head"><h2>Read before bidding</h2></div>
+    <ul class="caveats">
+      <li><b>Going price</b> is ESPN's average auction price blended with our board, fitted to what this league paid. It misses by about $5 a player on average, and $11 on stars, where it runs low.</li>
+      <li><b>Our ceiling</b> is from an empty room and snaps to the spending ladder's places ($60, $46, $30, $16, $9). Read it as the tier a player qualifies for. On draft day the room recomputes it after every pick.</li>
+      <li><b>BBM</b> is Basketball Monster's league value on total games, exported <span id="exported"></span>. Refresh the exports the week of the draft; injuries and roles move in preseason.</li>
+      <li>ESPN has not published 2027 projections yet. When it does, re-run the plan.</li>
+      <li>Category chips are league-standard values: green helps you win the category, red hurts.</li>
+    </ul>
+  </section>
+
+  <footer>Full Court Press · generated from the draft room's 2027 inputs · <span id="generated"></span></footer>
+</div>
+
+<script>
+const PLAN = __PLAN_DATA__;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const money = (v) => (v === null || v === undefined ? "–" : "$" + v);
+const P = PLAN.players;
+const z = (p, k) => (p.profile && p.profile[k]) || 0;
+const bidTo = (p) => {
+  const c = p.ceiling ?? 0, b = p.bbm_total ?? c;
+  return Math.max(1, Math.min(c, b));
+};
+
+const CHIP_ORDER = ["REB", "BLK", "FG%", "STL", "3PM", "AST", "PTS", "FT%", "TO"];
+function chips(p, limit = 5) {
+  const ranked = CHIP_ORDER.map((k) => [k, z(p, k)]).filter(([, v]) => Math.abs(v) >= 0.8)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, limit);
+  return ranked.map(([k, v]) => `<span class="chip ${v > 0 ? "pos" : "neg"}">${k} ${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}</span>`).join("");
+}
+
+function row(p, verdict) {
+  const meta = [
+    p.eligible.length ? p.eligible.join("/") : p.position,
+    p.age ? `age ${p.age}` : null,
+    p.games ? `${p.games} g` : null,
+    p.injury_risk ? `risk <span class="risk ${esc(p.injury_risk)}">${esc(p.injury_risk)}</span>` : null,
+    p.injury ? esc(p.injury) : null,
+  ].filter(Boolean).join(" · ");
+  return `<div class="row">
+    <div class="who"><span class="name">${esc(p.name)}</span><span class="meta">${meta}</span><div class="chips">${chips(p)}</div></div>
+    <div class="prices">
+      <div class="price"><b>${money(p.going)}</b><span>Going</span></div>
+      <div class="price"><b>${money(p.ceiling)}</b><span>Ours</span></div>
+      <div class="price"><b>${money(p.bbm_total)}</b><span>BBM</span></div>
+    </div>
+    ${verdict}
+  </div>`;
+}
+const pill = (kind, text) => `<span class="verdict ${kind}">${esc(text)}</span>`;
+const fill = (id, items, fn, empty = "Nobody fits this list right now.") => {
+  $(id).innerHTML = items.length ? items.map(fn).join("") : `<div class="row"><span class="muted">${empty}</span></div>`;
+};
+
+// facts, ladder, checkpoints
+$("facts").innerHTML = [
+  `<span><b>${PLAN.teams}</b> teams</span>`, `<span><b>$${PLAN.budget}</b> budget</span>`,
+  `<span><b>${PLAN.roster_slots}</b> roster spots</span>`, `<span>Draft <b>Sat 3 Oct</b>, 2:00 pm UTC</span>`,
+  `<span>You nominate <b>13th</b> of 15</span>`,
+].join("");
+$("cap").textContent = "$" + PLAN.cap;
+const ladder = PLAN.allocation, ladderTop = Math.max(...ladder);
+$("bars").innerHTML = ladder.map((v, i) => `<div class="bar ${i < 3 ? "top" : "rest"}" style="height:${Math.max(3, (v / ladderTop) * 100)}%"><span>$${v}</span></div>`).join("");
+$("ladder-foot").innerHTML = ladder.map((_, i) => `<span>${i + 1}</span>`).join("");
+let run = 0; const cum = ladder.map((v) => (run += v));
+$("checks").innerHTML = [
+  `<span class="check">Top 3 buys together: <b>≤ $${cum[2]}</b></span>`,
+  `<span class="check">After 6 players: <b>$${PLAN.budget - cum[5]}</b> left</span>`,
+  `<span class="check">After 9 players: <b>$${PLAN.budget - cum[8]}</b> left</span>`,
+  `<span class="check">Your 2026 top 3: <b>$92</b> (46%)</span>`,
+].join("");
+
+// stars
+const stars = P.filter((p) => p.going >= 40).sort((a, b) => b.going - a.going);
+fill("list-stars", stars, (p) => {
+  const to = bidTo(p);
+  if (p.going <= to) return row(p, pill("buy", `Buy up to $${to}`));
+  if (p.going <= to + 6) return row(p, pill("warn", `Only at $${to} or less`));
+  return row(p, pill("stop", `Let go past $${to}`));
+});
+
+// targets: both agree
+const mid = P.filter((p) => p.going >= 8 && p.going < 40);
+const targets = mid.filter((p) => (p.ceiling ?? 0) >= p.going && (p.bbm_total ?? 0) >= p.going + 5)
+  .sort((a, b) => (bidTo(b) - b.going) - (bidTo(a) - a.going) || b.going - a.going);
+fill("list-targets", targets, (p) => row(p, pill("buy", `Buy up to $${bidTo(p)}`)));
+
+const bbmLikes = mid.filter((p) => (p.bbm_total ?? 0) >= p.going + 8 && (p.ceiling ?? 0) < p.going)
+  .sort((a, b) => (b.bbm_total - b.going) - (a.bbm_total - a.going));
+fill("list-bbm", bbmLikes, (p) => row(p, pill("warn", `At $${p.going} or less`)));
+
+const letGo = P.filter((p) => p.going >= 8 && (p.ceiling ?? 0) <= p.going - 4 && (p.bbm_total ?? 0) <= p.going - 5)
+  .sort((a, b) => b.going - a.going);
+fill("list-letgo", letGo, (p) => row(p, pill("stop", `${money(p.going - Math.max(p.ceiling ?? 0, p.bbm_total ?? 0))} over value`)));
+
+const nominate = letGo.filter((p) => p.going >= 20).sort((a, b) => (b.going - (b.bbm_total ?? 0)) - (a.going - (a.bbm_total ?? 0))).slice(0, 10);
+fill("list-nominate", nominate, (p) => row(p, pill("info", `Room pays ~$${p.going}`)));
+
+const late = P.filter((p) => p.going <= 7 && (z(p, "STL") >= 1.4 || z(p, "3PM") >= 1.6))
+  .sort((a, b) => (z(b, "STL") + z(b, "3PM")) - (z(a, "STL") + z(a, "3PM"))).slice(0, 14);
+fill("list-late", late, (p) => row(p, pill("info", `Late, ~$${p.going}`)));
+
+const bigs = P.filter((p) => p.going <= 8 && z(p, "REB") + z(p, "BLK") >= 2.8)
+  .sort((a, b) => (z(b, "REB") + z(b, "BLK")) - (z(a, "REB") + z(a, "BLK"))).slice(0, 12);
+fill("list-bigs", bigs, (p) => row(p, pill(z(p, "FT%") <= -1.5 ? "warn" : "info", z(p, "FT%") <= -1.5 ? "Costs FT%" : `~$${p.going}`)));
+
+const ir = P.filter((p) => p.bbm_per_game !== null && p.bbm_total !== null && p.bbm_per_game - p.bbm_total >= 8)
+  .sort((a, b) => (b.bbm_per_game - b.bbm_total) - (a.bbm_per_game - a.bbm_total));
+fill("list-ir", ir, (p) => row(p, pill("info", `$${p.bbm_per_game} per game`)));
+
+// builds
+$("builds-grid").innerHTML = Object.entries(PLAN.builds).map(([label, b]) => {
+  const order = ["PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%"];
+  const probs = order.filter((k) => k in b.win_probability).map((k) => {
+    const v = b.win_probability[k];
+    return `<div class="prob"><span>${k}</span><div class="track"><div class="fill ${v < 0.25 ? "low" : ""}" style="width:${Math.round(v * 100)}%"></div></div><span>${Math.round(v * 100)}%</span></div>`;
+  }).join("");
+  const roster = b.roster.map((r) => `<div><span>${esc(r.name)}</span><span class="num">$${r.price}</span></div>`).join("");
+  return `<div class="build"><div><span class="eyebrow">${esc(label)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
+    <div class="probs" aria-label="Chance of winning each category">${probs}</div><div class="roster">${roster}</div></div>`;
+}).join("");
+
+// search
+function drawAll() {
+  const q = $("search").value.trim().toLowerCase();
+  const items = P.filter((p) => !q || p.name.toLowerCase().includes(q)).sort((a, b) => b.going - a.going).slice(0, q ? 40 : 25);
+  fill("list-all", items, (p) => row(p, pill("info", `Bid up to $${bidTo(p)}`)), "No player by that name at $3 or more.");
+}
+$("search").addEventListener("input", drawAll);
+drawAll();
+
+$("exported").textContent = PLAN.exported || "14 Sep 2026";
+$("generated").textContent = PLAN.generated || "";
+</script>
