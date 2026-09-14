@@ -543,6 +543,58 @@ best at saying what a player is worth relative to the board, and worst
 exactly where the board is wrong about a player -- or where the money
 already spent has made the board irrelevant.
 
+### Drafting to a plan, and what the wider replay says
+
+**The optimizer's own plan is stars-and-scrubs.** On BBM's 2026 projections
+the best roster from the empty room was $103 on Wembanyama and ten $1
+players, so capping bids to it changed nothing. Two things ruled out as the
+cause: cheap players do not under-deliver their projections (every BBM
+price tier delivered 0.90-1.11), and the board's low end is not cheaper
+than the room actually paid.
+
+**The room now drafts to the league's winning shape.** `app/draft/shape.py`
+reads how the top third of category teams spent, largest place first:
+`[55, 42, 28, 21, 15, 12, 9, 6, 4, 3, 2, 2, 1]`. `Allocation` in
+`app/draft/room.py` turns it into places; each of our buys uses the
+cheapest place that covers it, and the rest is refitted to the money we
+have left. The shape is a constraint *inside* the optimizer
+(`within_shape`), not just a cap on the bid, so the rosters with and
+without a player are both rosters the plan allows. `--plan
+history|optimizer|none` on both the room and the redraft.
+
+**The redraft now replays as every team** (`--all-teams`, parallel),
+comparing the room's 13 against each manager's own 13, both held all
+season. The results:
+
+    ESPN projections, 6 seasons, no plan      beat 33 of 72, -1.2 cats/season (se 2.0)
+    ESPN, balanced plan (2021-26)             vs no plan by season: +9.4 +7.2 +5.8 -0.5 -33.9
+    BBM 2026, no plan                         beat 8 of 14, +0.6
+    BBM 2026, balanced plan                   beat 11 of 14, +9.6 (se 4.2)
+    Through The Wire, every variant           2026 -17 to -56; 2025 -11; 2024 +7 / -1
+
+Read with care: every replay in a season shares one board and buys the
+same players, so the effective sample is seasons, not teams. ESPN's 2026
+plan collapse is Sabonis, Kessler and LaVine bought for nearly every team,
+in the price band where ESPN's 2026 projections delivered 0.72-0.77. Best
+reading: the room drafts like an average manager in this league, BBM with
+the plan perhaps better, and it has not beaten this manager's drafts.
+
+**Is the manager's edge skill?** Three seasons under this owner: dollar-
+weighted delivery ranked 7th of 14, 3rd of 12, 5th of 14 -- mean
+percentile 0.68 where luck alone gives 0.50 +/- 0.17. Conviction buys
+(paid well over board): 7, delivering 1.14 of projection against 0.99 for
+the rest of the league, but a hit rate identical to the league's (43%);
+the average is Jalen Johnson (1.67) and Mobley (1.40) against Morant
+(0.29). Discount swings: indistinguishable from the league. Consistent
+with luck leaning good; not yet evidence of an edge.
+
+**2027 BBM in the room.** `--bbm` loads all 510 rows. Names match strictly
+(`match_player`: same name without punctuation or suffix, or same surname
+with a short first name), because the feed's loose matcher had put Caleb
+Wilson on Jalen Wilson. Unmatched rows -- the rookie class -- go on the
+board under a stable negative id. Each ceiling shows age, games, injury
+risk, BBM $, ESPN and Yahoo average auction $.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

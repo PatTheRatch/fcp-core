@@ -19,6 +19,7 @@ from app.draft.optimizer import (
     optimize,
     roster_totals,
     score,
+    within_shape,
 )
 from app.draft.targets import CategoryDistribution
 
@@ -317,6 +318,8 @@ def _reference_swap_improve(
     budget: int,
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
+    shape: Sequence[int] | None = None,
+    exempt: frozenset[int] = frozenset(),
 ) -> RosterPlan:
     """The obvious swap loop, written for clarity and nothing else.
 
@@ -337,7 +340,7 @@ def _reference_swap_improve(
                     continue
                 trial = list(best.players)
                 trial[index] = incoming
-                if not fieldable(trial, lineup, limits):
+                if not within_shape(trial, shape, exempt) or not fieldable(trial, lineup, limits):
                     continue
                 plan = _plan(trial, distributions, punt)
                 if plan.expected_wins > (improved or best).expected_wins + 1e-9:
@@ -417,3 +420,11 @@ def test_carrying_the_roster_line_across_swaps_does_not_drift() -> None:
     from_scratch = roster_totals(plan.players, ["PTS", "REB", "TO", "FG%"])
     for category, value in from_scratch.items():
         assert plan.totals[category] == pytest.approx(value, rel=1e-12)
+
+
+def test_a_shape_is_checked_place_by_place_and_spares_the_exempt() -> None:
+    a, b, c = cand(1, 9), cand(2, 4), cand(3, 4)
+    assert within_shape([a, b], (10, 5), frozenset())
+    assert not within_shape([b, c], (10, 3), frozenset()), "two $4 players need two $4 places"
+    assert within_shape([a, b], (5,), frozenset({1})), "what we own is not the plan's to judge"
+    assert within_shape([a, b, c], None, frozenset())

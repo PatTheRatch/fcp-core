@@ -12,6 +12,7 @@ import pytest
 
 from app.draft.optimizer import Candidate
 from app.draft.room import (
+    Allocation,
     DraftError,
     DraftState,
     Pick,
@@ -275,3 +276,48 @@ def test_the_ceiling_is_warm_started_from_the_baseline() -> None:
     with a real player in a place that held one."""
     ceiling = bid_ceiling(room(), 2, BOARD, [PTS], lineup=LINEUP, restarts=0)
     assert ceiling.marginal_at_floor >= -1e-9
+
+
+# -- the plan ------------------------------------------------------------------
+
+
+def test_an_allocation_describes_the_whole_budget_largest_first() -> None:
+    state = room(budget=20, roster_slots=3)
+    allocation = Allocation.from_prices([2, 9], state)
+    assert allocation.places == tuple(sorted(allocation.places, reverse=True))
+    assert sum(allocation.places) == 20, "unspent money and an unfilled place are spread back"
+    assert len(allocation.places) == 3
+
+
+def test_a_purchase_uses_the_cheapest_place_that_covers_it_and_the_rest_refits() -> None:
+    state = room(budget=20, roster_slots=3)
+    allocation = Allocation.from_prices([12, 6, 2], state, slack=0.0)
+    assert allocation.places == (12, 6, 2)
+    bought = state.apply(Pick(7, 1, 5))
+    # $5 uses the $6 place, not the $12 one; the $1 saved goes back above
+    # the floor of what is left, $15 over two places.
+    assert sum(allocation.open_places(bought)) == 15
+    assert allocation.open_places(bought)[0] >= 12
+    assert len(allocation.open_places(bought)) == 2
+
+
+def test_the_plan_caps_what_one_player_may_take() -> None:
+    state = room()
+    star = cand(1, 8, 200.0)
+    pool = [star, cand(2, 1, 60.0), cand(3, 1, 55.0), cand(4, 1, 50.0)]
+    free = bid_ceiling(state, 1, pool, [PTS], lineup=LINEUP, restarts=2)
+    assert free.price == 9 and not free.capped
+
+    allocation = Allocation.from_prices([5, 5], state, slack=0.0)
+    capped = bid_ceiling(state, 1, pool, [PTS], lineup=LINEUP, restarts=2, allocation=allocation)
+    assert capped.plan_cap == 5
+    assert capped.price == 5
+    assert capped.capped, "he is worth more against the board; the plan is what stopped it"
+
+
+def test_a_plan_holds_both_rosters_to_its_places() -> None:
+    state = room()
+    pool = [cand(1, 8, 200.0), cand(2, 1, 60.0), cand(3, 1, 55.0), cand(4, 4, 58.0)]
+    allocation = Allocation.from_prices([5, 5], state, slack=0.0)
+    plan = resolve(state, pool, [PTS], lineup=LINEUP, restarts=2, allocation=allocation)
+    assert 1 not in plan.player_ids, "an $8 player does not fit a $5 place"

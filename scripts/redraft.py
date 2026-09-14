@@ -66,6 +66,7 @@ is the right side to be wrong on.
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import sys
 import time
 from collections import defaultdict
@@ -92,7 +93,16 @@ from app.draft import availability, pool
 from app.draft.bbm import load_bbm
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
-from app.draft.room import DraftState, Pick, bid_ceiling, reprice, resolve
+from app.draft.room import (
+    Allocation,
+    DraftState,
+    Pick,
+    bid_ceiling,
+    plan_allocation,
+    reprice,
+    resolve,
+)
+from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import PERCENTAGE_COMPONENTS, value_players
@@ -161,10 +171,13 @@ def load(  # type: ignore[no-untyped-def]
     slots = pool.roster_size_for(ls)
     if bbm is not None:
         loaded = load_bbm(session, bbm, season)
-        projections = loaded.projections
+        # A replay can only buy players who were actually nominated, and
+        # those all have our ids; a synthetic one could only ever be a
+        # phantom the end-of-draft fill reaches for.
+        projections = [p for p in loaded.projections if p.player_id > 0]
         say(
-            f"BBM {bbm.name}: {loaded.matched} matched ({loaded.fuzzy} loosely), "
-            f"{len(loaded.ambiguous)} ambiguous and {len(loaded.unmatched)} unmatched dropped; "
+            f"BBM {bbm.name}: {loaded.matched} matched ({len(loaded.loose)} loosely), "
+            f"{len(loaded.ambiguous)} ambiguous, {len(loaded.unmatched)} unmatched left out; "
             f"eligibility from ESPN for {loaded.espn_eligibility}, from BBM position for "
             f"{loaded.derived_eligibility}"
         )
@@ -247,6 +260,7 @@ def replay(
     limits: dict[str, int],
     restarts: int,
     market_cap: float | None = None,
+    allocation: Allocation | None = None,
 ) -> Replay:
     on_board = {c.player_id for c in candidates}
     out = Replay(state=state, bought=[], passed=[])
@@ -267,6 +281,7 @@ def replay(
             lineup=lineup,
             limits=limits,
             restarts=restarts,
+            allocation=allocation,
         )
         want = ceiling.price
         if want is not None and market_cap is not None:
@@ -423,10 +438,229 @@ def record(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Options:
+    pool_kind: str = "projected"
+    bbm: Path | None = None
+    bbm_availability: float = 1.0
+    market_cap: float | None = None
+    plan: str = "none"
+    plan_slack: float = 0.10
+    restarts: int = 2
+
+
+@dataclass(frozen=True)
+class Result:
+    season: int
+    team: str
+    actual: tuple[int, int, int]
+    room: tuple[int, int, int]
+    spent: int
+    #: The full readout, for a single-team run.
+    lines: tuple[str, ...]
+
+    @property
+    def gain(self) -> int:
+        """Categories the room's roster won beyond the drafted roster."""
+        return self.room[0] - self.actual[0]
+
+
+def simulate(season: int, me: str, options: Options) -> Result:
+    """Replay one team-season and score both rosters. Opens its own session."""
+    lines: list[str] = []
+
+    def note(text: str = "") -> None:
+        lines.append(text)
+
+    factory = make_session_factory(make_engine(get_settings().database_url))
+    with factory() as session:
+        ls, state, candidates, dists, lineup, limits, picks, factor = load(
+            session,
+            season,
+            me,
+            pool_kind=options.pool_kind,
+            bbm=options.bbm,
+            bbm_availability=options.bbm_availability,
+        )
+        note(
+            f"{season}: {len(picks)} picks, {len(candidates)} priced players, "
+            f"availability {factor:.3f} (before {season}), "
+            f"opponents from {dists[0].basis_seasons if dists else ()}"
+        )
+        if options.pool_kind == "total":
+            note("!! HINDSIGHT: the room is drafting on this season's actual totals")
+        if options.market_cap:
+            note(f"market prior: bids capped at {options.market_cap:.2f}x the market price")
+
+        allocation = None
+        if options.plan == "optimizer":
+            allocation, plan = plan_allocation(
+                state, candidates, dists, slack=options.plan_slack, lineup=lineup, limits=limits
+            )
+            note(f"plan (optimizer, {plan.expected_wins:.2f} expected wins):")
+            for c in sorted(plan.players, key=lambda c: -c.price):
+                note(f"    ${c.price:>3} {c.name}")
+        elif options.plan == "history":
+            shape = winning_shape(
+                session, roster_slots=state.roster_slots, budget=state.budget, before=season
+            )
+            allocation = Allocation.from_prices(shape, state, slack=options.plan_slack)
+        if allocation is not None:
+            note(
+                f"allocation ({options.plan}, slack {options.plan_slack:.0%}): "
+                f"{list(allocation.places)}"
+            )
+
+        t0 = time.time()
+        out = replay(
+            state,
+            candidates,
+            dists,
+            picks,
+            lineup=lineup,
+            limits=limits,
+            restarts=options.restarts,
+            market_cap=options.market_cap,
+            allocation=allocation,
+        )
+        note(
+            f"replayed in {time.time() - t0:.0f}s: bought {len(out.bought)}, "
+            f"passed {len(out.passed)} "
+            f"({sum(1 for p, _ in out.passed if p.winner == state.me)} of them our real picks), "
+            f"{out.off_board} nominations off our board, "
+            f"{out.reassigned} of our real picks reassigned"
+        )
+
+        final = out.state
+        if final.mine.open_slots:
+            plan = resolve(
+                final, candidates, dists, lineup=lineup, limits=limits, restarts=options.restarts
+            )
+            fills = [c for c in plan.players if c.player_id not in final.mine.player_ids][
+                : final.mine.open_slots
+            ]
+            for c in fills:
+                price = min(max(1, c.price), final.mine.max_bid(final.minimum_bid))
+                final = final.apply(Pick(c.player_id, final.me, price))
+            note(f"filled {len(fills)} open places from what was left")
+
+        note("\nWHAT THE ROOM WOULD HAVE BOUGHT")
+        for pick, paid, ceiling in out.bought:
+            tag = (
+                "ours anyway"
+                if pick.winner == state.me
+                else f"taken from {state.teams[pick.winner].name}"
+            )
+            note(
+                f"  #{pick.overall:>3} {pick.name:24s} ${paid:>3}  "
+                f"(ceiling ${ceiling}, real ${pick.price}) {tag}"
+            )
+        note("\nOUR REAL PICKS THE ROOM PASSED ON")
+        for pick, ceiling in out.passed:
+            if pick.winner == state.me:
+                bid = "no bid" if ceiling is None else f"${ceiling}"
+                note(f"  #{pick.overall:>3} {pick.name:24s} real ${pick.price:>3}  ceiling {bid}")
+
+        my_db = next(
+            t.id
+            for t in session.scalars(select(Team).where(Team.league_season_id == ls.id))
+            if t.name == me
+        )
+        windows = _period_windows(session, ls)
+        opp = _opponent_lines(session, ls, my_db)
+        actual_ids = [p.player_id for p in picks if p.winner == state.me]
+        sim_ids = sorted(final.mine.player_ids)
+        aw, al, at, acat = record(roster_lines(session, season, actual_ids, windows), opp)
+        sw, sl, st, scat = record(roster_lines(session, season, sim_ids, windows), opp)
+
+        note(
+            f"\nSCORED ON WHAT ACTUALLY HAPPENED, {len(opp)} regular-season weeks "
+            "vs our real opponents"
+        )
+        note(
+            f"  {'':22s} {'cats W-L-T':>12} {'win rate':>9}   "
+            + "  ".join(f"{c:>4}" for c in CATEGORIES)
+        )
+        for label, (w, lo, t, cats) in (
+            ("roster we drafted", (aw, al, at, acat)),
+            ("roster the room picks", (sw, sl, st, scat)),
+        ):
+            played = max(1, w + lo + t)
+            note(
+                f"  {label:22s} {f'{w}-{lo}-{t}':>12} {w / played:9.3f}   "
+                + "  ".join(f"{cats.get(c, 0):>4}" for c in CATEGORIES)
+            )
+        named = {c.player_id: c.name for c in candidates}
+        note(f"\n  drafted roster:   {', '.join(named.get(i, str(i)) for i in actual_ids)}")
+        note(
+            f"  room's roster:    {', '.join(named.get(i, str(i)) for i in sim_ids)}"
+            f"   (${final.mine.spent})"
+        )
+        return Result(season, me, (aw, al, at), (sw, sl, st), final.mine.spent, tuple(lines))
+
+
+def _simulate_job(job: tuple[int, str, Options]) -> Result | str:
+    season, team, options = job
+    try:
+        return simulate(season, team, options)
+    except Exception as exc:  # one broken team-season should not sink the batch
+        return f"{season} {team}: {type(exc).__name__}: {exc}"
+
+
+def _team_names(season: int) -> list[str]:
+    factory = make_session_factory(make_engine(get_settings().database_url))
+    with factory() as session:
+        return [
+            str(t.name)
+            for t in session.scalars(
+                select(Team)
+                .join(LeagueSeason, LeagueSeason.id == Team.league_season_id)
+                .where(LeagueSeason.season == season)
+                .order_by(Team.espn_team_id)
+            )
+        ]
+
+
+def summarise(results: Sequence[Result]) -> list[str]:
+    """Room against the drafted roster, per season and overall."""
+    out = [
+        f"  {'season':>6} {'teams':>5} {'room beat':>9} {'mean gain':>9} "
+        f"{'room win%':>9} {'drafted win%':>12}"
+    ]
+    groups: dict[int | None, list[Result]] = defaultdict(list)
+    for r in results:
+        groups[r.season].append(r)
+        groups[None].append(r)
+    for season in [*sorted(k for k in groups if k is not None), None]:
+        rows = groups[season]
+        room = sum(r.room[0] for r in rows) / max(1, sum(sum(r.room) for r in rows))
+        drafted = sum(r.actual[0] for r in rows) / max(1, sum(sum(r.actual) for r in rows))
+        gains = [r.gain for r in rows]
+        mean = sum(gains) / len(gains)
+        spread = (sum((g - mean) ** 2 for g in gains) / max(1, len(gains) - 1)) ** 0.5
+        label = "all" if season is None else str(season)
+        out.append(
+            f"  {label:>6} {len(rows):>5} {sum(g > 0 for g in gains):>5} of {len(rows):<2} "
+            f"{mean:+9.1f} {room:9.3f} {drafted:12.3f}"
+            + (
+                f"   (gain sd {spread:.1f}, se {spread / len(gains) ** 0.5:.1f})"
+                if season is None
+                else ""
+            )
+        )
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--season", type=int, required=True)
-    ap.add_argument("--me", required=True)
+    ap.add_argument("--season", type=int, action="append", required=True, help="repeatable")
+    ap.add_argument("--me", help="the team to replay as")
+    ap.add_argument(
+        "--all-teams",
+        action="store_true",
+        help="replay as every team in each season and summarise, in parallel",
+    )
+    ap.add_argument("--workers", type=int, default=6)
     ap.add_argument(
         "--restarts", type=int, default=2, help="per solve; 2 keeps 182 picks under ten minutes"
     )
@@ -453,111 +687,55 @@ def main() -> int:
         type=float,
         help="never bid more than the market's price times this (e.g. 1.15): the market as a prior",
     )
+    ap.add_argument(
+        "--plan",
+        default="none",
+        choices=("none", "optimizer", "history"),
+        help="bid to an allocation: the optimizer's empty-room roster, or the league's "
+        "winning spending shape from seasons before this one",
+    )
+    ap.add_argument(
+        "--plan-slack",
+        type=float,
+        default=0.10,
+        help="how far past the largest open place a bid may go (default 0.10)",
+    )
     args = ap.parse_args()
+    options = Options(
+        pool_kind=args.pool_kind,
+        bbm=args.bbm,
+        bbm_availability=args.bbm_availability,
+        market_cap=args.cap_at_market,
+        plan=args.plan,
+        plan_slack=args.plan_slack,
+        restarts=args.restarts,
+    )
 
-    factory = make_session_factory(make_engine(get_settings().database_url))
-    with factory() as session:
-        ls, state, candidates, dists, lineup, limits, picks, factor = load(
-            session,
-            args.season,
-            args.me,
-            pool_kind=args.pool_kind,
-            bbm=args.bbm,
-            bbm_availability=args.bbm_availability,
-        )
-        say(
-            f"{args.season}: {len(picks)} picks, {len(candidates)} priced players, "
-            f"availability {factor:.3f} "
-            f"(before {args.season}), opponents from {dists[0].basis_seasons if dists else ()}"
-        )
-        t0 = time.time()
-        if args.pool_kind == "total":
-            say("!! HINDSIGHT: the room is drafting on this season's actual totals")
-        if args.cap_at_market:
-            say(f"market prior: bids capped at {args.cap_at_market:.2f}x the market price")
-        out = replay(
-            state,
-            candidates,
-            dists,
-            picks,
-            lineup=lineup,
-            limits=limits,
-            restarts=args.restarts,
-            market_cap=args.cap_at_market,
-        )
-        say(
-            f"replayed in {time.time() - t0:.0f}s: bought {len(out.bought)}, "
-            f"passed {len(out.passed)} "
-            f"({sum(1 for p, _ in out.passed if p.winner == state.me)} of them our real picks), "
-            f"{out.off_board} nominations off our board, "
-            f"{out.reassigned} of our real picks reassigned"
-        )
+    if not args.all_teams:
+        if not args.me or len(args.season) != 1:
+            ap.error("a single replay takes one --season and --me; or pass --all-teams")
+        for line in simulate(args.season[0], args.me, options).lines:
+            say(line)
+        return 0
 
-        final = out.state
-        if final.mine.open_slots:
-            plan = resolve(
-                final, candidates, dists, lineup=lineup, limits=limits, restarts=args.restarts
-            )
-            fills = [c for c in plan.players if c.player_id not in final.mine.player_ids][
-                : final.mine.open_slots
-            ]
-            for c in fills:
-                price = min(max(1, c.price), final.mine.max_bid(final.minimum_bid))
-                final = final.apply(Pick(c.player_id, final.me, price))
-            say(f"filled {len(fills)} open places from what was left")
-
-        say("\nWHAT THE ROOM WOULD HAVE BOUGHT")
-        for pick, paid, ceiling in out.bought:
-            tag = (
-                "ours anyway"
-                if pick.winner == state.me
-                else f"taken from {state.teams[pick.winner].name}"
-            )
+    jobs = [(season, team, options) for season in args.season for team in _team_names(season)]
+    say(f"{len(jobs)} team-seasons, plan={options.plan}, {args.workers} workers")
+    results: list[Result] = []
+    t0 = time.time()
+    with multiprocessing.get_context("spawn").Pool(args.workers) as workers:
+        for done in workers.imap_unordered(_simulate_job, jobs):
+            if isinstance(done, str):
+                say(f"  FAILED {done}")
+                continue
+            results.append(done)
             say(
-                f"  #{pick.overall:>3} {pick.name:24s} ${paid:>3}  "
-                f"(ceiling ${ceiling}, real ${pick.price}) {tag}"
+                f"  {done.season} {done.team:32s} drafted {'-'.join(map(str, done.actual)):>9}  "
+                f"room {'-'.join(map(str, done.room)):>9}  {done.gain:+4d}  "
+                f"({len(results)}/{len(jobs)}, {time.time() - t0:.0f}s)"
             )
-        say("\nOUR REAL PICKS THE ROOM PASSED ON")
-        for pick, ceiling in out.passed:
-            if pick.winner == state.me:
-                note = "no bid" if ceiling is None else f"${ceiling}"
-                say(f"  #{pick.overall:>3} {pick.name:24s} real ${pick.price:>3}  ceiling {note}")
-
-        my_db = next(
-            t.id
-            for t in session.scalars(select(Team).where(Team.league_season_id == ls.id))
-            if t.name == args.me
-        )
-        windows = _period_windows(session, ls)
-        opp = _opponent_lines(session, ls, my_db)
-        actual_ids = [p.player_id for p in picks if p.winner == state.me]
-        sim_ids = sorted(final.mine.player_ids)
-        actual_lines = roster_lines(session, args.season, actual_ids, windows)
-        sim_lines = roster_lines(session, args.season, sim_ids, windows)
-        aw, al, at, acat = record(actual_lines, opp)
-        sw, sl, st, scat = record(sim_lines, opp)
-
-        say(
-            f"\nSCORED ON WHAT ACTUALLY HAPPENED, {len(opp)} regular-season weeks "
-            "vs our real opponents"
-        )
-        say(
-            f"  {'':22s} {'cats W-L-T':>12} {'win rate':>9}   "
-            + "  ".join(f"{c:>4}" for c in CATEGORIES)
-        )
-        say(
-            f"  {'roster we drafted':22s} {f'{aw}-{al}-{at}':>12} {aw / (aw + al + at):9.3f}   "
-            + "  ".join(f"{acat.get(c, 0):>4}" for c in CATEGORIES)
-        )
-        say(
-            f"  {'roster the room picks':22s} {f'{sw}-{sl}-{st}':>12} {sw / (sw + sl + st):9.3f}   "
-            + "  ".join(f"{scat.get(c, 0):>4}" for c in CATEGORIES)
-        )
-        named = {c.player_id: c.name for c in candidates}
-        drafted_names = ", ".join(named.get(i, str(i)) for i in actual_ids)
-        room_names = ", ".join(named.get(i, str(i)) for i in sim_ids)
-        say(f"\n  drafted roster:   {drafted_names}")
-        say(f"  room's roster:    {room_names}   (${final.mine.spent})")
+    say("\nTHE ROOM AGAINST EACH TEAM'S OWN DRAFT, scored on what actually happened")
+    for line in summarise(results):
+        say(line)
     return 0
 
 

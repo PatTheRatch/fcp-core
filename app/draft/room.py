@@ -29,6 +29,28 @@ THREE NUMBERS, THREE DIFFERENT QUESTIONS
                 something the rest of the board provides more cheaply. This
                 one is a judgment, and it is the optimizer's.
 
+THE PLAN
+
+A ceiling on its own has no memory of the budget. Each player is judged
+against the best roster the rest of the money could buy at board prices,
+and early in a draft that roster is always there on paper, so a star
+whose ceiling clears his price gets bought, and the next, and the room is
+left filling ten places at two dollars. Replaying 2026 that is what it
+did on every projection set: $150 on the first stars nominated, 71-99 and
+78-90 against a drafted roster that went 99-69, and the league's own
+history says top-heavy rosters lose at every size.
+
+So the room drafts to a plan. Before the first pick it solves the best
+roster from the empty room and keeps only its *shape*: what it spends on
+its most expensive player, its second, and so on down. That is the
+allocation. Each of our purchases uses up the cheapest planned place that
+covers its price, and whatever it saved or overspent is spread back over
+the places still open, above the floor, so the allocation always adds up
+to the money we actually have. The most we will pay for anyone is the
+largest open place, plus a little slack. The ceiling still decides whether
+a player is worth having; the plan decides how much of the budget one
+player may take. See `Allocation`.
+
 REPRICING
 
 Board prices are set before the draft to exhaust the total budget exactly.
@@ -300,6 +322,7 @@ def resolve(
     lock: Mapping[int, int] | None = None,
     exclude: Iterable[int] = (),
     starts: Iterable[Iterable[int]] = (),
+    allocation: Allocation | None = None,
 ) -> RosterPlan:
     """The best roster we can still finish from here.
 
@@ -307,6 +330,7 @@ def resolve(
     is repriced for the money left in the room. `lock` adds players at given
     prices as if we had just won them, which is how a bid is tested; `exclude`
     removes players as if someone else had, which is how the alternative is.
+    With an `allocation`, the roster also has to fit the plan's open places.
     """
     pool = reprice(state, candidates)
     forced = dict(lock or {})
@@ -327,6 +351,8 @@ def resolve(
         lineup=lineup,
         limits=limits,
         starts=starts,
+        shape=allocation.limits(state) if allocation is not None else None,
+        exempt=state.mine.player_ids,
     )
 
 
@@ -351,6 +377,124 @@ class Ceiling:
     marginal_at_floor: float
     #: The most any other team can pay. Bidding past it is pointless.
     field: int
+    #: The most the plan lets one player take, when bidding to a plan.
+    plan_cap: int | None = None
+    #: True when the plan, not the player, set `price`: he is worth at
+    #: least the cap relative to the board, and the budget says no more.
+    capped: bool = False
+
+
+@dataclass(frozen=True)
+class Allocation:
+    """The plan's spending shape: dollars per roster place, largest first."""
+
+    #: One amount per roster place, descending, summing to the budget.
+    places: tuple[int, ...]
+    #: How far past the largest open place a bid may go, as a fraction.
+    slack: float = 0.10
+
+    @classmethod
+    def from_plan(cls, plan: RosterPlan, state: DraftState, *, slack: float = 0.10) -> Allocation:
+        """The shape of a roster plan, padded to the roster and the budget.
+
+        A plan that leaves money unspent or places unfilled still has to
+        describe the whole budget, or the draft would end with money in the
+        pocket: empty places get the floor and the rest is spread over every
+        place above it, in proportion.
+        """
+        return cls.from_prices([c.price for c in plan.players], state, slack=slack)
+
+    @classmethod
+    def from_prices(
+        cls, prices: Iterable[int], state: DraftState, *, slack: float = 0.10
+    ) -> Allocation:
+        """Any spending shape -- a plan's, or history's -- fitted to this room."""
+        ordered = sorted((max(state.minimum_bid, p) for p in prices), reverse=True)
+        ordered = ordered[: state.roster_slots]
+        ordered += [state.minimum_bid] * (state.roster_slots - len(ordered))
+        return cls(tuple(_fit(ordered, state.budget, state.minimum_bid)), slack)
+
+    def open_places(self, state: DraftState) -> tuple[int, ...]:
+        """The places still to fill after what we have bought, refitted to our money.
+
+        Each purchase, in order, uses the cheapest open place that covers its
+        price, or the largest when none does.
+        """
+        open_ = list(self.places)
+        for pick in state.mine.picks:
+            if not open_:
+                break
+            covering = [i for i, amount in enumerate(open_) if amount >= pick.price]
+            open_.pop(covering[-1] if covering else 0)
+        return tuple(_fit(open_, state.mine.remaining, state.minimum_bid))
+
+    def limits(self, state: DraftState) -> tuple[int, ...]:
+        """The most each open place may cost right now, slack included."""
+        return tuple(
+            max(state.minimum_bid, int(amount * (1.0 + self.slack)))
+            for amount in self.open_places(state)
+        )
+
+    def cap(self, state: DraftState) -> int:
+        """The most the plan lets one player take right now."""
+        limits = self.limits(state)
+        return limits[0] if limits else 0
+
+
+def _fit(amounts: Sequence[int], total: int, floor: int) -> list[int]:
+    """Scale the amounts above the floor so the whole sums to `total`.
+
+    Rounded largest-remainder so the sum is exact; descending order kept.
+    """
+    if not amounts:
+        return []
+    above = [max(0, a - floor) for a in amounts]
+    spare = max(0, total - floor * len(amounts))
+    weight = sum(above)
+    if weight == 0:
+        shares = [spare / len(amounts)] * len(amounts)
+    else:
+        shares = [spare * a / weight for a in above]
+    whole = [int(x) for x in shares]
+    order = sorted(range(len(shares)), key=lambda i: whole[i] - shares[i])
+    for i in order[: spare - sum(whole)]:
+        whole[i] += 1
+    return sorted((floor + w for w in whole), reverse=True)
+
+
+def plan_allocation(
+    state: DraftState,
+    candidates: Sequence[Candidate],
+    distributions: Sequence[CategoryDistribution],
+    *,
+    slack: float = 0.10,
+    punt: Iterable[str] = (),
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+    limits: Mapping[str, int] | None = None,
+    restarts: int = DEFAULT_RESTARTS,
+    seed: int = 0,
+) -> tuple[Allocation, RosterPlan]:
+    """The allocation from the best roster in the *empty* room.
+
+    Always solved from before the first pick, whatever has happened since,
+    so restarting the room mid-draft gives the same plan it drafted to.
+    """
+    empty = replace(
+        state,
+        teams={tid: replace(t, picks=()) for tid, t in state.teams.items()},
+        picks=(),
+    )
+    plan = resolve(
+        empty,
+        candidates,
+        distributions,
+        punt=punt,
+        lineup=lineup,
+        limits=limits,
+        restarts=restarts,
+        seed=seed,
+    )
+    return Allocation.from_plan(plan, state, slack=slack), plan
 
 
 def bid_ceiling(
@@ -364,6 +508,7 @@ def bid_ceiling(
     limits: Mapping[str, int] | None = None,
     restarts: int = DEFAULT_RESTARTS,
     seed: int = 0,
+    allocation: Allocation | None = None,
 ) -> Ceiling:
     """The most we should pay for the player on the block.
 
@@ -372,6 +517,10 @@ def bid_ceiling(
     money has to come from somewhere -- so the answer is found by bisection
     over the legal range: the highest p at which having him is still at
     least as good as not.
+
+    With an `allocation` the search stops at the plan's cap: no player
+    takes more of the budget than the plan's largest open place allows,
+    however well he rates against the board.
 
     Costs one solve for the baseline and about seven for the search. Expect
     a few seconds at the default restarts; pass fewer on the clock.
@@ -399,6 +548,7 @@ def bid_ceiling(
             lock=lock,
             exclude=exclude,
             starts=starts,
+            allocation=allocation,
         )
 
     baseline = solve(exclude=[player_id])
@@ -407,7 +557,9 @@ def bid_ceiling(
     # the search. It can only raise the with-him side, so a ceiling errs
     # generous rather than refusing a player worth having.
     warm = [tuple(baseline.player_ids)]
-    ceiling = state.mine.max_bid(state.minimum_bid)
+    legal = state.mine.max_bid(state.minimum_bid)
+    plan_cap = allocation.cap(state) if allocation is not None else None
+    ceiling = legal if plan_cap is None else min(legal, plan_cap)
     field_max = state.field_ceiling()
 
     def with_price(price: int) -> float:
@@ -419,16 +571,26 @@ def bid_ceiling(
 
     without = baseline.expected_wins
     if ceiling < state.minimum_bid:
-        return Ceiling(player_id, None, ceiling, without, None, float("-inf"), field_max)
+        return Ceiling(player_id, None, legal, without, None, float("-inf"), field_max, plan_cap)
 
     low, high = state.minimum_bid, ceiling
     at_low = with_price(low)
     marginal = at_low - without
     if at_low < without:
-        return Ceiling(player_id, None, ceiling, without, None, marginal, field_max)
+        return Ceiling(player_id, None, legal, without, None, marginal, field_max, plan_cap)
     at_high = with_price(high)
     if at_high >= without:
-        return Ceiling(player_id, high, ceiling, without, at_high, marginal, field_max)
+        return Ceiling(
+            player_id,
+            high,
+            legal,
+            without,
+            at_high,
+            marginal,
+            field_max,
+            plan_cap,
+            capped=plan_cap is not None and high == plan_cap and plan_cap < legal,
+        )
 
     # Invariant: with_price(low) >= without > with_price(high).
     best_value = at_low
@@ -439,4 +601,4 @@ def bid_ceiling(
             low, best_value = mid, value
         else:
             high = mid
-    return Ceiling(player_id, low, ceiling, without, best_value, marginal, field_max)
+    return Ceiling(player_id, low, legal, without, best_value, marginal, field_max, plan_cap)

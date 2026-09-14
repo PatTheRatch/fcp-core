@@ -237,6 +237,25 @@ def fieldable(
     return can_field({p.player_id: p.eligible for p in roster}, lineup)
 
 
+def within_shape(
+    players: Iterable[Candidate], shape: Sequence[int] | None, exempt: frozenset[int]
+) -> bool:
+    """Whether the roster's spending fits a plan's places.
+
+    `shape` is the most each place may cost, largest first. The players not
+    `exempt` -- what we already own is -- must be assignable to distinct
+    places that each cover their price, which for two descending lists is
+    simply element by element. A partial roster is checked against the
+    first places, which is the same condition. Extra players beyond the
+    shape are held to its last place.
+    """
+    if not shape:
+        return True
+    prices = sorted((p.price for p in players if p.player_id not in exempt), reverse=True)
+    last = shape[-1]
+    return all(price <= (shape[i] if i < len(shape) else last) for i, price in enumerate(prices))
+
+
 def _plan(
     players: Sequence[Candidate],
     distributions: Sequence[CategoryDistribution],
@@ -267,6 +286,8 @@ def _greedy(
     roster_slots: int,
     budget: int,
     minimum_bid: int,
+    shape: Sequence[int] | None = None,
+    exempt: frozenset[int] = frozenset(),
 ) -> list[Candidate]:
     """Fill a roster in the given order, always leaving the floor bids.
 
@@ -296,6 +317,8 @@ def _greedy(
         slots_after = roster_slots - len(roster) - 1
         if spent + candidate.price + floor_for(slots_after) > budget:
             return
+        if shape and not within_shape([*roster, candidate], shape, exempt):
+            return
         roster.append(candidate)
         chosen.add(candidate.player_id)
         spent += candidate.price
@@ -317,6 +340,8 @@ def _swap_improve(
     budget: int,
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
+    shape: Sequence[int] | None = None,
+    exempt: frozenset[int] = frozenset(),
 ) -> RosterPlan:
     """Repeat the single best swap until no swap raises expected wins.
 
@@ -373,7 +398,7 @@ def _swap_improve(
                 # the lineup is not a swap, whatever it does to the score.
                 trial = list(best.players)
                 trial[index] = incoming
-                if not fieldable(trial, lineup, limits):
+                if not within_shape(trial, shape, exempt) or not fieldable(trial, lineup, limits):
                     continue
                 # The margin is re-applied, not dropped: the obvious loop
                 # compares each further candidate against the incumbent plus
@@ -404,6 +429,8 @@ def _repair_lineup(
     keep: frozenset[int],
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
+    shape: Sequence[int] | None = None,
+    exempt: frozenset[int] = frozenset(),
 ) -> list[Candidate] | None:
     """Make an illegal start legal with one swap, cheapest first."""
     chosen = {c.player_id for c in roster}
@@ -416,7 +443,7 @@ def _repair_lineup(
                 continue
             trial = list(roster)
             trial[index] = incoming
-            if fieldable(trial, lineup, limits):
+            if within_shape(trial, shape, exempt) and fieldable(trial, lineup, limits):
                 return trial
     return None
 
@@ -436,6 +463,8 @@ def optimize(
     lineup: Sequence[str] = DEFAULT_LINEUP,
     limits: Mapping[str, int] | None = None,
     starts: Iterable[Iterable[int]] = (),
+    shape: Sequence[int] | None = None,
+    exempt: Iterable[int] = (),
 ) -> RosterPlan:
     """The roster that maximises expected weekly category wins under a budget.
 
@@ -453,6 +482,13 @@ def optimize(
     without-him roster makes the two neighbours rather than strangers, and
     the comparison stops measuring the search.
 
+    `shape` holds the roster to a spending plan: the most each place may
+    cost, largest first, for every player not in `exempt` (see
+    `within_shape`). The draft room passes its allocation's open places and
+    exempts what we already own, so the roster with a player and the roster
+    without him are both rosters the plan allows. If the locked players
+    alone break the shape it is dropped, since no roster could keep it.
+
     `restarts` shuffled starts are tried beside the greedy one and the best
     result kept. `seed` fixes the shuffles, so the same inputs always give
     the same roster.
@@ -465,6 +501,9 @@ def optimize(
     kept = [by_id[pid] for pid in keep if pid in by_id]
     if not pool:
         return _plan(kept[:roster_slots], distributions, punted)
+    spared = frozenset(exempt)
+    if shape and not within_shape(kept, shape, spared):
+        shape = None
 
     def worth(candidate: Candidate) -> float:
         return sum(candidate.weekly.values()) / max(1, candidate.price)
@@ -493,7 +532,13 @@ def optimize(
     best: RosterPlan | None = None
     for ordered in orders:
         roster = _greedy(
-            ordered, keep=kept, roster_slots=roster_slots, budget=budget, minimum_bid=minimum_bid
+            ordered,
+            keep=kept,
+            roster_slots=roster_slots,
+            budget=budget,
+            minimum_bid=minimum_bid,
+            shape=shape,
+            exempt=spared,
         )
         if len(roster) < required:
             continue
@@ -501,7 +546,14 @@ def optimize(
         # it, and abandoned otherwise; the other starts will usually manage.
         if not fieldable(roster, lineup, limits):
             repaired = _repair_lineup(
-                roster, pool, budget=budget, keep=keep, lineup=lineup, limits=limits
+                roster,
+                pool,
+                budget=budget,
+                keep=keep,
+                lineup=lineup,
+                limits=limits,
+                shape=shape,
+                exempt=spared,
             )
             if repaired is None:
                 continue
@@ -515,6 +567,8 @@ def optimize(
             budget=budget,
             lineup=lineup,
             limits=limits,
+            shape=shape,
+            exempt=spared,
         )
         if best is None or plan.expected_wins > best.expected_wins + 1e-9:
             best = plan

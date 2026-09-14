@@ -29,10 +29,25 @@ ambiguous name is refused with the alternatives rather than guessed.
 
 THE POOL
 
-The room prices players from the season's projections. ESPN publishes those
-in the weeks before the draft; until then --pool-season and --pool-kind can
-stand in a prior season's projections or totals, which the room will say so
-about loudly. Do not draft on a stand-in without knowing it is one.
+    --bbm ~/Downloads/BBM_Projections.xls     draft on Basketball Monster's
+
+The manager drafts on Basketball Monster's projections, and --bbm reads the
+export directly: its games already price availability, so no discount is
+stacked on them, and every row goes on the board, rookies included. Its
+age, injury risk and ESPN and Yahoo average auction prices are shown with
+each ceiling. Without --bbm the room prices from ESPN's stored projections;
+--pool-season and --pool-kind can stand in a prior season's, which the room
+will say so about loudly.
+
+THE PLAN
+
+The room bids to an allocation (see app/draft/room.py): no player takes
+more of the budget than the largest place still open in it, plus
+--plan-slack. By default the allocation is the spending shape of this
+league's best category teams (app/draft/shape.py); --plan optimizer uses
+the optimizer's own best roster from the empty room, which on BBM's 2026
+projections was $103 on one star and ten one-dollar players; --plan none
+bids on the ceiling alone.
 """
 
 from __future__ import annotations
@@ -42,7 +57,8 @@ import select
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from sqlalchemy import select as sql_select
 from sqlalchemy.orm import Session
@@ -52,6 +68,7 @@ from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
 from app.draft import pool
 from app.draft.availability import measured_availability
+from app.draft.bbm import BBMRow, load_bbm
 from app.draft.feed import (
     BoardSnapshot,
     LoggedPick,
@@ -64,15 +81,18 @@ from app.draft.feed import (
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
 from app.draft.room import (
+    Allocation,
     Ceiling,
     DraftError,
     DraftState,
     Pick,
     bid_ceiling,
     inflation,
+    plan_allocation,
     reprice,
     resolve,
 )
+from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import value_players
@@ -96,6 +116,14 @@ class Room:
     restarts: int
     #: Set when the pool is a stand-in from another season.
     stand_in: str | None = None
+    #: The spending plan bids are capped to, when there is one.
+    allocation: Allocation | None = None
+    #: Where the allocation came from, for the readout.
+    plan_source: str = "none"
+    #: Basketball Monster's row for each player, when drafting on BBM.
+    bbm: dict[int, BBMRow] = field(default_factory=dict)
+    #: One line about the pool, for the header.
+    pool_note: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +152,9 @@ def load_room(
     punt: Sequence[str],
     restarts: int,
     tier_curve: bool = True,
+    bbm: Path | None = None,
+    plan: str = "history",
+    plan_slack: float = 0.10,
 ) -> Room:
     factory = make_session_factory(make_engine(get_settings().database_url))
     with factory() as session:
@@ -143,8 +174,20 @@ def load_room(
         teams = _teams(session, league_season)
 
         source_season = pool_season or season
-        projections = pool.load_projections(session, source_season, kind=pool_kind)
         stand_in = None
+        bbm_rows: dict[int, BBMRow] = {}
+        if bbm is not None:
+            loaded = load_bbm(session, bbm, season)
+            projections = loaded.projections
+            bbm_rows = loaded.rows
+            pool_note = (
+                f"pool: Basketball Monster, {bbm.name}: {len(projections)} players, "
+                f"{loaded.matched} matched to ESPN ids ({len(loaded.loose)} by short first name), "
+                f"{len(loaded.unmatched)} on the board by name only"
+            )
+        else:
+            projections = pool.load_projections(session, source_season, kind=pool_kind)
+            pool_note = f"pool: ESPN {source_season} {pool_kind}"
         if not projections and pool_season is None:
             raise SystemExit(
                 f"no {pool_kind} lines stored for {season}. ESPN publishes projections in "
@@ -166,7 +209,8 @@ def load_room(
             # Reshape to how this league actually spends: about half again on
             # the top five, less below rank 60. See app/draft/tiers.py.
             board = apply_tier_curve(board, LEAGUE_TIER_CURVE)
-        availability = measured_availability(session).factor
+        # BBM's games already price availability; ESPN's do not.
+        availability = 1.0 if bbm is not None else measured_availability(session).factor
         candidates = candidates_from(
             projections,
             board,
@@ -189,18 +233,38 @@ def load_room(
             me=my_id,
             nomination_order=league_season.draft_order or (),
         )
+        allocation = None
+        lineup = pool.lineup_for(league_season)
+        limits = pool.position_limits_for(league_season)
+        if plan == "history":
+            shape = winning_shape(session, roster_slots=slots, budget=state.budget)
+            allocation = Allocation.from_prices(shape, state, slack=plan_slack)
+        elif plan == "optimizer":
+            allocation, _ = plan_allocation(
+                state,
+                candidates,
+                distributions,
+                slack=plan_slack,
+                punt=punt,
+                lineup=lineup,
+                limits=limits,
+            )
         return Room(
             season=season,
             state=state,
             candidates=candidates,
             distributions=list(distributions),
-            lineup=pool.lineup_for(league_season),
-            limits=pool.position_limits_for(league_season),
+            lineup=lineup,
+            limits=limits,
             names=names,
             team_names=teams,
             punt=tuple(punt),
             restarts=restarts,
             stand_in=stand_in,
+            allocation=allocation,
+            plan_source=plan,
+            bbm=bbm_rows,
+            pool_note=pool_note,
         )
 
 
@@ -239,6 +303,28 @@ def show_ceiling(
         f"  marginal at $1 {ceiling.marginal_at_floor:+.3f}"
     )
     say(line)
+    if ceiling.capped:
+        say(
+            f"  the plan caps one player at ${ceiling.plan_cap} now; he rates higher against "
+            "the board, and the budget says no more"
+        )
+    row = room.bbm.get(ceiling.player_id)
+    if row is not None:
+        facts = []
+        if row.age is not None:
+            facts.append(f"age {row.age:.1f}")
+        facts.append(f"{row.games:.0f} games")
+        if row.injury_risk:
+            facts.append(f"injury risk {row.injury_risk}")
+        if row.injury:
+            facts.append(row.injury)
+        if row.dollars is not None:
+            facts.append(f"BBM ${row.dollars:.0f}")
+        if row.espn_dollars is not None:
+            facts.append(f"ESPN avg ${row.espn_dollars:.0f}")
+        if row.yahoo_dollars is not None:
+            facts.append(f"Yahoo avg ${row.yahoo_dollars:.0f}")
+        say("  " + " · ".join(facts))
     # Two different numbers, and the clock needs both: what he is worth to
     # us, above; and what he will probably go for, here -- the board's price
     # for him, repriced for the money left in the room.
@@ -273,8 +359,15 @@ def show_plan(room: Room, state: DraftState) -> None:
         lineup=room.lineup,
         limits=room.limits,
         restarts=room.restarts,
+        allocation=room.allocation,
     )
     say(f"best finish from here: {plan.expected_wins:.2f} expected categories a week, ${plan.cost}")
+    if room.allocation is not None:
+        places = room.allocation.open_places(state)
+        say(
+            f"spending plan ({room.plan_source}): open places {list(places)}, "
+            f"one player capped at ${room.allocation.cap(state)}"
+        )
     owned = state.mine.player_ids
     for c in sorted(plan.players, key=lambda c: (c.player_id not in owned, -c.price)):
         tag = "owned" if c.player_id in owned else "target"
@@ -335,6 +428,7 @@ def ceiling_for(room: Room, state: DraftState, player_id: int) -> Ceiling | None
             lineup=room.lineup,
             limits=room.limits,
             restarts=room.restarts,
+            allocation=room.allocation,
         )
     except DraftError as exc:
         say(f"  {exc}")
@@ -557,6 +651,21 @@ def main() -> int:
         action="store_true",
         help="price from value alone, without reshaping to how this league spends",
     )
+    ap.add_argument(
+        "--bbm", type=Path, help="draft on a Basketball Monster projection export (.xls)"
+    )
+    ap.add_argument(
+        "--plan",
+        default="history",
+        choices=("history", "optimizer", "none"),
+        help="the spending plan bids are capped to (default: this league's winning shape)",
+    )
+    ap.add_argument(
+        "--plan-slack",
+        type=float,
+        default=0.10,
+        help="how far past the largest open place a bid may go (default 0.10)",
+    )
     args = ap.parse_args()
 
     room = load_room(
@@ -567,6 +676,9 @@ def main() -> int:
         punt=args.punt,
         restarts=args.restarts,
         tier_curve=not args.no_tier_curve,
+        bbm=args.bbm,
+        plan=args.plan,
+        plan_slack=args.plan_slack,
     )
     state = room.state
     say(
@@ -579,6 +691,14 @@ def main() -> int:
         if not args.no_tier_curve
         else "board priced from value alone (tier curve off)"
     )
+    say(room.pool_note)
+    if room.allocation is not None:
+        say(
+            f"spending plan ({room.plan_source}, slack {args.plan_slack:.0%}): "
+            f"{list(room.allocation.places)}"
+        )
+    else:
+        say("no spending plan: bidding on the ceiling alone")
     if room.stand_in:
         say(
             f"!! POOL IS A STAND-IN: {room.stand_in}. Prices and ceilings reflect that season, "
