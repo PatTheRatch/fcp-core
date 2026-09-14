@@ -595,6 +595,28 @@ Wilson on Jalen Wilson. Unmatched rows -- the rookie class -- go on the
 board under a stable negative id. Each ceiling shows age, games, injury
 risk, BBM $, ESPN and Yahoo average auction $.
 
+### The draft service
+
+The room is a value; draft day needs a process. `app/draft/session.py`
+holds a live draft: state behind a lock, every accepted pick and undo
+appended to a JSON-lines log and replayed on start (a crash or refresh
+mid-auction loses nothing), and ceilings computed in worker processes for
+the player on the block first and then the twelve likeliest nominations by
+market price, keyed on the exact picks they were computed against so a
+stale answer is never shown. `app/draft/service.py` puts it behind a
+localhost FastAPI app -- state, server-sent events, picks, undo, block,
+player cards, plan -- with the page reader on its own thread.
+`scripts/draft_service.py` runs it. It runs on the manager's machine, not
+the VPS: the page reader needs the ESPN login and the VPS API is
+tailnet-only and read-only by design.
+
+Measured on the 2027 BBM pool: state in 60 ms, a pick in 40 ms, the eight
+most expensive players' ceilings ready about 25 seconds after start on two
+workers, and a nominated player's ceiling 13 seconds after a pick while
+precomputations were running. A nomination gives ninety. Three workers is
+the default. Room loading moved to `app/draft/live.py`, shared with the
+typed room.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
