@@ -12,6 +12,8 @@ import pytest
 
 from app.draft.lineup import DEFAULT_LINEUP
 from app.draft.optimizer import (
+    CONCEDE_PENALTY,
+    CONCEDE_THRESHOLD,
     Candidate,
     RosterPlan,
     _plan,
@@ -176,8 +178,9 @@ def test_an_empty_pool_yields_an_empty_plan() -> None:
 
     assert plan.players == ()
     # Zero points is five sd below the mean, so this is a near-certain loss,
-    # which is the honest answer for an empty roster.
-    assert plan.expected_wins == pytest.approx(0.0, abs=1e-4)
+    # and a category conceded outright, which is the honest answer for an
+    # empty roster.
+    assert plan.expected_wins == pytest.approx(-CONCEDE_PENALTY, abs=1e-4)
 
 
 CENTRE = frozenset({"C", "UT"})
@@ -428,3 +431,21 @@ def test_a_shape_is_checked_place_by_place_and_spares_the_exempt() -> None:
     assert not within_shape([b, c], (10, 3), frozenset()), "two $4 players need two $4 places"
     assert within_shape([a, b], (5,), frozenset({1})), "what we own is not the plan's to judge"
     assert within_shape([a, b, c], None, frozenset())
+
+
+def test_conceding_a_category_costs_what_the_league_measured() -> None:
+    """Three categories dominated and one given away sums the same as four
+    kept close, and in this league it does not play the same."""
+    cats = [PTS, REB]
+    even, _ = score({"PTS": 100.0, "REB": 50.0}, cats)  # 0.5 + 0.5
+    lopsided, probs = score({"PTS": 150.0, "REB": 20.0}, cats)
+    raw = sum(probs.values())
+    assert probs["REB"] < CONCEDE_THRESHOLD
+    assert lopsided == pytest.approx(raw - CONCEDE_PENALTY, abs=0.01)
+    assert even == pytest.approx(1.0)
+
+
+def test_a_category_the_manager_chose_to_punt_is_not_charged() -> None:
+    cats = [PTS, REB]
+    chosen, probs = score({"PTS": 150.0, "REB": 20.0}, cats, frozenset({"REB"}))
+    assert chosen == pytest.approx(probs["PTS"])

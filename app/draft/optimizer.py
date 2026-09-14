@@ -148,6 +148,29 @@ def roster_totals(players: Iterable[Candidate], categories: Sequence[str]) -> di
     return _totals_from(_summed(players), categories)
 
 
+#: A category won in fewer weeks than this is conceded.
+CONCEDE_THRESHOLD = 0.25
+
+#: What conceding a category costs, in categories a week, beyond what the
+#: probabilities already say. Summed win probabilities treat every category
+#: as independent, so a roster that gives up three to dominate six scores as
+#: well as its six. The league's history says it does not play that well:
+#: rosters drafted 1.5 SD behind the league in a category won 4.1% fewer
+#: categories than rosters of the same projected strength (season bootstrap
+#: -5.9% to -2.4%), and the most specialized teams won 12 points fewer of the
+#: one-category weeks (docs/punt_builds.md). 4.1% of nine categories is 0.37
+#: a week. Two or more punts measured no worse than one, so the penalty is
+#: charged once, scaled by how far below the threshold the conceded
+#: categories sit: one category at 0% costs all of it, one at 20% a fifth.
+#: A category the manager chose to punt is exempt.
+CONCEDE_PENALTY = 0.37
+
+
+def _concede_cost(probabilities: Iterable[float]) -> float:
+    shortfall = sum(max(0.0, CONCEDE_THRESHOLD - p) for p in probabilities) / CONCEDE_THRESHOLD
+    return CONCEDE_PENALTY * min(1.0, shortfall)
+
+
 def score(
     totals: dict[str, float],
     distributions: Sequence[CategoryDistribution],
@@ -156,16 +179,19 @@ def score(
     """Expected categories won, and the per-category probabilities.
 
     A punted category is left out of the sum, which is what punting means:
-    the roster stops paying for it and the optimizer stops chasing it.
+    the roster stops paying for it and the optimizer stops chasing it. A
+    category conceded without being chosen costs `CONCEDE_PENALTY`.
     """
     probabilities: dict[str, float] = {}
     expected = 0.0
+    kept: list[float] = []
     for distribution in distributions:
         probability = distribution.win_probability(totals.get(distribution.abbreviation, 0.0))
         probabilities[distribution.abbreviation] = probability
         if distribution.abbreviation not in punt:
             expected += probability
-    return expected, probabilities
+            kept.append(probability)
+    return expected - _concede_cost(kept), probabilities
 
 
 #: A scored category reduced to the three numbers the inner loop needs:
@@ -197,14 +223,16 @@ def _scored(distributions: Sequence[CategoryDistribution], punt: frozenset[str])
 
 
 def _expected_scored(totals: Mapping[str, float], scored: Sequence[_Scored]) -> float:
-    """Expected categories won, from the flattened distributions."""
+    """Expected categories won, from the flattened distributions, less the
+    cost of conceding a category (see `CONCEDE_PENALTY`)."""
     expected = 0.0
+    shortfall = 0.0
     for key, mean, scale, flat in scored:
-        if flat:
-            expected += 0.5
-        else:
-            expected += 0.5 + 0.5 * erf((totals.get(key, 0.0) - mean) * scale)
-    return expected
+        probability = 0.5 if flat else 0.5 + 0.5 * erf((totals.get(key, 0.0) - mean) * scale)
+        expected += probability
+        if probability < CONCEDE_THRESHOLD:
+            shortfall += CONCEDE_THRESHOLD - probability
+    return expected - CONCEDE_PENALTY * min(1.0, shortfall / CONCEDE_THRESHOLD)
 
 
 def _expected(

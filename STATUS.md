@@ -732,6 +732,31 @@ of random rosters -- and it is a three-category punt: FT% 0%, 3PM 2%, PTS
 balance is about spreading money, which this roster does; whether conceding
 categories wins in this league has not been tested.
 
+### Conceding a category now costs what the league measured
+
+`scripts/punt_builds.py` (docs/punt_builds.md) tested punt builds on the
+league's history with strength-matched comparisons: rosters drafted 1.5 SD
+behind the league in a category won 4.1% fewer categories than rosters of
+the same projected strength (season bootstrap -5.9% to -2.4%), and the most
+specialized teams won 12 points fewer one-category weeks (-20 to -2). Summed
+win probabilities cannot see either effect, which is why the optimizer kept
+building triple punts.
+
+`app/draft/optimizer.py` now charges `CONCEDE_PENALTY` (0.37 categories a
+week, 4.1% of nine) once per roster, scaled by how far conceded categories
+sit below 25%; a category the manager chooses to punt is exempt. On BBM 2026
+the model's score for each drafted roster correlates 0.79 with its held
+result (0.78 without the penalty). The empty-room roster no longer concedes
+anything -- Durant $53, Kawhi $40, Clingan $24, Alexander-Walker $23,
+McDaniels, Edgecombe, Reid -- at 5.06, above every evenly split league
+roster (3.94-4.86). Its weakest categories are AST 26% and PTS 37%.
+
+The $60 plan cap was checked against the valuation changes: it comes from
+spending history, not player values, and the history supports it. Winning
+category teams' most expensive player averaged $54 ($52 in 14-16 team
+seasons); the best regular-season team in each season never had a player
+above $70.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
