@@ -379,6 +379,53 @@ database one revision behind proves it fires. The right deploy is still
 `git pull && alembic upgrade head`; the guard turns forgetting the second
 half into a loud failure rather than a quiet wrong write.
 
+### Is top-heavy worth it, and does league size change that?
+
+Asked because the model's "let the stars go, buy depth" is what the
+objective says, and the league's own history is the check on it.
+`scripts/top_heavy.py` (written on the VPS, reviewed and merged) scores
+all 98 team-seasons -- 2023 included, since no projections are involved and
+it is the only 16-team year -- on two measures kept apart: STRATEGY, the
+share of the $200 a manager put on his three dearest picks, and EXECUTION,
+the share of the team's started production those three actually delivered.
+
+Balanced drafts win the regular season at every league size. Pooled,
+the balanced quartile wins categories at 0.536 and makes the playoffs 68%
+of the time; the top-heavy quartile 0.477 and 48%. At 14 teams it is 0.535
+against 0.477, at 16 teams 0.540 against 0.423 with the top-heavy four
+finishing eleventh on average. Sixty percent of teams that chose top-heavy
+did not get top-heavy production out of it, and here is the line that
+settles it: when the plan *worked*, those teams won categories at 0.484,
+against 0.471 when it did not. Getting the stars you paid for barely
+helped. Execution concentration on its own predicts nothing (0.499, 0.503,
+0.474, 0.500 across its quartiles). Top-heavy's best season (0.623) is no
+better than balanced's best (0.642); only its worst is worse (0.185
+against 0.401). It does not raise the ceiling. It lowers the floor.
+
+Titles are another matter, and honestly so: 2026's champion spent 83.5%
+of its money on three players, while the best regular-season team spent
+46%. A playoff week is one draw from the distribution, and a wide
+distribution wins its share of single draws. The record says top-heavy
+wins titles at about the rate balanced does (12% against 16%) while
+missing the playoffs far more often.
+
+On league size, the study's own replacement level -- the 25th percentile
+of started players -- flattened the effect by construction, so it was
+recomputed here with the natural one, the (teams x 13)th best player by
+started production. That falls as the league grows, from about 37 a week
+at 10 teams to 27 at 16, and a star's surplus over it rises from about 90
+a week to 110-127. Stars *are* worth more in a thinner pool. And top-heavy
+drafters still lose at 14 and 16 teams, because the surplus has to be
+bought and the room charges half again for it. The two halves do not
+contradict: the star is worth more, and he is priced further above what
+he is worth.
+
+So the model's position stands, now on history rather than on the
+objective alone: sell the premium, buy depth, and take the star only when
+he comes inside the ceiling. Ninety-eight team-seasons across four sizes
+is thin, and the 16-team row is one year. What would change the reading:
+two 15-team seasons in which the balanced quartile stops winning.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
