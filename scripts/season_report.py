@@ -1449,6 +1449,14 @@ footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--rule);
   .bar{width:11px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* Printing to PDF: keep backgrounds, keep a heading with what follows it,
+   and never split a table row, a trade or a finding across two pages. */
+@page { margin: 10mm; }
+@media print {
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+  tr, li, figure, blockquote, p { break-inside: avoid; page-break-inside: avoid; }
+}
 </style>
 """.strip()
 
