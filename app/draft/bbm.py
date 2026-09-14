@@ -91,6 +91,10 @@ class BBMRow:
     #: export carries it (2027 onward). The market, not a projection.
     espn_dollars: float | None = None
     yahoo_dollars: float | None = None
+    #: BBM's value for the league the export was made from (`Leag$`), which
+    #: prices this league's categories, size and budget; `dollars` is BBM's
+    #: generic value.
+    league_dollars: float | None = None
 
 
 @dataclass
@@ -150,6 +154,7 @@ def read_bbm(path: Path) -> list[BBMRow]:
                 age=maybe("Age"),
                 espn_dollars=maybe("ESPN$"),
                 yahoo_dollars=maybe("Y!Avg$"),
+                league_dollars=maybe("Leag$"),
             )
         )
     return rows

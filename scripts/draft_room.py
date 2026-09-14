@@ -318,7 +318,9 @@ def show_ceiling(
             facts.append(f"injury risk {row.injury_risk}")
         if row.injury:
             facts.append(row.injury)
-        if row.dollars is not None:
+        if row.league_dollars is not None:
+            facts.append(f"BBM league ${row.league_dollars:.0f}")
+        elif row.dollars is not None:
             facts.append(f"BBM ${row.dollars:.0f}")
         if row.espn_dollars is not None:
             facts.append(f"ESPN avg ${row.espn_dollars:.0f}")
