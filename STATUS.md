@@ -757,6 +757,27 @@ category teams' most expensive player averaged $54 ($52 in 14-16 team
 seasons); the best regular-season team in each season never had a player
 above $70.
 
+### The redraft, re-run after the pricing and weekly-line fixes
+
+Every team, replayed with the room pricing the pool as it now prices the
+draft (size_to_room with ESPN's average for the season), weekly lines over
+23.8 effective weeks, the concede penalty and the league's winning spending
+shape. Room's 13 against each team's own 13, both held all season:
+
+    ESPN projections, 2021-2026    beat 35 of 62, +2.2 categories (se 2.0)
+      by season                    +5.6, -13.2, +9.4, +3.3, +5.0
+      before today's fixes         beat 29 of 62, -1.5; 2026 was -21.2
+    BBM projections, 2026          beat 8 of 14, +8.3 (se 4.6); before +9.6
+    Through The Wire               2026 -28 (ESPN) / -21 (BBM); 2025 -3; 2024 +1
+
+The room now drafts a little better than the league's average manager and
+still not as well as this one. 2022 is a named failure: the room bought the
+"bargains" the market had discounted for reasons the projections did not
+carry -- Kyrie Irving at $6 (vaccine mandate), Jonathan Isaac at $6 (missed
+the season), Porter Jr., Ball and George (long absences). A price far below
+projected value is usually information. The plan's "bid up to" already takes
+the lower of our ceiling and BBM's value, and BBM prices availability.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does
