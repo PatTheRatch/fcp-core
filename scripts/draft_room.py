@@ -29,13 +29,19 @@ ambiguous name is refused with the alternatives rather than guessed.
 
 THE POOL
 
-    --bbm ~/Downloads/BBM_Projections.xls     draft on Basketball Monster's
+    --bbm BBM_Projections_2027_total.xls           draft on Basketball Monster's
+    --bbm-per-game BBM_Projections_2027_pergame.xls   and show its per-game values
 
 The manager drafts on Basketball Monster's projections, and --bbm reads the
 export directly: its games already price availability, so no discount is
 stacked on them, and every row goes on the board, rookies included. Its
 age, injury risk and ESPN and Yahoo average auction prices are shown with
-each ceiling. Without --bbm the room prices from ESPN's stored projections;
+each ceiling. BBM's dollar values depend on the page's Value Type: an
+export on Total Games Value prices missed games, one on Per Game Value
+does not. Pass the total export as --bbm and the per-game one as
+--bbm-per-game and the readout shows both; a wide gap is an injury
+discount, which an active manager with an IR slot can partly collect.
+Without --bbm the room prices from ESPN's stored projections;
 --pool-season and --pool-kind can stand in a prior season's, which the room
 will say so about loudly.
 
@@ -68,7 +74,7 @@ from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
 from app.draft import pool
 from app.draft.availability import measured_availability
-from app.draft.bbm import BBMRow, load_bbm
+from app.draft.bbm import BBMRow, load_bbm, name_key, read_bbm
 from app.draft.feed import (
     BoardSnapshot,
     LoggedPick,
@@ -122,6 +128,8 @@ class Room:
     plan_source: str = "none"
     #: Basketball Monster's row for each player, when drafting on BBM.
     bbm: dict[int, BBMRow] = field(default_factory=dict)
+    #: BBM's league value on a per-game basis, from a second export.
+    per_game_dollars: dict[int, float] = field(default_factory=dict)
     #: One line about the pool, for the header.
     pool_note: str = ""
 
@@ -153,6 +161,7 @@ def load_room(
     restarts: int,
     tier_curve: bool = True,
     bbm: Path | None = None,
+    bbm_per_game: Path | None = None,
     plan: str = "history",
     plan_slack: float = 0.10,
 ) -> Room:
@@ -264,8 +273,25 @@ def load_room(
             allocation=allocation,
             plan_source=plan,
             bbm=bbm_rows,
+            per_game_dollars=_per_game(bbm_rows, bbm_per_game),
             pool_note=pool_note,
         )
+
+
+def _per_game(rows: dict[int, BBMRow], path: Path | None) -> dict[int, float]:
+    """League dollars from a per-game export, keyed like the total export's rows."""
+    if path is None:
+        return {}
+    by_name = {
+        name_key(r.name): r.league_dollars if r.league_dollars is not None else r.dollars
+        for r in read_bbm(path)
+    }
+    out: dict[int, float] = {}
+    for player_id, row in rows.items():
+        value = by_name.get(name_key(row.name))
+        if value is not None:
+            out[player_id] = value
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -318,15 +344,22 @@ def show_ceiling(
             facts.append(f"injury risk {row.injury_risk}")
         if row.injury:
             facts.append(row.injury)
-        if row.league_dollars is not None:
-            facts.append(f"BBM league ${row.league_dollars:.0f}")
-        elif row.dollars is not None:
-            facts.append(f"BBM ${row.dollars:.0f}")
+        total = row.league_dollars if row.league_dollars is not None else row.dollars
+        per_game = room.per_game_dollars.get(ceiling.player_id)
+        if total is not None and per_game is not None:
+            facts.append(f"BBM league ${total:.0f} total / ${per_game:.0f} per game")
+        elif total is not None:
+            facts.append(f"BBM league ${total:.0f}")
         if row.espn_dollars is not None:
             facts.append(f"ESPN avg ${row.espn_dollars:.0f}")
         if row.yahoo_dollars is not None:
             facts.append(f"Yahoo avg ${row.yahoo_dollars:.0f}")
         say("  " + " · ".join(facts))
+        if total is not None and per_game is not None and per_game - total >= 8:
+            say(
+                f"  injury discount: ${per_game - total:.0f} of per-game value lost to missed "
+                "games; worth more to a roster that can stash him on IR"
+            )
     # Two different numbers, and the clock needs both: what he is worth to
     # us, above; and what he will probably go for, here -- the board's price
     # for him, repriced for the money left in the room.
@@ -657,6 +690,11 @@ def main() -> int:
         "--bbm", type=Path, help="draft on a Basketball Monster projection export (.xls)"
     )
     ap.add_argument(
+        "--bbm-per-game",
+        type=Path,
+        help="a second BBM export made on Per Game Value, shown beside the total value",
+    )
+    ap.add_argument(
         "--plan",
         default="history",
         choices=("history", "optimizer", "none"),
@@ -679,6 +717,7 @@ def main() -> int:
         restarts=args.restarts,
         tier_curve=not args.no_tier_curve,
         bbm=args.bbm,
+        bbm_per_game=args.bbm_per_game,
         plan=args.plan,
         plan_slack=args.plan_slack,
     )
