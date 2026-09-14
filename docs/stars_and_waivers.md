@@ -8,9 +8,9 @@ from players the team did not draft. Report only; nothing was changed.
 
 - **Balanced drafts beat top-heavy on the regular season, and heavy pickup use does not close the gap.** Balanced 0.531 against top-heavy 0.480 category win rate. Confidence: **strong** (n=98, and the sign holds in 6 of 8 seasons).
 - **The bootstrap over seasons puts the balanced-minus-top-heavy difference at +0.050 (95% CI +0.023 to +0.079).** The interval excludes zero. Confidence: **strong**.
-- **Top-heavy teams do lean on pickups more, but the extra activity does not buy a better outcome.** Confidence: see section 2/3.
-- **Injury risk is the mechanism with the clearest support: when the stars miss time, top-heavy has a lower floor than balanced.** Confidence: **suggestive** (small cells).
-- **Trades cannot be measured at all in this data, and FAAB price effects rest on 2026 alone.** Confidence: **no evidence available**.
+- **Top-heavy teams rely on pickups more but do not work the wire harder.** Their pickup share is higher (49.2% against 34.7%) while they make slightly FEWER adds (71.4 against 73.3). The reliance is a consequence of the draft, not extra effort. Confidence: **descriptive only** -- a bad draft forces pickups, so the causation runs both ways.
+- **Injuries deepen top-heavy's losses but do not explain them.** Top-heavy loses even when its stars are healthy: with availability above 0.90 it scores 0.503 against 0.510 for balanced teams whose stars MISSED time. Star availability is a second penalty on an already worse baseline, not the cause. Confidence: **suggestive** (cells of 3-9).
+- **Trades are real but small: 130 reconstructed trades across 47 of 98 team-seasons, supplying 4.2% of production.** They cannot be the mechanism that rescues a top-heavy draft. Confidence: **strong on the magnitude, suggestive on the exact count**, because the reconstruction is a lower bound.
 
 ## 2. Strategy x pickup production
 
@@ -66,10 +66,29 @@ Adds, pickup share, and star availability by strategy quartile.
 
 Top-heavy teams average 71.4 adds against 73.3 for balanced. **This is not evidence of strategy**: a bad draft forces pickups, so the direction of causation is ambiguous. Reported as description only.
 
-**Trades are unmeasurable.** `transaction_items` with item_type='TRADE'
-and a populated `to_team_id` number 27 across eight seasons (measured),
-and only 4 teams in 2026 are ever observed receiving a traded player in
-`daily_lineup_slots`. No per-season trade statistic is reported.
+### Do top-heavy teams trade more?
+
+Trades are reconstructed from roster movement (see the module docstring); ESPN's transaction tables do not carry most of them.
+
+| strategy | n | trades (mean) | teams with >=1 trade | trade share of production |
+|---|---|---|---|---|
+| Q1 balanced | 27 | 1.48 | 13/27 | 4.1% |
+| Q2 | 22 | 1.68 | 12/22 | 5.4% |
+| Q3 | 22 | 0.95 | 10/22 | 2.2% |
+| Q4 top-heavy | 27 | 1.19 | 12/27 | 5.1% |
+
+League-wide: 130 reconstructed trades across 47 of 98 team-seasons, supplying 4.2% of production on average. Trades are rare and small relative to the wire, so they cannot be the mechanism that makes a top-heavy draft work.
+
+### Waiver vs trade split of pickup production
+
+| strategy | n | wire share of production | trade share of production | other pickup share |
+|---|---|---|---|---|
+| Q1 balanced | 27 | 27.0% | 4.1% | 3.6% |
+| Q2 | 22 | 30.6% | 5.4% | 4.0% |
+| Q3 | 22 | 33.3% | 2.2% | 3.9% |
+| Q4 top-heavy | 27 | 40.0% | 5.1% | 4.1% |
+
+Pickup production splits into three parts: players the team added via a waiver or free-agent transaction (wire), players reconstructed as arriving by trade, and a remainder -- a player dropped and re-added, or one whose move the reconstruction could not attribute. The remainder is small and is shown rather than hidden.
 
 ## 4. Skill without reverse causality
 
@@ -93,9 +112,14 @@ Matched owner-seasons: 53. Median prior net/day: 0.848.
 
 
 **Reading.** Skill is measured on the season BEFORE the one being
-explained, so a bad draft this season cannot cause it. If skilled
-managers made top-heavy work, their top-heavy seasons would out-perform.
-See the table for whether they do -- the cells are small.
+explained, so a bad draft this season cannot cause it. It does not
+rescue top-heavy: top-heavy teams with above-median prior skill score
+0.479 (n=6) against 0.497 (n=8) for those below it -- the wrong sign,
+and within noise. Balanced teams show the same non-effect (0.543 above
+against 0.563 below), which suggests the prior-season measure is too
+noisy at these counts to separate managers at all. The honest reading
+is that this test found no skill effect in either direction, not that
+skill is absent.
 
 ## 5. Star injuries: top-heavy's floor
 
@@ -117,6 +141,15 @@ by 3x the season maximum. Split at 0.75 and 0.90.
 | Q4 top-heavy | 0.75-0.90 | 14 | 0.505 | 6.50 | 57% |
 | Q4 top-heavy | < 0.75 (stars missed time) | 9 | 0.430 | 8.89 | 33% |
 
+**Reading.** Injuries deepen top-heavy's loss but do NOT explain it.
+
+- Top-heavy with healthy stars (0.503, n=4) is still below balanced with stars that missed time (0.510, n=13). It loses even when its stars play.
+- Missing stars costs top-heavy 0.073 (0.503 to 0.430) and balanced 0.066 (0.576 to 0.510); the two penalties are of similar size, and the balanced healthy band is only n=3, so they should not be read as different from each other.
+- So star availability is not what separates the strategies. It is a second, separate penalty on top of an already worse baseline.
+
+These cells are small (single digits in the healthy band), so the levels are suggestive rather than firm; the ORDERING is consistent with the pooled result in section 2.
+
+
 ## 6. Bottom of the roster: are $1-2 picks just waiver players?
 
 ### Production per game, like for like
@@ -132,17 +165,19 @@ Both columns are GROSS production per game the player appeared in, so they are d
 | $26+ picks | 281 | 37.09 | 36.69 | n/a |
 | waiver adds (all) | 6560 | 18.88 | 18.80 | 0.91 |
 
-### How long each stays rostered, and early drop rate
+### How long each stays rostered, and when he is dropped
 
-| pick price | n | median last period held | dropped by p4 | dropped by p8 |
-|---|---|---|---|---|
-| $1-2 | 413 | 61 | 5% | 17% |
-| $3-5 | 177 | 71 | 3% | 11% |
-| $6-9 | 124 | 108 | 1% | 8% |
-| $10-25 | 271 | 137 | 2% | 3% |
-| $26+ | 289 | 141 | 0% | 1% |
+Held = in the team's daily lineup in ANY slot, so a benched player is still rostered. A dropped player is one whose last roster day falls before the end of the matchup period named, so the column reads "gone before period 4 finished".
 
-`last_held` is the last scoring period the player appears in the team's started lineup, so a $1 pick dropped early has a small value.
+| pick price | n | never held | median last roster day | dropped by end of MP4 | dropped by end of MP8 |
+|---|---|---|---|---|---|
+| $1-2 | 413 | 13% | 50 | 49% | 58% |
+| $3-5 | 177 | 6% | 72 | 37% | 48% |
+| $6-9 | 124 | 2% | 110 | 21% | 35% |
+| $10-25 | 271 | 1% | 139 | 13% | 23% |
+| $26+ | 289 | 2% | 146 | 8% | 11% |
+
+**Reading.** Cheap picks are not merely worse than expensive ones; they behave like waiver claims. 13% of $1-2 picks are never held in any slot at all, and 49% are gone by the end of matchup period 4 against 8% of $26+ picks. A $1-2 pick is a lottery ticket you drop within a month, which is exactly how the wire is used.
 
 ## 7. What stars-and-scrubs gives up
 
@@ -175,6 +210,11 @@ The realistic-pickup figure uses the `acquirable_value.py` method (added minus d
 Playoff W-L is won matchups over played matchups, so a bye or an unplayed final is excluded rather than counted as a loss. Title rate is over playoff teams only, so it is not comparable to the pool-wide title rate elsewhere.
 
 ## 10. League size, and 2026 on its own
+
+**Treat the size trend as suggestive, not established.** There are
+four sizes, and the 16-team row rests on a single season (n=4 per
+cell); the direction is consistent but the magnitude at 16 teams is
+not something this data can pin down.
 
 | teams | seasons | n (bal) | bal win rate | n (top-heavy) | th win rate | difference |
 |---|---|---|---|---|---|---|
@@ -209,13 +249,13 @@ One season, so nothing here is separable from the other 13 teams' outcomes in th
 
 Owner GUIDs matched: {238280FE-C9BA-47E1-90AF-F6B9ED7AAF43}
 
-| season | team | teams | strategy | top3 share | pickup share | adds | prior-skill rank | star avail | finish | played | title |
+| season | team | teams | strategy | top3 share | pickup share | adds | prior-season net per add | star avail | finish | played | title |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 2024 | Through The Wire | 14 | Q2 | 60.0% | 52.9% | 96 | n/a | 0.877 | 1 | yes | YES |
 | 2025 | Through The Wire | 12 | Q1 balanced | 52.5% | 37.7% | 87 | 0.906 | 0.732 | 3 | yes |  |
 | 2026 | Through The Wire | 14 | Q1 balanced | 46.0% | 44.3% | 113 | 0.440 | 0.663 | 2 | yes |  |
 
-prior-skill rank is the owner's mean net composite per add in the season BEFORE, from the acquirable_value method; 'n/a' means the owner has no prior season in the data.
+prior-season net per add is the owner's mean net composite per acquisition in the season BEFORE, from the acquirable_value method (added player minus dropped player over 14 periods). It is a level, not a rank. 'n/a' means the owner has no prior season in the data.
 
 ## 12. What this means for a 15-team $200 draft
 
@@ -225,9 +265,11 @@ prior-skill rank is the owner's mean net composite per add in the season BEFORE,
   per-season differences agree with the pooled means.
 - Do not expect the wire to fix a top-heavy draft. The extra adds are
   real but the outcomes are not better.
-- Star availability, not star quality, is the risk that separates the
-  strategies. If you go top-heavy, the loss is concentrated in the
-  weeks your expensive players miss.
+- Going top-heavy costs you baseline performance, not just downside:
+  healthy top-heavy teams still finish behind balanced teams whose
+  stars missed time. Missing stars is a further penalty on top.
+- Trades are not a rescue route -- the league trades rarely and for
+  little production (see section 3).
 
 **Thin evidence, listed separately.**
 
@@ -237,13 +279,17 @@ prior-skill rank is the owner's mean net composite per add in the season BEFORE,
 - Playoff and title rates: the playoff sample is a subset and titles are
   single digits per strategy.
 - 2026 alone: one season, and the only FAAB season.
-- Trades: not measurable at all, so a 15-team plan that relies on
-  trading cannot be checked against history.
+- Trades: the reconstruction recovers moves, not deals, and is a
+  lower bound. A plan built on trading two-for-ones cannot be checked
+  precisely, though the league-wide trade share is small enough that
+  the direction of the conclusion is unaffected.
 
 ## 13. Traps and data problems hit
 
 - `transaction_items` for trades are almost all missing (27 rows with a
-  `to_team_id` in eight seasons). Trades are excluded, not estimated.
+  `to_team_id` in eight seasons), so trades are reconstructed from
+  roster movement instead. The waiver exclusion is load-bearing:
+  without it 2026 shows 184 moves, because pickups are also moves.
 - `daily_lineup_slots.injury_status`/`.injured` are a single ingest-time
   snapshot, not a time series, so availability is measured from games
   played. This is the same trap documented in `waiver_value.py`.

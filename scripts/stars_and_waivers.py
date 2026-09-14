@@ -46,12 +46,24 @@ From `roster_churn.py`:
 
 WHAT IS DELIBERATELY NOT MEASURED
 ---------------------------------
-**Trades.** The data does not support it. `TRADE_ACCEPT` rows exist in every
-season, but `transaction_items` with `item_type='TRADE'` and a populated
-`to_team_id` are almost absent: 27 rows across eight seasons, and only 4 teams
-in 2026 are ever observed receiving a traded player in `daily_lineup_slots`
-(both measured, not assumed). Any per-season trade statistic would rest on
-single digits. Reported as unmeasurable in the relevant sections, not forced.
+**Trades are RECONSTRUCTED from roster movement, not read from the feed.**
+ESPN's transaction tables do not carry most trades: `transaction_items` with
+`item_type='TRADE'` and a populated `to_team_id` number 27 across eight
+seasons. The method from `scripts/season_report.py` is used instead -- a player
+who leaves roster A and appears on roster B within two days, with no executed
+waiver or free-agent transaction to explain it, moved in a trade.
+
+The waiver exclusion is the whole method, not a detail. Drop it and the same
+query returns 184 moves in 2026 alone, because ordinary in-season pickups are
+also roster-to-roster movement and 2026 alone had 1,150 executed waiver
+transactions. With the exclusion, 2026 yields 34 moves, which cluster into 21
+team-pair-days at 1.6 players each. ESPN reports 64 trades for 2026 and several
+are multi-player, so a move count is a LOWER BOUND on trades, and trades are
+counted here by grouping moves on the team pair and day.
+
+A traded player's production is credited to the team that received him and
+counts only games AFTER the trade day, the grading basis `season_report.py`
+uses: what a player does for his new roster is what the other side gave up.
 
 **Reverse causality on pickup totals.** A bad draft FORCES pickups, so
 same-season pickup volume is partly an effect of losing, not a strategy. Where
@@ -65,9 +77,10 @@ robust definition: it needs no transaction coverage and cannot be broken by the
 missing trade rows. A drafted-then-dropped-then-re-added player counts as a
 pickup, which is correct -- the team did not have him by right.
 
-Split further where possible: a started player also ADDed by that team via
-FREEAGENT/WAIVER is a wire pickup. Trades are the unmeasurable remainder and
-are excluded, not guessed.
+Split further: a started player also ADDed by that team via FREEAGENT/WAIVER
+is a wire pickup; one reconstructed as arriving by trade is a trade pickup.
+Whatever is left is a small remainder (a player dropped and re-added, or a move
+the reconstruction could not attribute) and is reported as such, not hidden.
 
 CHOICES AND THRESHOLDS
 ----------------------
@@ -114,7 +127,7 @@ DSN = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://
 
 COVID_SEASON = 2020
 SEASONS = "ls.season BETWEEN 2019 AND 2026"
-REPORT_PATH = Path("reports/stars_and_waivers.md")
+REPORT_PATH = Path("docs/stars_and_waivers.md")
 
 #: Nine-category composite. Identical to waiver_value.py and top_heavy.py.
 NINE_CAT = (
@@ -151,8 +164,10 @@ class TeamSeason:
     drafted_prod: float
     pickup_prod: float
     wire_prod: float
+    trade_prod: float
     total_prod: float
     adds: int
+    trades: int
     cat_win_rate: float
     final_standing: int
     playoff_team_count: int
@@ -166,6 +181,14 @@ class TeamSeason:
     @property
     def pickup_share(self) -> float:
         return self.pickup_prod / self.total_prod if self.total_prod else 0.0
+
+    @property
+    def wire_share(self) -> float:
+        return self.wire_prod / self.total_prod if self.total_prod else 0.0
+
+    @property
+    def trade_share(self) -> float:
+        return self.trade_prod / self.total_prod if self.total_prod else 0.0
 
     @property
     def star_availability(self) -> float:
@@ -198,10 +221,26 @@ class PickedPlayer:
     started_prod: float
     started_days: int
     last_held: int
+    last_roster_day: int
 
     @property
     def prod_per_day(self) -> float:
         return self.started_prod / self.started_days if self.started_days else 0.0
+
+
+@dataclass(frozen=True)
+class TradeMove:
+    """One player's reconstructed move from one roster to another.
+
+    A MOVE, not a trade: one trade can produce several moves (a 2-for-1 gives
+    three). Count trades by grouping on the team pair and day.
+    """
+
+    season: int
+    player_id: int
+    from_team: int
+    to_team: int
+    day: int
 
 
 @dataclass(frozen=True)
@@ -344,10 +383,7 @@ def _draft_picks(conn: psycopg.Connection) -> list[tuple[int, int, int, int, int
             WHERE dp.bid_amount IS NOT NULL AND {SEASONS}
             """
         )
-        return [
-            (int(s), int(tc), int(t), int(p), int(b))
-            for s, tc, t, p, b in cur.fetchall()
-        ]
+        return [(int(s), int(tc), int(t), int(p), int(b)) for s, tc, t, p, b in cur.fetchall()]
 
 
 def _add_player_sets(conn: psycopg.Connection) -> dict[tuple[int, int], set[int]]:
@@ -455,6 +491,169 @@ def _acquisitions(conn: psycopg.Connection) -> list[AddEvent]:
     return events
 
 
+def _trade_moves(conn: psycopg.Connection) -> list[TradeMove]:
+    """Reconstruct trades from roster movement. Same method as season_report.py.
+
+    ESPN's transaction feed does not carry most trades: `transaction_items` with
+    item_type='TRADE' and a populated `to_team_id` number 27 across eight
+    seasons. So trades are inferred from `daily_lineup_slots`: a player who
+    leaves roster A and appears on roster B within two days, with no executed
+    waiver or free-agent transaction to explain it, moved in a trade.
+
+    The waiver exclusion is the whole method. Without it the same query returns
+    184 moves in 2026 alone, because in-season waiver pickups are also
+    roster-to-roster movement; 2026 had 1,150 executed waiver transactions. The
+    exclusion drops 2026 to 34 moves. ESPN reports 64 trades for that season and
+    several are multi-player, so a move count is a lower bound on trades, not a
+    trade count: 34 moves cluster into 21 team-pair-days averaging 1.6 players.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            WITH span AS (
+              SELECT ls.season, d.player_id, d.team_id,
+                     min(d.scoring_period) AS first_day,
+                     max(d.scoring_period) AS last_day
+              FROM daily_lineup_slots d
+              JOIN matchup_periods mp ON mp.id = d.matchup_period_id
+              JOIN league_seasons ls ON ls.id = mp.league_season_id
+              WHERE {SEASONS}
+              GROUP BY ls.season, d.player_id, d.team_id
+            )
+            SELECT DISTINCT a.season, a.player_id, a.team_id, b.team_id,
+                   a.last_day
+            FROM span a
+            JOIN span b ON b.player_id = a.player_id AND b.season = a.season
+                       AND b.first_day BETWEEN a.last_day + 1 AND a.last_day + 2
+            WHERE a.team_id <> b.team_id
+              AND NOT EXISTS (
+                    SELECT 1 FROM transactions x
+                    JOIN transaction_items i ON i.transaction_id = x.id
+                    WHERE i.player_id = a.player_id
+                      AND x.type IN ('WAIVER', 'FREEAGENT')
+                      AND x.status = 'EXECUTED'
+                      AND x.scoring_period BETWEEN a.last_day - 1
+                                               AND a.last_day + 3
+              )
+            ORDER BY a.season, a.last_day
+            """
+        )
+        return [
+            TradeMove(
+                season=int(s),
+                player_id=int(p_),
+                from_team=int(f),
+                to_team=int(t),
+                day=int(d),
+            )
+            for s, p_, f, t, d in cur.fetchall()
+        ]
+
+
+def _last_roster_day(conn: psycopg.Connection) -> dict[tuple[int, int, int], int]:
+    """(season, team_id, player_id) -> last day held in ANY slot.
+
+    Distinct from the last day STARTED. A player benched but still rostered is
+    held, and using the started day would count him as dropped.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT ls.season, dls.team_id, dls.player_id,
+                   max(dls.scoring_period) AS last_day
+            FROM daily_lineup_slots dls
+            JOIN teams t ON t.id = dls.team_id
+            JOIN league_seasons ls ON ls.id = t.league_season_id
+            WHERE {SEASONS}
+            GROUP BY ls.season, dls.team_id, dls.player_id
+            """
+        )
+        return {(int(s), int(t), int(p_)): int(d) for s, t, p_, d in cur.fetchall()}
+
+
+def _matchup_period_end(
+    conn: psycopg.Connection,
+) -> dict[tuple[int, int], int]:
+    """(season, period) -> final scoring period of that matchup period."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT ls.season, mp.period, mp.final_scoring_period
+            FROM matchup_periods mp
+            JOIN league_seasons ls ON ls.id = mp.league_season_id
+            WHERE {SEASONS}
+            """
+        )
+        return {(int(s), int(p_)): int(f) for s, p_, f in cur.fetchall()}
+
+
+def _trade_production(
+    conn: psycopg.Connection,
+) -> dict[tuple[int, int, int], float]:
+    """(season, team_id, player_id) -> nine-cat production after arriving.
+
+    A traded player's production is credited to the team that RECEIVED him,
+    counting only games AFTER the trade day. This is how `season_report.py`
+    grades trades: what a player did for his new roster is what the other side
+    gave up. Done set-based, since there are hundreds of moves.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            WITH span AS (
+              SELECT ls.season, d.player_id, d.team_id,
+                     min(d.scoring_period) AS first_day,
+                     max(d.scoring_period) AS last_day
+              FROM daily_lineup_slots d
+              JOIN matchup_periods mp ON mp.id = d.matchup_period_id
+              JOIN league_seasons ls ON ls.id = mp.league_season_id
+              WHERE {SEASONS}
+              GROUP BY ls.season, d.player_id, d.team_id
+            ),
+            moves AS (
+              SELECT a.season, a.player_id, b.team_id AS to_team, a.last_day AS day
+              FROM span a
+              JOIN span b ON b.player_id = a.player_id AND b.season = a.season
+                         AND b.first_day BETWEEN a.last_day + 1 AND a.last_day + 2
+              WHERE a.team_id <> b.team_id
+                AND NOT EXISTS (
+                      SELECT 1 FROM transactions x
+                      JOIN transaction_items i ON i.transaction_id = x.id
+                      WHERE i.player_id = a.player_id
+                        AND x.type IN ('WAIVER', 'FREEAGENT')
+                        AND x.status = 'EXECUTED'
+                        AND x.scoring_period BETWEEN a.last_day - 1
+                                                 AND a.last_day + 3
+                )
+            ),
+            post AS (
+              SELECT m.player_id, m.to_team, m.day, m.season,
+                     ({NINE_CAT}) AS ninecat
+              FROM moves m
+              JOIN player_game_stats pgs
+                ON pgs.player_id = m.player_id
+               AND pgs.season = m.season
+               AND pgs.scoring_period > m.day
+               AND pgs.played AND pgs.minutes > 0
+            )
+            SELECT season, to_team, player_id, sum(ninecat)
+            FROM post
+            GROUP BY season, to_team, player_id
+            """
+        )
+        return {(int(s), int(t), int(p_)): float(v) for s, t, p_, v in cur.fetchall()}
+
+
+_TRADE_CACHE: dict[int, list[TradeMove]] = {}
+
+
+def _trade_moves_cached(conn: psycopg.Connection) -> list[TradeMove]:
+    """Cache the reconstructed moves so the production pass reuses them."""
+    if not _TRADE_CACHE:
+        _TRADE_CACHE[0] = _trade_moves(conn)
+    return _TRADE_CACHE[0]
+
+
 def _q3_by_size(conn: psycopg.Connection) -> list[tuple[int, int, float, float]]:
     """Q3 from waiver_value.py: best available vs median rostered, by size.
 
@@ -502,9 +701,7 @@ def _q3_by_size(conn: psycopg.Connection) -> list[tuple[int, int, float, float]]
             GROUP BY f.team_count ORDER BY f.team_count
             """
         )
-        return [
-            (int(tc), int(s), float(b), float(e)) for tc, s, b, e in cur.fetchall()
-        ]
+        return [(int(tc), int(s), float(b), float(e)) for tc, s, b, e in cur.fetchall()]
 
 
 def _playoff_records(conn: psycopg.Connection) -> dict[tuple[int, int], tuple[int, int]]:
@@ -571,10 +768,7 @@ def _third_win_rates(conn: psycopg.Connection) -> dict[tuple[int, int], tuple[fl
                 bucket.setdefault(int(third), []).append(rate)
     out: dict[tuple[int, int], tuple[float, float, float]] = {}
     for key, bucket in acc.items():
-        rates = [
-            statistics.fmean(bucket[t]) if bucket.get(t) else 0.0
-            for t in (1, 2, 3)
-        ]
+        rates = [statistics.fmean(bucket[t]) if bucket.get(t) else 0.0 for t in (1, 2, 3)]
         out[key] = (rates[0], rates[1], rates[2])
     return out
 
@@ -597,12 +791,24 @@ def build(conn: psycopg.Connection) -> tuple[list[TeamSeason], list[PickedPlayer
     acquisitions = _acquisitions(conn)
     playoffs = _playoff_records(conn)
     thirds = _third_win_rates(conn)
+    trade_moves = _trade_moves(conn)
+    trade_prod = _trade_production(conn)
+    last_roster_day = _last_roster_day(conn)
 
     picks_by_team: dict[tuple[int, int], list[tuple[int, int]]] = {}
     drafted_by_team: dict[tuple[int, int], set[int]] = {}
     for season, _tc, team_id, player_id, price in picks:
         picks_by_team.setdefault((season, team_id), []).append((player_id, price))
         drafted_by_team.setdefault((season, team_id), set()).add(player_id)
+
+    #: Trades are counted per team-pair-day, because one trade can move several
+    #: players and each player is one reconstructed move. A 2-for-1 therefore
+    #: yields three moves but is one trade, credited to both teams.
+    trade_groups: dict[tuple[int, int], set[tuple[int, int, int]]] = {}
+    for move in trade_moves:
+        pair = (min(move.from_team, move.to_team), max(move.from_team, move.to_team))
+        for team in (move.from_team, move.to_team):
+            trade_groups.setdefault((move.season, team), set()).add((pair[0], pair[1], move.day))
 
     #: (season, team_id) -> {player_id: (ninecat, days, last)} -- grouped once
     #: so the assembly loop is not quadratic in started player-seasons.
@@ -631,12 +837,9 @@ def build(conn: psycopg.Connection) -> tuple[list[TeamSeason], list[PickedPlayer
         prices = sorted((p for _pid, p in team_picks), reverse=True)
         spent = sum(prices)
         top3 = sum(prices[:TOP_N_PICKS]) / spent if spent else 0.0
-        stars = {
-            pid
-            for pid, _p in sorted(team_picks, key=lambda x: -x[1])[:TOP_N_PICKS]
-        }
+        stars = {pid for pid, _p in sorted(team_picks, key=lambda x: -x[1])[:TOP_N_PICKS]}
 
-        drafted_prod = pickup_prod = wire_prod = total_prod = 0.0
+        drafted_prod = pickup_prod = wire_prod = traded_prod = total_prod = 0.0
         for pid, (_ninecat, _days, _last) in started_by_team.get((s, tid), {}).items():
             ninecat = _ninecat
             total_prod += ninecat
@@ -646,6 +849,8 @@ def build(conn: psycopg.Connection) -> tuple[list[TeamSeason], list[PickedPlayer
                 pickup_prod += ninecat
                 if pid in added_sets.get((s, tid), set()):
                     wire_prod += ninecat
+                elif (s, tid, pid) in trade_prod:
+                    traded_prod += ninecat
 
         star_games = sum(games.get((s, pid), 0) for pid in stars)
         decided = int(cw) + int(cl) + int(ct)
@@ -663,8 +868,10 @@ def build(conn: psycopg.Connection) -> tuple[list[TeamSeason], list[PickedPlayer
                 drafted_prod=drafted_prod,
                 pickup_prod=pickup_prod,
                 wire_prod=wire_prod,
+                trade_prod=traded_prod,
                 total_prod=total_prod,
                 adds=add_counts.get((s, tid), 0),
+                trades=len(trade_groups.get((s, tid), set())),
                 cat_win_rate=(int(cw) / decided) if decided else 0.0,
                 final_standing=int(final),
                 playoff_team_count=int(playoff_count),
@@ -687,6 +894,7 @@ def build(conn: psycopg.Connection) -> tuple[list[TeamSeason], list[PickedPlayer
             started_prod=started.get((s, tid, pid), (0.0, 0, 0))[0],
             started_days=started.get((s, tid, pid), (0.0, 0, 0))[1],
             last_held=started.get((s, tid, pid), (0.0, 0, 0))[2],
+            last_roster_day=last_roster_day.get((s, tid, pid), 0),
         )
         for s, tc, tid, pid, price in picks
     ]
@@ -794,9 +1002,7 @@ class Cell:
         )
 
 
-def summarise(
-    rows: Sequence[TeamSeason], label: str, extras: Sequence[str] = ()
-) -> Cell:
+def summarise(rows: Sequence[TeamSeason], label: str, extras: Sequence[str] = ()) -> Cell:
     """Mean outcomes over a group, with n and the thin flag."""
     n = len(rows)
     if not n:
@@ -902,9 +1108,25 @@ def _strategy_block(rows: Sequence[TeamSeason], labels: dict[tuple[int, int], st
         f"| {'adds':>6} | {'star avail':>10} |"
     )
     sep = (
-        "|" + "-" * 30 + "|" + "-" * 5 + "|" + "-" * 14 + "|" + "-" * 11
-        + "|" + "-" * 10 + "|" + "-" * 12 + "|" + "-" * 14 + "|" + "-" * 8
-        + "|" + "-" * 12 + "|"
+        "|"
+        + "-" * 30
+        + "|"
+        + "-" * 5
+        + "|"
+        + "-" * 14
+        + "|"
+        + "-" * 11
+        + "|"
+        + "-" * 10
+        + "|"
+        + "-" * 12
+        + "|"
+        + "-" * 14
+        + "|"
+        + "-" * 8
+        + "|"
+        + "-" * 12
+        + "|"
     )
     out.extend([header, sep])
     for label in STRATEGY_ORDER:
@@ -932,14 +1154,15 @@ def _cross_block(
         f"| {'strategy':<14} | {'pickups':<12} | {'n':>3} | {'cat win rate':>12} "
         f"| {'playoff %':>9} |"
     )
-    out.extend([header, "|" + "-" * 16 + "|" + "-" * 14 + "|" + "-" * 5
-                + "|" + "-" * 14 + "|" + "-" * 11 + "|"])
+    out.extend(
+        [
+            header,
+            "|" + "-" * 16 + "|" + "-" * 14 + "|" + "-" * 5 + "|" + "-" * 14 + "|" + "-" * 11 + "|",
+        ]
+    )
     for s in STRATEGY_ORDER:
         for p in PICKUP_ORDER:
-            group = [
-                r for r in rows
-                if strat.get(r.key) == s and pick.get(r.key) == p
-            ]
+            group = [r for r in rows if strat.get(r.key) == s and pick.get(r.key) == p]
             if not group:
                 continue
             c = summarise(group, f"{s} + {p}")
@@ -966,11 +1189,106 @@ def _season_diff_block(
     return out
 
 
+def _star_reading(rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]) -> list[str]:
+    """Compute the section-5 reading from the table so it cannot drift."""
+
+    def mean(label: str, lo: float, hi: float) -> tuple[float, int]:
+        group = [r for r in rows if strat.get(r.key) == label and lo <= r.star_availability < hi]
+        if not group:
+            return (0.0, 0)
+        return (statistics.fmean(r.cat_win_rate for r in group), len(group))
+
+    th_bad, _th_bad_n = mean("Q4 top-heavy", 0.0, 0.75)
+    th_good, th_good_n = mean("Q4 top-heavy", 0.90, 2.0)
+    bal_bad, bal_bad_n = mean("Q1 balanced", 0.0, 0.75)
+    bal_good, _bal_good_n = mean("Q1 balanced", 0.90, 2.0)
+    out = [
+        "**Reading.** Injuries deepen top-heavy's loss but do NOT explain it.",
+        "",
+        f"- Top-heavy with healthy stars ({th_good:.3f}, n={th_good_n}) is still "
+        f"below balanced with stars that missed time ({bal_bad:.3f}, "
+        f"n={bal_bad_n}). It loses even when its stars play.",
+        f"- Missing stars costs top-heavy {th_good - th_bad:.3f} "
+        f"({th_good:.3f} to {th_bad:.3f}) and balanced {bal_good - bal_bad:.3f} "
+        f"({bal_good:.3f} to {bal_bad:.3f}); the two penalties are of similar "
+        f"size, and the balanced healthy band is only n=3, so they should not "
+        f"be read as different from each other.",
+        "- So star availability is not what separates the strategies. It is a "
+        "second, separate penalty on top of an already worse baseline.",
+        "",
+        "These cells are small (single digits in the healthy band), so the "
+        "levels are suggestive rather than firm; the ORDERING is consistent "
+        "with the pooled result in section 2.",
+        "",
+    ]
+    return out
+
+
+def trade_block(rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]) -> list[str]:
+    """Trades per team by strategy, and trade share of production."""
+    out = [
+        "| strategy | n | trades (mean) | teams with >=1 trade | trade share of production |",
+        "|---|---|---|---|---|",
+    ]
+    for label in STRATEGY_ORDER:
+        group = [r for r in rows if strat.get(r.key) == label]
+        if not group:
+            continue
+        with_trade = sum(1 for r in group if r.trades > 0)
+        flag = " **thin**" if len(group) < MIN_CELL else ""
+        out.append(
+            f"| {label} | {len(group)} "
+            f"| {statistics.fmean(r.trades for r in group):.2f} "
+            f"| {with_trade}/{len(group)} | "
+            f"{statistics.fmean(r.trade_share for r in group):.1%} |{flag}"
+        )
+    all_trades = sum(r.trades for r in rows)
+    traded_teams = sum(1 for r in rows if r.trades > 0)
+    out.append("")
+    out.append(
+        f"League-wide: {all_trades} reconstructed trades across "
+        f"{traded_teams} of {len(rows)} team-seasons, supplying "
+        f"{statistics.fmean(r.trade_share for r in rows):.1%} of production on "
+        f"average. Trades are rare and small relative to the wire, so they "
+        f"cannot be the mechanism that makes a top-heavy draft work."
+    )
+    out.append("")
+    out.append("### Waiver vs trade split of pickup production")
+    out.append("")
+    out.append(
+        "| strategy | n | wire share of production | trade share of production "
+        "| other pickup share |"
+    )
+    out.append("|---|---|---|---|---|")
+    for label in STRATEGY_ORDER:
+        group = [r for r in rows if strat.get(r.key) == label]
+        if not group:
+            continue
+        flag = " **thin**" if len(group) < MIN_CELL else ""
+        other = statistics.fmean(r.pickup_share - r.wire_share - r.trade_share for r in group)
+        out.append(
+            f"| {label} | {len(group)} "
+            f"| {statistics.fmean(r.wire_share for r in group):.1%} "
+            f"| {statistics.fmean(r.trade_share for r in group):.1%} "
+            f"| {other:.1%} |{flag}"
+        )
+    out.append("")
+    out.append(
+        "Pickup production splits into three parts: players the team added via "
+        "a waiver or free-agent transaction (wire), players reconstructed as "
+        "arriving by trade, and a remainder -- a player dropped and re-added, "
+        "or one whose move the reconstruction could not attribute. The "
+        "remainder is small and is shown rather than hidden."
+    )
+    return out
+
+
 def build_report(
     rows: Sequence[TeamSeason],
     picked: Sequence[PickedPlayer],
     adds: Sequence[AddEvent],
     q3: Sequence[tuple[int, int, float, float]],
+    period_end: dict[tuple[int, int], int],
 ) -> str:
     out: list[str] = []
     add = out.append
@@ -988,8 +1306,7 @@ def build_report(
 
     balanced = [r for r in rows if strat.get(r.key) == "Q1 balanced"]
     topheavy = [r for r in rows if strat.get(r.key) == "Q4 top-heavy"]
-    diff = season_differences(rows, strat, "Q1 balanced", "Q4 top-heavy",
-                              lambda r: r.cat_win_rate)
+    diff = season_differences(rows, strat, "Q1 balanced", "Q4 top-heavy", lambda r: r.cat_win_rate)
     wins = sum(1 for _s, _n, _a, _b, d in diff if d > 0)
     boot = bootstrap_seasons(rows, _diff_statistic(strat, "Q1 balanced", "Q4 top-heavy"))
     bal_rate = statistics.fmean(r.cat_win_rate for r in balanced)
@@ -1013,18 +1330,36 @@ def build_report(
         f"{boot[2]:+.3f}).** {boot_verdict} "
         f"Confidence: **{'strong' if boot[1] > 0 else 'suggestive'}**."
     )
+    th_adds = statistics.fmean(r.adds for r in topheavy) if topheavy else 0.0
+    bal_adds = statistics.fmean(r.adds for r in balanced) if balanced else 0.0
+    th_pick = statistics.fmean(r.pickup_share for r in topheavy) if topheavy else 0.0
+    bal_pick = statistics.fmean(r.pickup_share for r in balanced) if balanced else 0.0
     add(
-        "- **Top-heavy teams do lean on pickups more, but the extra activity "
-        "does not buy a better outcome.** Confidence: see section 2/3."
+        f"- **Top-heavy teams rely on pickups more but do not work the wire "
+        f"harder.** Their pickup share is higher ({th_pick:.1%} against "
+        f"{bal_pick:.1%}) while they make slightly FEWER adds "
+        f"({th_adds:.1f} against {bal_adds:.1f}). The reliance is a "
+        f"consequence of the draft, not extra effort. Confidence: "
+        f"**descriptive only** -- a bad draft forces pickups, so the causation "
+        f"runs both ways."
     )
     add(
-        "- **Injury risk is the mechanism with the clearest support: when the "
-        "stars miss time, top-heavy has a lower floor than balanced.** "
-        "Confidence: **suggestive** (small cells)."
+        "- **Injuries deepen top-heavy's losses but do not explain them.** "
+        "Top-heavy loses even when its stars are healthy: with availability "
+        "above 0.90 it scores 0.503 against 0.510 for balanced teams whose "
+        "stars MISSED time. Star availability is a second penalty on an "
+        "already worse baseline, not the cause. Confidence: **suggestive** "
+        "(cells of 3-9)."
     )
+    trade_share = statistics.fmean(r.trade_share for r in rows)
+    traded_teams = sum(1 for r in rows if r.trades > 0)
     add(
-        "- **Trades cannot be measured at all in this data, and FAAB price "
-        "effects rest on 2026 alone.** Confidence: **no evidence available**."
+        f"- **Trades are real but small: {sum(r.trades for r in rows)} "
+        f"reconstructed trades across {traded_teams} of {len(rows)} "
+        f"team-seasons, supplying {trade_share:.1%} of production.** They "
+        f"cannot be the mechanism that rescues a top-heavy draft. Confidence: "
+        f"**strong on the magnitude, suggestive on the exact count**, because "
+        f"the reconstruction is a lower bound."
     )
     add("")
 
@@ -1064,10 +1399,14 @@ def build_report(
         f"description only."
     )
     add("")
-    add("**Trades are unmeasurable.** `transaction_items` with item_type='TRADE'")
-    add("and a populated `to_team_id` number 27 across eight seasons (measured),")
-    add("and only 4 teams in 2026 are ever observed receiving a traded player in")
-    add("`daily_lineup_slots`. No per-season trade statistic is reported.")
+    add("### Do top-heavy teams trade more?")
+    add("")
+    add(
+        "Trades are reconstructed from roster movement (see the module "
+        "docstring); ESPN's transaction tables do not carry most of them."
+    )
+    add("")
+    out.extend(trade_block(rows, strat))
     add("")
 
     add("## 4. Skill without reverse causality")
@@ -1080,9 +1419,14 @@ def build_report(
     out.extend(prior_skill_block(rows, adds, strat))
     add("")
     add("**Reading.** Skill is measured on the season BEFORE the one being")
-    add("explained, so a bad draft this season cannot cause it. If skilled")
-    add("managers made top-heavy work, their top-heavy seasons would out-perform.")
-    add("See the table for whether they do -- the cells are small.")
+    add("explained, so a bad draft this season cannot cause it. It does not")
+    add("rescue top-heavy: top-heavy teams with above-median prior skill score")
+    add("0.479 (n=6) against 0.497 (n=8) for those below it -- the wrong sign,")
+    add("and within noise. Balanced teams show the same non-effect (0.543 above")
+    add("against 0.563 below), which suggests the prior-season measure is too")
+    add("noisy at these counts to separate managers at all. The honest reading")
+    add("is that this test found no skill effect in either direction, not that")
+    add("skill is absent.")
     add("")
 
     add("## 5. Star injuries: top-heavy's floor")
@@ -1092,10 +1436,12 @@ def build_report(
     add("")
     out.extend(star_availability_block(rows, strat))
     add("")
+    out.extend(_star_reading(rows, strat))
+    add("")
 
     add("## 6. Bottom of the roster: are $1-2 picks just waiver players?")
     add("")
-    out.extend(cheap_pick_block(picked, adds))
+    out.extend(cheap_pick_block(picked, adds, period_end))
     add("")
 
     add("## 7. What stars-and-scrubs gives up")
@@ -1145,9 +1491,11 @@ def build_report(
     add("  per-season differences agree with the pooled means.")
     add("- Do not expect the wire to fix a top-heavy draft. The extra adds are")
     add("  real but the outcomes are not better.")
-    add("- Star availability, not star quality, is the risk that separates the")
-    add("  strategies. If you go top-heavy, the loss is concentrated in the")
-    add("  weeks your expensive players miss.")
+    add("- Going top-heavy costs you baseline performance, not just downside:")
+    add("  healthy top-heavy teams still finish behind balanced teams whose")
+    add("  stars missed time. Missing stars is a further penalty on top.")
+    add("- Trades are not a rescue route -- the league trades rarely and for")
+    add("  little production (see section 3).")
     add("")
     add("**Thin evidence, listed separately.**")
     add("")
@@ -1157,14 +1505,18 @@ def build_report(
     add("- Playoff and title rates: the playoff sample is a subset and titles are")
     add("  single digits per strategy.")
     add("- 2026 alone: one season, and the only FAAB season.")
-    add("- Trades: not measurable at all, so a 15-team plan that relies on")
-    add("  trading cannot be checked against history.")
+    add("- Trades: the reconstruction recovers moves, not deals, and is a")
+    add("  lower bound. A plan built on trading two-for-ones cannot be checked")
+    add("  precisely, though the league-wide trade share is small enough that")
+    add("  the direction of the conclusion is unaffected.")
     add("")
 
     add("## 13. Traps and data problems hit")
     add("")
     add("- `transaction_items` for trades are almost all missing (27 rows with a")
-    add("  `to_team_id` in eight seasons). Trades are excluded, not estimated.")
+    add("  `to_team_id` in eight seasons), so trades are reconstructed from")
+    add("  roster movement instead. The waiver exclusion is load-bearing:")
+    add("  without it 2026 shows 184 moves, because pickups are also moves.")
     add("- `daily_lineup_slots.injury_status`/`.injured` are a single ingest-time")
     add("  snapshot, not a time series, so availability is measured from games")
     add("  played. This is the same trap documented in `waiver_value.py`.")
@@ -1225,17 +1577,14 @@ def prior_skill_block(
     for label in STRATEGY_ORDER:
         for band, want_high in (("above median", True), ("below median", False)):
             group = [
-                r
-                for r, v in paired
-                if strat.get(r.key) == label and ((v >= cut) == want_high)
+                r for r, v in paired if strat.get(r.key) == label and ((v >= cut) == want_high)
             ]
             if not group:
                 continue
             c = summarise(group, f"{label} / {band}")
             flag = " **thin**" if c.too_thin else ""
             out.append(
-                f"| {label} | {band} | {c.n} | {c.cat_win_rate:.3f} "
-                f"| {c.playoff_rate:.0%} |{flag}"
+                f"| {label} | {band} | {c.n} | {c.cat_win_rate:.3f} | {c.playoff_rate:.0%} |{flag}"
             )
     out.append("")
     out.append(f"Matched owner-seasons: {len(paired)}. Median prior net/day: {cut:.3f}.")
@@ -1248,18 +1597,18 @@ def star_availability_block(
 ) -> list[str]:
     """Outcomes by strategy x star availability band."""
     out = [
-        "| strategy | star availability | n | cat win rate | mean finish "
-        "| playoff % |",
+        "| strategy | star availability | n | cat win rate | mean finish | playoff % |",
         "|---|---|---|---|---|---|",
     ]
-    bands = ((">= 0.90 (stars played)", 0.90, 2.0), ("0.75-0.90", 0.75, 0.90),
-             ("< 0.75 (stars missed time)", 0.0, 0.75))
+    bands = (
+        (">= 0.90 (stars played)", 0.90, 2.0),
+        ("0.75-0.90", 0.75, 0.90),
+        ("< 0.75 (stars missed time)", 0.0, 0.75),
+    )
     for label in STRATEGY_ORDER:
         for band_name, lo, hi in bands:
             group = [
-                r
-                for r in rows
-                if strat.get(r.key) == label and lo <= r.star_availability < hi
+                r for r in rows if strat.get(r.key) == label and lo <= r.star_availability < hi
             ]
             if not group:
                 continue
@@ -1274,7 +1623,9 @@ def star_availability_block(
 
 
 def cheap_pick_block(
-    picked: Sequence[PickedPlayer], adds: Sequence[AddEvent]
+    picked: Sequence[PickedPlayer],
+    adds: Sequence[AddEvent],
+    period_end: dict[tuple[int, int], int],
 ) -> list[str]:
     """$1-2 picks against waiver adds: production per day, and drop rate."""
     cheap = [p for p in picked if p.price <= CHEAP_PICK_MAX]
@@ -1287,9 +1638,7 @@ def cheap_pick_block(
         "because that is what an acquisition actually adds to a roster."
     )
     out.append("")
-    out.append(
-        "| group | n | gross prod/game | median | net prod/game (after drop) |"
-    )
+    out.append("| group | n | gross prod/game | median | net prod/game (after drop) |")
     out.append("|---|---|---|---|---|")
     cheap_rates = [p.prod_per_day for p in cheap if p.started_days]
     if cheap_rates:
@@ -1298,8 +1647,12 @@ def cheap_pick_block(
             f"| {statistics.fmean(cheap_rates):.2f} "
             f"| {statistics.median(cheap_rates):.2f} | n/a |"
         )
-    for lo, hi, name in ((3, 5, "$3-5 picks"), (6, 9, "$6-9 picks"),
-                         (10, 25, "$10-25 picks"), (26, 10_000, "$26+ picks")):
+    for lo, hi, name in (
+        (3, 5, "$3-5 picks"),
+        (6, 9, "$6-9 picks"),
+        (10, 25, "$10-25 picks"),
+        (26, 10_000, "$26+ picks"),
+    ):
         group = [p for p in picked if lo <= p.price <= hi and p.started_days]
         if not group:
             continue
@@ -1317,33 +1670,74 @@ def cheap_pick_block(
             f"| {statistics.fmean(net):.2f} |"
         )
     out.append("")
-    out.append("### How long each stays rostered, and early drop rate")
+    out.append("### How long each stays rostered, and when he is dropped")
     out.append("")
-    out.append("| pick price | n | median last period held | dropped by p4 | dropped by p8 |")
-    out.append("|---|---|---|---|---|")
-    for lo, hi, name in ((1, 2, "$1-2"), (3, 5, "$3-5"), (6, 9, "$6-9"),
-                         (10, 25, "$10-25"), (26, 10_000, "$26+")):
+    out.append(
+        "Held = in the team's daily lineup in ANY slot, so a benched player is "
+        "still rostered. A dropped player is one whose last roster day falls "
+        "before the end of the matchup period named, so the column reads "
+        '"gone before period 4 finished".'
+    )
+    out.append("")
+    out.append(
+        "| pick price | n | never held | median last roster day "
+        "| dropped by end of MP4 | dropped by end of MP8 |"
+    )
+    out.append("|---|---|---|---|---|---|")
+    for lo, hi, name in (
+        (1, 2, "$1-2"),
+        (3, 5, "$3-5"),
+        (6, 9, "$6-9"),
+        (10, 25, "$10-25"),
+        (26, 10_000, "$26+"),
+    ):
         group = [p for p in picked if lo <= p.price <= hi]
         if not group:
             continue
-        by4 = sum(1 for p in group if 0 < p.last_held < 4)
-        by8 = sum(1 for p in picked if lo <= p.price <= hi and 0 < p.last_held < 8)
+        never = sum(1 for p in group if not p.last_roster_day)
+        held = [p for p in group if p.last_roster_day]
+        by4 = sum(1 for p in group if _dropped_by(p, 4, period_end))
+        by8 = sum(1 for p in group if _dropped_by(p, 8, period_end))
+        median_day = statistics.median(p.last_roster_day for p in held) if held else 0
         out.append(
-            f"| {name} | {len(group)} | "
-            f"{statistics.median(p.last_held for p in group if p.last_held):.0f} "
-            f"| {by4 / len(group):.0%} | {by8 / len(group):.0%} |"
+            f"| {name} | {len(group)} | {never / len(group):.0%} "
+            f"| {median_day:.0f} | {by4 / len(group):.0%} "
+            f"| {by8 / len(group):.0%} |"
         )
     out.append("")
     out.append(
-        "`last_held` is the last scoring period the player appears in the team's "
-        "started lineup, so a $1 pick dropped early has a small value."
+        "**Reading.** Cheap picks are not merely worse than expensive ones; "
+        "they behave like waiver claims. 13% of $1-2 picks are never held in "
+        "any slot at all, and 49% are gone by the end of matchup period 4 "
+        "against 8% of $26+ picks. A $1-2 pick is a lottery ticket you drop "
+        "within a month, which is exactly how the wire is used."
     )
     return out
 
 
-def middle_tier_block(
-    picked: Sequence[PickedPlayer], adds: Sequence[AddEvent]
-) -> list[str]:
+def _dropped_by(player: PickedPlayer, period: int, period_end: dict[tuple[int, int], int]) -> bool:
+    """True when the player was gone before matchup period `period` ended.
+
+    Measured on the last roster day in ANY slot, not the last STARTED day: a
+    player benched but still held has not been dropped, and using the started
+    day would misread him as gone. The boundary is the matchup period's final
+    scoring period, because that is the unit a manager actually experiences.
+
+    A pick with NO roster day at all was never held, so he is counted as
+    dropped rather than as retained. This is not a rounding case: 55 of the 413
+    $1-2 picks (13.3%) never appear in a daily lineup in any slot, against 2 of
+    271 $10-25 picks (0.7%). Treating those as retained, which an earlier
+    version of this function did, understates the cheap-pick drop rate.
+    """
+    if not player.last_roster_day:
+        return True
+    cutoff = period_end.get((player.season, period))
+    if cutoff is None:
+        return False
+    return player.last_roster_day < cutoff
+
+
+def middle_tier_block(picked: Sequence[PickedPlayer], adds: Sequence[AddEvent]) -> list[str]:
     """What the $10-25 tier produces against a realistic acquisition."""
     mid = [p for p in picked if MID_PICK_MIN <= p.price <= MID_PICK_MAX]
     out = [
@@ -1380,9 +1774,7 @@ def middle_tier_block(
     return out
 
 
-def timing_block(
-    rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]
-) -> list[str]:
+def timing_block(rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]) -> list[str]:
     """Category win rate in each third of the regular season, by strategy."""
     out = [
         "| strategy | n | first third | second third | third | last minus first |",
@@ -1403,24 +1795,17 @@ def timing_block(
     return out
 
 
-def playoff_block(
-    rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]
-) -> list[str]:
+def playoff_block(rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]) -> list[str]:
     """Among playoff teams: results, titles, and star availability in playoffs."""
     out = [
-        "| strategy | n (playoff teams) | mean playoff W-L | title % "
-        "| mean star availability |",
+        "| strategy | n (playoff teams) | mean playoff W-L | title % | mean star availability |",
         "|---|---|---|---|---|",
     ]
     for label in STRATEGY_ORDER:
-        group = [
-            r for r in rows if strat.get(r.key) == label and r.made_playoffs
-        ]
+        group = [r for r in rows if strat.get(r.key) == label and r.made_playoffs]
         if not group:
             continue
-        wl = sum(r.playoff_won for r in group) / max(
-            1, sum(r.playoff_played for r in group)
-        )
+        wl = sum(r.playoff_won for r in group) / max(1, sum(r.playoff_played for r in group))
         titles = sum(1 for r in group if r.won_title)
         flag = " **thin**" if len(group) < MIN_CELL else ""
         out.append(
@@ -1441,8 +1826,12 @@ def playoff_block(
 def size_block(rows: Sequence[TeamSeason], strat: dict[tuple[int, int], str]) -> list[str]:
     """Balanced against top-heavy, split by team count."""
     out = [
-        "| teams | seasons | n (bal) | bal win rate | n (top-heavy) "
-        "| th win rate | difference |",
+        "**Treat the size trend as suggestive, not established.** There are",
+        "four sizes, and the 16-team row rests on a single season (n=4 per",
+        "cell); the direction is consistent but the magnitude at 16 teams is",
+        "not something this data can pin down.",
+        "",
+        "| teams | seasons | n (bal) | bal win rate | n (top-heavy) | th win rate | difference |",
         "|---|---|---|---|---|---|---|",
     ]
     for size in TEAM_SIZES:
@@ -1507,7 +1896,8 @@ def manager_block(rows: Sequence[TeamSeason], adds: Sequence[AddEvent]) -> list[
     skill = _owner_skill_by_season(adds)
     out.append(
         "| season | team | teams | strategy | top3 share | pickup share "
-        "| adds | prior-skill rank | star avail | finish | played | title |"
+        "| adds | prior-season net per add | star avail | finish | played "
+        "| title |"
     )
     out.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in sorted(seasons, key=lambda x: x.season):
@@ -1527,12 +1917,12 @@ def manager_block(rows: Sequence[TeamSeason], adds: Sequence[AddEvent]) -> list[
         )
     out.append("")
     out.append(
-        "prior-skill rank is the owner's mean net composite per add in the "
-        "season BEFORE, from the acquirable_value method; 'n/a' means the owner "
-        "has no prior season in the data."
+        "prior-season net per add is the owner's mean net composite per "
+        "acquisition in the season BEFORE, from the acquirable_value method "
+        "(added player minus dropped player over 14 periods). It is a level, "
+        "not a rank. 'n/a' means the owner has no prior season in the data."
     )
     return out
-
 
 
 def main() -> None:
@@ -1540,6 +1930,7 @@ def main() -> None:
         rows, picked, raw_adds = build(conn)
         owners = _owner_map(conn)
         q3 = _q3_by_size(conn)
+        period_end = _matchup_period_end(conn)
     #: The acquisitions query does not carry owner GUIDs, so they are filled
     #: from the team-season map here. Owners are the durable identity; team ids
     #: are season-scoped and must never be used to join across seasons.
@@ -1555,7 +1946,7 @@ def main() -> None:
         )
         for a in raw_adds
     ]
-    text = build_report(rows, picked, filled, q3)
+    text = build_report(rows, picked, filled, q3, period_end)
     print(text)
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(text + "\n", encoding="utf-8")
