@@ -13,6 +13,10 @@
 services:
   db:
     image: postgres:16
+    # Come back after a host reboot. Without it, a kernel-update reboot on
+    # 2026-09-14 left the database down overnight, and the nightly ingest and
+    # backup both failed against it.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: fcp
       POSTGRES_PASSWORD: fcp
