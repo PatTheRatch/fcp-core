@@ -83,6 +83,13 @@
   .price { display: grid; }
   .price b { font: 600 20px/1 var(--display); font-variant-numeric: tabular-nums; }
   .price span { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .chip.tag-good { background: var(--buy-soft); color: var(--buy); font-family: var(--body); font-weight: 600; }
+  .chip.tag-bad { background: var(--stop-soft); color: var(--stop); font-family: var(--body); font-weight: 600; }
+  .chip.tag-warn { background: var(--warn-soft); color: var(--warn); font-family: var(--body); font-weight: 600; }
+  details.note { font-size: 13px; color: var(--muted); max-width: 70ch; }
+  details.note summary { cursor: pointer; color: var(--accent); font-size: 12px; list-style: none; }
+  details.note summary::-webkit-details-marker { display: none; }
+  details.note p { margin: 4px 0 0; }
   .verdict { font-size: 12.5px; font-weight: 600; padding: 5px 9px; border-radius: 6px; white-space: nowrap; text-align: center; min-width: 118px; }
   .verdict.buy { background: var(--buy-soft); color: var(--buy); }
   .verdict.warn { background: var(--warn-soft); color: var(--warn); }
@@ -136,7 +143,7 @@
   </div>
 
   <nav class="jump" aria-label="Sections">
-    <a href="#stars">Stars</a><a href="#fan">Cavs</a><a href="#targets">Targets</a><a href="#bbm">BBM likes</a><a href="#letgo">Let go</a><a href="#nominate">Nominate early</a><a href="#late">Late steals &amp; threes</a><a href="#bigs">Cheap bigs</a><a href="#ir">IR stash</a><a href="#builds">Builds</a><a href="#all">Find a player</a><a href="#notes">Read before bidding</a>
+    <a href="#stars">Stars</a><a href="#fan">Cavs</a><a href="#flags">BBM flags</a><a href="#targets">Targets</a><a href="#bbm">BBM likes</a><a href="#letgo">Let go</a><a href="#nominate">Nominate early</a><a href="#late">Late steals &amp; threes</a><a href="#bigs">Cheap bigs</a><a href="#ir">IR stash</a><a href="#builds">Builds</a><a href="#all">Find a player</a><a href="#notes">Read before bidding</a>
   </nav>
 
   <section id="stars">
@@ -147,6 +154,11 @@
   <section id="fan">
     <div class="sec-head"><h2>Cavs</h2><p class="legend">For each Cavalier, the model rebuilt its best roster with him on it at his going price. <b>Cost</b> is what that roster gives up against the best roster with no Cav, in categories a week — so you can pick the Cav who's cheapest to root for. And this time, hold him.</p></div>
     <div class="list" id="list-fan"></div>
+  </section>
+
+  <section id="flags">
+    <div class="sec-head"><h2>BBM flags</h2><p class="legend">Every player going for $3 or more that Basketball Monster's analysts have tagged — breakout and sleeper calls, bust calls, position battles — plus any projection BBM rates 4/10 or less. Tags BBM adds before the draft show up here on refresh.</p></div>
+    <div class="list" id="list-flags"></div>
   </section>
 
   <section id="targets">
@@ -229,6 +241,25 @@ function chips(p, limit = 5) {
   return ranked.map(([k, v]) => `<span class="chip ${v > 0 ? "pos" : "neg"}">${k} ${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}</span>`).join("");
 }
 
+// BBM's analyst flags, its confidence, and the written note.
+function tagChips(p) {
+  const out = (p.tags || []).map((t) => {
+    const low = t.toLowerCase();
+    const kind = low.includes("breakout") || low.includes("sleeper") ? "tag-good"
+      : low.includes("bust") || low.includes("tank") ? "tag-bad" : "tag-warn";
+    return `<span class="chip ${kind}">${esc(t)}</span>`;
+  });
+  if (p.confidence !== null && p.confidence !== undefined && p.confidence <= 4) {
+    out.push(`<span class="chip tag-warn" title="BBM's confidence in this projection, out of 10">confidence ${p.confidence}/10</span>`);
+  }
+  return out.join("");
+}
+function noteBlock(p) {
+  if (!p.note) return "";
+  const extra = [p.confidence ? `confidence ${p.confidence}/10` : null, p.role, ...(p.status || [])].filter(Boolean).join(" · ");
+  return `<details class="note"><summary>${esc(p.note_by || "BBM")}'s note${extra ? " · " + esc(extra) : ""}</summary><p>${esc(p.note)}</p></details>`;
+}
+
 // The 2022 trap: cheap on a player only our model likes usually means news.
 function newsFlag(p) {
   const c = p.ceiling, g = p.going, b = p.bbm_total;
@@ -246,7 +277,7 @@ function row(p, verdict) {
     p.injury ? esc(p.injury) : null,
   ].filter(Boolean).join(" · ");
   return `<div class="row">
-    <div class="who"><span class="name">${esc(p.name)}</span><span class="meta">${meta}</span><div class="chips">${chips(p)}${newsFlag(p)}</div></div>
+    <div class="who"><span class="name">${esc(p.name)}</span><span class="meta">${meta}</span><div class="chips">${tagChips(p)}${chips(p)}${newsFlag(p)}</div>${noteBlock(p)}</div>
     <div class="prices">
       <div class="price"><b>${money(p.going)}</b><span>Going</span></div>
       <div class="price"><b>${money(p.ceiling)}</b><span>Ours</span></div>
@@ -298,6 +329,15 @@ fill("list-fan", fan, (f) => {
   const kind = f.in_best || f.cost <= 0.05 ? "buy" : (f.cost <= 0.2 ? "warn" : "stop");
   return row(f.p, pill(kind, label));
 }, "No Cavaliers priced on the board.");
+
+// BBM flags
+const flagged = P.filter((p) => p.going >= 3 && ((p.tags || []).length || (p.confidence !== null && p.confidence <= 4)))
+  .sort((a, b) => b.going - a.going);
+fill("list-flags", flagged, (p) => {
+  const t = (p.tags || []).join(" ").toLowerCase();
+  const kind = t.includes("bust") || t.includes("tank") ? "stop" : t.includes("breakout") || t.includes("sleeper") ? "buy" : "warn";
+  return row(p, pill(kind, `Bid up to $${bidTo(p)}`));
+}, "No flagged players yet.");
 
 // targets: both agree
 const mid = P.filter((p) => p.going >= 8 && p.going < 40);

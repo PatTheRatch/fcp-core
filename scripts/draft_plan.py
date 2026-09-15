@@ -31,6 +31,7 @@ from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any
 
+from app.draft.bbm import ROLES
 from app.draft.live import RoomError, load_room, market_prices
 from app.draft.room import resolve
 from app.draft.session import _compute, process_executor
@@ -145,6 +146,12 @@ def main() -> int:
                 "injury_risk": (row.injury_risk or None) if row else None,
                 "injury": (row.injury or None) if row else None,
                 "nba_team": (row.team or None) if row else None,
+                "confidence": row.confidence if row else None,
+                "role": (ROLES.get(row.role, row.role) or None) if row else None,
+                "status": list(row.status) if row else [],
+                "tags": list(row.tags) if row else [],
+                "note": (row.note or None) if row else None,
+                "note_by": (row.note_by or None) if row else None,
                 "profile": profile.get(c.player_id, {}),
             }
         )

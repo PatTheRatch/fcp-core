@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.draft.bbm import ROLES
 from app.draft.feed import LoggedPick, OnBlock, match_name, match_team
 from app.draft.live import Room, bargain_warning, market_prices
 from app.draft.optimizer import Candidate, RosterPlan
@@ -573,6 +574,13 @@ class DraftSession:
                     ),
                     "espn_avg": _rounded(row.espn_dollars),
                     "yahoo_avg": _rounded(row.yahoo_dollars),
+                    "team": row.team or None,
+                    "confidence": row.confidence,
+                    "role": ROLES.get(row.role, row.role) or None,
+                    "status": list(row.status),
+                    "tags": list(row.tags),
+                    "note": row.note or None,
+                    "note_by": row.note_by or None,
                 }
             return {
                 "player_id": player_id,

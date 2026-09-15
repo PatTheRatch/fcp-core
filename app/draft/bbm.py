@@ -97,6 +97,19 @@ class BBMRow:
     league_dollars: float | None = None
     #: NBA team abbreviation, e.g. "CLE".
     team: str = ""
+    #: The analyst's written take, and who wrote it.
+    note: str = ""
+    note_by: str = ""
+    #: BBM's confidence in the projection, 1-10.
+    confidence: int | None = None
+    #: Expected role code (ST, mST, BN, mBN, limBN, EM, NVR); see `ROLES`.
+    role: str = ""
+    #: Contract and roster situation, e.g. ("Rookie", "New Team").
+    status: tuple[str, ...] = ()
+    #: Analyst flags, e.g. ("Breakout Candidate", "Position Battle"). Read from
+    #: every analyst column, so tags BBM adds later (Bust Candidate, Sleeper,
+    #: Tank Candidate) come through without a code change.
+    tags: tuple[str, ...] = ()
 
 
 @dataclass
@@ -112,6 +125,44 @@ class BBMLoad:
     derived_eligibility: int = 0
     #: The export's row for every projection, by the id it was loaded under.
     rows: dict[int, BBMRow] = field(default_factory=dict)
+
+
+#: BBM's role codes, in the words a draft screen should use.
+ROLES: dict[str, str] = {
+    "ST": "starter",
+    "mST": "marginal starter",
+    "BN": "bench",
+    "mBN": "marginal bench",
+    "limBN": "limited bench",
+    "EM": "emergency only",
+    "NVR": "not expected to play",
+}
+
+#: Columns BBM fills with one analyst's flags.
+_ANALYST_COLUMNS = ("Josh", "Kyle", "Matt")
+
+_NOTE = re.compile(r"^\s*\[\s*(?P<by>[^:\]]+):\s*(?P<text>.*?)\]?\s*$", re.DOTALL)
+
+
+def split_note(raw: str) -> tuple[str, str]:
+    """`[Josh: text]` -> ("Josh", "text"). Unwrapped text keeps an empty author."""
+    text = raw.strip()
+    if not text:
+        return "", ""
+    match = _NOTE.match(text)
+    if match is None:
+        return "", text
+    return match.group("by").strip(), match.group("text").strip().rstrip("]").strip()
+
+
+def split_list(raw: str) -> tuple[str, ...]:
+    """BBM's pipe-separated lists, cleaned and de-duplicated, order kept."""
+    out: list[str] = []
+    for part in str(raw).split("|"):
+        item = part.split(" - ")[0].strip()
+        if item and item not in out:
+            out.append(item)
+    return tuple(out)
 
 
 def read_bbm(path: Path) -> list[BBMRow]:
@@ -142,6 +193,17 @@ def read_bbm(path: Path) -> list[BBMRow]:
             value = row_values[col[column]] if column in col else None
             return float(value) if isinstance(value, int | float) else None
 
+        def cell(column: str, row_values: list[object] = values) -> str:
+            return str(row_values[col[column]]).strip() if column in col else ""
+
+        note_by, note = split_note(cell("Note"))
+        raw_confidence = cell("Conf")
+        confidence = float(raw_confidence) if raw_confidence.replace(".", "", 1).isdigit() else None
+        tags: list[str] = []
+        for column in _ANALYST_COLUMNS:
+            for tag in split_list(cell(column)):
+                if tag not in tags:
+                    tags.append(tag)
         rows.append(
             BBMRow(
                 name=name,
@@ -157,7 +219,13 @@ def read_bbm(path: Path) -> list[BBMRow]:
                 espn_dollars=maybe("ESPN$"),
                 yahoo_dollars=maybe("Y!Avg$"),
                 league_dollars=maybe("Leag$"),
-                team=str(values[col["Team"]]).strip() if "Team" in col else "",
+                team=cell("Team"),
+                note=note,
+                note_by=note_by,
+                confidence=int(confidence) if confidence else None,
+                role=cell("Role"),
+                status=split_list(cell("Status")),
+                tags=tuple(tags),
             )
         )
     return rows

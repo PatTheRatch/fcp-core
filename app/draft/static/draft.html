@@ -47,6 +47,12 @@
   .verdict { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; font-weight: 600; }
   .verdict.good { background: #16301f; color: var(--good); } .verdict.bad { background: #331a1a; color: var(--bad); }
   .verdict.wait { background: var(--panel-2); color: var(--muted); font-weight: 400; }
+  .tag { border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
+  .tag.breakout, .tag.sleeper { background: #16301f; color: var(--good); }
+  .tag.bust, .tag.tank { background: #331a1a; color: var(--bad); }
+  .tag.battle, .tag.other { background: #3a2c10; color: var(--accent); }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 2px 0 8px; padding-left: 10px; border-left: 2px solid var(--line); max-width: 70ch; }
+  .note b { color: var(--text); font-weight: 600; }
   .verdict.warn-news { background: #3a2c10; color: var(--accent); font-weight: 500; }
   .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .fact { background: var(--panel-2); border-radius: 6px; padding: 3px 8px; font-size: 13px; }
@@ -262,6 +268,16 @@ async function renderCard() {
   if (buy) buy.onclick = () => { $("e-player").value = card.name; $("e-team").value = String(S.me); $("e-price").focus(); };
 }
 
+function tagClass(tag) {
+  const t = tag.toLowerCase();
+  if (t.includes("breakout")) return "breakout";
+  if (t.includes("sleeper")) return "sleeper";
+  if (t.includes("bust")) return "bust";
+  if (t.includes("tank")) return "tank";
+  if (t.includes("battle")) return "battle";
+  return "other";
+}
+
 function cardHtml(c, offer) {
   const ce = c.ceiling || {}, b = c.bbm, me = S.teams.find((t) => t.is_me);
   const slots = ["PG", "SG", "SF", "PF", "C"].filter((p) => (c.eligible || []).includes(p) || c.position === p);
@@ -286,7 +302,12 @@ function cardHtml(c, offer) {
     if (b.espn_avg !== null) facts.push(`<span class="fact">ESPN avg $${b.espn_avg}</span>`);
     if (b.yahoo_avg !== null) facts.push(`<span class="fact">Yahoo avg $${b.yahoo_avg}</span>`);
     if (b.injury_discount) facts.push(`<span class="fact flag">injury discount $${b.injury_discount} — worth more if you can stash him on IR</span>`);
+    if (b.confidence) facts.push(`<span class="fact">BBM confidence <b>${b.confidence}</b>/10</span>`);
+    if (b.role) facts.push(`<span class="fact">${esc(b.role)}</span>`);
+    (b.status || []).forEach((st) => facts.push(`<span class="fact">${esc(st)}</span>`));
   }
+  const tags = b ? (b.tags || []).map((t) => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join("") : "";
+  const note = b && b.note ? `<div class="note"><b>${esc(b.note_by || "BBM")}:</b> ${esc(b.note)}</div>` : "";
   return `
     <div class="card-name">${esc(c.name)}</div>
     <div class="card-sub">${esc(where)} · going price from ${esc(c.market_source)}</div>
@@ -299,7 +320,9 @@ function cardHtml(c, offer) {
     </div>
     ${verdict}
     ${c.warning ? `<div class="verdict warn-news">${esc(c.warning)}</div>` : ""}
+    ${tags ? `<div class="facts">${tags}</div>` : ""}
     <div class="facts">${facts.join("")}</div>
+    ${note}
     <div class="muted" style="font-size:12px">field can bid ${money(S.field_ceiling)} · our board prices him ${money(c.board_price)}${ce.marginal_at_floor !== undefined && ce.marginal_at_floor !== null ? ` · adds ${ce.marginal_at_floor.toFixed(2)} cats/week at $1` : ""}</div>
     <div class="buttons"><button class="small" id="c-buy">We won him →</button></div>`;
 }

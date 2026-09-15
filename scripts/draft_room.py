@@ -64,6 +64,7 @@ import sys
 import time
 from pathlib import Path
 
+from app.draft.bbm import ROLES
 from app.draft.feed import (
     BoardSnapshot,
     LoggedPick,
@@ -155,6 +156,18 @@ def show_ceiling(
         if row.yahoo_dollars is not None:
             facts.append(f"Yahoo avg ${row.yahoo_dollars:.0f}")
         say("  " + " · ".join(facts))
+        context = []
+        if row.confidence is not None:
+            context.append(f"BBM confidence {row.confidence}/10")
+        if row.role:
+            context.append(ROLES.get(row.role, row.role))
+        context.extend(row.status)
+        if row.tags:
+            context.append("FLAGS: " + ", ".join(row.tags))
+        if context:
+            say("  " + " · ".join(context))
+        if row.note:
+            say(f"  {row.note_by or 'BBM'}: {row.note}")
         if total is not None and per_game is not None and per_game - total >= 8:
             say(
                 f"  injury discount: ${per_game - total:.0f} of per-game value lost to missed "
