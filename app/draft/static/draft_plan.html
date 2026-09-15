@@ -136,12 +136,17 @@
   </div>
 
   <nav class="jump" aria-label="Sections">
-    <a href="#stars">Stars</a><a href="#targets">Targets</a><a href="#bbm">BBM likes</a><a href="#letgo">Let go</a><a href="#nominate">Nominate early</a><a href="#late">Late steals &amp; threes</a><a href="#bigs">Cheap bigs</a><a href="#ir">IR stash</a><a href="#builds">Builds</a><a href="#all">Find a player</a><a href="#notes">Read before bidding</a>
+    <a href="#stars">Stars</a><a href="#fan">Cavs</a><a href="#targets">Targets</a><a href="#bbm">BBM likes</a><a href="#letgo">Let go</a><a href="#nominate">Nominate early</a><a href="#late">Late steals &amp; threes</a><a href="#bigs">Cheap bigs</a><a href="#ir">IR stash</a><a href="#builds">Builds</a><a href="#all">Find a player</a><a href="#notes">Read before bidding</a>
   </nav>
 
   <section id="stars">
     <div class="sec-head"><h2>Stars</h2><p class="legend">Expected to go for $40 or more. <b>Bid up to</b> is the lower of our ceiling and BBM's league value.</p></div>
     <div class="list" id="list-stars"></div>
+  </section>
+
+  <section id="fan">
+    <div class="sec-head"><h2>Cavs</h2><p class="legend">For each Cavalier, the model rebuilt its best roster with him on it at his going price. <b>Cost</b> is what that roster gives up against the best roster with no Cav, in categories a week — so you can pick the Cav who's cheapest to root for. And this time, hold him.</p></div>
+    <div class="list" id="list-fan"></div>
   </section>
 
   <section id="targets">
@@ -281,6 +286,18 @@ fill("list-stars", stars, (p) => {
   if (p.going <= to + 6) return row(p, pill("warn", `Only at $${to} or less`));
   return row(p, pill("stop", `Let go past $${to}`));
 });
+
+// the loyalty pick
+const byId = Object.fromEntries(P.map((p) => [p.id, p]));
+const fan = (PLAN.fan || []).map((f) => ({ ...f, p: byId[f.id] })).filter((f) => f.p)
+  .sort((a, b) => a.cost - b.cost || b.p.going - a.p.going);
+fill("list-fan", fan, (f) => {
+  const label = f.in_best ? `Free — already in the best roster, ~$${f.p.going}`
+    : f.cost <= 0.05 ? `Nearly free: −${f.cost.toFixed(2)} cats/wk at ~$${f.p.going}`
+    : `Costs ${f.cost.toFixed(2)} cats/wk at ~$${f.p.going}`;
+  const kind = f.in_best || f.cost <= 0.05 ? "buy" : (f.cost <= 0.2 ? "warn" : "stop");
+  return row(f.p, pill(kind, label));
+}, "No Cavaliers priced on the board.");
 
 // targets: both agree
 const mid = P.filter((p) => p.going >= 8 && p.going < 40);

@@ -57,6 +57,9 @@ def main() -> int:
     ap.add_argument(
         "--exported", default="", help="when the BBM exports were pulled, for the page footer"
     )
+    ap.add_argument(
+        "--fan-team", default="CLE", help="NBA team to find a loyalty pick from (default CLE)"
+    )
     args = ap.parse_args()
 
     try:
@@ -95,7 +98,8 @@ def main() -> int:
         row = room.bbm.get(c.player_id)
         total = row.league_dollars if row and row.league_dollars is not None else None
         going = market.get(c.player_id, (None, ""))[0] or 0
-        if going >= CONSIDER_FROM or (total or 0) >= CONSIDER_FROM:
+        fan = row is not None and row.team == args.fan_team
+        if going >= CONSIDER_FROM or (total or 0) >= CONSIDER_FROM or (fan and (total or 0) >= 1):
             considered.append(c)
     print(f"{len(considered)} players considered; computing ceilings", flush=True)
 
@@ -140,6 +144,7 @@ def main() -> int:
                 "games": None if not row else round(row.games),
                 "injury_risk": (row.injury_risk or None) if row else None,
                 "injury": (row.injury or None) if row else None,
+                "nba_team": (row.team or None) if row else None,
                 "profile": profile.get(c.player_id, {}),
             }
         )
@@ -166,8 +171,50 @@ def main() -> int:
             ],
         }
 
+    # The loyalty pick: for each fan-team player, the best roster that has him
+    # at his going price, against the best roster with no such requirement.
+    base = resolve(
+        state,
+        room.candidates,
+        room.distributions,
+        lineup=room.lineup,
+        limits=room.limits,
+        restarts=12,
+        allocation=room.allocation,
+    )
+    fan_rows = []
+    for c in considered:
+        row = room.bbm.get(c.player_id)
+        if row is None or row.team != args.fan_team:
+            continue
+        with_him = resolve(
+            state,
+            room.candidates,
+            room.distributions,
+            lineup=room.lineup,
+            limits=room.limits,
+            restarts=12,
+            allocation=room.allocation,
+            lock={c.player_id: c.price},
+            starts=[tuple(base.player_ids)],
+        )
+        fan_rows.append(
+            {
+                "id": c.player_id,
+                "cost": round(max(0.0, base.expected_wins - with_him.expected_wins), 3),
+                "in_best": c.player_id in base.player_ids,
+                "roster_with": [
+                    {"name": p.name, "price": p.price}
+                    for p in sorted(with_him.players, key=lambda p: -p.price)
+                ],
+            }
+        )
+    print(f"{len(fan_rows)} {args.fan_team} players costed", flush=True)
+
     out = {
         "season": args.season,
+        "fan_team": args.fan_team,
+        "fan": fan_rows,
         "team": args.me,
         "teams": len(state.teams),
         "budget": state.budget,

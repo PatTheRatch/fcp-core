@@ -95,6 +95,8 @@ class BBMRow:
     #: prices this league's categories, size and budget; `dollars` is BBM's
     #: generic value.
     league_dollars: float | None = None
+    #: NBA team abbreviation, e.g. "CLE".
+    team: str = ""
 
 
 @dataclass
@@ -155,6 +157,7 @@ def read_bbm(path: Path) -> list[BBMRow]:
                 espn_dollars=maybe("ESPN$"),
                 yahoo_dollars=maybe("Y!Avg$"),
                 league_dollars=maybe("Leag$"),
+                team=str(values[col["Team"]]).strip() if "Team" in col else "",
             )
         )
     return rows
