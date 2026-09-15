@@ -778,6 +778,27 @@ the season), Porter Jr., Ball and George (long absences). A price far below
 projected value is usually information. The plan's "bid up to" already takes
 the lower of our ceiling and BBM's value, and BBM prices availability.
 
+### The local search is at the optimum
+
+`scripts/milp_gap.py` (docs/milp_gap.md) solves the draft optimizer's problem
+exactly as a mixed-integer program with HiGHS: lineup assignment, the centre
+limit, the spending shape through Hall's condition on the sorted places (13
+rows instead of per-place assignment variables), win probabilities
+piecewise-linear over 60 segments, FG% and FT% by a threshold ladder on makes
+minus rate times attempts, and the capped concede penalty. On the 2027 BBM
+room it proved optimality in 16.5 minutes.
+
+Inside the model the optimum is 5.0736 and the local search's roster scores
+5.0733 -- 0.0003 apart, well inside the model's own resolution (percentages
+floored to a 0.002 grid). Re-scored with the real scorer the local roster is
+the better one (5.0868 against 5.0779). The rosters share 12 of 13 players.
+Fourteen of fifteen local runs across restarts 4, 12 and 48 land on the same
+score to four decimals, at about a second a solve at restarts 4. No change:
+the local search stays, for the plan and for live ceilings.
+
+A first attempt on the VPS (branch `milp-gap`, 821 lines) never became
+feasible; this rewrite replaced it.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

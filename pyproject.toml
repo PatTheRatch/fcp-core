@@ -27,6 +27,10 @@ live = [
 projections = [
     "xlrd>=2.0",
 ]
+# The exact solver in scripts/milp_gap.py, which checks the local search.
+opt = [
+    "scipy>=1.11",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",
