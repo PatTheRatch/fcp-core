@@ -197,7 +197,7 @@
   </section>
 
   <section id="builds">
-    <div class="sec-head"><h2>What the model would build</h2><p class="legend">Its best roster from an empty room, bought at going prices. Categories it wins under 25% of weeks are marked as conceded. <b>Don't draft to this if it concedes categories.</b> In this league's history, rosters built at the draft to punt a category won about 4% fewer categories than rosters of the same projected strength, and specialized teams won 12 points fewer of the close 5-4 weeks (docs/punt_builds.md). The model's objective doesn't know that yet.</p></div>
+    <div class="sec-head"><h2>What the model would build</h2><p class="legend">The model's best rosters from an empty room, bought at going prices: its overall best, one with no player BBM rates high or extreme injury risk, and two deliberate punts. Every build is scored on all nine categories, so a punt is compared on what it will actually win. In this league's history, rosters built at the draft to punt a category won about 4% fewer categories than rosters of the same projected strength, and specialized teams won 12 points fewer of the close 5-4 weeks (docs/punt_builds.md). The model charges that cost on every roster that concedes a category without being asked to; the punt builds below are punts by choice, shown so you can see what the fun costs.</p></div>
     <div class="builds" id="builds-grid"></div>
   </section>
 
@@ -369,22 +369,24 @@ const ir = P.filter((p) => p.bbm_per_game !== null && p.bbm_total !== null && p.
 fill("list-ir", ir, (p) => row(p, pill("info", `$${p.bbm_per_game} per game`)));
 
 // builds
-const seenRosters = new Set();
-$("builds-grid").innerHTML = Object.entries(PLAN.builds).filter(([, b]) => {
-  const key = b.roster.map((r) => r.name).sort().join("|");
-  if (seenRosters.has(key)) return false;
-  seenRosters.add(key);
-  return true;
-}).map(([label, b]) => {
+const BUILD_NAMES = { "balanced": "Best roster", "no high injury risk": "No high injury risk", "punt TO": "Punt turnovers", "punt FT%": "Punt FT%" };
+const best = PLAN.builds.balanced;
+$("builds-grid").innerHTML = Object.entries(PLAN.builds).map(([label, b]) => {
   const order = ["PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%"];
   const conceded = order.filter((k) => (b.win_probability[k] ?? 1) < 0.25);
   const probs = order.filter((k) => k in b.win_probability).map((k) => {
     const v = b.win_probability[k];
     return `<div class="prob"><span>${k}</span><div class="track"><div class="fill ${v < 0.25 ? "low" : ""}" style="width:${Math.round(v * 100)}%"></div></div><span>${Math.round(v * 100)}%</span></div>`;
   }).join("");
-  const roster = b.roster.map((r) => `<div><span>${esc(r.name)}</span><span class="num">$${r.price}</span></div>`).join("");
-  const name = conceded.length ? `Concedes ${conceded.join(", ")}` : "No category conceded";
-  return `<div class="build"><div><span class="eyebrow">${esc(name)}</span><h3>${b.expected_wins} categories a week · $${b.cost}</h3></div>
+  const roster = b.roster.map((r) => `<div><span>${esc(r.name)}${r.injury_risk === "H" || r.injury_risk === "E" ? ` <span class="risk ${r.injury_risk}">${r.injury_risk}</span>` : ""}</span><span class="num">$${r.price}</span></div>`).join("");
+  const score = b.all_nine ?? b.expected_wins;
+  const gap = best && label !== "balanced" ? (best.all_nine ?? best.expected_wins) - score : null;
+  const sub = [
+    conceded.length ? `concedes ${conceded.join(", ")}` : "concedes nothing",
+    b.excluded ? `${b.excluded} high- or extreme-risk players left out` : null,
+    gap !== null ? (gap <= 0.02 ? "as good as the best roster" : `gives up ${gap.toFixed(2)} categories a week`) : null,
+  ].filter(Boolean).join(" · ");
+  return `<div class="build"><div><span class="eyebrow">${esc(BUILD_NAMES[label] || label)}</span><h3>${score} categories a week · $${b.cost}</h3><p class="muted" style="font-size:13px">${esc(sub)}</p></div>
     <div class="probs" aria-label="Chance of winning each category">${probs}</div><div class="roster">${roster}</div></div>`;
 }).join("");
 

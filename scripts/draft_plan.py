@@ -33,6 +33,7 @@ from typing import Any
 
 from app.draft.bbm import ROLES
 from app.draft.live import RoomError, load_room, market_prices
+from app.draft.optimizer import roster_totals, score
 from app.draft.room import resolve
 from app.draft.session import _compute, process_executor
 from app.draft.valuation import value_players
@@ -156,8 +157,23 @@ def main() -> int:
             }
         )
 
+    # Alternative builds. Each is scored on all nine categories with the concede
+    # penalty (`all_nine`), so a build that punts by choice is compared on
+    # what it will actually win, not on the categories it stopped counting.
+    categories = [d.abbreviation for d in room.distributions]
+    risky = [
+        c.player_id
+        for c in room.candidates
+        if (row := room.bbm.get(c.player_id)) is not None and row.injury_risk in ("H", "E")
+    ]
+    variants: tuple[tuple[str, tuple[str, ...], list[int]], ...] = (
+        ("balanced", (), []),
+        ("no high injury risk", (), risky),
+        ("punt TO", ("TO",), []),
+        ("punt FT%", ("FT%",), []),
+    )
     builds = {}
-    for label, punt in (("balanced", ()), ("punt FT%", ("FT%",))):
+    for label, punt, exclude in variants:
         plan = resolve(
             state,
             room.candidates,
@@ -167,16 +183,31 @@ def main() -> int:
             limits=room.limits,
             restarts=12,
             allocation=room.allocation,
+            exclude=exclude,
         )
+        all_nine, _ = score(roster_totals(plan.players, categories), room.distributions)
         builds[label] = {
             "expected_wins": round(plan.expected_wins, 2),
+            "all_nine": round(all_nine, 2),
+            "punt": list(punt),
+            "excluded": len(exclude),
             "cost": plan.cost,
             "win_probability": {k: round(v, 2) for k, v in plan.win_probability.items()},
             "roster": [
-                {"name": p.name, "price": p.price, "position": p.position}
+                {
+                    "name": p.name,
+                    "price": p.price,
+                    "position": p.position,
+                    "injury_risk": (
+                        room.bbm[p.player_id].injury_risk or None
+                        if p.player_id in room.bbm
+                        else None
+                    ),
+                }
                 for p in sorted(plan.players, key=lambda p: -p.price)
             ],
         }
+    print("builds: " + ", ".join(f"{k} {v['all_nine']}" for k, v in builds.items()), flush=True)
 
     # The loyalty pick: for each fan-team player, the best roster that has him
     # at his going price, against the best roster with no such requirement.
