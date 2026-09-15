@@ -198,6 +198,7 @@
       <li><b>BBM</b> is Basketball Monster's league value on total games, exported <span id="exported"></span>. Refresh the exports the week of the draft; injuries and roles move in preseason.</li>
       <li>ESPN has not published 2027 projections yet. When it does, re-run the plan.</li>
       <li>Category chips are league-standard values: green helps you win the category, red hurts.</li>
+      <li><b>"Check news"</b> marks a player whose going price is far below our ceiling while BBM doesn't agree. Replaying 2022, the room's worst misses were exactly these — Kyrie Irving and Jonathan Isaac at $6 — cheap because the room knew something the projections didn't.</li>
     </ul>
   </section>
 
@@ -223,6 +224,14 @@ function chips(p, limit = 5) {
   return ranked.map(([k, v]) => `<span class="chip ${v > 0 ? "pos" : "neg"}">${k} ${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}</span>`).join("");
 }
 
+// The 2022 trap: cheap on a player only our model likes usually means news.
+function newsFlag(p) {
+  const c = p.ceiling, g = p.going, b = p.bbm_total;
+  if (c === null || g === null || c < g + 8 || c < g * 1.5) return "";
+  if (b !== null && b >= g + 5) return "";
+  return `<span class="chip neg" title="Our ceiling is well above his price and BBM doesn't agree: check injury, role or suspension news">check news</span>`;
+}
+
 function row(p, verdict) {
   const meta = [
     p.eligible.length ? p.eligible.join("/") : p.position,
@@ -232,7 +241,7 @@ function row(p, verdict) {
     p.injury ? esc(p.injury) : null,
   ].filter(Boolean).join(" · ");
   return `<div class="row">
-    <div class="who"><span class="name">${esc(p.name)}</span><span class="meta">${meta}</span><div class="chips">${chips(p)}</div></div>
+    <div class="who"><span class="name">${esc(p.name)}</span><span class="meta">${meta}</span><div class="chips">${chips(p)}${newsFlag(p)}</div></div>
     <div class="prices">
       <div class="price"><b>${money(p.going)}</b><span>Going</span></div>
       <div class="price"><b>${money(p.ceiling)}</b><span>Ours</span></div>

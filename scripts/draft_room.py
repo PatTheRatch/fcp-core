@@ -73,7 +73,7 @@ from app.draft.feed import (
     new_picks,
     parse_board,
 )
-from app.draft.live import Room, RoomError, load_room, market_price
+from app.draft.live import Room, RoomError, bargain_warning, load_room, market_price
 from app.draft.room import (
     Ceiling,
     DraftError,
@@ -119,6 +119,16 @@ def show_ceiling(
         f"  marginal at $1 {ceiling.marginal_at_floor:+.3f}"
     )
     say(line)
+    bbm_row = room.bbm.get(ceiling.player_id)
+    warning = bargain_warning(
+        market_price(room, state, ceiling.player_id)[0],
+        ceiling.price,
+        (bbm_row.league_dollars if bbm_row.league_dollars is not None else bbm_row.dollars)
+        if bbm_row is not None
+        else None,
+    )
+    if warning:
+        say(f"  !! {warning}")
     if ceiling.capped:
         say(
             f"  the plan caps one player at ${ceiling.plan_cap} now; he rates higher against "

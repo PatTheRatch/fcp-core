@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from app.draft.feed import LoggedPick, OnBlock, match_name, match_team
-from app.draft.live import Room, market_prices
+from app.draft.live import Room, bargain_warning, market_prices
 from app.draft.optimizer import Candidate, RosterPlan
 from app.draft.room import (
     Allocation,
@@ -554,8 +554,10 @@ class DraftSession:
             ceiling = self._ceilings.get((state.picks, player_id))
             pending = (state.picks, player_id) in self._pending
             bbm = None
+            total_dollars: float | None = None
             if row is not None:
                 total = row.league_dollars if row.league_dollars is not None else row.dollars
+                total_dollars = total
                 per_game = room.per_game_dollars.get(player_id)
                 bbm = {
                     "age": row.age,
@@ -592,6 +594,11 @@ class DraftSession:
                 ),
                 "bbm": bbm,
                 "ceiling": _ceiling_view(ceiling, going, pending),
+                "warning": bargain_warning(
+                    going,
+                    ceiling.price if ceiling is not None else None,
+                    total_dollars,
+                ),
             }
 
     def search(

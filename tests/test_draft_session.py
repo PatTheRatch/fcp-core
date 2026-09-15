@@ -287,3 +287,14 @@ def test_going_prices_share_the_rooms_money_and_price_a_quarter_at_a_dollar() ->
     assert sum(1 for p in rostered if p == 1) == round(DOLLAR_ONE_SHARE * 40)
     assert sum(rostered) == pytest.approx(800 * SPEND_RATE, abs=15)
     assert rostered[0] > rostered[-1]
+
+
+def test_a_cheap_player_only_our_model_likes_carries_a_warning() -> None:
+    from app.draft.live import bargain_warning
+
+    # Kyrie Irving, 2022: ceiling $41, went for $6, nothing else backing it.
+    assert bargain_warning(6, 41, None) is not None
+    assert bargain_warning(6, 41, 8.0) is not None, "BBM barely above the price is no backing"
+    assert bargain_warning(6, 41, 30.0) is None, "BBM agrees: more likely a real bargain"
+    assert bargain_warning(20, 24, None) is None, "a small gap is ordinary disagreement"
+    assert bargain_warning(None, 41, None) is None

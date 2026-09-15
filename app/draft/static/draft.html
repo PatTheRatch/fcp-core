@@ -47,6 +47,7 @@
   .verdict { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; font-weight: 600; }
   .verdict.good { background: #16301f; color: var(--good); } .verdict.bad { background: #331a1a; color: var(--bad); }
   .verdict.wait { background: var(--panel-2); color: var(--muted); font-weight: 400; }
+  .verdict.warn-news { background: #3a2c10; color: var(--accent); font-weight: 500; }
   .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .fact { background: var(--panel-2); border-radius: 6px; padding: 3px 8px; font-size: 13px; }
   .fact.flag { background: #3a2c10; color: var(--accent); }
@@ -297,6 +298,7 @@ function cardHtml(c, offer) {
       <div class="big"><b>${money(me.max_bid)}</b><span>we can bid</span></div>
     </div>
     ${verdict}
+    ${c.warning ? `<div class="verdict warn-news">${esc(c.warning)}</div>` : ""}
     <div class="facts">${facts.join("")}</div>
     <div class="muted" style="font-size:12px">field can bid ${money(S.field_ceiling)} · our board prices him ${money(c.board_price)}${ce.marginal_at_floor !== undefined && ce.marginal_at_floor !== null ? ` · adds ${ce.marginal_at_floor.toFixed(2)} cats/week at $1` : ""}</div>
     <div class="buttons"><button class="small" id="c-buy">We won him →</button></div>`;

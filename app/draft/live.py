@@ -355,3 +355,40 @@ def size_to_room(
 def market_price(room: Room, state: DraftState, player_id: int) -> tuple[int | None, str]:
     """`market_prices` for one player."""
     return market_prices(room, state).get(player_id, (None, "not on the board"))
+
+
+#: How far our ceiling has to clear the going price before a cheap price
+#: stops looking like a bargain and starts looking like information.
+BARGAIN_GAP = 8
+BARGAIN_RATIO = 1.5
+#: BBM backs a bargain when its value clears the going price by this much.
+BBM_BACKS_BY = 5
+
+
+def bargain_warning(going: int | None, ceiling: int | None, bbm_total: float | None) -> str | None:
+    """A caution when the room is cheap on a player only our model likes.
+
+    Replaying 2022, the room bought the players the market had discounted for
+    reasons the projections did not carry: Kyrie Irving at $6 (the vaccine
+    mandate), Jonathan Isaac at $6 (he missed the season), Porter Jr., Ball
+    and George (long absences). Every one had a ceiling far above his price.
+    A price far below projected value is usually information. BBM's values
+    price availability and role, so when BBM agrees the gap is more likely a
+    real bargain; when it does not, or has no view, the card says so.
+    """
+    if going is None or ceiling is None:
+        return None
+    if ceiling < going + BARGAIN_GAP or ceiling < going * BARGAIN_RATIO:
+        return None
+    if bbm_total is not None and bbm_total >= going + BBM_BACKS_BY:
+        return None
+    basis = (
+        "BBM has no value for him"
+        if bbm_total is None
+        else f"BBM values him at ${round(bbm_total)}"
+    )
+    return (
+        f"Our ceiling is ${ceiling - going} above what he'll go for and {basis}. "
+        "A price this low is often news the projections don't have (injury, role, "
+        "suspension) — check before calling it a bargain."
+    )
