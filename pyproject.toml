@@ -27,6 +27,13 @@ live = [
 projections = [
     "xlrd>=2.0",
 ]
+# The MILP used to measure how far the draft optimizer's local search is from
+# the true optimum (scripts/milp_gap.py). HiGHS through its own bindings rather
+# than scipy: scipy is a far larger download and only wraps the same solver.
+# Nothing in app/ imports this; the live draft room does not need it.
+opt = [
+    "highspy>=1.7",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",
