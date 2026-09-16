@@ -637,6 +637,14 @@ BBM exports live in `data/bbm/` inside the project (git-ignored): a process
 the app launches cannot read `~/Documents` under macOS privacy rules, and
 hung silently trying.
 
+`scripts/bbm_pull.py` refreshes them: it logs in with `BBM_USERNAME` /
+`BBM_PASSWORD` from `.env` (on the Mac and the VPS), downloads the total and
+per-game exports with all 115 columns, checks each loads, replaces
+`BBM_Projections_<season>_{total,pergame}.xls`, and prints who was added,
+dropped, or moved $3+ in Leag$. First run 2026-09-16: 515 players, Josh Hart
+$9.3 to $5.1, Jalen Williams $26.2 to $29.9. Re-run `scripts/draft_plan.py`
+after a pull.
+
 ### How good "expected to go for" is
 
 Scored on 1,274 drafted players against what this league actually paid
