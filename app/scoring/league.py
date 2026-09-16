@@ -59,10 +59,11 @@ def _league_season(session: Session, season: int) -> LeagueSeason:
     return found
 
 
-def average_team_line(session: Session, season: int) -> CategoryLine:
-    """The mean team line of a regular-season period of the usual length."""
+def average_team_line(session: Session, season: int, days: int | None = None) -> CategoryLine:
+    """The mean team line of a regular-season period of `days` days (the
+    season's usual length when None)."""
     league_season = _league_season(session, season)
-    days = modal_period_days(session, [season])
+    days = modal_period_days(session, [season]) if days is None else days
     rows = session.execute(
         select(MatchupTeamStat.abbreviation, func.avg(cast(MatchupTeamStat.value, Float)))
         .join(Matchup, Matchup.id == MatchupTeamStat.matchup_id)
