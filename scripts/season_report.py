@@ -28,12 +28,15 @@ are the real record.
 TRADES ARE RECONSTRUCTED, NOT READ
 ----------------------------------
 ESPN's transaction feed is not complete for trades. In 2026 it carries player
-movement for 4 of the league's 32 completed trades; `teams.trades` counts 32
-of them. So trades here are inferred from `daily_lineup_slots`: a player who
-leaves roster A and appears on roster B within two days, with no executed
-waiver or free-agent transaction to explain it, moved in a trade. That
-recovers 13 of the Foxes' 15 and every one of Through The Wire's 4. The page
-says so, and the count ESPN reports is shown next to the count we recovered.
+movement for 4 of the league's 64 team-trades; `teams.trades` counts 64 of them.
+So trades are reconstructed from `daily_lineup_slots` by
+`app.scoring.trades.reconstruct_trades`: a trade is two teams moving players
+both ways on the same day (within a day). A one-way move is a waiver claim
+unless the transaction ledger confirms a trade, and moves the wire explains are
+never trades at all. Measured against ESPN, that recovers 52 of the Foxes'
+season's 64 sides and 157 of 204 league-wide -- a lower bound, never an
+over-count. The page says so, and the count ESPN reports is shown next to the
+count we recovered.
 
 A trade is graded on what each player did AFTER the trade date, for anyone.
 That is the only fair basis -- production a player gives another roster still
@@ -47,12 +50,23 @@ import html
 import json
 import os
 import re
+import sys
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+
+# The script is run by path (`python scripts/season_report.py`), which puts
+# `scripts/` on sys.path rather than the repo root, so `app` is not importable
+# until the root is added. Same reason the other entry points here import late.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.db.session import make_engine, make_session_factory
+from app.scoring.trades import reconstruct_trades
 
 #: psycopg's dict_row gives back column name to value, with the value type
 #: fixed by the query rather than the schema, so Any is honest here.
@@ -64,6 +78,14 @@ Cur = psycopg.Cursor[Row]
 Number = int | float | Decimal | None
 
 DSN = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://")
+
+#: SQLAlchemy needs the driver named in the scheme, the opposite of what psycopg
+#: wants, so the one `.env` value is spelled two ways rather than duplicated.
+SA_DSN = (
+    DSN
+    if DSN.startswith("postgresql+psycopg://")
+    else DSN.replace("postgresql://", "postgresql+psycopg://", 1)
+)
 
 #: Column order for the week-by-week grid. Percentages first, then counting
 #: stats, then turnovers, so a team's shape reads left to right.
@@ -295,70 +317,72 @@ def _starters(
     return rows[:limit], drafted, acquired
 
 
-def _trades(cur: Cur, season_id: int, team_id: int, season: int) -> list[Row]:
-    """Reconstruct trades from roster movement. See the module docstring."""
-    cur.execute(
-        f"""
-        WITH span AS (
-            SELECT d.player_id, d.team_id,
-                   min(d.scoring_period) AS first_day, max(d.scoring_period) AS last_day
-            FROM daily_lineup_slots d
-            JOIN matchup_periods mp ON mp.id = d.matchup_period_id
-            WHERE mp.league_season_id = %(s)s
-            GROUP BY 1, 2
-        ), moves AS (
-            SELECT a.player_id, a.team_id AS from_team, b.team_id AS to_team,
-                   a.last_day AS day
-            FROM span a
-            JOIN span b ON b.player_id = a.player_id
-                       AND b.first_day BETWEEN a.last_day + 1 AND a.last_day + 2
-            WHERE a.team_id <> b.team_id
-              AND (a.team_id = %(t)s OR b.team_id = %(t)s)
-              AND NOT EXISTS (
-                    SELECT 1 FROM transactions x
-                    JOIN transaction_items i ON i.transaction_id = x.id
-                    WHERE i.player_id = a.player_id
-                      AND x.league_season_id = %(s)s
-                      AND x.type IN ('WAIVER', 'FREEAGENT')
-                      AND x.status = 'EXECUTED'
-                      AND x.scoring_period BETWEEN a.last_day - 1 AND a.last_day + 3
-              )
-        )
-        SELECT m.day, p.name,
-               CASE WHEN m.to_team = %(t)s THEN 'in' ELSE 'out' END AS direction,
-               other.name AS counterparty,
-               (SELECT count(*) FROM player_game_stats g
-                 WHERE g.player_id = m.player_id AND g.season = %(yr)s
-                   AND g.played AND g.scoring_period > m.day) AS games_after,
-               (SELECT COALESCE(sum({NINE_CAT}), 0) FROM player_game_stats g
-                 WHERE g.player_id = m.player_id AND g.season = %(yr)s
-                   AND g.played AND g.scoring_period > m.day) AS comp_after
-        FROM moves m
-        JOIN players p ON p.id = m.player_id
-        JOIN teams other
-          ON other.id = CASE WHEN m.to_team = %(t)s THEN m.from_team ELSE m.to_team END
-        ORDER BY m.day, direction DESC, comp_after DESC
-        """,
-        {"s": season_id, "t": team_id, "yr": season},
-    )
-    rows = cur.fetchall()
+def _trades(cur: Cur, session: Session, season_id: int, team_id: int, season: int) -> list[Row]:
+    """Trades for the page, reconstructed by `app.scoring.trades`.
+
+    The reconstruction itself lives in the module, because it is a scoring
+    concern rather than a presentation one. What stays here is the part the
+    page needs and the module deliberately does not know: the nine-category
+    production each player posted after the trade, which the report grades on.
+    """
+    trades = reconstruct_trades(session, season, team_id)
+    if not trades:
+        return []
+
+    #: Production after a trade is per player *and* per day, and the module's
+    #: `Party` deliberately does not carry it: the nine-cat composite is this
+    #: report's business, not the scoring package's.
+    after: dict[tuple[int, int], tuple[int, float]] = {}
 
     by_day: dict[int, Row] = {}
-    for row in rows:
+    for trade in trades:
         day = by_day.setdefault(
-            row["day"], {"day": row["day"], "in": [], "out": [], "counterparties": []}
+            trade.day,
+            {
+                "day": trade.day,
+                "in": [],
+                "out": [],
+                "counterparties": list(trade.counterparty_names),
+                "from_ledger": trade.from_ledger,
+            },
         )
-        day[row["direction"]].append(row)
-        if row["counterparty"] not in day["counterparties"]:
-            day["counterparties"].append(row["counterparty"])
+        for side, parties in (("in", trade.players_in), ("out", trade.players_out)):
+            known = {entry["player_id"] for entry in day[side]}
+            for party in parties:
+                if party.player_id not in known:
+                    day[side].append({"player_id": party.player_id, "name": party.name})
+        if not trade.gradeable:
+            day["gradeable"] = False
+
     for day in by_day.values():
-        got = sum(r["comp_after"] for r in day["in"])
-        gave = sum(r["comp_after"] for r in day["out"])
+        for side in ("in", "out"):
+            for entry in day[side]:
+                key = (entry["player_id"], day["day"])
+                if key not in after:
+                    cur.execute(
+                        f"""
+                        SELECT count(*) FILTER (WHERE g.played) AS games_after,
+                               COALESCE(sum({NINE_CAT}) FILTER (WHERE g.played), 0) AS comp_after
+                        FROM player_game_stats g
+                        WHERE g.player_id = %(p)s AND g.season = %(yr)s
+                          AND g.scoring_period > %(d)s
+                        """,
+                        {"p": entry["player_id"], "yr": season, "d": day["day"]},
+                    )
+                    row = one(cur)
+                    after[key] = (row["games_after"], row["comp_after"])
+                games_after, comp_after = after[key]
+                entry["games_after"] = games_after
+                entry["comp_after"] = comp_after
+        for side in ("in", "out"):
+            day[side].sort(key=lambda entry: entry["comp_after"], reverse=True)
+        got = sum(entry["comp_after"] for entry in day["in"])
+        gave = sum(entry["comp_after"] for entry in day["out"])
         day["net"] = got - gave
         #: A side with nothing on it means the other half of the deal was not
         #: recoverable from roster movement -- a three-way, or a player who
         #: never appeared in a daily lineup. Not gradeable.
-        day["gradeable"] = bool(day["in"] and day["out"])
+        day.setdefault("gradeable", bool(day["in"] and day["out"]))
     return sorted(by_day.values(), key=lambda d: d["day"])
 
 
@@ -603,7 +627,12 @@ def _last_week(cur: Cur, season_id: int, team_id: int, season: int, weeks: list[
     }
 
 
-def gather(conn: psycopg.Connection[Any], season: int, team_name: str) -> Row:
+def gather(
+    conn: psycopg.Connection[Any],
+    session: Session,
+    season: int,
+    team_name: str,
+) -> Row:
     with conn.cursor(row_factory=dict_row) as cur:
         season_id = _season_id(cur, season)
         team = _team(cur, season_id, team_name)
@@ -632,7 +661,7 @@ def gather(conn: psycopg.Connection[Any], season: int, team_name: str) -> Row:
             "starters": starters,
             "drafted_comp": drafted_comp,
             "acquired_comp": acquired_comp,
-            "trades": _trades(cur, season_id, tid, season),
+            "trades": _trades(cur, session, season_id, tid, season),
             "waivers": _waivers(cur, season_id, tid),
             "waiver_value": _waiver_value(cur, season_id, season),
             "best_swaps": _swaps(cur, season_id, tid, season, best=True),
@@ -1485,16 +1514,23 @@ def main() -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    engine = make_engine(SA_DSN)
+    factory: sessionmaker[Session] = make_session_factory(engine)
     with psycopg.connect(DSN) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             season_id = _season_id(cur, args.season)
             names = _team_names(cur, season_id) if args.all else [args.team]
 
-        for name in names:
-            data = gather(conn, args.season, name)
-            path = out / f"{slug(name)}-{args.season}.html"
-            path.write_text(render(data, notes), encoding="utf-8")
-            print(f"{name}: {path}")
+        # Trade reconstruction is a scoring-package query, so it reads through a
+        # SQLAlchemy session while the rest of the report keeps its psycopg
+        # cursor. One session for the run: the two layers see the same database.
+        with factory() as session:
+            for name in names:
+                data = gather(conn, session, args.season, name)
+                path = out / f"{slug(name)}-{args.season}.html"
+                path.write_text(render(data, notes), encoding="utf-8")
+                print(f"{name}: {path}")
+    engine.dispose()
 
 
 if __name__ == "__main__":

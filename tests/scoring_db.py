@@ -216,10 +216,25 @@ def transaction(
     *,
     status: str = "EXECUTED",
 ) -> None:
-    """A transaction on `day`: items are (item type, player, from team, to team)."""
+    """A transaction on `day`: items are (item type, player, from team, to team).
+
+    A None team is ESPN's team 0, meaning free agency. `kind` is ESPN's type
+    string, so the same helper builds a waiver claim, a TRADE_ACCEPT or an
+    items-less TRADE_UPHOLD (pass `items=[]`).
+    """
     row = Transaction(
         league_season_id=team.league_season_id,
-        espn_transaction_id=f"{kind}-{day}-{team.id}-{len(items)}-{items[0][1].id}",
+        # ESPN's id is unique league-wide and the table is not truncated between
+        # tests, so the key has to separate rows a test builds deliberately:
+        # the same kind of move on the same day by the same team is two rows
+        # when it names two different players. An items-less row (a TRADE_UPHOLD,
+        # which is what ESPN really sends) has no player to key on, so the item
+        # count carries it.
+        espn_transaction_id=(
+            f"{kind}-{day}-{team.id}-{len(items)}-{items[0][1].id}"
+            if items
+            else f"{kind}-{day}-{team.id}"
+        ),
         team_id=team.id,
         type=kind,
         status=status,
