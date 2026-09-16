@@ -1265,6 +1265,11 @@ picking a winner silently.
    `/ingest-runs/health`
 3. A frontend, if and when there is something to read the API. That is the
    decision that would force the auth question.
+4. In-season pickups: a status listener (injury, ownership, minutes, free
+   agents, three passes a day), a recommender for one team over two
+   horizons, and a morning digest. Designed in `docs/pickups.md`; the
+   listener is the part with a deadline, since status history cannot be
+   backfilled and the season opens around 2026-10-20.
 
 ### Prior seasons
 
