@@ -3,7 +3,7 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- Read-only HTTP API over the stored seasons, 22 endpoints (see below),
+- Read-only HTTP API over the stored seasons, 23 endpoints (see below),
   including seven narrative routes. Writes stay with the ingest.
 - Nightly scheduled ingest keeping the current season current, and the next
   season's settings current while its draft is ahead, with every run recorded
@@ -69,6 +69,7 @@ a league id and a year rather than from surrogate database ids.
 | `.../matchups` | matchups with per-category detail for both sides |
 | `.../teams/{tid}/lineups` | daily slots with that day's production |
 | `.../teams/{tid}/bench` | bench points and the worst individual calls |
+| `.../teams/{tid}/scorecard` | the season graded in categories a week: players, draft, trades, wire (`app/scoring`) |
 | `GET /players` | name search |
 | `GET /players/{pid}` | one player |
 | `GET /players/{pid}/games` | game log |

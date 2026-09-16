@@ -395,3 +395,85 @@ class ProjectionGapOut(BaseModel):
     difference: float = Field(description="Actual minus projected. Negative is a miss")
     projected_games: float | None
     actual_games: float | None
+
+
+class VerdictOut(BaseModel):
+    """Both lenses of a grade, in categories a week, with the sentence."""
+
+    label: str
+    text: str
+    decision: float
+    result: float
+
+
+class LensValueOut(BaseModel):
+    team_fit: float
+    team_fit_per_week: float
+    league_standard: float
+    league_standard_per_week: float
+    weeks_started: int
+    weeks_held: int
+
+
+class PlayerValueOut(BaseModel):
+    player_id: int
+    name: str
+    regular: LensValueOut
+    playoffs: LensValueOut
+
+
+class DraftGradeOut(BaseModel):
+    player_id: int
+    name: str
+    price: int
+    projected_value: int | None
+    market: int | None
+    market_source: str
+    outcome: str
+    delivered: float
+    decision: float | None
+    result: float
+    verdict: VerdictOut | None
+
+
+class MoveGradeOut(BaseModel):
+    """A trade or wire move over one stretch (regular season or playoffs)."""
+
+    periods: list[int]
+    decision: float
+    result: float
+    verdict: VerdictOut
+
+
+class TradeGradeOut(BaseModel):
+    day: int
+    counterparties: list[str]
+    players_in: list[str]
+    players_out: list[str]
+    part_missing: bool
+    regular: MoveGradeOut | None
+    playoffs: MoveGradeOut | None
+
+
+class WireMoveOut(BaseModel):
+    day: int
+    kind: str
+    added: list[str]
+    dropped: list[str]
+    regular: MoveGradeOut | None
+    playoffs: MoveGradeOut | None
+
+
+class ScorecardOut(BaseModel):
+    """One team's season in categories a week: see docs/scoring/SPEC.md."""
+
+    season: int
+    espn_team_id: int
+    team_name: str
+    replacement: float
+    category_record: dict[str, float]
+    looks_like_punts: list[str]
+    players: list[PlayerValueOut]
+    draft: list[DraftGradeOut]
+    trades: list[TradeGradeOut]
+    wire: list[WireMoveOut]
