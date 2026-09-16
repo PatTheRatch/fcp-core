@@ -16,13 +16,14 @@ of the shape:
   without re-fetching a season that may no longer be available.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -772,5 +773,45 @@ class PlayerSeasonStat(Base):
     #: The player's primary position, which is what position limits count.
     #: A power forward eligible at centre is not a centre for that purpose.
     primary_position: Mapped[str | None] = mapped_column(String)
+
+
+class PlayerProjectionSnapshot(Base):
+    """ESPN's projection for a player as it stood on one day.
+
+    `player_season_stats` keeps one projection per season and overwrites it
+    on every ingest, so the projection a manager was looking at on the day of
+    a trade is gone by the next morning. The decision lens of the scoring
+    work (docs/scoring/SPEC.md) needs exactly that, so the ingest also writes
+    it here, one row per player per day, whenever it stores a projection.
+
+    What the projection is, from the S1 probe (branch `scoring-s1`): the
+    card's only projection split, a forecast with its own games count.
+    Whether ESPN refreshes it during the season, and whether it becomes
+    rest-of-season, cannot be measured in September; these rows are how that
+    gets answered.
+
+    Costs no request: the cards are already fetched for the daily lines.
+    """
+
+    __tablename__ = "player_projection_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "season", "captured_on", "kind", name="uq_player_projection_snapshots_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: The UTC date the ingest read the card.
+    captured_on: Mapped[date] = mapped_column(Date, nullable=False)
+    #: The card's key for the split, "projected" today; kept as a column so a
+    #: rest-of-season split, if ESPN ever adds one, lands beside it.
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    games_played: Mapped[float | None] = mapped_column(Float)
+    #: The split's totals exactly as ESPN sent them.
+    stats: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     player: Mapped[Player] = relationship()

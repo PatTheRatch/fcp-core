@@ -38,20 +38,26 @@ A season with no usable projection (2020, 2023: `app.draft.projections`)
 or a player with none uses his season to date alone, then recent form; a
 player with no games and no projection has an empty line.
 
-From 2027, a saved daily projection snapshot (`player_projection_snapshots`,
-S10) on or before the day replaces this reconstruction when one exists.
+From 2027, pass `as_of` (the calendar date of the move): the latest saved
+projection snapshot on or before it (`player_projection_snapshots`, S10)
+stands in for the preseason projection in the blend. It replaces the prior,
+not the whole line, because whether ESPN refreshes its projection in season
+was not measurable before the season (the S1 probe, branch `scoring-s1`);
+if it turns out to be a true rest-of-season forecast, it should earn more
+weight, and the first in-season month of snapshots is how to fit that.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import PlayerGameStat, PlayerSeasonStat
+from app.db.models import PlayerGameStat, PlayerProjectionSnapshot, PlayerSeasonStat
 from app.draft.projections import usable
 from app.scoring.lines import COUNTS, CategoryLine
 
@@ -108,7 +114,30 @@ def projection_rate(session: Session, player_id: int, season: int) -> dict[str, 
     return {key: float(getattr(row, column) or 0.0) / games for key, column in COUNTS.items()}
 
 
-def knowable(session: Session, player_id: int, season: int, day: int) -> Knowable:
+def snapshot_rate(
+    session: Session, player_id: int, season: int, as_of: date
+) -> dict[str, float] | None:
+    """The latest saved projection on or before `as_of`, per game, or None."""
+    row = session.scalar(
+        select(PlayerProjectionSnapshot)
+        .where(
+            PlayerProjectionSnapshot.player_id == player_id,
+            PlayerProjectionSnapshot.season == season,
+            PlayerProjectionSnapshot.kind == "projected",
+            PlayerProjectionSnapshot.captured_on <= as_of,
+        )
+        .order_by(PlayerProjectionSnapshot.captured_on.desc())
+        .limit(1)
+    )
+    if row is None or not row.games_played:
+        return None
+    games = float(row.games_played)
+    return {key: float(row.stats.get(key) or 0.0) / games for key in COUNTS}
+
+
+def knowable(
+    session: Session, player_id: int, season: int, day: int, *, as_of: date | None = None
+) -> Knowable:
     """The per-game line knowable at the end of scoring period `day - 1`.
 
     Only games before `day` count: a move made on a day is judged before
@@ -127,7 +156,8 @@ def knowable(session: Session, player_id: int, season: int, day: int) -> Knowabl
     games = [dict(row._mapping) for row in rows]
     recent = [g for g in games if int(g["scoring_period"]) >= day - RECENT_DAYS]
 
-    projected = projection_rate(session, player_id, season)
+    snapshot = snapshot_rate(session, player_id, season, as_of) if as_of else None
+    projected = snapshot if snapshot is not None else projection_rate(session, player_id, season)
     to_date = _rate(games)
     if projected is None:
         base = to_date
@@ -141,7 +171,7 @@ def knowable(session: Session, player_id: int, season: int, day: int) -> Knowabl
         games_so_far=len(games),
         recent_games=len(recent),
         had_projection=projected is not None,
-        source="blend",
+        source="snapshot" if snapshot is not None else "blend",
     )
 
 
