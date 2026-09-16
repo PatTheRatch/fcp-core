@@ -3,16 +3,20 @@
 Two things matter here and neither is about ESPN. A narrowed run must touch
 only the days it covers and leave everything else exactly as it was, and
 every execution must leave a record even when it fails.
+
+A third came later: the season after the current one has its settings
+refreshed while its draft is still ahead, and is left alone otherwise.
 """
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import (
@@ -23,9 +27,28 @@ from app.db.models import (
     PlayerGameStat,
 )
 from app.db.session import make_engine, make_session_factory
-from app.ingest import FULL_SCOPE, IngestScope, ingest_season, recent_scope
+from app.ingest import (
+    FULL_SCOPE,
+    IngestScope,
+    draft_is_pending,
+    ingest_season,
+    ingest_season_settings,
+    recent_scope,
+)
 from app.ingest_runs import FAILED, RUNNING, SUCCEEDED, last_successful_run, record_run
-from tests.fakes import BOX_LINE, fake_box, fake_card, fake_player, fake_team, league_with_days
+from scripts.ingest_league import refresh_upcoming_season
+from tests.fakes import (
+    BOX_LINE,
+    DEFAULT_DRAFT_SETTINGS,
+    DEFAULT_ROSTER_SETTINGS,
+    attach_transactions,
+    fake_box,
+    fake_card,
+    fake_league,
+    fake_player,
+    fake_team,
+    league_with_days,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -226,3 +249,118 @@ def test_full_scope_describes_itself_as_full() -> None:
     assert FULL_SCOPE.describe() == {"mode": "full"}
     assert FULL_SCOPE.is_full is True
     assert FULL_SCOPE.covers_day(999) and FULL_SCOPE.covers_period(999)
+
+
+#: 2026-10-03 14:00 UTC, the 2027 draft as ESPN had it on 2026-09-15.
+DRAFT_2027_EPOCH_MS = 1791036000000
+SEPTEMBER = datetime(2026, 9, 16, tzinfo=UTC)
+
+
+def _next_season(
+    *,
+    team_count: int = 15,
+    auction_budget: int = 200,
+    centre_limit: int = 3,
+    draft_epoch_ms: int | None = DRAFT_2027_EPOCH_MS,
+) -> Any:
+    league = fake_league(season=2027, team_count=team_count)
+    league.teams = [fake_team(team_id, f"Team {team_id}") for team_id in range(1, team_count + 1)]
+    roster = dict(DEFAULT_ROSTER_SETTINGS, positionLimits={"5": centre_limit})
+    draft = dict(DEFAULT_DRAFT_SETTINGS, auctionBudget=auction_budget, date=draft_epoch_ms)
+    return attach_transactions(league, {}, roster_settings=roster, draft_settings=draft)
+
+
+def _stored(session: Session, season: int) -> LeagueSeason | None:
+    session.expire_all()
+    return session.scalars(select(LeagueSeason).where(LeagueSeason.season == season)).one_or_none()
+
+
+def _runs(session: Session, season: int) -> list[IngestRun]:
+    return list(session.scalars(select(IngestRun).where(IngestRun.season == season)).all())
+
+
+def test_a_draft_is_pending_until_its_date_passes() -> None:
+    assert draft_is_pending(None, SEPTEMBER), "an unscheduled draft has not happened"
+    assert draft_is_pending(datetime(2026, 10, 3, 14, tzinfo=UTC), SEPTEMBER)
+    assert not draft_is_pending(datetime(2025, 10, 18, 17, tzinfo=UTC), SEPTEMBER)
+
+
+def test_season_settings_repair_a_stale_row_without_touching_play(session: Session) -> None:
+    """The 2026-09-15 row: 16 teams, $0, four centres, no draft date."""
+    stale = _next_season(team_count=16, auction_budget=0, centre_limit=4, draft_epoch_ms=None)
+    ingest_season_settings(session, stale)
+    session.commit()
+
+    ingest_season_settings(session, _next_season())
+    session.commit()
+
+    stored = _stored(session, 2027)
+    assert stored is not None
+    assert stored.team_count == 15
+    assert stored.auction_budget == 200
+    assert stored.position_limits == {"C": 3}
+    assert stored.drafted_at == datetime(2026, 10, 3, 14, tzinfo=UTC)
+    assert stored.draft_order == DEFAULT_DRAFT_SETTINGS["pickOrder"]
+    assert len(stored.teams) == 16, "teams are updated in place, never deleted"
+    assert session.scalar(select(func.count()).select_from(MatchupPeriod)) == 0
+    assert session.scalar(select(func.count()).select_from(PlayerGameStat)) == 0
+
+
+def test_upcoming_refresh_writes_settings_while_the_draft_is_ahead(
+    factory: sessionmaker[Session], session: Session
+) -> None:
+    note = refresh_upcoming_season(
+        factory, espn_league_id=3853870, season=2027, fetch=lambda _: _next_season(), now=SEPTEMBER
+    )
+
+    assert "settings refreshed" in note
+    stored = _stored(session, 2027)
+    assert stored is not None
+    assert (stored.team_count, stored.auction_budget) == (15, 200)
+    [run] = _runs(session, 2027)
+    assert (run.mode, run.status) == ("settings", SUCCEEDED)
+    assert run.detail["counts"] == {"teams": 15}
+
+
+def test_upcoming_refresh_skips_a_season_espn_does_not_have(
+    factory: sessionmaker[Session], session: Session
+) -> None:
+    """Most of the year. Not a failure, so no failed run to set off the health check."""
+
+    def missing(season: int) -> Any:
+        raise RuntimeError(f"League {season} does not exist")
+
+    note = refresh_upcoming_season(
+        factory, espn_league_id=3853870, season=2027, fetch=missing, now=SEPTEMBER
+    )
+
+    assert "not on ESPN yet" in note
+    assert _stored(session, 2027) is None
+    assert _runs(session, 2027) == []
+
+
+def test_upcoming_refresh_leaves_a_drafted_season_alone(
+    factory: sessionmaker[Session], session: Session
+) -> None:
+    """Once the draft is done, the regular ingest owns the season."""
+    ingest_season_settings(session, _next_season())
+    session.commit()
+
+    note = refresh_upcoming_season(
+        factory,
+        espn_league_id=3853870,
+        season=2027,
+        fetch=lambda _: _next_season(team_count=12, auction_budget=500),
+        now=datetime(2026, 10, 4, tzinfo=UTC),
+    )
+
+    assert "drafted 2026-10-03" in note
+    stored = _stored(session, 2027)
+    assert stored is not None
+    assert (stored.team_count, stored.auction_budget) == (15, 200)
+    assert _runs(session, 2027) == []
+
+
+def test_the_scheduled_job_asks_for_the_upcoming_season() -> None:
+    script = (REPO_ROOT / "scripts" / "scheduled_ingest.sh").read_text()
+    assert '--recent "$RECENT_DAYS" --upcoming' in script

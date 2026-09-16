@@ -1120,6 +1120,32 @@ def ingest_draft(session: Session, league_season: LeagueSeason, espn_league: ESP
     return written
 
 
+def scheduled_draft(espn_league: ESPNLeague) -> datetime | None:
+    """When ESPN says the season's draft is, or was. None if it is unscheduled."""
+    return _epoch_ms_to_datetime(fetch_draft_settings(espn_league)["drafted_at"])
+
+
+def draft_is_pending(drafted_at: datetime | None, now: datetime | None = None) -> bool:
+    """Whether a draft is still ahead: not yet scheduled, or scheduled later than now."""
+    return drafted_at is None or drafted_at > (now or datetime.now(UTC))
+
+
+def ingest_season_settings(session: Session, espn_league: ESPNLeague) -> LeagueSeason:
+    """Write a season's settings and teams, and nothing that needs play.
+
+    What a draft reads before it happens: team count, auction budget, roster
+    and position limits, draft date and order, and who is in the league. A
+    couple of ESPN requests, against a couple of hundred for a whole season.
+    No matchups, lineups, game logs or transactions, which an undrafted
+    season does not have. The draft itself is left to the full ingest.
+
+    Does not commit: the caller owns the transaction.
+    """
+    league_season = ingest_league_structure(session, espn_league)
+    ingest_teams(session, league_season, espn_league)
+    return league_season
+
+
 def ingest_season(
     session: Session, espn_league: ESPNLeague, scope: IngestScope = FULL_SCOPE
 ) -> LeagueSeason:

@@ -5,6 +5,11 @@
 # only the trailing days and leaves the rest of the season untouched. A full
 # pass stays a manual decision.
 #
+# --upcoming also refreshes next season's settings and teams (not its game
+# logs) while ESPN has that season and its draft is still ahead. Until
+# October the current season is the old one, and the draft being prepared
+# reads the new one's budget, team count and position limits.
+#
 # Exit codes matter here, because a scheduler is the only thing reading them:
 #   0   the ingest succeeded
 #   69  the database was unreachable, so nothing was attempted
@@ -77,8 +82,8 @@ if ! "$PYTHON" -m alembic current 2>/dev/null | grep -q '(head)'; then
     exit 1
 fi
 
-log "starting: --recent $RECENT_DAYS"
-if "$PYTHON" scripts/ingest_league.py --recent "$RECENT_DAYS" >> "$LOG_FILE" 2>&1; then
+log "starting: --recent $RECENT_DAYS --upcoming"
+if "$PYTHON" scripts/ingest_league.py --recent "$RECENT_DAYS" --upcoming >> "$LOG_FILE" 2>&1; then
     log "succeeded"
     exit 0
 fi

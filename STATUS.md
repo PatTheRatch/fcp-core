@@ -5,8 +5,9 @@
 - FastAPI application boots (`create_app()`)
 - Read-only HTTP API over the stored seasons, 22 endpoints (see below),
   including seven narrative routes. Writes stay with the ingest.
-- Nightly scheduled ingest keeping the current season current, with every
-  run recorded and queryable. **Runs on the VPS**, not a laptop.
+- Nightly scheduled ingest keeping the current season current, and the next
+  season's settings current while its draft is ahead, with every run recorded
+  and queryable. **Runs on the VPS**, not a laptop.
 - The API is served on the VPS at `http://100.105.64.94:8001`, reachable from
   the tailnet only.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
@@ -1311,8 +1312,30 @@ counted his production. Verified upstream, not a parsing fault.
 
 ### The scheduled ingest
 
-A nightly job refreshes the current season. It runs
-`scripts/scheduled_ingest.sh`, which calls the ingest in `--recent` mode.
+A nightly job refreshes the current season, and the next season's settings
+while its draft is still ahead. It runs `scripts/scheduled_ingest.sh`, which
+calls the ingest as `--recent --upcoming`.
+
+**Why the next season too.** The current season is whichever one ESPN is
+playing, so through September it is still the old one, while the draft being
+prepared reads the new one. Nothing refreshed that row. On 2026-09-15 the VPS
+held 2027 as 16 teams, a $0 auction budget, a centre limit of 4 and no draft
+date, when ESPN had 15 teams, $200, a limit of 3 and a draft on 2026-10-03.
+`app/draft/live.load_room` refuses a $0 budget, so the room would not have
+opened; it was fixed by hand with `--season 2027`. A day later ESPN had moved
+again, to 16 teams and a draft on 2026-10-10, which is the argument for doing
+this nightly rather than once.
+
+`--upcoming` fetches current + 1 and, if ESPN has it and its draft date is
+unset or still in the future, writes its settings (team count, auction
+budget, roster and position limits, draft type, date and order) and its
+teams and owners. Not matchups, lineups, game logs or transactions: a few
+ESPN requests, not a couple of hundred. The run is recorded in `ingest_runs`
+with mode `settings`. A season ESPN does not have yet, which is most of the
+year, is skipped with a line in the log and no run row, so it cannot trip
+the health check; a real ESPN outage has already failed the current season's
+run, which goes first. Once the draft date passes the season is left to the
+regular ingest, which takes it over at the October rollover.
 
 **Narrow by design.** A full season is a couple of hundred ESPN requests and
 about two and a half minutes. `--recent` covers the trailing ten scoring
