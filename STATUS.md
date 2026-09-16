@@ -142,7 +142,7 @@ each can be checked against a season that has already happened.
 | 2. Targets: what totals actually win a category here | done |
 | 3. Market model: what this league pays for value | done |
 | 4. Optimizer: best roster under a budget | done |
-| 5. Live draft room: state, remaining pool, re-solve | done; unproven against a live league until 2026-10-03 |
+| 5. Live draft room: state, remaining pool, re-solve | done, pending the manager's rehearsal; the live page reader is unproven until a mock or the draft on 2026-10-10 |
 
 **Why this differs from the previous attempt.** That one simulated what we
 can now measure. It ran Monte Carlo over imagined drafts to guess category
@@ -644,6 +644,15 @@ per-game exports with all 115 columns, checks each loads, replaces
 dropped, or moved $3+ in Leag$. First run 2026-09-16: 515 players, Josh Hart
 $9.3 to $5.1, Jalen Williams $26.2 to $29.9. Re-run `scripts/draft_plan.py`
 after a pull.
+
+The pull guards against BBM settings made in the browser. Leag$ is only
+exported while the punt panel's `cat_25` box is ticked, so the pull ticks it.
+And a settings change on 2026-09-16 raised every projected game count (median
++10; Wembanyama 61 to 68) with Assume Good Health still off; a plan built on
+it scored 6.19 expected wins against 5.53, all of it healthier players than
+BBM's own games expect. The pull now refuses an export without Leag$ or with
+the median player's games moved by two or more, and keeps the old files
+(`--accept-games` overrides).
 
 ### How good "expected to go for" is
 
@@ -1166,7 +1175,10 @@ Okongwu about 21 under it.
 
 ## Building now
 
-- The draft framework, layer by layer (see above)
+- Nothing in the draft framework. The code is done (2026-09-16), pending the
+  manager rehearsing on 2026 (`scripts/draft_service.py --rehearse 2026`) and
+  one ESPN mock draft to prove the page reader before 10 Oct. Before the
+  draft: re-pull BBM, re-run `scripts/draft_plan.py`.
 
 ### Why the schema is season-scoped
 

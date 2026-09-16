@@ -9,7 +9,9 @@ line), pulls both exports and writes BBM_Projections_<season>_total.xls and
 BBM_Projections_<season>_pergame.xls, the names the draft scripts take. Each
 file must load through the room's reader before it replaces the old one.
 Then it prints what moved since the last pull: players added or dropped, and
-league dollars (Leag$) that changed by at least --movers.
+league dollars (Leag$) that changed by at least --movers. It refuses, keeping
+the old files, an export without Leag$ or one whose projected games moved
+across the board, since both come from BBM settings, not news.
 
 The files are paid data: data/bbm/ is git-ignored, and stays that way.
 """
@@ -30,6 +32,11 @@ def main() -> int:
     ap.add_argument("--season", type=int, help="refuse the pull unless BBM is projecting this")
     ap.add_argument("--dir", type=Path, default=Path("data/bbm"))
     ap.add_argument("--movers", type=float, default=3.0, help="Leag$ change worth listing")
+    ap.add_argument(
+        "--accept-games",
+        action="store_true",
+        help="replace the files even if projected games shifted across the board",
+    )
     args = ap.parse_args()
 
     settings = BBMSettings()  # read from .env
@@ -44,23 +51,50 @@ def main() -> int:
     print(f"BBM {result.season}, {result.source}, league {result.league!r}")
 
     args.dir.mkdir(parents=True, exist_ok=True)
+    staged: list[tuple[Path, Path, list[BBMRow], list[BBMRow]]] = []
     for export in result.exports:
         target = args.dir / f"BBM_Projections_{result.season}_{export.kind}.xls"
         fresh = target.with_suffix(".xls.new")
         fresh.write_bytes(export.body)
+        before = read_bbm(target) if target.exists() else []
         try:
             rows = read_bbm(fresh)
+            check(rows, before, accept_games=args.accept_games)
         except Exception as exc:
-            fresh.unlink()
-            raise SystemExit(
-                f"{export.kind} export did not load, kept the old file: {exc}"
-            ) from exc
-        before = read_bbm(target) if target.exists() else []
+            for path in [fresh, *(f for _, f, _, _ in staged)]:
+                path.unlink(missing_ok=True)
+            raise SystemExit(f"{export.kind} export refused, kept the old files: {exc}") from exc
+        staged.append((target, fresh, before, rows))
+    for target, fresh, before, rows in staged:
         fresh.replace(target)
         print(f"\n{target}: {len(rows)} players")
         report_movers(before, rows, args.movers)
     print(f"\npulled {datetime.date.today():%-d %b %Y}")
     return 0
+
+
+#: A shift in the median projected games this large, across players in both
+#: files, is a settings change (Assume Good Health, a season window), not news.
+GAMES_SHIFT = 2.0
+
+
+def check(rows: list[BBMRow], before: list[BBMRow], *, accept_games: bool) -> None:
+    """Refuse an export the room would misread."""
+    if not any(r.league_dollars is not None for r in rows):
+        raise ValueError("no Leag$ column; the league-settings values are switched off in BBM")
+    if not before or accept_games:
+        return
+    old = {r.name: r.games for r in before}
+    shifts = sorted(r.games - old[r.name] for r in rows if r.name in old)
+    if shifts:
+        median = shifts[len(shifts) // 2]
+        if abs(median) >= GAMES_SHIFT:
+            raise ValueError(
+                f"projected games moved {median:+.0f} for the median player. That is a "
+                "BBM setting (Assume Good Health, the projection window), not news; "
+                "BBM's games already price missed time and the room relies on that. "
+                "Fix the setting, or pass --accept-games if the change is real"
+            )
 
 
 def report_movers(before: list[BBMRow], after: list[BBMRow], threshold: float) -> None:

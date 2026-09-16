@@ -12,6 +12,9 @@ Two things about the page, found by logging in (2026-09-16), not guessed:
 - Its dropdowns are scripted widgets (`bm-custom-select`), not `<select>`s.
   The browser posts each one under its `data-name` with the selected
   option's `data-value`, so the form state is read from those too.
+- Leag$, the value for this league's settings and what the room reads,
+  is only exported while the punt panel's `cat_25` box is ticked, so the
+  pull ticks it whatever the account has saved.
 - The export only carries the columns currently shown, 61 by default. The
   hand-downloaded files had 115, Age and the ADPs among them. Ticking every
   column and pressing Apply (`dcapply_DisplayColumnsId`) brings them back for
@@ -43,6 +46,11 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 )
 TIMEOUT = 180
+
+#: The punt-panel box that, ticked, puts the league-settings values (Leag$,
+#: LeagV, PuntV, Punt+) in the export. Found 2026-09-16 when a settings change
+#: in the browser unticked it and Leag$ vanished; forced on for every pull.
+LEAGUE_VALUES_FIELD = "cat_25"
 OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
@@ -174,6 +182,8 @@ class BBMClient:
             form = form_state(page)
             form["ValueDisplayType"] = value_type
             form["PlayerFilterControl"] = "AllPlayers"
+            # Unticked, the export drops Leag$ (and LeagV, PuntV, Punt+).
+            form[LEAGUE_VALUES_FIELD] = "25"
             form["EXCELBUTTON"] = ""
             body = self.http.post(
                 PROJECTIONS_URL, data=form, headers={"Referer": PROJECTIONS_URL}, timeout=TIMEOUT
