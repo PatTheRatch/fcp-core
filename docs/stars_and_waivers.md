@@ -165,6 +165,29 @@ Both columns are GROSS production per game the player appeared in, so they are d
 | $26+ picks | 281 | 37.09 | 36.69 | n/a |
 | waiver adds (all) | 6560 | 18.88 | 18.80 | 0.91 |
 
+### The same table in nine-category z-scores
+
+The composite above adds raw counts, so points dominate it and a shot-blocker
+reads as a scrub. Re-measured 2026-09-16 in z-scores: each player's per-game
+rate in each of the nine categories against the season's pool of players with
+20 or more games (turnovers inverted, FG% and FT% as makes above the pool's
+rate on the player's attempts), summed. Zero is an average rotation player.
+Drafted players over their whole season; waiver adds over their games after
+the add (computed 2026-09-16 on the live database; the script was a one-off check, not committed).
+
+| group | n | z per game (mean) | median | composite (mean) |
+|---|---|---|---|---|
+| $2 or less picks | 397 | -0.57 | -0.69 | 20.04 |
+| $3-5 picks | 176 | +0.48 | +0.45 | 23.20 |
+| $6-9 picks | 124 | +1.14 | +1.21 | 25.05 |
+| $10-25 picks | 271 | +2.57 | +2.51 | 28.96 |
+| $26+ picks | 287 | +5.62 | +5.24 | 37.18 |
+| waiver adds | 6679 | -0.87 | -0.93 | 19.08 |
+
+The reading holds and gets sharper: in z-scores a $10-25 player is worth
+about three and a half $1-2 picks' distance above a waiver add, and a $1-2
+pick sits close to what the wire returns.
+
 ### How long each stays rostered, and when he is dropped
 
 Held = in the team's daily lineup in ANY slot, so a benched player is still rostered. A dropped player is one whose last roster day falls before the end of the matchup period named, so the column reads "gone before period 4 finished".
