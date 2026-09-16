@@ -20,9 +20,14 @@ put back:
 
     result = EW(team week) - EW(team week - incoming started + outgoing counterfactual)
 
-The outgoing counterfactual is every game he played that period, for anyone,
-times the share of his games the team had started while it held him, so a
-bench player dropped is not credited with lines he would not have started.
+The outgoing counterfactual is the games he played, for anyone, on the days
+the move's spot was its own: the days the team held what came in (every day
+after the move, for a drop), times the share of his games the team had started
+while it held him. So a bench player dropped is not credited with lines he
+would not have started, and a streamer held two days is weighed against two
+days of the player he replaced, not the rest of the week, when the next
+pickup had the spot.
+
 Uneven counts are settled at replacement level (`app.scoring.replacement`):
 each spot the move opened is worth a typical pickup, each spot it used costs
 one. Averaged over the window's periods, in categories a week.
@@ -85,17 +90,16 @@ def _week_days(book: SeasonBook, period: int) -> int:
     return period_length(book.periods[period]) or 7
 
 
-def _all_games(book: SeasonBook, player_id: int, period: int) -> CategoryLine:
-    """Every game the player played in a period, for any team or none."""
-    found = book.periods[period]
+def _games_on(book: SeasonBook, player_id: int, days: set[int]) -> CategoryLine:
+    """Every game the player played on these days, for any team or none."""
+    if not days:
+        return CategoryLine({}, 0)
     columns = [getattr(PlayerGameStat, column) for column in COUNTS.values()]
     rows = book.session.execute(
         select(*columns).where(
             PlayerGameStat.player_id == player_id,
             PlayerGameStat.season == book.league_season.season,
-            PlayerGameStat.scoring_period.between(
-                found.first_scoring_period, found.final_scoring_period
-            ),
+            PlayerGameStat.scoring_period.in_(sorted(days)),
             PlayerGameStat.played.is_(True),
         )
     ).all()
@@ -103,6 +107,30 @@ def _all_games(book: SeasonBook, player_id: int, period: int) -> CategoryLine:
         {key: sum(float(row[i] or 0.0) for row in rows) for i, key in enumerate(COUNTS)},
         len(rows),
     )
+
+
+def _spot_days(
+    book: SeasonBook, team_id: int, day: int, players_in: Sequence[int], period: int
+) -> set[int]:
+    """The days in a period, after the move, that the move's roster spots were its own.
+
+    With players in, the days the team held any of them. With none (a drop), every
+    day of the period after the move.
+    """
+    found = book.periods[period]
+    first = max(int(found.first_scoring_period or 0), day + 1)
+    final = int(found.final_scoring_period or 0)
+    if not players_in:
+        return set(range(first, final + 1))
+    held = book.session.scalars(
+        select(DailyLineupSlot.scoring_period).where(
+            DailyLineupSlot.team_id == team_id,
+            DailyLineupSlot.player_id.in_(list(players_in)),
+            DailyLineupSlot.scoring_period.between(first, final),
+            DailyLineupSlot.slot != "FA",
+        )
+    ).all()
+    return {int(d) for d in held}
 
 
 def start_share(book: SeasonBook, team_id: int, player_id: int, before_day: int) -> float:
@@ -199,9 +227,8 @@ def grade_move(
     for period in periods:
         team = book.team_week(team_id, period)
         incoming = sum_lines(book.player_week(team_id, period, pid) for pid in players_in)
-        outgoing = sum_lines(
-            _all_games(book, pid, period).scaled(shares[pid]) for pid in players_out
-        )
+        days = _spot_days(book, team_id, day, players_in, period)
+        outgoing = sum_lines(_games_on(book, pid, days).scaled(shares[pid]) for pid in players_out)
         opponents = book.opponents.for_period(book.periods[period])
         without = team - incoming + outgoing
         results.append(expected_wins(team, opponents) - expected_wins(without, opponents))
