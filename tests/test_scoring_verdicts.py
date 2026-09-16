@@ -66,13 +66,14 @@ def test_the_band_is_smaller_than_a_move_worth_naming() -> None:
 
 
 def test_the_label_follows_the_band_and_not_the_rounded_number() -> None:
-    """0.035 prints as "+0.04" but is good; 0.025 prints as "+0.03" but is not.
+    """The classification is made on the number; the sentence reports it rounded."""
+    assert verdict(NEUTRAL_BAND + 0.004, 0.0).good_decision is True
+    assert verdict(NEUTRAL_BAND - 0.004, 0.0).good_decision is None
 
-    That is the band working as intended, per the module docstring: the
-    classification is made on the number, the sentence reports it rounded.
-    """
-    assert verdict(0.035, 0.0).good_decision is True
-    assert verdict(0.025, 0.0).good_decision is None
+
+def test_a_caller_grading_bigger_moves_passes_its_own_band() -> None:
+    assert verdict(0.4, 0.0).label == "Good call, no payoff yet"
+    assert verdict(0.4, 0.0, band=0.5).label == "Wash"
 
 
 def test_the_text_format() -> None:

@@ -16,35 +16,17 @@ what counts as neutral.
 
 WHAT COUNTS AS NEUTRAL
 
-Both lenses are money, so the band has to be in categories a week and must
-not swallow a real one. `NEUTRAL_BAND` is set from the measured spread of a
-typical waiver add, in `app.scoring.replacement` (medians 0.062 to 0.128
-across the eight seasons 2019-2026, interquartile ranges 0.012 to 0.034).
+A lens within `NEUTRAL_BAND` categories a week of zero is neutral. The scale
+comes from `app.scoring.replacement`: a typical waiver pickup adds 0.06-0.13
+categories a week (the median by season, 2019-2026), with the middle half of
+pickups spread across roughly 0.01 to 0.30. `NEUTRAL_BAND` is 0.05, about
+half of a typical pickup: a move worth less than half of the most ordinary
+move in the league is not worth calling good or bad.
 
-0.03 is the top of those interquartile ranges, and about a third of a typical
-pickup. That is the argument for it rather than a half of anything. Half of a
-pickup's *median*, the ticket's suggestion of 0.05, is also roughly the whole
-interquartile range of a pickup, so it would call most of the spread between
-one add and the next neutral -- and a starting pitcher's streamer move, which
-is the smallest thing the wire grades ever read, would be neutral far more
-often than not for no reason the data supports. At 0.03 a move has to clear
-the ordinary week-to-week noise of an add to be called anything at all: a
-+/- 0.02 is nobody's victory.
-
-Why the floor is a size and not a share. The result lens is measured against
-a whole team's season, and the decision lens against one player's expected
-line, so the two have different denominators; a share of either would mean
-the threshold moves with the thing it is judging, and the same verdict would
-need a different band per caller. One absolute size, named once, is the only
-version a reader can hold in their head.
-
-A caveat worth writing down rather than solving here, because S14 decides it:
-this band is the size of a wire move. A draft grade's numbers are bigger --
-a first round pick is worth several categories a week -- so a miss of 0.03
-there is not neutral in the way it is here. If that turns out to matter, the
-band belongs to the caller and `verdict` should take it as a parameter
-defaulting to `NEUTRAL_BAND`, rather than one number being tuned to satisfy
-two scales.
+The band is a size, not a share, so one number means the same thing to every
+reader. It is sized for moves on the wire and in trades of one or two
+players. A draft pick's value is several times larger, so callers grading
+bigger things pass their own `band` rather than tuning this one.
 
 FORMATTING
 
@@ -59,11 +41,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: Categories a week either lens may sit from zero and still read as neutral.
-#: The top of the interquartile range a waiver add shows in every one of the
-#: eight measured seasons (0.034 in 2020, the widest), and about a third of a
-#: typical pickup's median (0.062-0.128). See the module docstring.
-NEUTRAL_BAND = 0.03
+#: Categories a week either lens may sit from zero and still read as neutral:
+#: about half of a typical pickup's median value (0.06-0.13 by season,
+#: `app.scoring.replacement`). See the module docstring.
+NEUTRAL_BAND = 0.05
 
 #: The nine cells, decision rows by result columns. Every word a verdict can
 #: say lives here so no call site invents its own phrasing.
@@ -97,17 +78,14 @@ class Verdict:
     good_result: bool | None
 
 
-def lens(value: float) -> bool | None:
-    """Where one lens sits: good, neutral or bad, against `NEUTRAL_BAND`.
+def lens(value: float, band: float = NEUTRAL_BAND) -> bool | None:
+    """Where one lens sits: good, neutral or bad.
 
-    The band is closed, so a decision exactly `NEUTRAL_BAND` categories a
-    week is neutral and one just beyond it is good. The strict comparison is
-    what keeps a rounded -0.03 from reading as a loss, which matters because
-    the printed numbers are rounded to two decimals and 0.03 is not.
+    The band is closed: exactly `band` is neutral, just beyond it is good.
     """
-    if value > NEUTRAL_BAND:
+    if value > band:
         return True
-    if value < -NEUTRAL_BAND:
+    if value < -band:
         return False
     return None
 
@@ -123,7 +101,7 @@ def signed(value: float) -> str:
     return f"{rounded + 0.0:+.2f}"  # the + 0.0 turns a rounded -0.0 back into zero
 
 
-def verdict(decision: float, result: float) -> Verdict:
+def verdict(decision: float, result: float, *, band: float = NEUTRAL_BAND) -> Verdict:
     """Grade a move on both lenses: `decision` expected, `result` delivered.
 
     Both are categories a week and either may be negative, because a move can
@@ -131,8 +109,8 @@ def verdict(decision: float, result: float) -> Verdict:
     "Good call, bad break" and a poor call that won is "Lucky break on a poor
     call", and both facts have to survive to the sentence.
     """
-    good_decision = lens(decision)
-    good_result = lens(result)
+    good_decision = lens(decision, band)
+    good_result = lens(result, band)
     label = LABELS[(good_decision, good_result)]
     text = f"{label}: {signed(decision)} categories a week expected, {signed(result)} delivered."
     return Verdict(
