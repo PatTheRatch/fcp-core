@@ -24,6 +24,8 @@ from app.db.models import (
     Player,
     PlayerGameStat,
     Team,
+    Transaction,
+    TransactionItem,
 )
 from app.scoring.lines import COUNTS
 
@@ -203,3 +205,36 @@ def matchup(
             )
     session.flush()
     return row
+
+
+def transaction(
+    session: Session,
+    team: Team,
+    day: int,
+    kind: str,
+    items: list[tuple[str, Player, Team | None, Team | None]],
+    *,
+    status: str = "EXECUTED",
+) -> None:
+    """A transaction on `day`: items are (item type, player, from team, to team)."""
+    row = Transaction(
+        league_season_id=team.league_season_id,
+        espn_transaction_id=f"{kind}-{day}-{team.id}-{len(items)}-{items[0][1].id}",
+        team_id=team.id,
+        type=kind,
+        status=status,
+        scoring_period=day,
+    )
+    session.add(row)
+    session.flush()
+    for item_type, who, source, destination in items:
+        session.add(
+            TransactionItem(
+                transaction_id=row.id,
+                player_id=who.id,
+                item_type=item_type,
+                from_team_id=source.id if source else None,
+                to_team_id=destination.id if destination else None,
+            )
+        )
+    session.flush()
