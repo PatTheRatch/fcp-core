@@ -31,6 +31,9 @@ from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
+from app.db.models import LeagueSeason
 from app.draft.bbm import ROLES
 from app.draft.live import RoomError, load_room, market_prices
 from app.draft.optimizer import roster_totals, score
@@ -249,8 +252,16 @@ def main() -> int:
         )
     print(f"{len(fan_rows)} {args.fan_team} players costed", flush=True)
 
+    with factory() as session:
+        league_season = session.scalars(
+            select(LeagueSeason).where(LeagueSeason.season == args.season)
+        ).one()
+        drafted_at = league_season.drafted_at
+        order = list(league_season.draft_order or [])
     out = {
         "season": args.season,
+        "draft_at": drafted_at.isoformat() if drafted_at else None,
+        "nominate": order.index(state.me) + 1 if state.me in order else None,
         "fan_team": args.fan_team,
         "fan": fan_rows,
         "team": args.me,

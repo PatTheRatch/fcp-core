@@ -119,7 +119,7 @@
 
 <div class="wrap">
   <header>
-    <span class="eyebrow">2026–27 auction · 15 teams · nine categories</span>
+    <span class="eyebrow" id="eyebrow"></span>
     <h1>Through The Wire<br>Draft Plan</h1>
     <div class="facts" id="facts"></div>
   </header>
@@ -130,7 +130,7 @@
       <li><span class="n">1</span><p><b>Draft balanced.</b> Balanced drafts won 53.1% of categories to top-heavy's 48.0% across 98 team-seasons, in 6 of 8 seasons. Top-heavy lost even when its stars stayed healthy.</p></li>
       <li><span class="n">2</span><p><b>Pay for the middle.</b> $10–25 players produce about 28 a game; $1–2 picks produce 19, the same as a waiver pickup, and half are dropped within a month. The wire cannot replace the middle tier.</p></li>
       <li><span class="n">3</span><p><b>Buy rebounds, blocks and FG% with real money.</b> The waiver pool adds almost no blocks and hurts FG%. <b>Leave steals and threes for the end</b> — they are what cheap players and the wire actually supply.</p></li>
-      <li><span class="n">4</span><p><b>Take a star only inside the price.</b> This league pays about 1.5× for stars, and the going price is sized to that: it prices the room's real $3,000 with a quarter of the places at $1. Wembanyama at $118 would be a league record ($101 is the most anyone has paid), so read the very top as a range.</p></li>
+      <li><span class="n">4</span><p><b>Take a star only inside the price.</b> This league pays about 1.5× for stars, and the going price is sized to that: it prices the room's real <span id="pot"></span> with a quarter of the places at $1. <span id="top-star"></span> would be a league record ($101 is the most anyone has paid), so read the very top as a range.</p></li>
       <li><span class="n">5</span><p><b>Your picks, your call.</b> The room drafts like an average manager and has not beaten your drafts. Use these numbers to size bids, not to overrule a read you believe in.</p></li>
     </ol>
     <div class="ladder">
@@ -291,12 +291,30 @@ const fill = (id, items, fn, empty = "Nobody fits this list right now.") => {
   $(id).innerHTML = items.length ? items.map(fn).join("") : `<div class="row"><span class="muted">${empty}</span></div>`;
 };
 
+function ordinal(n) {
+  const tail = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th");
+  return n + tail;
+}
+function draftWhen(iso) {
+  if (!iso) return "";
+  const at = new Date(iso);
+  const day = at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  const time = at.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).toLowerCase();
+  return `<span>Draft <b>${day.replace(",", "")}</b>, ${time} UTC</span>`;
+}
+
 // facts, ladder, checkpoints
 $("facts").innerHTML = [
   `<span><b>${PLAN.teams}</b> teams</span>`, `<span><b>$${PLAN.budget}</b> budget</span>`,
-  `<span><b>${PLAN.roster_slots}</b> roster spots</span>`, `<span>Draft <b>Sat 3 Oct</b>, 2:00 pm UTC</span>`,
-  `<span>You nominate <b>13th</b> of 15</span>`,
+  `<span><b>${PLAN.roster_slots}</b> roster spots</span>`, draftWhen(PLAN.draft_at),
+  PLAN.nominate ? `<span>You nominate <b>${ordinal(PLAN.nominate)}</b> of ${PLAN.teams}</span>` : "",
 ].join("");
+$("pot").textContent = "$" + (PLAN.teams * PLAN.budget).toLocaleString("en-US");
+{
+  const star = PLAN.players.reduce((a, b) => (b.going > a.going ? b : a));
+  $("top-star").textContent = `${star.name} at $${star.going}`;
+}
+$("eyebrow").textContent = `${PLAN.season - 1}–${String(PLAN.season).slice(2)} auction · ${PLAN.teams} teams · nine categories`;
 $("cap").textContent = "$" + PLAN.cap;
 const ladder = PLAN.allocation, ladderTop = Math.max(...ladder);
 $("bars").innerHTML = ladder.map((v, i) => `<div class="bar ${i < 3 ? "top" : "rest"}" style="height:${Math.max(3, (v / ladderTop) * 100)}%"><span>$${v}</span></div>`).join("");
@@ -399,6 +417,6 @@ function drawAll() {
 $("search").addEventListener("input", drawAll);
 drawAll();
 
-$("exported").textContent = PLAN.exported || "14 Sep 2026";
+$("exported").textContent = PLAN.exported || "unknown";
 $("generated").textContent = PLAN.generated || "";
 </script>
