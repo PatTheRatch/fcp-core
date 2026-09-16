@@ -9,21 +9,21 @@ Every figure on the page comes from a query in this file. Nothing is written by
 hand per team: the prose is fixed labels, and the only sentences that vary are
 assembled from the numbers themselves. Adding a team means passing a name.
 
-THREE MEASURES, THREE DIFFERENT THINGS
---------------------------------------
-They are easy to confuse and the page labels each one:
+THE CURRENCY IS CATEGORIES A WEEK
+---------------------------------
+This league is head-to-head nine-cat, so players, picks, trades and pickups are
+graded in categories a week: how much a player's started lines moved his
+team's expected category wins against that season's teams (docs/scoring/SPEC.md,
+`app.scoring`). The page reads it from the scorecard (`app.scoring.scorecard`),
+the same numbers `scripts/scorecard.py` and the API serve.
 
-  banked      nine-category production a player generated WHILE IN THIS TEAM'S
-              STARTING LINEUP. This is what the team actually scored.
-  full season the same player's production for anyone, all year. The gap
-              between the two is what a team gave away.
-  games       days the player was started AND his NBA team played. A started
-              slot on a rest day is not a game and is never counted as one.
+Grades carry two lenses, decision first: what was knowable at the time, and
+what was delivered. "Good call, bad break" is a different season from "Lucky
+break on a poor call", and one number cannot say which.
 
-Nine-category production is PTS + REB + AST + STL + BLK + 3PM - TO. It is a
-rough single number for comparing players inside one category set, not a
-scoring system: this league is head-to-head nine-cat, and the category tables
-are the real record.
+Nine-category production (PTS + REB + AST + STL + BLK + 3PM - TO) survives
+only in fine print, as a measure of activity. It is not a score: it counts a
+three-pointer on a team punting threes in full.
 
 TRADES ARE RECONSTRUCTED, NOT READ
 ----------------------------------
@@ -38,9 +38,9 @@ season's 64 sides and 157 of 204 league-wide -- a lower bound, never an
 over-count. The page says so, and the count ESPN reports is shown next to the
 count we recovered.
 
-A trade is graded on what each player did AFTER the trade date, for anyone.
-That is the only fair basis -- production a player gives another roster still
-counts as production the trading team gave up.
+A trade is graded by the scoring package's move engine: from the trade to the
+end of the stretch, the team's weeks with what arrived against the same weeks
+with what left put back (`app.scoring.moves`).
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import make_engine, make_session_factory
+from app.scoring.scorecard import Scorecard, scorecard
 from app.scoring.trades import reconstruct_trades
 
 #: psycopg's dict_row gives back column name to value, with the value type
@@ -668,6 +669,7 @@ def gather(
             "worst_swaps": _swaps(cur, season_id, tid, season, best=False),
             "bench": _bench(cur, season_id, tid, season),
             "last_week": _last_week(cur, season_id, tid, season, weeks),
+            "card": scorecard(session, season, tid),
         }
 
 
@@ -814,37 +816,34 @@ def _findings(d: Row) -> list[tuple[str, str]]:
     an opinion about the manager; it is the largest gap of its kind.
     """
     out: list[tuple[str, str]] = []
-    picks = [p for p in d["draft"] if p["cost"]]
-
-    gone = [
-        p for p in picks if not p["kept"] and p["full_comp"] and p["full_comp"] - p["banked"] > 0
-    ]
-    if gone:
-        worst = max(gone, key=lambda p: p["full_comp"] - p["banked"])
-        left = (
-            f"left the roster on day {worst['last_day']}"
-            if worst["last_day"]
-            else "never appeared in a daily lineup"
-        )
+    card: Scorecard = d["card"]
+    if card.draft:
+        best = max(card.draft, key=lambda g: g.result)
+        worst = min(card.draft, key=lambda g: g.result)
         out.append(
             (
-                "Largest gap between what a pick cost and what it returned",
-                f"{worst['name']}, ${worst['cost']}, {worst['games']} games started, {left}. "
-                f"Produced {num(worst['full_comp'])} for the season, of which "
-                f"{num(worst['banked'])} landed in this lineup.",
+                "Best pick for the price",
+                f"{best.name}, ${best.price}, {best.outcome}: added {best.delivered:.2f} "
+                f"categories a week, {best.result:+.2f} against what a ${best.price} pick "
+                "usually adds.",
             )
         )
-
-    if picks:
-        best = max(picks, key=lambda p: p["per_dollar"] or 0)
-        if best["per_dollar"]:
+        if worst is not best:
             out.append(
                 (
-                    "Best return per auction dollar",
-                    f"{best['name']}, ${best['cost']}, {num(best['banked'])} banked across "
-                    f"{best['games']} games. {num(best['per_dollar'])} per dollar.",
+                    "Costliest pick for the price",
+                    f"{worst.name}, ${worst.price}, {worst.outcome}: added "
+                    f"{worst.delivered:.2f} categories a week, {worst.result:+.2f} against par.",
                 )
             )
+    if card.looks_like_punts:
+        out.append(
+            (
+                "Looks like a punt",
+                f"Won {', '.join(card.looks_like_punts)} in under a quarter of matchups. Inferred "
+                "from the record, not declared.",
+            )
+        )
 
     rates = d["rates"]
     if rates:
@@ -1074,132 +1073,171 @@ def render(d: Row, notes: dict[str, str] | None = None) -> str:
         "</div></section>"
     )
 
+    card: Scorecard = d["card"]
+
     # -- draft ------------------------------------------------------------
-    if d["draft"]:
-        spend = sum(p["cost"] or 0 for p in d["draft"])
+    if card.draft:
+        spend = sum(g.price for g in card.draft)
+        banked = {p["name"]: p for p in d["draft"]}
         add('<section><div class="shead"><h2>The draft</h2>')
-        add(f'<span class="tag">${spend} · {len(d["draft"])} players</span></div>')
+        add(f'<span class="tag">${spend} · {len(card.draft)} players</span></div>')
         note("draft")
         add(
             '<div class="wrap"><table><thead><tr>'
-            "<th>Player</th><th>Cost</th><th>Games</th><th>Banked</th><th>Per $</th>"
-            "<th>Full season</th><th>Left roster</th></tr></thead><tbody>"
+            "<th>Player</th><th>Cost</th><th>Board</th><th>Became</th>"
+            "<th>Cats a week</th><th>Verdict</th><th>Nine-cat</th></tr></thead><tbody>"
         )
-        for p in d["draft"]:
-            pd = p["per_dollar"]
-            cls = "pos" if pd and pd >= 100 else "neg" if pd is not None and pd < 40 else ""
-            if p["kept"]:
-                left = '<span class="dim">kept</span>'
-            elif p["last_day"]:
-                left = f"day {p['last_day']}"
-            else:
-                left = '<span class="dim">never rostered</span>'
+        for g in card.draft:
+            cls = "pos" if g.result > 0.1 else "neg" if g.result < -0.1 else ""
+            board = f"${g.projected_value}" if g.projected_value is not None else "—"
+            label = g.verdict.label if g.verdict else f"{g.result:+.2f} against par"
+            old = banked.get(g.name)
+            activity = num(old["banked"]) if old else "—"
             add(
-                f'<tr><td>{e(p["name"])}</td><td class="cost">${p["cost"] or 0}</td>'
-                f"<td>{p['games']}</td><td>{num(p['banked'])}</td>"
-                f'<td class="{cls}">{num(pd) if pd is not None else "—"}</td>'
-                f'<td class="dim">{num(p["full_comp"])} in {p["full_games"] or 0} g</td>'
-                f"<td>{left}</td></tr>"
+                f'<tr><td>{e(g.name)}</td><td class="cost">${g.price}</td>'
+                f'<td class="dim">{board}</td><td>{e(g.outcome)}</td>'
+                f'<td class="{cls}">{g.delivered:.2f}</td><td>{e(label)}</td>'
+                f'<td class="dim">{activity}</td></tr>'
             )
         add("</tbody></table></div>")
         add(
-            '<p class="note"><b>Banked</b> is nine-category production while in this starting '
-            "lineup. <b>Full season</b> is what the player produced for anyone, all year. "
-            "<b>Games</b> counts started days his NBA team actually played.</p></section>"
+            '<p class="note"><b>Cats a week</b> is what the pick added to this team\'s expected '
+            "category wins per regular-season week: his own weeks here, plus a share of what "
+            "came back if he was traded. A pick at his price usually adds "
+            "0.050 + 0.0735 × √price. <b>Board</b> is the room's valuation from that "
+            "season's projections. The verdict reads the board against the price, then what "
+            "he became against it. <b>Nine-cat</b> is raw production in this lineup, activity "
+            "only.</p></section>"
         )
 
-    # -- who actually played ---------------------------------------------
-    if d["starters"]:
-        total = d["drafted_comp"] + d["acquired_comp"]
-        share = 100 * d["acquired_comp"] / total if total else 0
-        add('<section><div class="shead"><h2>Where the production came from</h2>')
-        add(f'<span class="tag">{share:.0f}% acquired after the draft</span></div>')
+    # -- who won the categories -------------------------------------------
+    started = [p for p in card.players if p.regular.weeks_started]
+    if started:
+        prices = {g.player_id: g.price for g in card.draft}
+        total = sum(p.regular.team_fit for p in started)
+        acquired = sum(p.regular.team_fit for p in started if p.player_id not in prices)
+        share = 100 * acquired / total if total else 0
+        add('<section><div class="shead"><h2>Who won the categories</h2>')
+        add(f'<span class="tag">{share:.0f}% from players acquired after the draft</span></div>')
         note("production")
         add(
             '<div class="wrap"><table><thead><tr>'
-            "<th>Player</th><th>Games</th><th>Banked</th><th>Origin</th>"
-            "</tr></thead><tbody>"
+            "<th>Player</th><th>Weeks</th><th>Cats a week</th><th>League standard</th>"
+            "<th>Origin</th></tr></thead><tbody>"
         )
-        for s in d["starters"]:
-            origin = f"draft ${s['cost']}" if s["cost"] is not None else "acquired"
+        for p in sorted(started, key=lambda v: -v.regular.team_fit)[:15]:
+            origin = f"draft ${prices[p.player_id]}" if p.player_id in prices else "acquired"
             add(
-                f"<tr><td>{e(s['name'])}</td><td>{s['games']}</td>"
-                f'<td>{num(s["comp"])}</td><td class="dim">{e(origin)}</td></tr>'
+                f"<tr><td>{e(p.name)}</td>"
+                f"<td>{p.regular.weeks_started} of {p.regular.weeks_held}</td>"
+                f"<td>{p.regular.team_fit_per_week:+.2f}</td>"
+                f'<td class="dim">{p.regular.league_standard_per_week:+.2f}</td>'
+                f'<td class="dim">{e(origin)}</td></tr>'
             )
-        add("</tbody></table></div></section>")
+        add("</tbody></table></div>")
+        add(
+            '<p class="note"><b>Cats a week</b> is what his started lines added to this '
+            "team's expected category wins, per week held, so a scorer on a team punting "
+            "points counts for less. <b>League standard</b> is the same lines inside an "
+            "average team: comparable across the league, blind to fit. <b>Weeks</b> is weeks "
+            "started of weeks held.</p></section>"
+        )
 
     # -- trades -----------------------------------------------------------
-    if d["trades"]:
+    if card.trades:
         reported = team["trades"] or 0
+        after = {tr["day"]: tr for tr in d["trades"]}
         add('<section><div class="shead"><h2>Trades</h2>')
         add(
-            f'<span class="tag">{len(d["trades"])} reconstructed · '
+            f'<span class="tag">{len(card.trades)} reconstructed · '
             f"ESPN counts {reported}</span></div>"
         )
         note("trades")
         add('<div class="trades">')
-        for tr in d["trades"]:
-            got = ", ".join(e(r["name"]) for r in tr["in"]) or "—"
-            gave = ", ".join(e(r["name"]) for r in tr["out"]) or "—"
-            if tr["gradeable"]:
-                grade = "good" if tr["net"] > 150 else "bad" if tr["net"] < -150 else "flat"
-                verdict = f"{'+' if tr['net'] > 0 else ''}{num(tr['net'])}"
+        for graded in card.trades:
+            tr = graded.trade
+            got = ", ".join(e(p.name) for p in tr.players_in) or "—"
+            gave = ", ".join(e(p.name) for p in tr.players_out) or "—"
+            regular = graded.regular
+            if graded.part_missing or regular is None:
+                grade, verdict, why = "flat", "part missing", "One side could not be recovered."
             else:
-                grade, verdict = "flat", "part missing"
-            detail = "; ".join(
-                f"{e(r['name'])} {num(r['comp_after'])} in {r['games_after']} g"
-                for r in tr["in"] + tr["out"]
-            )
+                good = regular.verdict.good_result
+                grade = "good" if good else "bad" if good is False else "flat"
+                verdict = f"{regular.result:+.2f}"
+                weeks = len(regular.periods)
+                why = f"{e(regular.verdict.text)} Over {weeks} week{'s' if weeks != 1 else ''}."
+                if graded.playoffs:
+                    why += f" Playoffs: {e(graded.playoffs.verdict.text)}"
+            old = after.get(tr.day)
+            activity = ""
+            if old:
+                activity = (
+                    " Nine-cat after the trade: "
+                    + "; ".join(
+                        f"{e(r['name'])} {num(r['comp_after'])}" for r in old["in"] + old["out"]
+                    )
+                    + "."
+                )
             add(
-                f'<div class="trade"><div class="day">Day {tr["day"]}</div>'
+                f'<div class="trade"><div class="day">Day {tr.day}</div>'
                 f'<div class="flow"><span class="out">{gave}</span>'
                 f'<span class="arrow">→</span><span class="in">{got}</span>'
-                f'<span class="why">With {e(", ".join(tr["counterparties"]))}. '
-                f"After the trade: {detail}.</span></div>"
+                f'<span class="why">With {e(", ".join(tr.counterparty_names))}. {why}'
+                f'<span class="dim">{activity}</span></span></div>'
                 f'<div class="grade {grade}">{verdict}</div></div>'
             )
         add("</div>")
         add(
             '<p class="note">Reconstructed from roster movement, because ESPN’s transaction '
-            "feed does not carry player detail for most trades. The grade is production after the "
-            "trade date, for anyone: what arrived less what left. A deal marked "
-            "<b>part missing</b> had one side that could not be recovered.</p></section>"
+            "feed does not carry player detail for most trades. The grade is categories a week "
+            "from the trade to the end of the regular season (or until what arrived left): the "
+            "team's real weeks against the same weeks with what left put back. A two-for-one "
+            "counts the spot it opened as a typical pickup. <b>Part missing</b> means one side "
+            "could not be recovered, so it is not graded.</p></section>"
         )
 
     # -- wire -------------------------------------------------------------
-    wv_line = ""
-    if wv_mine and wv_rank:
-        wv_line = (
-            f"{num(wv_mine['per_day'], 2)} net production per day over the fortnight after each "
-            f"swap, across {wv_mine['moves']} one-for-one moves — {ordinal(wv_rank)} of "
-            f"{len(wv)}. Hit rate {int(wv_mine['hit_rate'])}%."
-        )
     add('<section><div class="shead"><h2>The wire</h2>')
     add(
         f'<span class="tag">{d["waivers"]["won"]} claims won · '
         f"{d['waivers']['failed']} failed</span></div>"
     )
     note("wire")
+    lasting = [m for m in card.wire if m.regular and len(m.regular.periods) >= 2]
     add(
         f"<p>${d['waivers']['spent']} of FAAB across {d['waivers']['won']} winning claims. "
-        f"Top bid ${d['waivers']['top_bid'] or 0}. {e(wv_line)}</p>"
+        f"Top bid ${d['waivers']['top_bid'] or 0}. A typical pickup this season added "
+        f"{card.replacement:.2f} categories a week. {len(lasting)} of {len(card.wire)} moves "
+        "kept their pickup two weeks or more.</p>"
     )
-    if d["best_swaps"] or d["worst_swaps"]:
+    if lasting:
+        ranked = sorted(lasting, key=lambda m: -(m.regular.result if m.regular else 0))
         add(
             '<div class="wrap"><table><thead><tr>'
-            "<th>Swap</th><th>Day</th><th>Net per day, next 14</th></tr></thead><tbody>"
+            "<th>Move</th><th>Day</th><th>Weeks</th><th>Cats a week</th><th>Verdict</th>"
+            "</tr></thead><tbody>"
         )
-        for s in d["best_swaps"]:
-            add(
-                f'<tr><td>{e(s["added"])} <span class="dim">for</span> {e(s["dropped"])}</td>'
-                f'<td>{s["day"]}</td><td class="pos">+{num(s["net"], 1)}</td></tr>'
+        shown = ranked[:3] + [m for m in ranked[-2:] if m not in ranked[:3]]
+        for m in shown:
+            move = m.regular
+            if move is None:
+                continue
+            cls = "pos" if move.result > 0 else "neg"
+            dropped = (
+                f' <span class="dim">for</span> {e(", ".join(m.dropped))}' if m.dropped else ""
             )
-        for s in d["worst_swaps"][:2]:
             add(
-                f'<tr><td>{e(s["added"])} <span class="dim">for</span> {e(s["dropped"])}</td>'
-                f'<td>{s["day"]}</td><td class="neg">{num(s["net"], 1)}</td></tr>'
+                f"<tr><td>{e(', '.join(m.added))}{dropped}</td><td>{m.day}</td>"
+                f'<td>{len(move.periods)}</td><td class="{cls}">{move.result:+.2f}</td>'
+                f"<td>{e(move.verdict.label)}</td></tr>"
             )
         add("</tbody></table></div>")
+    if wv_mine and wv_rank:
+        add(
+            f'<p class="note">Nine-cat activity: {num(wv_mine["per_day"], 2)} net production a day '
+            f"in the fortnight after each one-for-one swap, {ordinal(wv_rank)} of {len(wv)}.</p>"
+        )
     add("</section>")
 
     # -- bench ------------------------------------------------------------
