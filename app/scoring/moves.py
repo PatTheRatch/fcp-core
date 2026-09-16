@@ -144,6 +144,9 @@ def _window(
         return ()
     held = held_weeks(book.session, book.league_season.id, team_id)
     tenure = [p for pid in players_in for p in held.get(pid, set()) if p in after]
+    if playoffs and players_in and not tenure:
+        # Gone before the playoffs: the move has no playoff stretch to grade.
+        return ()
     last = max(tenure) if tenure else after[0]
     return tuple(p for p in after if p <= last)
 
