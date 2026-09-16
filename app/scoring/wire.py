@@ -36,7 +36,7 @@ class WireMove:
     playoffs: MoveGrade | None
 
 
-def _median(values: list[float]) -> float:
+def median_of(values: list[float]) -> float:
     ordered = sorted(values)
     if not ordered:
         return 0.0
@@ -51,7 +51,7 @@ def wire_grades(
 ) -> list[WireMove]:
     """Every executed wire move by the team, in date order."""
     book = book or SeasonBook.load(session, season)
-    replacement = _median(pickup_values(book))
+    replacement = median_of(pickup_values(book))
     rows = session.execute(
         select(
             Transaction.id,

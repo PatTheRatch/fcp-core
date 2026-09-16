@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.models import MatchupPeriod, Team
 from app.scoring.moves import grade_move, start_share
 from app.scoring.season import SeasonBook
+from app.scoring.trade_grades import trade_grades
 from app.scoring.wire import wire_grades
 from tests.scoring_db import held, league_season, matchup, player, transaction
 
@@ -97,3 +98,28 @@ def test_start_share_counts_only_games_while_held(scoring_session: Session) -> N
     held(session, home, periods[0], swingman, 3, slot="BE")  # no game: does not count
     book = SeasonBook.load(session, 2026)
     assert start_share(book, home.id, swingman.id, before_day=7) == pytest.approx(0.5)
+
+
+def test_a_trade_is_graded_from_the_teams_side(scoring_session: Session) -> None:
+    session = scoring_session
+    home, away, periods = season(session)
+    core, good, poor = (player(session, n) for n in ("Core", "Good", "Poor"))
+    for index, period in enumerate(periods):
+        held(session, home, period, core, index * 7 + 1, stats=CORE)
+    # Swapped after day 6: Poor to away, Good to home.
+    held(session, home, periods[0], poor, 5, stats=POOR)
+    held(session, home, periods[0], poor, 6)
+    held(session, away, periods[0], good, 5, stats=GOOD)
+    held(session, away, periods[0], good, 6)
+    for day in (7, 9, 15, 22):
+        period = periods[(day - 1) // 7]
+        held(session, home, period, good, day, stats=GOOD)
+        held(session, away, period, poor, day, stats=POOR)
+
+    grades = trade_grades(session, 2026, home.id)
+    assert len(grades) == 1
+    grade = grades[0]
+    assert not grade.part_missing
+    assert [p.name for p in grade.trade.players_in] == ["Good"]
+    assert grade.regular is not None
+    assert grade.regular.result > 0
