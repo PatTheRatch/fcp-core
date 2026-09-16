@@ -808,6 +808,75 @@ the local search stays, for the plan and for live ceilings.
 A first attempt on the VPS (branch `milp-gap`, 821 lines) never became
 feasible; this rewrite replaced it.
 
+### The opponent, checked from the other direction
+
+ESPN moved the 2027 league again on 2026-09-16, back to sixteen teams with
+the draft on 2026-10-10; the nightly `--upcoming` refresh caught it on the
+VPS and the local database was brought level by hand. At sixteen the
+opponent basis is no longer a borrow: it is 2023, the one sixteen-team
+season, brought forward where the game drifts. That is one season, so
+`scripts/opponent_check.py` (docs/opponent_check.md) estimates the same
+number without history: a draft dealt from the 2027 BBM board, 2000 times,
+sixteen rosters of thirteen at going prices, each team's week the sum of its
+projected lines at the started share; between-team spread from the
+simulation, within-team spread (three-game weeks, rest) from the league's
+own week-to-week variance, added in quadrature.
+
+The three routes agree on the means. 2023 brought forward, the fourteen-team
+seasons size-scaled, and the simulation land within 5% on points, rebounds,
+assists, threes and turnovers and within 10% on steals and blocks, with the
+history inside the bracket the simulation draws (raw, and on a
+games-actually-played basis, since a real opponent streams round the
+absences a projection prices). Backtested on 2026 from its own export the
+simulation reproduces the season within 4% in five of seven counting
+categories once games are put on that basis; the export is not quite a
+preseason file, so the factor is a bracket rather than a calibration. No
+change to the basis.
+
+Two things it exposed. 2023's between-team spread was the widest on record
+(78 points a week against 36-52 in every fourteen-team season, and 39 in the
+simulation at sixteen teams), so the room's opponent is wider than either
+alternative and flatters a strong roster by about a fifth of a category a
+week (5.52 expected wins against 5.32-5.35). And the projected pool shoots
+.489 from the field where the league posts .477-.483, in both 2026 and 2027:
+the opponent's FG% is read from history but the roster's own from the
+projections, so every roster is credited about 0.15 of a category a week in
+FG% it will not win. Recorded, not yet priced.
+
+### Hit these targets, maximise the rest
+
+The old "hit these targets, maximise that" tool, rebuilt on the exact
+solver. `app/draft/exact.py` now holds the MILP that `scripts/milp_gap.py`
+was built around, and takes what the local search cannot: a floor on any
+category's win probability. The floors are soft. Each is a slack variable
+charged `TARGET_WEIGHT` (ten categories a week per unit of probability) in
+the objective, so a set of targets the board cannot meet comes back as the
+roster that misses them by the least, with the shortfall reported, and never
+as "infeasible". The only hard constraints are the roster's rules and the
+spending shape, which is dropped when the locked players alone break it,
+as the local search drops it. Soft on purpose: a roster that misses a floor
+by a hair rather than concede another category outright is the better
+roster, and a hard floor would refuse it.
+
+`scripts/soft_targets.py` is the tool. A target is `REB=0.65` (win rebounds
+65% of weeks), `REB>=210` or `TO<=60` (a weekly total, turned into the
+probability it has against the opponent), or `FG%=0.55`. `--maximize wins`
+is the ordinary objective over everything else; `--maximize PTS,AST` counts
+only those. `--lock Name=price` and `--exclude Name` work as in the room, and
+the report shows every target against what the roster posts, the roster,
+every category beside the best roster with no targets, and what the targets
+cost in expected wins. If the solver returns nothing inside the time limit
+the local search's roster is reported instead, marked as such.
+
+First run, asking the balanced plan to reach 50% in points and assists, its
+two weakest categories: both met (0.52 and 0.59) for 0.036 expected wins a
+week, by swapping the plan's Maxey and Buzelis for Durant and Dyson Daniels
+and giving back rebounds, turnovers and FG%. Ten minutes at a 3.6% gap, so
+not proven; a better roster, if one exists, scores at most 0.19 more. Nine
+brute-forced tests hold the model to the real scorer on a toy pool: the
+optimum, a reachable floor met at least cost, an unreachable one missed by
+the least, locks, exclusions, punts, the shape and its dropping.
+
 ### What the mock draft taught us
 
 Run 2026-09-13 against a mock cloned from this league. The read API does

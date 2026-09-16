@@ -27,7 +27,9 @@ live = [
 projections = [
     "xlrd>=2.0",
 ]
-# The exact solver in scripts/milp_gap.py, which checks the local search.
+# The exact solver (app/draft/exact.py): the gap check in scripts/milp_gap.py
+# and the target builder in scripts/soft_targets.py. Nothing the room needs
+# on the night imports it.
 opt = [
     "scipy>=1.11",
 ]
