@@ -15,6 +15,26 @@ Standing rules for every ticket (VPS model):
 
 ---
 
+## Where it stands (2026-09-17)
+
+| ticket | state |
+|---|---|
+| S1 | tabled; probe on branch `scoring-s1` |
+| S2 | done (`app/scoring/trades.py`), VPS agent, reviewed |
+| S3 | done (`app/scoring/lines.py`) |
+| S4 | done (`app/scoring/value.py`) |
+| S5 | done (`app/scoring/league.py`) |
+| S6 | done (`app/scoring/replacement.py`, `season.py`) |
+| S7 | done (`app/scoring/players.py`) |
+| S8 | done (`app/scoring/knowable.py`), fitted blend rather than the ticket's |
+| S9 | done (`app/scoring/draft.py`) |
+| S10 | written, on branch `scoring-s10`, NOT merged: migration 0014 must be applied first |
+| S11 | done (`app/scoring/trade_grades.py`, on `moves.py`) |
+| S12 | done (`app/scoring/wire.py`, on `moves.py`) |
+| S13 | done (`app/scoring/verdicts.py`), VPS agent, reviewed and corrected |
+| S14 | done (`app/api/scorecard.py`, `scripts/scorecard.py`) |
+| S15 | done; three 2026 reports regenerated |
+
 ## Group A -- foundations (no dependencies)
 
 ### S1. Spike: does ESPN serve rest-of-season projections in season?

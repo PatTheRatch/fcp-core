@@ -1174,6 +1174,31 @@ disagreements worth looking at. Against a simple fit, the league paid about
 53 over the curve for Cade Cunningham and 45 for Giannis, and got Onyeka
 Okongwu about 21 under it.
 
+### Scoring players, drafts, trades and the wire
+
+`app/scoring/` grades a played season in **categories a week**: how much a
+line moved a team's expected category wins against that season's teams
+(docs/scoring/SPEC.md, tickets in docs/scoring/TICKETS.md). Every grade has
+two lenses, decision (what was knowable) and result (what was delivered),
+and a verdict sentence. `scripts/scorecard.py` and
+`GET .../teams/{tid}/scorecard` serve a team-season; the season report reads
+the same scorecard, with nine-cat production kept as fine print.
+
+Measured while building it (all on the live database, 2026-09-16):
+started lineups reproduce ESPN's weekly team totals on 294 of 294
+team-weeks; a typical pickup adds 0.06-0.13 categories a week; a pick at
+price p has delivered 0.050 + 0.0735 x sqrt(p) to its drafting team; the
+knowable line (season to date shrunk to the projection, a little recent
+form) beats the projection alone 2.85 to 4.36 on the next 28 days; trades
+reconstruct at or under ESPN's count every season (157 of 204). A
+league-wide check caught a counterfactual that charged every wire move
+for games already played; fixed, 1-for-1 moves average +0.07 a week and
+trades net to zero.
+
+S10 (daily projection snapshots) waits on branch `scoring-s10`: the nightly
+ingest refuses to run behind the latest migration, so 0014 is applied on the
+VPS before that branch merges.
+
 ## Building now
 
 - Nothing in the draft framework. The code is done (2026-09-16), pending the
