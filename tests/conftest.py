@@ -42,6 +42,10 @@ def scoring_factory(test_database_url: str) -> Iterator[sessionmaker[Session]]:
 @pytest.fixture
 def scoring_session(scoring_factory: sessionmaker[Session]) -> Iterator[Session]:
     with scoring_factory() as session:
+        # Both roots have to be named: cascading from `leagues` reaches
+        # `league_seasons` and everything under them, but `players` and `owners`
+        # are global by design and have no foreign key back to a league, so
+        # their rows survived into the next test.
         session.execute(text("TRUNCATE leagues, players, owners RESTART IDENTITY CASCADE"))
         session.commit()
         yield session
