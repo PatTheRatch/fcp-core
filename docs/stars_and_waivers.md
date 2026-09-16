@@ -184,9 +184,8 @@ the add (computed 2026-09-16 on the live database; the script was a one-off chec
 | $26+ picks | 287 | +5.62 | +5.24 | 37.18 |
 | waiver adds | 6679 | -0.87 | -0.93 | 19.08 |
 
-The reading holds and gets sharper: in z-scores a $10-25 player is worth
-about three and a half $1-2 picks' distance above a waiver add, and a $1-2
-pick sits close to what the wire returns.
+The reading holds and gets sharper: a $10-25 pick is 3.4 z a game above a
+waiver add, while a $1-2 pick is only 0.3 above it.
 
 ### How long each stays rostered, and when he is dropped
 
