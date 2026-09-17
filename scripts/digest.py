@@ -21,7 +21,6 @@ Exit codes:
 """
 
 import argparse
-import os
 import sys
 from datetime import UTC, datetime
 
@@ -36,9 +35,6 @@ from app.digest import (
     mark_notified,
 )
 from app.espn import get_espn_settings
-
-DIGEST_URL = "FCP_DIGEST_URL"
-DIGEST_CHAT_ID = "FCP_DIGEST_CHAT_ID"
 
 
 def main() -> int:
@@ -61,9 +57,10 @@ def main() -> int:
         print("FCP_TRACKED_TEAM_ID is not set; there is no team to report on.", file=sys.stderr)
         return 1
 
-    url = os.environ.get(DIGEST_URL)
-    chat_id = os.environ.get(DIGEST_CHAT_ID)
-    engine = make_engine(get_settings().database_url)
+    settings = get_settings()
+    url = settings.fcp_digest_url
+    chat_id = settings.fcp_digest_chat_id
+    engine = make_engine(settings.database_url)
     try:
         factory = make_session_factory(engine)
         with factory() as session:
@@ -96,7 +93,7 @@ def main() -> int:
                 print(text)
                 if not args.dry_run:
                     print(
-                        f"\n[{DIGEST_URL} is not set, so nothing was delivered"
+                        f"\n[FCP_DIGEST_URL is not set, so nothing was delivered"
                         f" and {len(event_ids)} event(s) stay unnotified]"
                     )
                 return 0

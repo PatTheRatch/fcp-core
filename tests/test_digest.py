@@ -490,3 +490,25 @@ def test_the_script_refuses_without_a_tracked_team(
     )
     assert completed.returncode == 1
     assert "FCP_TRACKED_TEAM_ID is not set" in completed.stderr
+
+
+def test_delivery_settings_come_from_the_env_file_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The VPS keeps its secrets in .env; a scheduled run reads no environment."""
+    from app.config import Settings
+
+    monkeypatch.delenv("FCP_DIGEST_URL", raising=False)
+    monkeypatch.delenv("FCP_DIGEST_CHAT_ID", raising=False)
+    blank = Settings(
+        database_url="postgresql+psycopg://x/y",
+        test_database_url="postgresql+psycopg://x/y_test",
+        fcp_digest_url="   ",
+        fcp_digest_chat_id="",
+    )
+    assert blank.fcp_digest_url is None and blank.fcp_digest_chat_id is None
+    set_up = Settings(
+        database_url="postgresql+psycopg://x/y",
+        test_database_url="postgresql+psycopg://x/y_test",
+        fcp_digest_url="https://api.telegram.org/botX/sendMessage",
+        fcp_digest_chat_id="12345",
+    )
+    assert set_up.fcp_digest_chat_id == "12345"

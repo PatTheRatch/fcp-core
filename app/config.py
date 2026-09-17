@@ -19,6 +19,26 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str
 
+    #: Where the digest and its alerts are delivered (app/notify.py). Unset
+    #: means print and deliver nothing. Read here rather than from the
+    #: environment alone so a scheduled run picks it up from `.env`, which is
+    #: where every other secret on the VPS lives.
+    fcp_digest_url: str | None = None
+    #: Set as well for Telegram's shape; unset posts ntfy's.
+    fcp_digest_chat_id: str | None = None
+
+    @field_validator("fcp_digest_url", "fcp_digest_chat_id", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: str | None) -> str | None:
+        """An empty value in `.env` or the environment means unset, not "".
+
+        A scheduled unit that exports the name with nothing after it would
+        otherwise deliver to the empty string and fail.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("database_url", "test_database_url")
     @classmethod
     def _must_use_psycopg(cls, value: str) -> str:
