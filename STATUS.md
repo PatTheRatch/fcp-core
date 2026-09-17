@@ -1195,9 +1195,9 @@ league-wide check caught a counterfactual that charged every wire move
 for games already played; fixed, 1-for-1 moves average +0.07 a week and
 trades net to zero.
 
-S10 (daily projection snapshots) waits on branch `scoring-s10`: the nightly
-ingest refuses to run behind the latest migration, so 0014 is applied on the
-VPS before that branch merges.
+S10 (daily projection snapshots) is on main with migration 0014. The nightly
+ingest refuses to run behind the latest migration, so pulling main on the VPS
+and `alembic upgrade head` go together, before the 09:00 UTC run.
 
 ## Building now
 

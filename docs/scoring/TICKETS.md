@@ -28,7 +28,7 @@ Standing rules for every ticket (VPS model):
 | S7 | done (`app/scoring/players.py`) |
 | S8 | done (`app/scoring/knowable.py`), fitted blend rather than the ticket's |
 | S9 | done (`app/scoring/draft.py`) |
-| S10 | written, on branch `scoring-s10`, NOT merged: migration 0014 must be applied first |
+| S10 | merged to main; apply migration 0014 on the VPS in the same step as pulling main |
 | S11 | done (`app/scoring/trade_grades.py`, on `moves.py`) |
 | S12 | done (`app/scoring/wire.py`, on `moves.py`) |
 | S13 | done (`app/scoring/verdicts.py`), VPS agent, reviewed and corrected |
