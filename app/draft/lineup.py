@@ -10,6 +10,11 @@ one.
 The optimizer treats an unfieldable roster as invalid, not as low scoring.
 Before this existed, a roster of thirteen centres would have scored well on
 blocks and rebounds and been accepted.
+
+The draft only ever asks whether the whole lineup can be covered, but the
+in-season question is how much of it can be, so the matching is sized rather
+than asked as a boolean (`max_matching`, with `can_field` on top of it).
+Same algorithm either way: a second one would be a second thing to be wrong.
 """
 
 from collections import Counter
@@ -62,22 +67,42 @@ def within_position_limits(
 _NON_LINEUP = frozenset({"BE", "IR"})
 
 
-def can_field(
+def max_matching(
     eligibilities: Mapping[int, Iterable[str]],
     lineup: Sequence[str] = DEFAULT_LINEUP,
-) -> bool:
-    """True if every lineup slot can be filled by a distinct eligible player.
+) -> int:
+    """How many lineup slots a set of players can fill at once.
+
+    The count `can_field` never needed: a roster of four guards against a
+    lineup with three guard places fills three, and the fourth is a start
+    going nowhere. In season that number is the whole question, because a
+    player with four games in a week is worth nothing on a day the lineup is
+    already full.
 
     `eligibilities` maps a player id to the slot names they may occupy. A
     player who could sit in UT covers any UT slot, so the three UT slots are
     simply three copies of the same requirement.
+
+    Standard augmenting-path matching: slots are distinguished by position in
+    `lineup`, so two UT slots are two slots. Returns the size of the largest
+    assignment, which is at most `len(lineup)`.
+
+    A single-slot lineup is the degenerate case and is answered directly. The
+    augmenting-path loop below cannot displace anyone when there is one slot,
+    and a slot's eligibility is all a player offers, so for one slot the
+    question is simply whether any player may take it: names both mean the
+    same thing to a reader, and the loop would answer it by accident.
     """
     players = list(eligibilities)
+    if not players or not lineup:
+        return 0
+
+    if len(lineup) == 1:
+        wanted = lineup[0]
+        return 1 if any(wanted in _usable(eligibilities[player]) for player in players) else 0
+
     slot_ids = list(range(len(lineup)))
-    eligible = {
-        player: {slot for slot in eligibilities[player] if slot not in _NON_LINEUP}
-        for player in players
-    }
+    eligible = {player: _usable(eligibilities[player]) for player in players}
 
     # slot index -> player currently assigned to it.
     assigned: dict[int, int] = {}
@@ -94,8 +119,32 @@ def can_field(
                 return True
         return False
 
-    matched = sum(1 for player in players if try_assign(player, set()))
-    return matched >= len(lineup)
+    return sum(1 for player in players if try_assign(player, set()))
+
+
+def _usable(slots: Iterable[str]) -> set[str]:
+    """The slots of one player's eligibility that are lineup slots at all.
+
+    Bench and injured reserve are eligibility ESPN lists and places nobody
+    starts, so they are dropped once here rather than at every call site.
+    """
+    return {slot for slot in slots if slot not in _NON_LINEUP}
+
+
+def can_field(
+    eligibilities: Mapping[int, Iterable[str]],
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+) -> bool:
+    """True if every lineup slot can be filled by a distinct eligible player.
+
+    The yes/no over `max_matching`: a lineup is fieldable exactly when the
+    largest assignment covers all of it. Kept as a name because it reads as
+    the question the optimizer asks, and because everything already calling
+    it means this, not the count.
+    """
+    if not lineup:
+        return True
+    return max_matching(eligibilities, lineup) >= len(lineup)
 
 
 def uncovered_slots(
