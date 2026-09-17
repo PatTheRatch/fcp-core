@@ -157,7 +157,7 @@
   </section>
 
   <section id="flags">
-    <div class="sec-head"><h2>BBM flags</h2><p class="legend">Every player going for $3 or more that Basketball Monster's analysts have tagged — breakout and sleeper calls, bust calls, position battles — plus any projection BBM rates 4/10 or less. Tags BBM adds before the draft show up here on refresh.</p></div>
+    <div class="sec-head"><h2>BBM flags</h2><p class="legend">Every player going for $3 or more that Basketball Monster's analysts have tagged — breakout and sleeper calls, bust calls, position battles — plus any projection BBM rates 4/10 or less. Good news first, then position battles and shaky projections, then bust calls; within each, most valuable to us first (what we would bid). Tags BBM adds before the draft show up here on refresh.</p></div>
     <div class="list" id="list-flags"></div>
   </section>
 
@@ -349,13 +349,16 @@ fill("list-fan", fan, (f) => {
 }, "No Cavaliers priced on the board.");
 
 // BBM flags
-const flagged = P.filter((p) => p.going >= 3 && ((p.tags || []).length || (p.confidence !== null && p.confidence <= 4)))
-  .sort((a, b) => b.going - a.going);
-fill("list-flags", flagged, (p) => {
+// Good news first (breakout, sleeper), then the uncertain (position battles,
+// low confidence), then bad news (bust, tank); each group by what we would pay.
+function flagKind(p) {
   const t = (p.tags || []).join(" ").toLowerCase();
-  const kind = t.includes("bust") || t.includes("tank") ? "stop" : t.includes("breakout") || t.includes("sleeper") ? "buy" : "warn";
-  return row(p, pill(kind, `Bid up to $${bidTo(p)}`));
-}, "No flagged players yet.");
+  return t.includes("bust") || t.includes("tank") ? "stop" : t.includes("breakout") || t.includes("sleeper") ? "buy" : "warn";
+}
+const FLAG_ORDER = { buy: 0, warn: 1, stop: 2 };
+const flagged = P.filter((p) => p.going >= 3 && ((p.tags || []).length || (p.confidence !== null && p.confidence <= 4)))
+  .sort((a, b) => FLAG_ORDER[flagKind(a)] - FLAG_ORDER[flagKind(b)] || bidTo(b) - bidTo(a) || b.going - a.going);
+fill("list-flags", flagged, (p) => row(p, pill(flagKind(p), `Bid up to $${bidTo(p)}`)), "No flagged players yet.");
 
 // targets: both agree
 const mid = P.filter((p) => p.going >= 8 && p.going < 40);
