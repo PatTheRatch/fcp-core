@@ -1415,6 +1415,11 @@ picking a winner silently.
    build: the streaming recommender (2) and the rest-of-season recommender
    (3), both backtestable on the stored 2026 season, which is what would
    fill the two sections the digest currently leaves out.
+5. The end-of-week matchup predictor, designed in `docs/week_predictor.md`:
+   each category's chance of being won this week, and the matchup's, from the
+   fitted knowable line, the stored NBA schedule and the listener's
+   availability. ESPN data only, so it needs no paid source, and it is
+   backtestable on 2026 except for availability, which has no history.
 
 ### Prior seasons
 
