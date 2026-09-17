@@ -28,6 +28,7 @@ from app.db.models import (
     Owner,
     Player,
     PlayerGameStat,
+    PlayerProjectionSnapshot,
     PlayerSeasonStat,
     RosterSlot,
     Team,
@@ -35,7 +36,15 @@ from app.db.models import (
     TransactionItem,
 )
 from app.db.session import make_engine, make_session_factory
-from app.ingest import IngestScope, ingest_league_structure, ingest_season
+from app.ingest import (
+    IngestScope,
+    ingest_daily_lineups,
+    ingest_league_structure,
+    ingest_matchups_and_rosters,
+    ingest_player_stats,
+    ingest_season,
+    ingest_teams,
+)
 from tests.fakes import (
     BOX_LINE,
     NINE_CAT_STAT_IDS,
@@ -1307,3 +1316,41 @@ def test_a_league_without_draft_settings_stores_zero_rather_than_guessing(
     assert stored.draft_type is None
     assert stored.seconds_per_pick is None
     assert stored.draft_order == []
+
+
+def test_each_days_projection_is_kept(session: Session) -> None:
+    """The season row keeps the latest projection; the snapshots keep every day's."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    starter = fake_player(100, "Starter", slot="PG")
+
+    def league(points: float) -> Any:
+        return league_with_days(
+            teams=[home, away],
+            boxes={1: [fake_box(home, away, home_lineup=[starter])]},
+            days={1: {1: [fake_box(home, away, home_lineup=[starter], away_lineup=[])]}},
+            windows={1: ["1"]},
+            matchup_period_count=1,
+            cards={
+                100: fake_card(100, "Starter", {1: BOX_LINE}, projected={"PTS": points, "GP": 70.0})
+            },
+        )
+
+    monday = datetime(2026, 11, 2, 9, tzinfo=UTC)
+    tuesday = datetime(2026, 11, 3, 9, tzinfo=UTC)
+    for when, points in ((monday, 1700.0), (monday, 1710.0), (tuesday, 1650.0)):
+        espn = league(points)
+        stored = ingest_league_structure(session, espn)
+        ingest_teams(session, stored, espn)
+        ingest_matchups_and_rosters(session, stored, espn)
+        ingest_daily_lineups(session, stored, espn)
+        ingest_player_stats(session, stored, espn, now=when)
+        session.commit()
+
+    snapshots = {
+        s.captured_on.isoformat(): s
+        for s in session.scalars(select(PlayerProjectionSnapshot)).all()
+    }
+    assert set(snapshots) == {"2026-11-02", "2026-11-03"}
+    assert snapshots["2026-11-02"].stats["PTS"] == 1710.0  # the day's last read wins
+    assert snapshots["2026-11-03"].stats["PTS"] == 1650.0
+    assert snapshots["2026-11-03"].games_played == 70.0

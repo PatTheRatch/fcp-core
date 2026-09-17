@@ -11,7 +11,7 @@ ingest safe to run every year, and on a schedule within a year.
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from espn_api.basketball import League as ESPNLeague
@@ -33,6 +33,7 @@ from app.db.models import (
     Owner,
     Player,
     PlayerGameStat,
+    PlayerProjectionSnapshot,
     PlayerSeasonStat,
     RosterSlot,
     Team,
@@ -594,13 +595,39 @@ def _season_rollups(espn_player: Any, season: int) -> list[tuple[str, dict[str, 
     return found
 
 
+def _snapshot_projection(
+    session: Session, player_id: int, season: int, totals: dict[str, Any], captured_on: date
+) -> None:
+    """Keep today's projection for a player; a second run the same day overwrites it."""
+    snapshot = session.scalar(
+        select(PlayerProjectionSnapshot).where(
+            PlayerProjectionSnapshot.player_id == player_id,
+            PlayerProjectionSnapshot.season == season,
+            PlayerProjectionSnapshot.captured_on == captured_on,
+            PlayerProjectionSnapshot.kind == "projected",
+        )
+    )
+    if snapshot is None:
+        snapshot = PlayerProjectionSnapshot(
+            player_id=player_id, season=season, captured_on=captured_on, kind="projected"
+        )
+        session.add(snapshot)
+    snapshot.games_played = float(totals["GP"]) if totals.get("GP") is not None else None
+    snapshot.stats = dict(totals)
+
+
 def ingest_player_stats(
     session: Session,
     league_season: LeagueSeason,
     espn_league: ESPNLeague,
     scope: IngestScope = FULL_SCOPE,
+    *,
+    now: datetime | None = None,
 ) -> int:
     """Write a box score line per player per scoring period. Returns rows written.
+
+    Also snapshots each card's projection under today's date (UTC), in
+    `player_projection_snapshots`, since the season row keeps only the latest.
 
     Scoped to players who appeared on a roster this season, so ingesting a
     second league does not refetch the whole player universe.
@@ -609,6 +636,7 @@ def ingest_player_stats(
     The naive version issued a query for each of roughly 28000 rows, which
     took over two minutes and dominated the cost of a scheduled run.
     """
+    captured_on = (now or datetime.now(UTC)).date()
     espn_player_ids = _season_player_ids(session, league_season)
     players = {
         player.espn_player_id: player
@@ -669,6 +697,8 @@ def ingest_player_stats(
                 ]
                 position = getattr(espn_player, "position", None)
                 rollup.primary_position = str(position) if position else None
+                if kind == "projected":
+                    _snapshot_projection(session, player.id, season, totals, captured_on)
                 for abbreviation, column in _PLAYER_STAT_COLUMNS.items():
                     if column == "personal_fouls" or column in (
                         "offensive_rebounds",

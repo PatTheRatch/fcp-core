@@ -1,9 +1,11 @@
 """The knowable line: projection shrunk toward season to date, a little recent form."""
 
+from datetime import date
+
 import pytest
 from sqlalchemy.orm import Session
 
-from app.db.models import PlayerSeasonStat
+from app.db.models import PlayerProjectionSnapshot, PlayerSeasonStat
 from app.scoring.knowable import PRIOR_GAMES, RECENT_WEIGHT, knowable, knowable_line
 from tests.scoring_db import held, league_season, player
 
@@ -65,3 +67,29 @@ def test_an_unusable_projection_season_leans_on_games_alone(scoring_session: Ses
     line = knowable(session, who.id, 2023, day=5)
     assert not line.had_projection
     assert line.per_game.get("PTS") == pytest.approx(12.0)
+
+
+def test_a_saved_snapshot_stands_in_for_the_preseason_projection(
+    scoring_session: Session,
+) -> None:
+    session = scoring_session
+    who = player(session, "Revised")
+    project(session, who.id, 2027, points=750, games=75)  # 10 a game preseason
+    for captured, points in ((date(2026, 11, 1), 1500.0), (date(2026, 11, 20), 1800.0)):
+        session.add(
+            PlayerProjectionSnapshot(
+                player_id=who.id,
+                season=2027,
+                captured_on=captured,
+                kind="projected",
+                games_played=60.0,
+                stats={"PTS": points, "GP": 60.0},
+            )
+        )
+    session.flush()
+    early = knowable(session, who.id, 2027, day=1, as_of=date(2026, 11, 10))
+    assert early.source == "snapshot"
+    assert early.per_game.get("PTS") == pytest.approx(25.0)
+    assert knowable(session, who.id, 2027, day=1).per_game.get("PTS") == pytest.approx(10.0)
+    before_any = knowable(session, who.id, 2027, day=1, as_of=date(2026, 10, 1))
+    assert before_any.source == "blend"
