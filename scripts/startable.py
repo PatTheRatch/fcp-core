@@ -21,6 +21,12 @@ check it reports came from.
 
 import argparse
 import sys
+from pathlib import Path
+
+# Run by path, so `scripts/` is on sys.path and the repo root is not. Without
+# this, `app` resolves to whichever checkout the interpreter's venv installed,
+# which is the production one when a worktree borrows /opt/fcp-core/.venv.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session

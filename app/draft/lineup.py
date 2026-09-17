@@ -87,19 +87,10 @@ def max_matching(
     `lineup`, so two UT slots are two slots. Returns the size of the largest
     assignment, which is at most `len(lineup)`.
 
-    A single-slot lineup is the degenerate case and is answered directly. The
-    augmenting-path loop below cannot displace anyone when there is one slot,
-    and a slot's eligibility is all a player offers, so for one slot the
-    question is simply whether any player may take it: names both mean the
-    same thing to a reader, and the loop would answer it by accident.
     """
     players = list(eligibilities)
     if not players or not lineup:
         return 0
-
-    if len(lineup) == 1:
-        wanted = lineup[0]
-        return 1 if any(wanted in _usable(eligibilities[player]) for player in players) else 0
 
     slot_ids = list(range(len(lineup)))
     eligible = {player: _usable(eligibilities[player]) for player in players}
