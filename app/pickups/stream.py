@@ -53,7 +53,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -74,6 +75,9 @@ from app.pickups.state import (
 )
 from app.scoring.lines import CategoryLine
 
+if TYPE_CHECKING:  # A cycle at runtime: `bids` ranks the wire with `weight`.
+    from app.pickups.bids import Bid
+
 #: Categories a move must add to be recommended (docs/pickups.md section
 #: 4.3, a starting value pending the backtest). A typical pickup measured
 #: 0.06-0.13 categories a week (STATUS.md), so this asks for a good one.
@@ -89,6 +93,10 @@ REPORT_MOVES = 5
 
 #: A category has "moved" when its win probability changes by this much.
 MOVED_THRESHOLD = 0.01
+
+#: Days in a matchup period, which is what a week's claim buys: a bid made
+#: with two days left is bid for two of seven.
+PERIOD_DAYS = 7.0
 
 SWAP = "swap"
 ADD = "add"
@@ -140,6 +148,10 @@ class Move:
     shifts: tuple[CategoryShift, ...]
     #: Whether the move seats a player on a day a slot was going empty.
     fills_empty_day: bool
+    #: What to pay for the added player, on a move that clears the hurdle
+    #: (`app.pickups.bids`). None on a move that does not, and when the
+    #: caller asked for no bids.
+    bid: Bid | None = None
 
     def moved(self, threshold: float = MOVED_THRESHOLD) -> tuple[CategoryShift, ...]:
         """The categories the move changed, largest change first."""
@@ -332,12 +344,14 @@ def stream_recommendations(
     pool_size: int = POOL_SIZE,
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
+    bids: bool = True,
 ) -> StreamReport:
     """The streaming report for ESPN team `team_id` on scoring period `today`.
 
     `pool` names the free agents to consider instead of the latest pass's
     wire; `distributions` stands in for the season's measured ones. Both
-    exist for tests and the backtest. `tilt` switches the minutes tilt.
+    exist for tests and the backtest. `tilt` switches the minutes tilt, and
+    `bids` whether a move that clears the hurdle is priced in FAAB.
     """
     week = load_team_week(session, league_season, team_id, today)
     season = int(league_season.season)
@@ -435,9 +449,53 @@ def stream_recommendations(
                     moves.append(evaluate(IR_MOVE, add, None, hurt))
 
     moves.sort(key=lambda move: (-move.delta, move.add.player_id, _id_of(move.drop)))
-    return _report(
-        week, base, their_line, before, _best_per_add(moves), empty_days, hurdle, len(wire)
-    )
+    reported = _best_per_add(moves)
+    if bids:
+        reported = _priced(session, league_season, week, reported, wire, hurdle)
+    return _report(week, base, their_line, before, reported, empty_days, hurdle, len(wire))
+
+
+def _priced(
+    session: Session,
+    league_season: LeagueSeason,
+    week: TeamWeek,
+    moves: Sequence[Move],
+    wire: Sequence[Contender],
+    hurdle: float,
+) -> tuple[Move, ...]:
+    """A FAAB bid on every move that clears the hurdle.
+
+    `app.pickups.bids` reads this module for its own ranking, so it is
+    imported here rather than at the top: the two halves of the recommender
+    would otherwise import each other.
+
+    The rank is taken among the free agents this report evaluated, ranked by
+    the same per-game weight the fit ranks a historical wire by. The bid's
+    share of the pot is the week's share of the period, since a streaming
+    claim is bought for the days that are left.
+    """
+    from app.pickups.bids import bid_fit, recommend_bid, value_rank
+
+    if not any(move.clears(hurdle) for move in moves):
+        return tuple(moves)
+    fit = bid_fit(session, league_season)
+    weights = {contender.player_id: contender.weight for contender in wire}
+    priced: list[Move] = []
+    for move in moves:
+        if not move.clears(hurdle):
+            priced.append(move)
+            continue
+        bid = recommend_bid(
+            move.delta,
+            hurdle,
+            value_rank(move.add.player_id, weights),
+            week.faab_remaining,
+            len(week.scoring_periods_remaining),
+            PERIOD_DAYS,
+            fit,
+        )
+        priced.append(replace(move, bid=bid))
+    return tuple(priced)
 
 
 def _best_per_add(ranked: Sequence[Move]) -> tuple[Move, ...]:

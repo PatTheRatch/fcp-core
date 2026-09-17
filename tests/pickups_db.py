@@ -26,6 +26,7 @@ from app.db.models import (
     ProTeamGame,
     Team,
     Transaction,
+    TransactionItem,
 )
 from app.draft.targets import CategoryDistribution
 from app.scoring.lines import COUNTS
@@ -240,16 +241,25 @@ def on_the_wire(
 
 
 def winning_bid(session: Session, team: Team, day: int, amount: int, who: Player) -> None:
-    """An executed waiver claim by `team` for `amount` of FAAB."""
+    """An executed waiver claim by `team` for `amount` of FAAB, adding `who`."""
+    claim = Transaction(
+        league_season_id=team.league_season_id,
+        espn_transaction_id=f"bid-{day}-{team.id}-{who.id}",
+        team_id=team.id,
+        type="WAIVER",
+        status="EXECUTED",
+        scoring_period=day,
+        bid_amount=amount,
+    )
+    session.add(claim)
+    session.flush()
     session.add(
-        Transaction(
-            league_season_id=team.league_season_id,
-            espn_transaction_id=f"bid-{day}-{team.id}-{who.id}",
-            team_id=team.id,
-            type="WAIVER",
-            status="EXECUTED",
-            scoring_period=day,
-            bid_amount=amount,
+        TransactionItem(
+            transaction_id=claim.id,
+            player_id=who.id,
+            item_type="ADD",
+            from_team_id=None,
+            to_team_id=team.id,
         )
     )
     session.flush()
