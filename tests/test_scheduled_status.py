@@ -74,3 +74,10 @@ def test_the_timer_fires_at_the_three_slots() -> None:
     timer = (REPO_ROOT / "deploy" / "fcp-core-status.timer").read_text()
     for slot in ("15:00:00", "22:30:00", "00:30:00"):
         assert f"OnCalendar=*-*-* {slot} UTC" in timer
+
+
+def test_the_timer_passes_nothing_so_the_wrapper_names_the_pass_from_the_clock() -> None:
+    """Without this the digest never saw "morning" and only ever alerted."""
+    script = (REPO_ROOT / "scripts" / "scheduled_status.sh").read_text()
+    assert 'set -- --label "$LABEL"' in script
+    assert "label_for(datetime.now(UTC))" in script

@@ -36,6 +36,16 @@ require_python
 wait_for_database
 require_schema_at_head
 
+# The timer passes no arguments. Name the pass from the clock here, once, so
+# the pass and the digest below agree on which one this is; left to the pass,
+# the digest would never see "morning" and the morning digest would never go.
+if [ "$#" -eq 0 ]; then
+    LABEL="$("$PYTHON" -c 'from datetime import UTC, datetime
+from app.listener.status import label_for
+print(label_for(datetime.now(UTC)))')"
+    set -- --label "$LABEL"
+fi
+
 log "starting: status pass $*"
 if ! "$PYTHON" scripts/status_pass.py "$@" >> "$LOG_FILE" 2>&1; then
     log "FAILED: see the lines above and the ingest_runs table"

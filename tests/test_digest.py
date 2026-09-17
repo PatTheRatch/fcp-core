@@ -437,6 +437,9 @@ def test_the_script_prints_and_marks_nothing_without_a_delivery_url(
         env={
             **os.environ,
             "DATABASE_URL": test_database_url,
+            # Settings requires it, and the script runs outside the repo, so
+            # no .env supplies it.
+            "TEST_DATABASE_URL": test_database_url,
             "ESPN_LEAGUE_ID": str(LEAGUE_ID),
             "ESPN_SWID": "{x}",
             "ESPN_S2": "y",
@@ -470,6 +473,9 @@ def test_the_script_refuses_without_a_tracked_team(
         env={
             **os.environ,
             "DATABASE_URL": test_database_url,
+            # Settings requires it, and the script runs outside the repo, so
+            # no .env supplies it.
+            "TEST_DATABASE_URL": test_database_url,
             "ESPN_LEAGUE_ID": str(LEAGUE_ID),
             "ESPN_SWID": "{x}",
             "ESPN_S2": "y",
