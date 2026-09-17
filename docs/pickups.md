@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, auction draft, FAAB
 **Written:** 2026-09-16, five weeks before the 2027 season tips off (ESPN labels a season by the year it ends in)
-**Status:** design note, nothing built. Intended as a handoff: it names tables, sources, modules, tests and phases so an implementer needs no other context beyond `STATUS.md` and the code it points at.
+**Status:** layer 1, the listener, is built (2026-09-17: `app/listener/`, migration `0016`, `scripts/status_pass.py`, `deploy/fcp-core-status.*`) and waits on the VPS steps in `STATUS.md` under "The listener". Layers 2 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
 **Companions:** [`waiver_value.md`](waiver_value.md) (what the wire offered), [`acquirable_value.md`](acquirable_value.md) (what real moves returned), [`stars_and_waivers.md`](stars_and_waivers.md) (whether pickups rescue a draft)
 
 ---
@@ -115,6 +115,8 @@ Indexes: `(player_id, observed_at)` and `(season, observed_at)`.
 
 Field names for `onTeamId`, `status`, `waiverProcessDate` should be confirmed with a probe before the migration is written. Extend `scripts/espn_probe.py` or add `--dump-card PLAYER_ID` to print one raw entry. `injuryStatus`, `injured`, `expectedReturnDate`, `proTeamId` and the `ownership` block are confirmed by `espn_api`'s own parser and by `price_scorecard.py`.
 
+**As built:** `onTeamId` and `status` were already confirmed by the S1 probe (`docs/scoring/espn_projections.md` on branch `scoring-s1`, section 1). `waiverProcessDate` is read on trust; `scripts/espn_probe.py --pool-keys` counts how many WAIVERS entries carry it and `--dump-card ID` prints one. The migration is `0016`, not `0014`, which went to S10.
+
 ### 3.2 `player_news`
 
 | column | type | source |
@@ -199,6 +201,13 @@ Unique on `(player_id, kind, observed_at)`.
 
 Rules live in `app/listener/events.py` as pure functions over two snapshot rows plus a minutes series, tested with constructed rows. The first snapshot for a player produces no events.
 
+**As built**, three rules are tighter than the table so an event means one thing happened:
+
+- `ownership_surge` and `ownership_slide` fire as the 24-hour move crosses ±5.0, not on every pass it stays beyond it; the 25% crossing is a surge on its own.
+- `minutes_spike` and `minutes_drop` carry `through_scoring_period` in `detail`, and the pass skips one that names the same game as the last event of that kind for the player. A spike is therefore recorded once, and again only when a new game moves the window.
+- `return_date_changed` needs a date on both sides; a date appearing with `went_out` or vanishing with `returned` is part of those events.
+- `upgraded` uses a severity order OUT = SUSPENSION < DOUBTFUL < QUESTIONABLE = DAY_TO_DAY < PROBABLE < ACTIVE. A move between two equal ranks is no event.
+
 ### 3.6 Cadence and the pass
 
 `scripts/status_pass.py`, run by `scripts/scheduled_status.sh`, with `deploy/fcp-core-status.{service,timer}`. Three firings, `OnCalendar` listed three times in one timer:
@@ -222,6 +231,8 @@ The 09:00 UTC nightly ingest still runs and should also write a snapshot (`pass_
 Requests per pass: under 60. Duration: seconds. The script reuses the schema-at-head guard, the database wait and the exit codes from `scheduled_ingest.sh` verbatim; factor those into a shared shell include if it avoids copying.
 
 Out of season (no `pro_team_games` in the next 14 days) the pass should still snapshot once a day at most and skip news; preseason status changes matter for the draft but not three times a day.
+
+**As built:** the pass labels itself from the clock (`app/listener/status.label_for`, the nearest slot within an hour, else `adhoc`), and `scheduled_ingest.sh` runs `status_pass.py --label nightly` after the ingest, so a fourth snapshot needs no change to the ingest itself. The shared shell pieces are in `scripts/scheduled_common.sh`. The season row is written from the league's settings if the ingest has not made it yet. A skipped off-season pass still records a run, with `skipped` in its detail, so the health route sees the listener alive.
 
 ### 3.7 Tests for layer 1
 

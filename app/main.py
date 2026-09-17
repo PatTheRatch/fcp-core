@@ -4,6 +4,7 @@ from app.api.draft import router as draft_router
 from app.api.health import router as health_router
 from app.api.ingest_runs import router as ingest_runs_router
 from app.api.leagues import router as leagues_router
+from app.api.listener import router as listener_router
 from app.api.narratives import router as narratives_router
 from app.api.players import router as players_router
 from app.api.scorecard import router as scorecard_router
@@ -34,4 +35,5 @@ def create_app() -> FastAPI:
     app.include_router(players_router)
     app.include_router(ingest_runs_router)
     app.include_router(scorecard_router)
+    app.include_router(listener_router)
     return app

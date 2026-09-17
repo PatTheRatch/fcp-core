@@ -3,11 +3,22 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- Read-only HTTP API over the stored seasons, 23 endpoints (see below),
+- Read-only HTTP API over the stored seasons, 26 endpoints (see below),
   including seven narrative routes. Writes stay with the ingest.
 - Nightly scheduled ingest keeping the current season current, and the next
   season's settings current while its draft is ahead, with every run recorded
   and queryable. **Runs on the VPS**, not a laptop.
+- The in-season listener (`app/listener`, docs/pickups.md layer 1): a status
+  pass three times a day snapshots every player ESPN carries for the league,
+  injury status, return date, NBA team, fantasy team and ownership, into
+  `player_status_snapshots`, the unrostered ones into `free_agent_snapshots`,
+  the NBA schedule into `pro_team_games`, diffs each player against his
+  previous snapshot into `player_status_events` (thirteen kinds, including a
+  minutes spike read from the stored box scores), and fetches news into
+  `player_news` for the players that changed and the tracked team's roster.
+  Migration 0016; `scripts/status_pass.py`; `deploy/fcp-core-status.timer`.
+  **Built 2026-09-17, not yet deployed**: see "The listener" below for the
+  VPS steps.
 - The API is served on the VPS at `http://100.105.64.94:8001`, reachable from
   the tailnet only.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
@@ -97,7 +108,15 @@ Operational routes:
 |---|---|
 | `GET /ingest-runs` | ingest history, newest first |
 | `GET /ingest-runs/health` | freshness of the season running now |
-| `GET /ingest-runs/health/{season}` | time since the last success, and staleness |
+| `GET /ingest-runs/health/{season}` | time since the last success, and staleness; `?mode=status` asks about the listener alone |
+
+Listener routes, over what the status passes wrote:
+
+| Route | What it gives |
+|---|---|
+| `.../events?since=&kinds=&team=` | status changes this season, newest first; `team` narrows to a roster, `team=0` to the wire |
+| `GET /players/{pid}/status` | a player's snapshot history, one row per pass |
+| `GET /players/{pid}/news` | stored news, newest first |
 
 The derivation lives in `app/narratives.py`, not in the routers, because it
 is domain logic rather than HTTP. One idea carries most of it: a matchup is
@@ -1377,11 +1396,12 @@ picking a winner silently.
    `/ingest-runs/health`
 3. A frontend, if and when there is something to read the API. That is the
    decision that would force the auth question.
-4. In-season pickups: a status listener (injury, ownership, minutes, free
-   agents, three passes a day), a recommender for one team over two
-   horizons, and a morning digest. Designed in `docs/pickups.md`; the
-   listener is the part with a deadline, since status history cannot be
-   backfilled and the season opens around 2026-10-20.
+4. In-season pickups, designed in `docs/pickups.md`. The listener (phase 1)
+   is built and waits on the VPS steps under "The listener" below; it has to
+   be running before the season opens around 2026-10-20, since status
+   history cannot be backfilled. Still to build: the text digest (1b), the
+   streaming recommender (2) and the rest-of-season recommender (3), both
+   backtestable on the stored 2026 season.
 
 ### Prior seasons
 
@@ -1539,6 +1559,55 @@ attempted. **The Compose database must be running for the job to do
 anything**, so Docker needs to start at login for the schedule to be
 reliable. Output goes to `logs/scheduled-ingest.log`, trimmed when it grows
 past 2MB.
+
+### The listener
+
+Built 2026-09-17 from the design in `docs/pickups.md`, against the test
+database only: this container cannot reach ESPN or the VPS, so the live
+pool has not been fetched by this code yet. What is pinned by tests: every
+entry leaves a snapshot and the unrostered ones a free-agent row; the
+second pass produces exactly the events its changes warrant and asks for
+news only for the tracked roster and the players with an event; a minutes
+spike is recorded once and again only when a new game moves the window;
+out of season the pass snapshots once a day and never fetches news; the
+pool fetch pages until a short page; the scheduled wrappers refuse a
+database behind the code; the migration upgrades and downgrades.
+
+Decisions taken while building it, beyond the design note:
+
+- An ownership surge or slide fires once, as the 24-hour move crosses the
+  line, not on every pass it stays over it. The line is 5.0 points, and
+  crossing 25% owned upward is a surge on its own.
+- A minutes event names the last game it ran through, and the pass skips
+  one that names the same game as the last event of that kind on record.
+- The pass labels itself from the clock (`label_for`): the nearest slot
+  within an hour, else `adhoc`. The nightly ingest wrapper runs a fourth
+  pass with `--label nightly` after the ingest succeeds.
+- The season row is written from the league's settings if the ingest has
+  not made it yet, so the listener never loses a day to ordering.
+- A scheduled `--recent` ingest now unions the latest free agents into the
+  players whose cards it fetches, so an unrostered player's minutes are
+  stored before anyone picks him up. A full pass does not.
+- `waiverProcessDate` is the one field name taken on trust.
+  `scripts/espn_probe.py --pool-keys` reports how many WAIVERS entries
+  carry it, and `--dump-card ID` prints one entry whole.
+
+**To deploy**, on the VPS, after pulling main:
+
+```
+cd /opt/fcp-core && git pull
+./.venv/bin/python -m alembic upgrade head          # migration 0016
+./.venv/bin/python scripts/espn_probe.py --pool-keys  # confirm the field names
+./.venv/bin/python scripts/status_pass.py --force     # one pass by hand, read the output
+sudo cp deploy/fcp-core-status.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fcp-core-status.timer
+sudo systemctl restart fcp-core-api.service          # the new routes
+```
+
+Optionally `FCP_TRACKED_TEAM_ID=<espn team id>` in `.env` names the roster
+whose news every pass fetches. Then `GET /ingest-runs/health?mode=status`
+says whether the listener is alive, and `.../events` what it has seen.
 
 ### Why the API is tailnet-only, and why owners have opaque ids
 

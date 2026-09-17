@@ -5,7 +5,13 @@ import pytest
 from pydantic import ValidationError
 
 from app import espn as espn_module
-from app.espn import ESPNSettings, current_season, fetch_current_league, resolve_season
+from app.espn import (
+    ESPNSettings,
+    current_season,
+    fetch_current_league,
+    fetch_newest_league,
+    resolve_season,
+)
 
 
 def test_espn_settings_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,7 +70,10 @@ def test_a_configured_season_overrides_the_calendar() -> None:
     assert resolve_season(pinned, date(2026, 12, 25)) == 2023
 
 
-def test_without_a_configured_season_the_calendar_wins() -> None:
+def test_without_a_configured_season_the_calendar_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `_env_file=None` ignores .env, not the process environment, and a
+    # machine that pins ESPN_SEASON would otherwise fail this for no reason.
+    monkeypatch.delenv("ESPN_SEASON", raising=False)
     free = ESPNSettings(_env_file=None, espn_league_id=1, espn_swid="x", espn_s2="y")
     assert resolve_season(free, date(2026, 12, 25)) == 2027
 
@@ -121,3 +130,36 @@ def test_a_pinned_season_skips_the_derivation_entirely(
 
     assert fetch_current_league(_settings(2019), date(2026, 12, 25)) == "league-2019"
     assert asked == [2019]
+
+
+def test_the_listener_follows_the_newest_season_espn_has(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In September the calendar says 2026, ESPN already serves 2027."""
+    asked: list[int] = []
+
+    def fake_fetch(settings: ESPNSettings, season: int | None = None) -> Any:
+        asked.append(season or 0)
+        return f"league-{season}"
+
+    monkeypatch.setattr(espn_module, "fetch_league", fake_fetch)
+
+    assert fetch_newest_league(_settings(), date(2026, 9, 17)) == "league-2027"
+    assert asked == [2027]
+
+
+def test_the_listener_falls_back_to_the_season_in_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In November 2028 does not exist, so the pass follows 2027 like the ingest."""
+    asked: list[int] = []
+
+    def fake_fetch(settings: ESPNSettings, season: int | None = None) -> Any:
+        asked.append(season or 0)
+        if season == 2028:
+            raise RuntimeError("404 from ESPN")
+        return f"league-{season}"
+
+    monkeypatch.setattr(espn_module, "fetch_league", fake_fetch)
+
+    assert fetch_newest_league(_settings(), date(2026, 11, 3)) == "league-2027"
+    assert asked == [2028, 2027]
+    assert fetch_newest_league(_settings(2025), date(2026, 11, 3)) == "league-2025"

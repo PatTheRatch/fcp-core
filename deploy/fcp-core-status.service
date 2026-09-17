@@ -1,0 +1,39 @@
+# One status pass of the in-season listener. Paired with fcp-core-status.timer.
+#
+# Install (from a checkout at /opt/fcp-core):
+#     sudo cp deploy/fcp-core-status.* /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-status.timer
+#
+# Run one now:      sudo systemctl start fcp-core-status.service
+# Watch:            journalctl -u fcp-core-status.service -n 50
+# Remove:           sudo systemctl disable --now fcp-core-status.timer
+#
+# Optional: FCP_TRACKED_TEAM_ID in /opt/fcp-core/.env names the ESPN team
+# whose roster gets its news fetched on every pass.
+
+[Unit]
+Description=fcp-core - status pass of the in-season listener
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/scripts/scheduled_status.sh
+
+# A pass is seconds; the ceiling covers a slow ESPN and the database wait.
+TimeoutStartSec=600
+
+# Exit 69 means the database was unreachable, so nothing was attempted. Left
+# as a failure on purpose, as for the ingest: on a server the database is
+# meant to be up.
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core

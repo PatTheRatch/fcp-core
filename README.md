@@ -74,7 +74,9 @@ curl http://127.0.0.1:8000/health   # -> {"status":"ok"}
 ## Probe an ESPN league (read-only)
 
 ```bash
-python scripts/espn_probe.py
+python scripts/espn_probe.py                      # settings and the team list
+python scripts/espn_probe.py --pool-keys          # which fields the player pool carries
+python scripts/espn_probe.py --dump-card 3112335  # one raw player-pool entry
 ```
 
 Prints one league's settings and team list. Fetches only, nothing is persisted.
@@ -280,3 +282,28 @@ unrecorded.
 A run still showing `running` means the process died partway. `stale` goes
 true when nothing has succeeded for 36 hours, which tolerates one missed
 night. Text output lands in `logs/scheduled-ingest.log`.
+
+## Listening for status changes in season
+
+The nightly ingest cannot see a player's injury status as a history, because
+ESPN reports it as of the request only. The listener fills that gap: a status
+pass snapshots the whole player pool, diffs it against the last pass, and
+fetches news for the players that changed (see `docs/pickups.md`).
+
+```bash
+python scripts/status_pass.py            # one pass, labelled from the clock
+python scripts/status_pass.py --force    # snapshot even off-season
+```
+
+On the VPS it runs three times a day, at the hours injury news lands:
+
+```bash
+sudo cp deploy/fcp-core-status.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fcp-core-status.timer
+```
+
+Set `FCP_TRACKED_TEAM_ID` in `.env` to the ESPN team whose roster should have
+its news fetched on every pass. `curl localhost:8000/ingest-runs/health?mode=status`
+says whether the listener is alive; `/leagues/{id}/seasons/{yr}/events` lists
+what it saw.

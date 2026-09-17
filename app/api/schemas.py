@@ -6,7 +6,7 @@ categories) return a plain list. Collections that grow with the season
 an unbounded response by accident.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -302,7 +302,12 @@ class IngestRunOut(BaseModel):
 
     id: int
     season: int
-    mode: str = Field(description="'full' rewrites the season, 'recent' the trailing days")
+    mode: str = Field(
+        description=(
+            "'full' rewrites the season, 'recent' the trailing days, 'settings' next "
+            "season's rules, 'status' a listener pass"
+        )
+    )
     status: str = Field(description="'running', 'succeeded' or 'failed'")
     started_at: datetime
     finished_at: datetime | None
@@ -315,6 +320,9 @@ class IngestHealthOut(BaseModel):
     """Whether the schedule is actually keeping the current season current."""
 
     season: int
+    mode: str | None = Field(
+        default=None, description="When set, only runs of this mode were counted"
+    )
     last_success_at: datetime | None
     hours_since_last_success: float | None
     last_status: str | None = Field(description="Status of the most recent run, successful or not")
@@ -477,3 +485,44 @@ class ScorecardOut(BaseModel):
     draft: list[DraftGradeOut]
     trades: list[TradeGradeOut]
     wire: list[WireMoveOut]
+
+
+class StatusEventOut(BaseModel):
+    """One change the listener saw between two passes (app/listener/events.py)."""
+
+    id: int
+    espn_player_id: int
+    player_name: str
+    season: int
+    kind: str
+    observed_at: datetime
+    previous: dict[str, Any] = Field(description="The fields that changed, before")
+    current: dict[str, Any] = Field(description="The same fields, after")
+    detail: dict[str, Any] = Field(description="What the rule computed, e.g. minutes means")
+    notified_at: datetime | None = Field(description="When the digest reported it, if it has")
+
+
+class StatusSnapshotOut(BaseModel):
+    """A player's status and ownership as ESPN reported it on one pass."""
+
+    season: int
+    observed_at: datetime
+    pass_label: str
+    injury_status: str | None
+    injured: bool
+    expected_return_date: date | None
+    pro_team_id: int | None
+    on_team_id: int | None = Field(description="Fantasy team holding him, 0 when unrostered")
+    status: str | None = Field(description="ONTEAM, FREEAGENT or WAIVERS")
+    percent_owned: float | None
+    percent_change: float | None = Field(description="24-hour move across all ESPN leagues")
+    percent_started: float | None
+    auction_value_average: float | None
+
+
+class PlayerNewsOut(BaseModel):
+    published: datetime
+    headline: str
+    story: str
+    source: str
+    seen_at: datetime

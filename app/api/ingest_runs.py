@@ -25,6 +25,8 @@ STALENESS_THRESHOLD_HOURS = 36
 
 RUN_PAGE_LIMIT = 200
 
+MODE_HELP = "Count only runs of this mode: 'full', 'recent', 'settings' or 'status'"
+
 
 @router.get("/ingest-runs", summary="Ingest history, newest first")
 def list_ingest_runs(
@@ -69,39 +71,45 @@ def list_ingest_runs(
     "/ingest-runs/health",
     summary="Whether the season now running is being kept current",
 )
-def get_current_ingest_health(session: SessionDep) -> IngestHealthOut:
+def get_current_ingest_health(
+    session: SessionDep,
+    mode: str | None = Query(default=None, description=MODE_HELP),
+) -> IngestHealthOut:
     """Freshness of whichever season is running now.
 
     Deliberately takes no season: asking about a fixed year is how a stale
     schedule hides, since a finished season refreshed nightly looks perfectly
     healthy while the live one goes unrecorded.
     """
-    return get_ingest_health(current_season(), session)
+    return get_ingest_health(current_season(), session, mode)
 
 
 @router.get(
     "/ingest-runs/health/{season}",
     summary="Whether a given season's data is still being kept current",
 )
-def get_ingest_health(season: int, session: SessionDep) -> IngestHealthOut:
+def get_ingest_health(
+    season: int,
+    session: SessionDep,
+    mode: str | None = Query(default=None, description=MODE_HELP),
+) -> IngestHealthOut:
     """Age of the last successful run, and whether that counts as stale.
 
     Reports the most recent run's status separately, so a season that is
     fresh but failing right now is visible rather than hidden behind the
     last success.
+
+    With `mode`, only runs of that mode count. The listener's status passes
+    are the reason: three a day in season, and a listener that has gone
+    quiet would otherwise hide behind a healthy nightly ingest.
     """
-    last_success = session.scalar(
-        select(IngestRun)
-        .where(IngestRun.season == season, IngestRun.status == SUCCEEDED)
-        .order_by(IngestRun.started_at.desc())
-        .limit(1)
-    )
-    latest = session.scalar(
-        select(IngestRun)
-        .where(IngestRun.season == season)
-        .order_by(IngestRun.started_at.desc())
-        .limit(1)
-    )
+    successes = select(IngestRun).where(IngestRun.season == season, IngestRun.status == SUCCEEDED)
+    everything = select(IngestRun).where(IngestRun.season == season)
+    if mode is not None:
+        successes = successes.where(IngestRun.mode == mode)
+        everything = everything.where(IngestRun.mode == mode)
+    last_success = session.scalar(successes.order_by(IngestRun.started_at.desc()).limit(1))
+    latest = session.scalar(everything.order_by(IngestRun.started_at.desc()).limit(1))
 
     hours: float | None = None
     if last_success is not None:
@@ -110,6 +118,7 @@ def get_ingest_health(season: int, session: SessionDep) -> IngestHealthOut:
 
     return IngestHealthOut(
         season=season,
+        mode=mode,
         last_success_at=last_success.started_at if last_success else None,
         hours_since_last_success=hours,
         last_status=latest.status if latest else None,

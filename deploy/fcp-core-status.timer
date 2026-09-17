@@ -1,0 +1,25 @@
+# Three status passes a day, at the hours injury news lands.
+#
+#   15:00 UTC  morning   10:00/11:00 Eastern; overnight news, shootaround reports
+#   22:30 UTC  report    17:30/18:30 Eastern, after the 17:00 Eastern injury report
+#   00:30 UTC  late      19:30/20:30 Eastern, game-time decisions for the early tips
+#
+# The 09:00 UTC nightly ingest (fcp-core-ingest.timer) writes a fourth
+# snapshot of its own. Out of season the pass snapshots once a day at most and
+# skips the rest by itself, so the timer stays as it is all year.
+
+[Unit]
+Description=fcp-core - status passes of the in-season listener
+Requires=fcp-core-status.service
+
+[Timer]
+OnCalendar=*-*-* 15:00:00 UTC
+OnCalendar=*-*-* 22:30:00 UTC
+OnCalendar=*-*-* 00:30:00 UTC
+# A host down at the slot runs the pass when it comes back.
+Persistent=true
+# Keep it clear of the other jobs on the host, and inside the label window.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -876,3 +876,171 @@ class BBMProjection(Base):
     row_hash: Mapped[str] = mapped_column(String, nullable=False)
     #: Every column of the export for this player, as BBM sent it.
     row: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class PlayerStatusSnapshot(Base):
+    """A player's status and ownership as ESPN reported it at one moment.
+
+    The one thing the rest of the database cannot reconstruct. ESPN serves a
+    player's injury status *as of the request* and never as a history, which
+    is why `daily_lineup_slots.injury_status` reads OUT on days a player
+    scored 30 (see `app/draft/availability.py`). The listener writes a row
+    for every player on every pass, and the time series is the table itself.
+
+    Every observation is stored, not only changes: "no change" is then a
+    fact on record, and the diff in `app/listener/events.py` stays honest.
+    About 550 players by four passes a day by 180 days is roughly 400k rows a
+    season, which is nothing.
+
+    `season` is the season being observed, not a foreign key: the pass runs
+    before the season's row may exist, and a player's card is global.
+    """
+
+    __tablename__ = "player_status_snapshots"
+    __table_args__ = (
+        Index("ix_player_status_snapshots_player_observed", "player_id", "observed_at"),
+        Index("ix_player_status_snapshots_season_observed", "season", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: One value for the whole pass, so a pass can be selected by it.
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: "morning", "report", "late" or "nightly" (docs/pickups.md section 3.6).
+    pass_label: Mapped[str] = mapped_column(String, nullable=False)
+
+    #: ESPN's string as given: ACTIVE, OUT, DAY_TO_DAY, QUESTIONABLE, ...
+    injury_status: Mapped[str | None] = mapped_column(String)
+    injured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    expected_return_date: Mapped[date | None] = mapped_column(Date)
+    #: 0 means no NBA team.
+    pro_team_id: Mapped[int | None] = mapped_column(Integer)
+    #: The fantasy team holding him in this league, 0 when unrostered.
+    on_team_id: Mapped[int | None] = mapped_column(Integer)
+    #: ONTEAM, FREEAGENT or WAIVERS.
+    status: Mapped[str | None] = mapped_column(String)
+
+    percent_owned: Mapped[float | None] = mapped_column(Float)
+    #: The 24-hour move in `percent_owned` across all ESPN leagues.
+    percent_change: Mapped[float | None] = mapped_column(Float)
+    percent_started: Mapped[float | None] = mapped_column(Float)
+    auction_value_average: Mapped[float | None] = mapped_column(Float)
+
+    player: Mapped[Player] = relationship()
+
+
+class PlayerNews(Base):
+    """One news item about a player, kept from the first pass that saw it.
+
+    Fetched one request per player, so only for players with a fresh event
+    and for the tracked team's roster. Unique on the story so a second pass
+    that sees the same item writes nothing.
+    """
+
+    __tablename__ = "player_news"
+    __table_args__ = (
+        UniqueConstraint("player_id", "published", "headline", name="uq_player_news_story"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    published: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    headline: Mapped[str] = mapped_column(String, nullable=False)
+    story: Mapped[str] = mapped_column(String, nullable=False, default="")
+    source: Mapped[str] = mapped_column(String, nullable=False, default="espn")
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    player: Mapped[Player] = relationship()
+
+
+class FreeAgentSnapshot(Base):
+    """Who was available in this league at one pass, and their waiver state.
+
+    League-scoped where `player_status_snapshots` is global: availability is
+    a fact about this league's rosters. The same pool fetch feeds both; an
+    entry whose status is not ONTEAM lands here as well.
+    """
+
+    __tablename__ = "free_agent_snapshots"
+    __table_args__ = (
+        Index("ix_free_agent_snapshots_season_observed", "league_season_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    #: FREEAGENT or WAIVERS.
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    #: When a player on waivers clears. Read from the entry's
+    #: `waiverProcessDate`, which the probe has still to confirm.
+    waiver_clears_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    league_season: Mapped[LeagueSeason] = relationship()
+    player: Mapped[Player] = relationship()
+
+
+class ProTeamGame(Base):
+    """One NBA game, from the pro schedule ESPN sends with the league.
+
+    Games remaining in a matchup period is the whole basis of streaming, so
+    the schedule has to be in the database. Rewritten for the season on
+    every pass, since postponements move games. A scoring period is a day,
+    and a team plays at most once a day, hence the key.
+    """
+
+    __tablename__ = "pro_team_games"
+    __table_args__ = (
+        UniqueConstraint("season", "pro_team_id", "scoring_period", name="uq_pro_team_games_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    pro_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    opponent_pro_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    home: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class PlayerStatusEvent(Base):
+    """A change between two consecutive snapshots of one player.
+
+    Derived and persisted, rather than recomputed, because the digest has to
+    know what it has already reported: `notified_at` is set when it goes
+    out. The kinds and the rules that produce them live in
+    `app/listener/events.py`.
+    """
+
+    __tablename__ = "player_status_events"
+    __table_args__ = (
+        UniqueConstraint("player_id", "kind", "observed_at", name="uq_player_status_events_key"),
+        Index("ix_player_status_events_season_observed", "season", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    #: The pass that first saw the new state.
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: The fields that changed, before and after.
+    previous: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    current: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    #: Whatever the rule computed on the way, e.g. the two minutes means.
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    player: Mapped[Player] = relationship()

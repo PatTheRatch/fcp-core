@@ -5,6 +5,7 @@ reads. They live here rather than in a test module so both the ingest and
 the API tests can build the same shapes.
 """
 
+import json
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -350,12 +351,112 @@ def attach_transactions(
         view = (params or {}).get("view")
         if view == "mSettings":
             return {"settings": {"rosterSettings": rules, "draftSettings": draft}}
+        if view == "kona_player_info":
+            return _pool_page(league, headers or {})
         day = int((params or {}).get("scoringPeriodId") or 0)
         found = [dict(tx, scoringPeriodId=day) for tx in by_day.get(day, [])]
         return {"transactions": found}
 
-    league.espn_request = SimpleNamespace(league_get=league_get)
+    def get_player_news(playerId: int) -> dict[str, Any]:  # noqa: N803  (ESPN's parameter name)
+        league.news_requests.append(playerId)
+        return {"news": {"feed": list(league.news.get(playerId, []))}}
+
+    league.espn_request = SimpleNamespace(league_get=league_get, get_player_news=get_player_news)
     league.player_map = dict(names or {})
+    if not hasattr(league, "pool"):
+        league.pool = []
+    if not hasattr(league, "pool_requests"):
+        league.pool_requests = []
+    if not hasattr(league, "news"):
+        league.news = {}
+        league.news_requests = []
+    if not hasattr(league, "pro_schedule"):
+        league.pro_schedule = {}
+    return league
+
+
+def _pool_page(league: Any, headers: dict[str, Any]) -> dict[str, Any]:
+    """Answer one `kona_player_info` page the way ESPN does: limit, offset, status filter."""
+    wanted = json.loads(headers.get("x-fantasy-filter") or "{}").get("players", {})
+    league.pool_requests.append(wanted)
+    entries = list(league.pool)
+    statuses = (wanted.get("filterStatus") or {}).get("value")
+    if statuses:
+        entries = [e for e in entries if e.get("status") in statuses]
+    entries.sort(key=lambda e: -(e["player"].get("ownership", {}).get("percentOwned") or 0.0))
+    offset = int(wanted.get("offset") or 0)
+    limit = int(wanted.get("limit") or len(entries))
+    return {"players": entries[offset : offset + limit]}
+
+
+def fake_pool_entry(
+    player_id: int,
+    name: str,
+    *,
+    injury_status: str = "ACTIVE",
+    injured: bool = False,
+    expected_return_date: tuple[int, int, int] | None = None,
+    pro_team_id: int = 13,
+    on_team_id: int = 0,
+    status: str | None = None,
+    percent_owned: float = 50.0,
+    percent_change: float = 0.0,
+    percent_started: float = 20.0,
+    auction_value_average: float = 0.0,
+    waiver_process_date: int | None = None,
+) -> dict[str, Any]:
+    """One raw `kona_player_info` entry, in the shape the S1 probe recorded.
+
+    `status` defaults from `on_team_id`: a team means ONTEAM, none means
+    FREEAGENT. Pass WAIVERS with a `waiver_process_date` for a player
+    clearing.
+    """
+    entry: dict[str, Any] = {
+        "id": player_id,
+        "onTeamId": on_team_id,
+        "status": status or ("ONTEAM" if on_team_id else "FREEAGENT"),
+        "player": {
+            "id": player_id,
+            "fullName": name,
+            "defaultPositionId": 1,
+            "eligibleSlots": [0, 11, 12],
+            "proTeamId": pro_team_id,
+            "injured": injured,
+            "injuryStatus": injury_status,
+            "ownership": {
+                "percentOwned": percent_owned,
+                "percentChange": percent_change,
+                "percentStarted": percent_started,
+                "auctionValueAverage": auction_value_average,
+            },
+        },
+    }
+    if expected_return_date is not None:
+        entry["player"]["expectedReturnDate"] = [*expected_return_date, 0, 0, 0]
+    if waiver_process_date is not None:
+        entry["waiverProcessDate"] = waiver_process_date
+    return entry
+
+
+def fake_pro_game(home_id: int, away_id: int, epoch_ms: int) -> dict[str, Any]:
+    return {"homeProTeamId": home_id, "awayProTeamId": away_id, "date": epoch_ms}
+
+
+def attach_pool(
+    league: Any,
+    entries: list[dict[str, Any]],
+    *,
+    schedule: dict[int, dict[str, list[dict[str, Any]]]] | None = None,
+    news: dict[int, list[dict[str, Any]]] | None = None,
+    scoring_period: int = 1,
+) -> Any:
+    """Give a fake league a player pool, an NBA schedule and a news feed."""
+    league.pool = list(entries)
+    league.pool_requests = []
+    league.pro_schedule = dict(schedule or {})
+    league.news = dict(news or {})
+    league.news_requests = []
+    league.scoringPeriodId = scoring_period
     return league
 
 

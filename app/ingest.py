@@ -16,7 +16,7 @@ from typing import Any
 
 from espn_api.basketball import League as ESPNLeague
 from espn_api.basketball.constant import STATS_MAP
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -24,6 +24,7 @@ from app.db.models import (
     SEASON_STAT_KINDS,
     DailyLineupSlot,
     DraftPick,
+    FreeAgentSnapshot,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -320,18 +321,27 @@ def _espn_team_id(side: Any) -> int | None:
     return team_id or None
 
 
-def _get_or_create_player(session: Session, espn_player: Any) -> Player | None:
-    espn_player_id = getattr(espn_player, "playerId", None)
-    if espn_player_id is None:
-        return None
-    espn_player_id = int(espn_player_id)
+def get_or_create_player(session: Session, espn_player_id: int, name: str | None) -> Player:
+    """The global player row for an ESPN id, created if this is the first sight of him.
 
+    The name is refreshed on every call: ESPN's spelling is the one the
+    league sees, and a player renamed upstream should read that way here.
+    """
     player = session.scalar(select(Player).where(Player.espn_player_id == espn_player_id))
     if player is None:
         player = Player(espn_player_id=espn_player_id)
         session.add(player)
-    player.name = str(getattr(espn_player, "name", "") or f"player {espn_player_id}")
+    player.name = str(name or f"player {espn_player_id}")
     return player
+
+
+def _get_or_create_player(session: Session, espn_player: Any) -> Player | None:
+    espn_player_id = getattr(espn_player, "playerId", None)
+    if espn_player_id is None:
+        return None
+    return get_or_create_player(
+        session, int(espn_player_id), str(getattr(espn_player, "name", "") or "")
+    )
 
 
 def _sync_roster(session: Session, matchup: Matchup, team: Team, lineup: list[Any]) -> None:
@@ -539,13 +549,45 @@ def _as_utc(value: Any) -> datetime | None:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _season_player_ids(session: Session, league_season: LeagueSeason) -> list[int]:
+def latest_free_agent_ids(session: Session, league_season: LeagueSeason) -> list[int]:
+    """ESPN ids of everyone the listener last saw unrostered in this league.
+
+    From the most recent pass in `free_agent_snapshots`; empty when the
+    listener has never run for the season.
+    """
+    latest = session.scalar(
+        select(func.max(FreeAgentSnapshot.observed_at)).where(
+            FreeAgentSnapshot.league_season_id == league_season.id
+        )
+    )
+    if latest is None:
+        return []
+    return list(
+        session.scalars(
+            select(Player.espn_player_id)
+            .join(FreeAgentSnapshot, FreeAgentSnapshot.player_id == Player.id)
+            .where(
+                FreeAgentSnapshot.league_season_id == league_season.id,
+                FreeAgentSnapshot.observed_at == latest,
+            )
+        ).all()
+    )
+
+
+def _season_player_ids(
+    session: Session, league_season: LeagueSeason, *, include_free_agents: bool = False
+) -> list[int]:
     """Every player who appeared on a roster in this season, in either grain.
 
     Both sources are needed. The weekly aggregate roster is nearly empty for
     seasons before 2025, so on its own it would scope player stats down to a
     fraction of the league and leave most daily lineups without a stat line
     to join against.
+
+    With `include_free_agents`, also everyone the listener last saw on the
+    wire, so an unrostered player's minutes are visible before anyone picks
+    him up. A scheduled run wants that; a historical full pass does not,
+    since it would refetch the universe for a season nobody can act on.
     """
     weekly = (
         select(Player.espn_player_id)
@@ -559,7 +601,10 @@ def _season_player_ids(session: Session, league_season: LeagueSeason) -> list[in
         .join(Team, Team.id == DailyLineupSlot.team_id)
         .where(Team.league_season_id == league_season.id)
     )
-    return sorted(set(session.scalars(weekly).all()) | set(session.scalars(daily).all()))
+    ids = set(session.scalars(weekly).all()) | set(session.scalars(daily).all())
+    if include_free_agents:
+        ids |= set(latest_free_agent_ids(session, league_season))
+    return sorted(ids)
 
 
 def _scoring_period_entries(espn_player: Any) -> list[tuple[int, dict[str, Any]]]:
@@ -637,7 +682,9 @@ def ingest_player_stats(
     took over two minutes and dominated the cost of a scheduled run.
     """
     captured_on = (now or datetime.now(UTC)).date()
-    espn_player_ids = _season_player_ids(session, league_season)
+    espn_player_ids = _season_player_ids(
+        session, league_season, include_free_agents=not scope.is_full
+    )
     players = {
         player.espn_player_id: player
         for player in session.scalars(

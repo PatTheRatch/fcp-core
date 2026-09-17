@@ -6,6 +6,7 @@ credentials are not required to boot the API or run the DB test suite.
 """
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Any
@@ -33,6 +34,11 @@ class ESPNSettings(BaseSettings):
     #: Set it only to pin a run to one particular year; a pinned value will
     #: happily keep refreshing a season that ended months ago.
     espn_season: int | None = None
+
+    #: The ESPN team id the listener fetches news for on every pass, and the
+    #: pickups digest will report on. Optional; without it the pass still
+    #: snapshots everyone and asks for news only where an event fired.
+    fcp_tracked_team_id: int | None = None
 
 
 @lru_cache
@@ -123,6 +129,25 @@ def fetch_current_league(settings: ESPNSettings, today: date | None = None) -> L
         # Not an error worth surfacing on its own: the previous season is the
         # right answer until ESPN publishes the new one.
         return fetch_league(settings, season=derived - 1)
+
+
+def fetch_newest_league(settings: ESPNSettings, today: date | None = None) -> League:
+    """The newest season ESPN serves for the league, for the listener.
+
+    The season in progress (`fetch_current_league`) is the right one for
+    the ingest, but the listener wants the one being prepared as soon as it
+    exists: through September the calendar still says the finished season,
+    while ESPN already has the new league, its rosters and its draft. A
+    player's status history belongs to the season it is about to affect.
+    So the year after the derived one is tried first, and the fallback is
+    the current-season logic. A configured `ESPN_SEASON` is used as given.
+    """
+    if settings.espn_season:
+        return fetch_league(settings, season=settings.espn_season)
+    try:
+        return fetch_league(settings, season=current_season(today) + 1)
+    except Exception:
+        return fetch_current_league(settings, today)
 
 
 #: Transaction types worth storing. FUTURE_ROSTER is excluded on purpose: it
@@ -274,3 +299,87 @@ def prior_seasons(league: League) -> list[int]:
     """
     seasons = getattr(league, "previousSeasons", None) or []
     return sorted(int(year) for year in seasons)
+
+
+#: How many pool entries to ask for per page. ESPN serves 250 without
+#: complaint; a 14-team league's whole pool is four to five pages.
+POOL_PAGE_SIZE = 250
+
+#: A ceiling on pages, so a server that never returns a short page cannot
+#: keep the pass fetching forever. Twenty pages of 250 is 5000 players,
+#: ten times the NBA.
+POOL_MAX_PAGES = 20
+
+
+def fetch_player_pool(
+    league: League,
+    *,
+    statuses: Sequence[str] | None = None,
+    scoring_period: int | None = None,
+    page_size: int = POOL_PAGE_SIZE,
+) -> list[dict[str, Any]]:
+    """Every player ESPN carries for this league, as raw `kona_player_info` entries.
+
+    Paged by `limit` and `offset` in the filter header until a page comes
+    back short. `League.free_agents()` cannot do this: it takes a size and
+    no offset, so it can never see past the first slice.
+
+    `statuses` narrows to ONTEAM, FREEAGENT or WAIVERS; None fetches the lot,
+    which is the cheapest shape when both rostered and unrostered players are
+    wanted, since one pass gives both and the caller splits on `onTeamId`.
+    Sorted by percent owned descending so the players anyone cares about
+    come first, and a truncated fetch loses the tail rather than the head.
+    """
+    params: dict[str, Any] = {"view": "kona_player_info"}
+    if scoring_period is not None:
+        params["scoringPeriodId"] = scoring_period
+
+    entries: list[dict[str, Any]] = []
+    for page in range(POOL_MAX_PAGES):
+        wanted: dict[str, Any] = {
+            "limit": page_size,
+            "offset": page * page_size,
+            "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
+            "sortDraftRanks": {"sortPriority": 100, "sortAsc": True, "value": "STANDARD"},
+        }
+        if statuses is not None:
+            wanted["filterStatus"] = {"value": list(statuses)}
+        data = league.espn_request.league_get(
+            params=params, headers={"x-fantasy-filter": json.dumps({"players": wanted})}
+        )
+        found = [e for e in ((data or {}).get("players") or []) if isinstance(e, dict)]
+        entries.extend(found)
+        if len(found) < page_size:
+            break
+    return entries
+
+
+def fetch_player_news(league: League, espn_player_id: int) -> list[dict[str, Any]]:
+    """The news feed for one player, as raw items. One request per player.
+
+    Costly in requests rather than bytes, so callers keep it to players
+    worth asking about. The feed is `{"news": {"feed": [...]}}`; anything
+    else comes back as no news.
+    """
+    data = league.espn_request.get_player_news(espn_player_id)
+    feed = ((data or {}).get("news") or {}).get("feed") or []
+    return [item for item in feed if isinstance(item, dict)]
+
+
+def pro_schedule(league: League) -> dict[int, dict[str, list[dict[str, Any]]]]:
+    """The NBA schedule ESPN sent with the league: pro team id -> day -> games.
+
+    Populated by `espn-api` on league load (`_get_all_pro_schedule`), so it
+    costs no request. Days are strings because that is how ESPN keys them.
+    """
+    raw = getattr(league, "pro_schedule", None) or {}
+    schedule: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    for team_id, by_day in raw.items():
+        if not isinstance(by_day, dict):
+            continue
+        schedule[int(team_id)] = {
+            str(day): [g for g in games if isinstance(g, dict)]
+            for day, games in by_day.items()
+            if isinstance(games, list)
+        }
+    return schedule
