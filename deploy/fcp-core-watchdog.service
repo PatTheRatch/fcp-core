@@ -1,0 +1,29 @@
+# Daily check that the other scheduled jobs are still running.
+#
+# Install:
+#     sudo cp deploy/fcp-core-watchdog.* /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-watchdog.timer
+#
+# Exit 2 means something has gone quiet, and is left as a unit failure on
+# purpose: the message goes to the phone, and the host shows it too.
+
+[Unit]
+Description=fcp-core - are the scheduled jobs still running
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/.venv/bin/python scripts/watchdog.py
+TimeoutStartSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core

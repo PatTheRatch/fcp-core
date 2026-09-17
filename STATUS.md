@@ -1404,8 +1404,9 @@ picking a winner silently.
 ## Next
 
 1. Whichever narratives the endpoints turn out not to answer
-2. Alerting on a stale season, rather than having to look at
-   `/ingest-runs/health`
+2. ~~Alerting on a stale season~~ done: `scripts/watchdog.py` checks the
+   ingest, the listener, the BBM pull and the backups once a day and sends
+   one message when a job has gone quiet (`deploy/fcp-core-watchdog.*`).
 3. A frontend, if and when there is something to read the API. That is the
    decision that would force the auth question.
 4. In-season pickups, designed in `docs/pickups.md`. The listener and the
@@ -1718,6 +1719,23 @@ The VPS is also simply faster: 72 to 88 seconds per season against 140 to 172
 on the Mac, and a nightly `--recent` run takes about 10 seconds. The stored
 data matches the Mac exactly, including the 2021 reconciliation gap, which is
 a good sign the two are genuinely the same pipeline.
+
+### The scheduled jobs, and what notices when one stops
+
+| unit | UTC | what it does |
+|---|---|---|
+| `fcp-core-ingest.timer` | 09:00 | the season's trailing days, next season's settings, then a listener pass |
+| `fcp-core-bbm.timer` | 09:30 | BBM's two exports, into `data/bbm/` and the database |
+| `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days |
+| `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet |
+| `fcp-core-status.timer` | 15:00, 22:30, 00:30 | listener passes, then the digest or an alert |
+
+The watchdog exists because silence is the failure mode that matters: a
+failed run shows up in `systemctl --failed` and in its own row, while a timer
+nobody enabled, a disabled unit or a pass that exits 0 without doing anything
+looks exactly like a quiet weekend. Windows are about three times each job's
+interval, except the listener's, which is twelve hours in season because the
+hours it misses cannot be recovered.
 
 ### Deploying a code change to the VPS
 

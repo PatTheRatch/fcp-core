@@ -1,0 +1,15 @@
+# Late morning UTC, after the ingest (09:00), the BBM pull (09:30) and the
+# backup (10:00) have all had their turn, so a quiet job is a whole missed
+# day rather than a job that has not run yet today.
+
+[Unit]
+Description=fcp-core - daily check that the scheduled jobs are running
+Requires=fcp-core-watchdog.service
+
+[Timer]
+OnCalendar=*-*-* 11:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
