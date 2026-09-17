@@ -61,6 +61,15 @@ def test_the_nightly_ingest_also_takes_the_status_snapshot() -> None:
     assert 'scripts/ingest_league.py --recent "$RECENT_DAYS" --upcoming' in script
 
 
+def test_the_morning_pass_sends_the_digest_and_the_others_only_alert() -> None:
+    script = (REPO_ROOT / "scripts" / "scheduled_status.sh").read_text()
+    assert '*morning*) DIGEST_ARGS="" ;;' in script
+    assert '*) DIGEST_ARGS="--alert" ;;' in script
+    assert "scripts/digest.py $DIGEST_ARGS" in script
+    # The digest runs only once the pass itself has succeeded.
+    assert script.index('status_pass.py "$@"') < script.index("digest.py $DIGEST_ARGS")
+
+
 def test_the_timer_fires_at_the_three_slots() -> None:
     timer = (REPO_ROOT / "deploy" / "fcp-core-status.timer").read_text()
     for slot in ("15:00:00", "22:30:00", "00:30:00"):

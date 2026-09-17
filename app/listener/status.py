@@ -24,7 +24,7 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
 from espn_api.basketball import League as ESPNLeague
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -52,6 +52,7 @@ from app.listener.pool import (
     parse_pool_entry,
     parse_pro_schedule,
 )
+from app.listener.snapshots import latest_snapshots
 
 #: The passes, by label, at their UTC times. `morning` catches overnight
 #: news and shootaround reports, `report` follows the 17:00 Eastern injury
@@ -214,29 +215,6 @@ def snapshotted_on(session: Session, season: int, day: datetime) -> bool:
     return found is not None
 
 
-def _latest_snapshots(session: Session, season: int) -> dict[int, PlayerStatusSnapshot]:
-    """Each player's most recent snapshot this season, keyed on our player id."""
-    latest = (
-        select(
-            PlayerStatusSnapshot.player_id,
-            func.max(PlayerStatusSnapshot.observed_at).label("observed_at"),
-        )
-        .where(PlayerStatusSnapshot.season == season)
-        .group_by(PlayerStatusSnapshot.player_id)
-        .subquery()
-    )
-    rows = session.scalars(
-        select(PlayerStatusSnapshot).join(
-            latest,
-            and_(
-                PlayerStatusSnapshot.player_id == latest.c.player_id,
-                PlayerStatusSnapshot.observed_at == latest.c.observed_at,
-            ),
-        )
-    ).all()
-    return {row.player_id: row for row in rows}
-
-
 def _players_for(session: Session, entries: Sequence[PoolEntry]) -> dict[int, Player]:
     """Our player row for every entry, created for anyone never seen before."""
     wanted = {entry.espn_player_id for entry in entries}
@@ -357,7 +335,7 @@ def run_status_pass(
     result.requests += len(raw_entries) // POOL_PAGE_SIZE + 1
     entries = [parsed for parsed in map(parse_pool_entry, raw_entries) if parsed is not None]
     players = _players_for(session, entries)
-    previous = _latest_snapshots(session, season)
+    previous = latest_snapshots(session, season)
     result.players = len(entries)
 
     with_events: dict[int, Player] = {}

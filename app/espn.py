@@ -13,6 +13,7 @@ from typing import Any
 
 from espn_api.basketball import League
 from espn_api.basketball.constant import POSITION_MAP
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: espn-api issues its internal `requests.get()` calls with no timeout, so a
@@ -36,9 +37,19 @@ class ESPNSettings(BaseSettings):
     espn_season: int | None = None
 
     #: The ESPN team id the listener fetches news for on every pass, and the
-    #: pickups digest will report on. Optional; without it the pass still
-    #: snapshots everyone and asks for news only where an event fired.
+    #: digest reports on. Optional; without it the pass still snapshots
+    #: everyone and asks for news only where an event fired.
     fcp_tracked_team_id: int | None = None
+
+    @field_validator("espn_season", "fcp_tracked_team_id", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object) -> object:
+        """An empty value in .env means "not set", not "parse this as a number".
+
+        `ESPN_SEASON=` with nothing after it is an easy thing to leave behind,
+        and a pydantic traceback about int parsing is a poor way to find out.
+        """
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 @lru_cache

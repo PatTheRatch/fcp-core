@@ -307,3 +307,25 @@ Set `FCP_TRACKED_TEAM_ID` in `.env` to the ESPN team whose roster should have
 its news fetched on every pass. `curl localhost:8000/ingest-runs/health?mode=status`
 says whether the listener is alive; `/leagues/{id}/seasons/{yr}/events` lists
 what it saw.
+
+## The morning digest
+
+```bash
+python scripts/digest.py --dry-run   # print it, deliver nothing, mark nothing
+python scripts/digest.py             # the morning message
+python scripts/digest.py --alert      # only an urgent roster change, if there is one
+```
+
+Plain text, under forty lines, built from stored rows with no ESPN request:
+what changed on the tracked roster, where that roster stands now, which free
+agents are worth a look, and how many adds the team has made in a fortnight.
+The streaming and rest-of-season advice needs the recommender and is not in it
+yet.
+
+`scheduled_status.sh` runs the digest after the morning pass and an alert
+after the later ones, so nothing extra needs installing. Delivery is one POST
+to `FCP_DIGEST_URL`: an ntfy topic URL works as it is, and setting
+`FCP_DIGEST_CHAT_ID` as well switches to the Telegram shape. With no URL the
+message is printed and nothing is marked as sent, so the next run repeats it.
+That is deliberate: an event is only ever marked notified once a delivery has
+actually succeeded.

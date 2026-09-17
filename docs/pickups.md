@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, auction draft, FAAB
 **Written:** 2026-09-16, five weeks before the 2027 season tips off (ESPN labels a season by the year it ends in)
-**Status:** layer 1, the listener, is built (2026-09-17: `app/listener/`, migration `0016`, `scripts/status_pass.py`, `deploy/fcp-core-status.*`) and waits on the VPS steps in `STATUS.md` under "The listener". Layers 2 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
+**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and wait on the VPS steps in `STATUS.md` under "The listener". Phases 2 to 4, the recommenders and everything after, are still design. Where the build departed from this note, the note says so in place, marked **as built**.
 **Companions:** [`waiver_value.md`](waiver_value.md) (what the wire offered), [`acquirable_value.md`](acquirable_value.md) (what real moves returned), [`stars_and_waivers.md`](stars_and_waivers.md) (whether pickups rescue a draft)
 
 ---
@@ -378,6 +378,18 @@ Mark `notified_at` on the events it included. Delivery is one HTTP POST to a not
 
 Tracked team: `FCP_TRACKED_TEAM_ID` in `.env`, the ESPN team id. One team for now; the routes take any team.
 
+**As built** (`app/digest.py`, `app/notify.py`, `scripts/digest.py`):
+
+- Sections 1, 2 and 5 are in; 3 and 4 wait on the recommender. A free agent carries his percent owned rather than a value rank, for the same reason.
+- Section 1 is followed by where the roster stands now, one line per player carrying a status and a count of the rest. That is the part worth reading on a morning when nothing changed.
+- An event is filed by where its player is *now*: on the tracked roster it is roster news, unrostered it is wire news, on a rival's roster it is neither. So a rival's injury is never reported, and a player a rival drops becomes wire news by himself.
+- `notified_at` is set only after a delivery succeeds. A dry run, a missing URL or a refused POST all leave the events unmarked, and the next message repeats them.
+- Everything the digest reports on is marked, including what it summarises as "and N more"; the events route has the full list. Kinds the digest never shows are never queried and never marked.
+- Caps keep it under forty lines: eight roster events, ten wire ones, eight status lines.
+- The notification service stays the manager's choice. `app/notify.py` posts the text as the body, which is ntfy's API; `FCP_DIGEST_CHAT_ID` switches it to Telegram's JSON shape. Nothing retries.
+- Alerts are `went_out` on the tracked roster only, one line each. `URGENT_KINDS` is one constant, so widening it later is one line.
+- `scheduled_status.sh` runs the digest after the morning pass and `--alert` after the others, so no second timer was needed.
+
 ### 5.3 Deploy
 
 New units named `fcp-core-status.{service,timer}` in `deploy/`, following `fcp-core-ingest.*` (User `aisha`, `WorkingDirectory=/opt/fcp-core`, the same hardening lines). The host is shared with the live production stack, so keep the `fcp-core-` prefix and touch nothing outside `/opt/fcp-core`. Deploy is still `git pull && alembic upgrade head`, and the schema guard in the pass script refuses to run otherwise.
@@ -395,15 +407,17 @@ Update `STATUS.md` "Works today" with the new tables, routes and timer when each
 
 ## 7. Phases and acceptance
 
-| phase | deliverable | done when | target |
-|---|---|---|---|
-| 1 | Listener tables, pool fetch, event diff, status timer, `IngestRun mode=status`, `/events`, `/players/{pid}/status` | Three passes a day recorded on the VPS for a week; events appear for real status changes; tests in §3.7 pass | before 2026-10-20 |
-| 1b | Digest, text only, tracked team | Morning message arrives with events and a roster status line | opening week |
-| 2 | `TeamWeek`, streaming recommender, empty-day check, `/week`, digest section 3 | Backtest §4.6 on the 7-day horizon beats the baseline; live output sane for two weeks | November |
-| 3 | Rest-of-season recommender, drops, stashes, bids, `/pickups`, `/free-agents`, digest section 4 | Backtest on the 30-day horizon beats the baseline; hurdles recorded here | December |
-| 4 | News summarisation, then a frontend | | 2027 |
+| phase | deliverable | done when | target | state |
+|---|---|---|---|---|
+| 1 | Listener tables, pool fetch, event diff, status timer, `IngestRun mode=status`, `/events`, `/players/{pid}/status` | Three passes a day recorded on the VPS for a week; events appear for real status changes; tests in §3.7 pass | before 2026-10-20 | written 2026-09-17, tests pass; the VPS week is still owed |
+| 1b | Digest, text only, tracked team | Morning message arrives with events and a roster status line | opening week | written 2026-09-17; the first real message is still owed |
+| 2 | `TeamWeek`, streaming recommender, empty-day check, `/week`, digest section 3 | Backtest §4.6 on the 7-day horizon beats the baseline; live output sane for two weeks | November | design |
+| 3 | Rest-of-season recommender, drops, stashes, bids, `/pickups`, `/free-agents`, digest section 4 | Backtest on the 30-day horizon beats the baseline; hurdles recorded here | December | design |
+| 4 | News summarisation, then a frontend | | 2027 | design |
 
 Phase 1 is the only one with a hard date. Phases 2 and 3 can be built entirely against 2026 data in the test database and on a laptop.
+
+Neither phase 1 nor 1b is *accepted* yet: both acceptance tests are about what happens on the VPS against the real ESPN, and neither has run there. What is done is the code, its tests, and the deploy steps.
 
 ---
 

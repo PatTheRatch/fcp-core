@@ -163,3 +163,19 @@ def test_the_listener_falls_back_to_the_season_in_progress(
     assert fetch_newest_league(_settings(), date(2026, 11, 3)) == "league-2027"
     assert asked == [2028, 2027]
     assert fetch_newest_league(_settings(2025), date(2026, 11, 3)) == "league-2025"
+
+
+def test_a_blank_value_in_the_environment_means_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`ESPN_SEASON=` left behind in .env must not crash every script."""
+    monkeypatch.setenv("ESPN_LEAGUE_ID", "1")
+    monkeypatch.setenv("ESPN_SWID", "{x}")
+    monkeypatch.setenv("ESPN_S2", "y")
+    monkeypatch.setenv("ESPN_SEASON", "")
+    monkeypatch.setenv("FCP_TRACKED_TEAM_ID", "  ")
+
+    settings = ESPNSettings(_env_file=None)
+    assert settings.espn_season is None
+    assert settings.fcp_tracked_team_id is None
+
+    monkeypatch.setenv("FCP_TRACKED_TEAM_ID", "3")
+    assert ESPNSettings(_env_file=None).fcp_tracked_team_id == 3

@@ -12,6 +12,11 @@
 #   69  the database was unreachable, so nothing was attempted
 #   1   the pass failed, or the database schema is behind the code
 #
+# The morning pass is followed by the digest (scripts/digest.py); the later
+# passes by an alert, which sends nothing unless a player on the tracked
+# roster has just been ruled out. Both need FCP_TRACKED_TEAM_ID and
+# FCP_DIGEST_URL to deliver anything; without them they print and exit 0.
+#
 # Every attempt is appended to logs/scheduled-status.log, and the pass itself
 # to the ingest_runs table with mode "status".
 
@@ -32,10 +37,24 @@ wait_for_database
 require_schema_at_head
 
 log "starting: status pass $*"
-if "$PYTHON" scripts/status_pass.py "$@" >> "$LOG_FILE" 2>&1; then
-    log "succeeded"
-    exit 0
+if ! "$PYTHON" scripts/status_pass.py "$@" >> "$LOG_FILE" 2>&1; then
+    log "FAILED: see the lines above and the ingest_runs table"
+    exit 1
 fi
+log "succeeded"
 
-log "FAILED: see the lines above and the ingest_runs table"
-exit 1
+# Then tell the manager. The morning pass earns the whole digest; the later
+# ones only interrupt for a player of his being ruled out. A delivery that
+# fails leaves the events unnotified, so the next run repeats them, and the
+# failure is the unit's rather than being swallowed here.
+case "${1:-}${2:-}" in
+    *morning*) DIGEST_ARGS="" ;;
+    *) DIGEST_ARGS="--alert" ;;
+esac
+log "starting: digest ${DIGEST_ARGS:-morning}"
+if ! "$PYTHON" scripts/digest.py $DIGEST_ARGS >> "$LOG_FILE" 2>&1; then
+    log "FAILED: the digest; the status pass itself succeeded"
+    exit 1
+fi
+log "succeeded: digest"
+exit 0

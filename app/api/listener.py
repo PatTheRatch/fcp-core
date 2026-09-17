@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import LeagueSeasonDep, SessionDep
@@ -17,6 +17,7 @@ from app.api.schemas import Page, PlayerNewsOut, StatusEventOut, StatusSnapshotO
 from app.db.models import Player, PlayerNews, PlayerStatusEvent, PlayerStatusSnapshot
 from app.listener.events import KINDS
 from app.listener.pool import UNROSTERED_STATUSES
+from app.listener.snapshots import latest_snapshot_ids
 
 router = APIRouter(tags=["listener"])
 
@@ -25,30 +26,10 @@ KINDS_HELP = "Any of " + ", ".join(KINDS)
 SNAPSHOT_PAGE_LIMIT = 500
 
 
-def _latest_snapshot_ids(season: int) -> Select[tuple[int]]:
-    """Ids of each player's most recent snapshot this season."""
-    latest = (
-        select(
-            PlayerStatusSnapshot.player_id,
-            func.max(PlayerStatusSnapshot.observed_at).label("observed_at"),
-        )
-        .where(PlayerStatusSnapshot.season == season)
-        .group_by(PlayerStatusSnapshot.player_id)
-        .subquery()
-    )
-    return select(PlayerStatusSnapshot.id).join(
-        latest,
-        and_(
-            PlayerStatusSnapshot.player_id == latest.c.player_id,
-            PlayerStatusSnapshot.observed_at == latest.c.observed_at,
-        ),
-    )
-
-
 def _players_on(season: int, team: int) -> Select[tuple[int]]:
     """Player ids whose latest snapshot puts them on `team`, or on the wire for 0."""
     base = select(PlayerStatusSnapshot.player_id).where(
-        PlayerStatusSnapshot.id.in_(_latest_snapshot_ids(season))
+        PlayerStatusSnapshot.id.in_(latest_snapshot_ids(season))
     )
     if team == 0:
         return base.where(PlayerStatusSnapshot.status.in_(UNROSTERED_STATUSES))

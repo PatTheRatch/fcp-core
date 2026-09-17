@@ -19,6 +19,13 @@
   Migration 0016; `scripts/status_pass.py`; `deploy/fcp-core-status.timer`.
   **Built 2026-09-17, not yet deployed**: see "The listener" below for the
   VPS steps.
+- The morning digest (`app/digest.py`, `scripts/digest.py`): what changed on
+  the tracked roster, where that roster stands, which free agents are worth
+  a look, and the team's adds in a fortnight. Plain text, under forty lines,
+  no ESPN request. Delivered by one POST to `FCP_DIGEST_URL`, and an event
+  is marked notified only once that POST has succeeded. The later passes
+  send a one-line alert instead, and only for a player of yours being ruled
+  out. **Built 2026-09-17, not yet deployed**, with the listener.
 - The API is served on the VPS at `http://100.105.64.94:8001`, reachable from
   the tailnet only.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
@@ -1396,12 +1403,13 @@ picking a winner silently.
    `/ingest-runs/health`
 3. A frontend, if and when there is something to read the API. That is the
    decision that would force the auth question.
-4. In-season pickups, designed in `docs/pickups.md`. The listener (phase 1)
-   is built and waits on the VPS steps under "The listener" below; it has to
-   be running before the season opens around 2026-10-20, since status
-   history cannot be backfilled. Still to build: the text digest (1b), the
-   streaming recommender (2) and the rest-of-season recommender (3), both
-   backtestable on the stored 2026 season.
+4. In-season pickups, designed in `docs/pickups.md`. The listener and the
+   digest (phases 1 and 1b) are built and wait on the VPS steps under "The
+   listener" below; the listener has to be running before the season opens
+   around 2026-10-20, since status history cannot be backfilled. Still to
+   build: the streaming recommender (2) and the rest-of-season recommender
+   (3), both backtestable on the stored 2026 season, which is what would
+   fill the two sections the digest currently leaves out.
 
 ### Prior seasons
 
@@ -1573,6 +1581,14 @@ out of season the pass snapshots once a day and never fetches news; the
 pool fetch pages until a short page; the scheduled wrappers refuse a
 database behind the code; the migration upgrades and downgrades.
 
+The digest reads only what the passes wrote. Its season is the newest one
+the listener has snapshotted rather than anything fetched, its roster is
+whoever the latest snapshots put on the tracked team, and a free agent is
+ranked by percent owned until phase 2 can price him. An event lands in the
+roster section or the wire section by where its player is now, so a rival's
+injury is never reported and a player a rival drops moves to the wire by
+himself.
+
 Decisions taken while building it, beyond the design note:
 
 - An ownership surge or slide fires once, as the 24-hour move crosses the
@@ -1591,6 +1607,15 @@ Decisions taken while building it, beyond the design note:
 - `waiverProcessDate` is the one field name taken on trust.
   `scripts/espn_probe.py --pool-keys` reports how many WAIVERS entries
   carry it, and `--dump-card ID` prints one entry whole.
+- The notification service is left to you, which is what section 10 of the
+  design note wanted: `app/notify.py` posts the text as the body, which is
+  ntfy's API, and setting `FCP_DIGEST_CHAT_ID` switches it to Telegram's
+  JSON. Neither needs a client library or an account key in the repository.
+- An event is marked notified only after a delivery succeeds. A dry run, a
+  missing URL and a refused POST all leave it unmarked, so the next message
+  repeats it rather than swallowing it.
+- A blank value in `.env` (`ESPN_SEASON=` with nothing after it) now reads
+  as unset instead of failing with a pydantic parse error.
 
 **To deploy**, on the VPS, after pulling main:
 
@@ -1605,9 +1630,18 @@ sudo systemctl enable --now fcp-core-status.timer
 sudo systemctl restart fcp-core-api.service          # the new routes
 ```
 
-Optionally `FCP_TRACKED_TEAM_ID=<espn team id>` in `.env` names the roster
-whose news every pass fetches. Then `GET /ingest-runs/health?mode=status`
-says whether the listener is alive, and `.../events` what it has seen.
+`FCP_TRACKED_TEAM_ID=<espn team id>` in `.env` names the roster whose news
+every pass fetches and whom the digest is about, and `FCP_DIGEST_URL` is
+where the digest goes: an ntfy topic URL works as it is, or a Telegram
+`sendMessage` URL with `FCP_DIGEST_CHAT_ID` beside it. Read one before
+turning delivery on:
+
+```
+./.venv/bin/python scripts/digest.py --dry-run
+```
+
+Then `GET /ingest-runs/health?mode=status` says whether the listener is
+alive, and `.../events` what it has seen.
 
 ### Why the API is tailnet-only, and why owners have opaque ids
 
