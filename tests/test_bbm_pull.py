@@ -1,6 +1,8 @@
 import pytest
 
+from app.draft.bbm import BBMRow
 from app.draft.bbm_pull import BBMPullError, custom_selects, form_state, logged_out, page_season
+from scripts.bbm_pull import check
 
 
 def dropdown(name: str, options: list[tuple[str, str]], selected: str, wide: str = "") -> str:
@@ -70,3 +72,27 @@ def test_logged_out() -> None:
     assert logged_out('<input name="PasswordTB" type="password" />')
     assert logged_out("You must be logged in to view this")
     assert not logged_out(PAGE)
+
+
+def _row(name: str, games: float) -> BBMRow:
+    return BBMRow(
+        name=name,
+        position="PG",
+        games=games,
+        rates={},
+        fg_pct=0.0,
+        ft_pct=0.0,
+        dollars=None,
+        injury="",
+        injury_risk="",
+        league_dollars=1.0,
+    )
+
+
+def test_games_may_fall_with_the_calendar_but_not_jump() -> None:
+    before = [_row(f"P{i}", 70.0) for i in range(5)]
+    check([_row(f"P{i}", 67.0) for i in range(5)], before, accept_games=False, days=4)
+    with pytest.raises(ValueError):
+        check([_row(f"P{i}", 67.0) for i in range(5)], before, accept_games=False, days=0)
+    with pytest.raises(ValueError):
+        check([_row(f"P{i}", 73.0) for i in range(5)], before, accept_games=False, days=4)

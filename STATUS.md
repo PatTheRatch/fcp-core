@@ -646,6 +646,11 @@ dropped, or moved $3+ in Leag$. First run 2026-09-16: 515 players, Josh Hart
 $9.3 to $5.1, Jalen Williams $26.2 to $29.9. Re-run `scripts/draft_plan.py`
 after a pull.
 
+On the VPS it runs daily at 09:30 UTC with `--store` (`deploy/fcp-core-bbm.*`),
+which also keeps both exports in the database as versions of each player's
+row (`bbm_captures`, `bbm_projections`; `app.draft.bbm_store.as_of` reads a
+date back).
+
 The pull guards against BBM settings made in the browser. Leag$ is only
 exported while the punt panel's `cat_25` box is ticked, so the pull ticks it.
 And a settings change on 2026-09-16 raised every projected game count (median

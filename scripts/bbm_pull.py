@@ -13,6 +13,10 @@ league dollars (Leag$) that changed by at least --movers. It refuses, keeping
 the old files, an export without Leag$ or one whose projected games moved
 across the board, since both come from BBM settings, not news.
 
+With --store it also keeps both exports in the database, a version of each
+player's row whenever it changes (`app.draft.bbm_store`), which is what the
+daily timer on the VPS runs.
+
 The files are paid data: data/bbm/ is git-ignored, and stays that way.
 """
 
@@ -24,7 +28,7 @@ import sys
 from pathlib import Path
 
 from app.draft.bbm import BBMRow, read_bbm
-from app.draft.bbm_pull import BBMClient, BBMPullError, BBMSettings
+from app.draft.bbm_pull import BBMClient, BBMPullError, BBMSettings, PullResult
 
 
 def main() -> int:
@@ -32,6 +36,11 @@ def main() -> int:
     ap.add_argument("--season", type=int, help="refuse the pull unless BBM is projecting this")
     ap.add_argument("--dir", type=Path, default=Path("data/bbm"))
     ap.add_argument("--movers", type=float, default=3.0, help="Leag$ change worth listing")
+    ap.add_argument(
+        "--store",
+        action="store_true",
+        help="also keep today's exports in the database (app.draft.bbm_store)",
+    )
     ap.add_argument(
         "--accept-games",
         action="store_true",
@@ -57,9 +66,14 @@ def main() -> int:
         fresh = target.with_suffix(".xls.new")
         fresh.write_bytes(export.body)
         before = read_bbm(target) if target.exists() else []
+        days = (
+            (datetime.date.today() - datetime.date.fromtimestamp(target.stat().st_mtime)).days
+            if target.exists()
+            else 0
+        )
         try:
             rows = read_bbm(fresh)
-            check(rows, before, accept_games=args.accept_games)
+            check(rows, before, accept_games=args.accept_games, days=days)
         except Exception as exc:
             for path in [fresh, *(f for _, f, _, _ in staged)]:
                 path.unlink(missing_ok=True)
@@ -70,16 +84,53 @@ def main() -> int:
         print(f"\n{target}: {len(rows)} players")
         report_movers(before, rows, args.movers)
     print(f"\npulled {datetime.date.today():%-d %b %Y}")
+    if args.store:
+        store(result)
     return 0
 
 
-#: A shift in the median projected games this large, across players in both
-#: files, is a settings change (Assume Good Health, a season window), not news.
+def store(result: PullResult) -> None:
+    """Keep today's exports in the database, as versions of each player's row."""
+    from app.config import get_settings
+    from app.db.session import make_engine, make_session_factory
+    from app.draft.bbm_store import capture, read_export
+
+    factory = make_session_factory(make_engine(get_settings().database_url))
+    today = datetime.datetime.now(datetime.UTC).date()
+    with factory() as session:
+        for export in result.exports:
+            saved = capture(
+                session,
+                season=result.season,
+                value_type=export.kind,
+                rows=read_export(export.body),
+                captured_on=today,
+                source=result.source,
+                league=result.league,
+            )
+            print(
+                f"stored {export.kind}: {saved.players} players, {saved.changed} changed, "
+                f"{saved.dropped} dropped"
+            )
+        session.commit()
+
+
+#: A rise in the median player's projected games this large is a settings
+#: change (Assume Good Health, the projection window), not news.
 GAMES_SHIFT = 2.0
 
+#: How fast a rest-of-season projection's games fall on their own once the
+#: season is on: an NBA team plays about 3.5 games a week.
+GAMES_PER_DAY = 0.5
 
-def check(rows: list[BBMRow], before: list[BBMRow], *, accept_games: bool) -> None:
-    """Refuse an export the room would misread."""
+
+def check(rows: list[BBMRow], before: list[BBMRow], *, accept_games: bool, days: int = 0) -> None:
+    """Refuse an export the room would misread.
+
+    Projected games may fall with the calendar (half a game a day in season,
+    as games are played) but a jump up, or a fall faster than the days
+    explain, is a setting.
+    """
     if not any(r.league_dollars is not None for r in rows):
         raise ValueError("no Leag$ column; the league-settings values are switched off in BBM")
     if not before or accept_games:
@@ -88,11 +139,11 @@ def check(rows: list[BBMRow], before: list[BBMRow], *, accept_games: bool) -> No
     shifts = sorted(r.games - old[r.name] for r in rows if r.name in old)
     if shifts:
         median = shifts[len(shifts) // 2]
-        if abs(median) >= GAMES_SHIFT:
+        if median >= GAMES_SHIFT or median <= -(GAMES_SHIFT + GAMES_PER_DAY * days):
             raise ValueError(
-                f"projected games moved {median:+.0f} for the median player. That is a "
-                "BBM setting (Assume Good Health, the projection window), not news; "
-                "BBM's games already price missed time and the room relies on that. "
+                f"projected games moved {median:+.0f} for the median player in {days} days. "
+                "That is a BBM setting (Assume Good Health, the projection window), not "
+                "news; BBM's games already price missed time and the room relies on that. "
                 "Fix the setting, or pass --accept-games if the change is real"
             )
 

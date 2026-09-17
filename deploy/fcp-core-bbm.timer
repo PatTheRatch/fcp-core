@@ -1,0 +1,14 @@
+# Daily, after the 09:00 ingest so players new to ESPN are matched, and before
+# the 10:00 backup so the dump carries the day's projections.
+
+[Unit]
+Description=fcp-core - daily Basketball Monster projections
+Requires=fcp-core-bbm.service
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

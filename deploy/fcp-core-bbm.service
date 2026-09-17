@@ -1,0 +1,34 @@
+# Daily pull of Basketball Monster's projections into data/bbm/ and the database.
+#
+# Install:
+#     sudo cp deploy/fcp-core-bbm.* /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-bbm.timer
+#
+# Run one now:   sudo systemctl start fcp-core-bbm.service
+# See the last:  journalctl -u fcp-core-bbm.service -n 30
+#
+# Needs BBM_USERNAME and BBM_PASSWORD in /opt/fcp-core/.env. A refused export
+# (league values missing, projected games jumping) exits non-zero and keeps
+# yesterday's files and rows, which is the point: it shows in
+# `systemctl --failed` instead of quietly storing a settings mistake.
+
+[Unit]
+Description=fcp-core - daily Basketball Monster projections
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/.venv/bin/python scripts/bbm_pull.py --store
+TimeoutStartSec=900
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core

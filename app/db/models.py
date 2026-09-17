@@ -815,3 +815,64 @@ class PlayerProjectionSnapshot(Base):
     stats: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     player: Mapped[Player] = relationship()
+
+
+class BBMCapture(Base):
+    """One daily pull of Basketball Monster's projection export.
+
+    A row per export per day, whether or not anything changed, so a gap in
+    the history is a day the pull did not run rather than a quiet day.
+    """
+
+    __tablename__ = "bbm_captures"
+    __table_args__ = (
+        UniqueConstraint(
+            "season", "value_type", "captured_on", name="uq_bbm_captures_season_type_day"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: "total" (season-total values) or "pergame" (per-game values).
+    value_type: Mapped[str] = mapped_column(String, nullable=False)
+    captured_on: Mapped[date] = mapped_column(Date, nullable=False)
+    #: BBM's projection source and the league its values were computed for.
+    source: Mapped[str | None] = mapped_column(String)
+    league: Mapped[str | None] = mapped_column(String)
+    players: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Rows that differed from the day before (a new version was stored).
+    changed: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Players in yesterday's export and not in today's.
+    dropped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class BBMProjection(Base):
+    """A player's row in BBM's export, for the days it stayed the same.
+
+    Stored as versions rather than daily copies: a row is written when a
+    player's line changes, and `last_seen` moves forward on each day it does
+    not. The row as BBM served it on a date is the version with
+    `first_seen <= date <= last_seen` (`app.draft.bbm_store.as_of`).
+
+    Paid data: this table stays on our database and out of the repository.
+    """
+
+    __tablename__ = "bbm_projections"
+    __table_args__ = (
+        Index("ix_bbm_projections_lookup", "season", "value_type", "name_key", "last_seen"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    value_type: Mapped[str] = mapped_column(String, nullable=False)
+    #: BBM's name as exported, and the normalised key rows are tracked by.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    name_key: Mapped[str] = mapped_column(String, nullable=False)
+    #: Our player, when the name matches one strictly (`app.draft.bbm.match_player`).
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id", ondelete="SET NULL"))
+    first_seen: Mapped[date] = mapped_column(Date, nullable=False)
+    last_seen: Mapped[date] = mapped_column(Date, nullable=False)
+    #: Hash of `row`, to tell a changed line from an unchanged one cheaply.
+    row_hash: Mapped[str] = mapped_column(String, nullable=False)
+    #: Every column of the export for this player, as BBM sent it.
+    row: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
