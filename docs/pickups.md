@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, auction draft, FAAB
 **Written:** 2026-09-16, five weeks before the 2027 season tips off (ESPN labels a season by the year it ends in)
-**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and wait on the VPS steps in `STATUS.md` under "The listener". Phases 2 to 4, the recommenders and everything after, are still design. Where the build departed from this note, the note says so in place, marked **as built**.
+**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and wait on the VPS steps in `STATUS.md` under "The listener". Phase 2's short-term half is built (2026-09-18: `app/pickups/state.py`, `projection.py`, `stream.py`, `scripts/stream.py`); the rest-of-season recommender, the bids, the backtest and phases 3 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
 **Companions:** [`waiver_value.md`](waiver_value.md) (what the wire offered), [`acquirable_value.md`](acquirable_value.md) (what real moves returned), [`stars_and_waivers.md`](stars_and_waivers.md) (whether pickups rescue a draft)
 
 ---
@@ -281,6 +281,8 @@ class RosteredPlayer:
 
 `my_totals` and `opp_totals` come from `matchup_team_stats` for the current matchup. Confirm during phase 2 that the `--recent` ingest writes the in-progress matchup's stats; `ingest_matchups_and_rosters` is believed to, since the box score view returns running totals, but it has only ever been run on finished periods.
 
+**As built** (2026-09-18, `app/pickups/state.py`): `my_totals` and `opp_totals` are `CategoryLine`s of raw counts (FGM/FGA and FTM/FTA included) rather than dicts, so a percentage is rebuilt and never averaged. `faab_remaining` is `acquisition_budget` (the 100 FAAB pot) less executed bids; `auction_budget` above is the draft's 200 and was the wrong field. `RosteredPlayer` carries `game_days`, the remaining scoring periods on which he has a game he is not ruled out of, and `games_remaining_this_period` is its length. Injury status, return date and NBA team come from the latest status snapshot; a player the listener has never seen takes his team from his last `roster_slots.pro_team`. Before the season's first lineup day the roster is the snapshots' `on_team_id`, with nobody on IR. OUT with no return date is out for the whole period, which matches `startable`. `load_free_agents` reads every row of the latest pass of `free_agent_snapshots`, since that table only ever holds the unrostered. `season_calendar` dates a scoring period from the stored schedule, for the CLI's default day and for the knowable line's `as_of`. The in-progress matchup's running totals are still to be confirmed on the live database.
+
 ### 4.2 Rest-of-season projection per player: `app/pickups/projection.py`
 
 A `PlayerProjection` for the remainder of the season, built as:
@@ -291,6 +293,8 @@ A `PlayerProjection` for the remainder of the season, built as:
 - **Games**: count `pro_team_games` from today to the end of the fantasy season, exclude games before `expected_return_date` when status is OUT, and multiply the rest by a league availability factor. Use 0.96 when the rate came from BBM and 0.88 when from ESPN, the two figures measured in the `bbm.py` docstring. Do not stack.
 
 Percentages are carried as FGM/FGA and FTM/FTA totals, the way `valuation.py` already does, so a roster's FG% is rebuilt from components.
+
+**As built** (2026-09-18, `app/pickups/projection.py`): the per-game rate is the knowable line (`app/scoring/knowable.py`: season to date shrunk to the projection with `PRIOR_GAMES` 15, then 15% of the last fortnight), fitted on 7,165 checkpoints and better on the next 28 days than the `k = 20` blend above (2.85 against 2.90), so that blend is not implemented and BBM is not consulted; the rate is ESPN-derived, so the availability factor is always 0.88. The tilt is as designed and switchable (`tilt=`), keyed on the listener's own `minutes_spike` and `minutes_drop` events: live while the event's `through_scoring_period` is within 10 days of today, factor = the event's recent mean over his season mean from `player_game_stats` (the event's own prior mean when he has no games stored), capped to [0.6, 1.5], applied to every count so the percentages stand. Games are the caller's to count (`state.playable_days`); `rest_of_period_line` applies no availability factor, because the days left in a week are a known schedule, and `rest_of_season_line` applies 0.88 once.
 
 ### 4.3 Short term, this week: `app/pickups/stream.py`
 
@@ -305,6 +309,8 @@ Answer: *which swap most improves my expected category wins in the current match
 **Empty-day check**, reported separately: any remaining scoring period on which a starting slot has no player with a game while a free agent does. This is the most common streaming reason and does not need the probability model.
 
 **Hurdle**: recommend only when Δ expected wins ≥ 0.10 categories, or an empty day is filled. Below that, say so.
+
+**As built** (2026-09-18, `app/pickups/stream.py`, `scripts/stream.py`): step 1 counts starts, not games. Each remaining day is a matching of the players with a game to the lineup (`app/inseason/startable.py`), seated in order of a per-game weight (counts over each category's spread, turnovers against, percentages left out), which is the exact best seating because the seatable sets form a transversal matroid; a four-game free agent on days the lineup is already full adds nothing. σ is the `CategoryDistribution` spread scaled by `sqrt(days_remaining / period_days)`, settled as a step when no days are left. A swap is legal when the roster respects the position limits and still seats at least as much of the lineup as before, so a roster already short somewhere can still make a move that does not make it shorter. FAAB affordability is not enforced (a claim can be a $0 bid); `faab_remaining` is reported beside the moves. An IR move needs the status OUT exactly, which is what ESPN admits to IR. The five reported are the best move per added player, so five pickups are named rather than one pickup with five drops. A filled empty day clears the hurdle only with a positive Δ, since dropping a starter for a body that plays on the empty day fills it and loses the week. The pool is the latest pass's wire cut to the top 80 by weight times games left; `pool=` and `distributions=` are overrides for the tests and the backtest. On a bye the report carries the empty-day check and no moves. The knowable line is queried per player, so a run costs a few hundred small queries; fine for a CLI and the digest, and to be batched if the backtest minds.
 
 ### 4.4 Long term, rest of season: `app/pickups/season.py`
 

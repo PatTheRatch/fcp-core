@@ -1412,9 +1412,10 @@ picking a winner silently.
 4. In-season pickups, designed in `docs/pickups.md`. The listener and the
    digest (phases 1 and 1b) are built and wait on the VPS steps under "The
    listener" below; the listener has to be running before the season opens
-   around 2026-10-20, since status history cannot be backfilled. Still to
-   build: the streaming recommender (2) and the rest-of-season recommender
-   (3), both backtestable on the stored 2026 season, which is what would
+   around 2026-10-20, since status history cannot be backfilled. The
+   streaming recommender (phase 2, this week) is built, under "The streaming
+   recommender" below. Still to build: the rest-of-season recommender, the
+   bids, and the backtest on the stored 2026 season, which is what would
    fill the two sections the digest currently leaves out.
 5. The end-of-week matchup predictor, designed in `docs/week_predictor.md`:
    each category's chance of being won this week, and the matchup's, from the
@@ -1653,6 +1654,54 @@ turning delivery on:
 
 Then `GET /ingest-runs/health?mode=status` says whether the listener is
 alive, and `.../events` what it has seen.
+
+### The streaming recommender
+
+Built 2026-09-18 from section 4.3 of `docs/pickups.md`, against the test
+database only: the local development database is at migration 0013 and has
+none of the listener's tables, so `scripts/stream.py` refuses it with a
+message rather than a traceback, and the report has not yet been read on a
+real week. `app/pickups/` holds it, in three modules and no HTTP: `state`
+(the team's week: roster from the latest lineup day or, before one, the
+snapshots; both sides' posted counts; days left; open places, the IR slot
+and FAAB), `projection` (a player's per-game line from today, the knowable
+line with a switchable minutes tilt on top, and the games it is spread
+over), and `stream` (every legal swap, add and IR move ranked by the change
+in expected categories won head to head, the empty-day check, and the
+hurdle). `scripts/stream.py --season 2027 --team "Through The Wire"` prints
+it for one day.
+
+What is pinned by tests (32): the roster, status and games come from the
+tables the docstrings name and no other; OUT with a return date loses
+exactly the games before it; the tilt fires only while its event is live,
+scales every count, is capped, and switches off; a level category is
+flipped by a free agent with three games into an open slot; the empty-day
+check names the day, the slots and who could fill them; a marginal swap is
+listed and refused; a free agent whose four games fall on full days adds
+nothing; a better one displaces the worst starter; an OUT player can go to
+IR to make room; position limits hold; a bye has no head-to-head.
+
+Decisions taken while building it, beyond the design note (each is also
+marked **as built** in the note):
+
+- Starts, not games. Each remaining day is the `startable` matching, seated
+  in order of a per-game weight against the league's spreads; the weight
+  only decides who sits on a full day. A four-game pickup on full days is
+  worth nothing, which a games count cannot see.
+- The per-game rate is the knowable line, not the note's `k = 20` blend, and
+  BBM is not consulted; the availability factor is therefore always 0.88,
+  and only on a rest-of-season line.
+- The FAAB pot is `acquisition_budget`, not `auction_budget`.
+- OUT with no return date is out for the period. An IR move needs OUT exactly.
+- A swap is legal when the roster keeps the position limits and seats at
+  least as much of the lineup as before, so a roster already short can still
+  make a move that does not make it shorter. Affordability is not enforced.
+- The five moves reported are the best per added player. A filled empty day
+  clears the hurdle only with a positive change.
+- On a bye the report carries the empty-day check and no moves.
+
+Not built here, for the next brief: the rest-of-season recommender
+(section 4.4), the bids (4.5), the backtest (4.6) and the API routes (5.1).
 
 ### Why the API is tailnet-only, and why owners have opaque ids
 

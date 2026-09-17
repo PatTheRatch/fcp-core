@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Who to stream this week, for one team, and whether anyone is worth it.
+
+Usage:
+    python scripts/stream.py --season 2027 --team "Through The Wire"
+    python scripts/stream.py --season 2027 --team "Through The Wire" --today 12
+    python scripts/stream.py --season 2027 --team "Through The Wire" --no-tilt
+
+Read-only: it prints, it writes nothing. The week is read from the stored
+rows (lineup days, the listener's snapshots and pool, the NBA schedule, the
+live matchup's totals), so the answer is the same whenever it is run for the
+same day. `--today` is a scoring period; without it the calendar day is
+turned into one from the stored schedule, which before opening night is the
+season's first day.
+
+Domain logic lives in app/pickups/stream.py; this file is argument parsing
+and layout. See docs/pickups.md section 4.3.
+"""
+
+import argparse
+import sys
+from datetime import date
+from pathlib import Path
+
+# Run by path, so `scripts/` is on sys.path and the repo root is not. Without
+# this, `app` resolves to whichever checkout the interpreter's venv installed,
+# which is the production one when a worktree borrows /opt/fcp-core/.venv.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from sqlalchemy import inspect, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.db.models import League, LeagueSeason, Team
+from app.db.session import make_engine, make_session_factory
+from app.inseason.startable import team_by_name, team_names
+from app.pickups.state import season_calendar
+from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
+
+#: ESPN's league id for Full Court Press. The stored league is looked up by
+#: id rather than assumed to be the only one, and the CLI names it so a stale
+#: database is obvious rather than silently used.
+LEAGUE_ID = 3853870
+
+#: The listener's tables, without which there is no roster, pool or
+#: schedule to read. Checked up front so a database behind the code says
+#: so instead of failing on the first query.
+LISTENER_TABLES = ("player_status_snapshots", "free_agent_snapshots", "pro_team_games")
+
+
+def _league_season(session: Session, season: int) -> LeagueSeason | None:
+    return session.scalar(
+        select(LeagueSeason)
+        .join(League, League.id == LeagueSeason.league_id)
+        .where(League.espn_league_id == LEAGUE_ID, LeagueSeason.season == season)
+    )
+
+
+def _missing_tables(engine: Engine) -> list[str]:
+    inspector = inspect(engine)
+    return [table for table in LISTENER_TABLES if not inspector.has_table(table)]
+
+
+def _names(session: Session, league_season: LeagueSeason) -> dict[int, str]:
+    return {
+        int(team.espn_team_id): team.name
+        for team in session.scalars(
+            select(Team).where(Team.league_season_id == league_season.id)
+        ).all()
+    }
+
+
+def _describe(move: Move) -> str:
+    add = f"add {move.add.name} ({move.add_starts} of {move.add.games_remaining_this_period} games)"
+    if move.kind == ADD:
+        rest = "into the open place"
+    elif move.kind == IR_MOVE and move.to_ir is not None:
+        rest = f"{move.to_ir.name} to IR"
+    elif move.drop is not None:
+        rest = (
+            f"drop {move.drop.name} ({move.drop_starts} of {move.drop.games_remaining_this_period})"
+        )
+    else:
+        rest = ""
+    return f"{add}, {rest}".rstrip(", ")
+
+
+def render(
+    report: StreamReport,
+    *,
+    season: int,
+    team_name: str,
+    opponent_name: str | None,
+    when: date | None,
+) -> str:
+    out: list[str] = []
+    add = out.append
+    first, last = report.scoring_periods_remaining[0], report.scoring_periods_remaining[-1]
+    dated = f", {when.isoformat()}" if when is not None else ""
+    add(
+        f"{team_name} - season {season}, matchup period {report.matchup_period}, "
+        f"day {first}{dated}; days {first}-{last} left ({report.days_remaining})"
+    )
+    if report.on_bye:
+        add("opponent: none (bye), so no head-to-head this period")
+    else:
+        add(f"opponent: {opponent_name or report.opponent_team_id}")
+        add(f"expected categories won as things stand: {report.expected_wins:.2f} of 9")
+        add("  " + "  ".join(f"{key} {p:.2f}" for key, p in report.probabilities.items()))
+    add(
+        f"roster: {report.open_slots} open place(s), IR slot "
+        f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
+        f"{report.pool_size} free agents evaluated"
+    )
+
+    add("")
+    add("empty days (a slot nobody on the roster can fill, that a free agent could):")
+    if not report.empty_days:
+        add("  none")
+    for day in report.empty_days:
+        fillers = ", ".join(p.name for p in day.fillers[:4])
+        if len(day.fillers) > 4:
+            fillers += f" and {len(day.fillers) - 4} more"
+        add(f"  day {day.scoring_period}: {', '.join(day.empty_slots)} empty; {fillers}")
+
+    add("")
+    if report.on_bye:
+        add("moves: none ranked on a bye")
+    else:
+        add("moves, by change in expected categories won:")
+        if not report.moves:
+            add("  none legal")
+        for rank, move in enumerate(report.moves, start=1):
+            moved = ", ".join(f"{s.abbreviation} {s.delta:+.2f}" for s in move.moved()[:4])
+            flag = "  fills an empty day" if move.fills_empty_day else ""
+            add(f"  {rank}. {move.delta:+.3f}  {_describe(move)}{flag}")
+            if moved:
+                add(f"       {moved}")
+
+    add("")
+    chosen = report.recommended
+    if chosen is None:
+        add(f"no move clears the hurdle ({report.hurdle:.2f} categories, or an empty day filled).")
+    else:
+        add(f"recommended: {_describe(chosen)} ({chosen.delta:+.3f})")
+    return "\n".join(out)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--season", type=int, required=True, help="ESPN season, e.g. 2027")
+    parser.add_argument("--team", required=True, help="Team name, or a unique prefix of one")
+    parser.add_argument("--today", type=int, default=None, help="Scoring period (default: today)")
+    parser.add_argument("--no-tilt", action="store_true", help="Ignore minutes spikes and drops")
+    args = parser.parse_args()
+
+    engine = make_engine(get_settings().database_url)
+    try:
+        missing = _missing_tables(engine)
+        if missing:
+            print(
+                "The database is behind the code: no "
+                + ", ".join(missing)
+                + ". Run 'alembic upgrade head' where the listener runs; nothing was written.",
+                file=sys.stderr,
+            )
+            return 1
+        factory = make_session_factory(engine)
+        with factory() as session:
+            league_season = _league_season(session, args.season)
+            if league_season is None:
+                print(
+                    f"No stored season {args.season} for ESPN league {LEAGUE_ID}.",
+                    file=sys.stderr,
+                )
+                return 1
+            team = team_by_name(session, league_season, args.team)
+            if team is None:
+                print(f"No team matching {args.team!r} in {args.season}.", file=sys.stderr)
+                for name in team_names(session, league_season):
+                    print(f"  {name}", file=sys.stderr)
+                return 1
+
+            calendar = season_calendar(session, args.season)
+            if calendar is None:
+                print(f"No NBA schedule stored for {args.season}.", file=sys.stderr)
+                return 1
+            today = (
+                args.today if args.today is not None else calendar.scoring_period_on(date.today())
+            )
+
+            try:
+                report = stream_recommendations(
+                    session, league_season, team.espn_team_id, today, tilt=not args.no_tilt
+                )
+            except ValueError as error:
+                print(str(error), file=sys.stderr)
+                return 1
+            names = _names(session, league_season)
+            text = render(
+                report,
+                season=args.season,
+                team_name=team.name,
+                opponent_name=names.get(report.opponent_team_id or -1),
+                when=calendar.date_of(today),
+            )
+        print(text)
+        print("")
+        print("Read-only; nothing was written.")
+    finally:
+        engine.dispose()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
