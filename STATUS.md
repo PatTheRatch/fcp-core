@@ -660,6 +660,11 @@ money, and the pick log. It redraws from the event stream.
 his real price. Verified in the browser on 2026-09-14: nominations advance
 and sell, buying from the card applies and refits the plan, keyboard entry
 for another team works, pause holds the clock while ceilings land. The
+BBM is a paid membership and nobody has permission to republish its
+numbers, so the exports, the stored rows and everything derived from them per
+player stay private to the account that fetched them; `docs/projection_sources.md`
+records what that rules out and the upload path other people would need.
+
 BBM exports live in `data/bbm/` inside the project (git-ignored): a process
 the app launches cannot read `~/Documents` under macOS privacy rules, and
 hung silently trying.
