@@ -92,3 +92,20 @@ def test_value_types_are_kept_apart(scoring_session: Session) -> None:
     assert len(as_of(session, 2027, MON, "total")) == 1
     assert len(as_of(session, 2027, MON, "pergame")) == 1
     assert as_of(session, 2027, date(2026, 11, 1)) == []
+
+
+def test_recomputed_value_columns_are_not_a_change(scoring_session: Session) -> None:
+    session = scoring_session
+    monday = [{"Name": "Steady", "g": 70.0, "p/g": 20.04, "pV": 1.7744, "Rank": 12}]
+    tuesday = [{"Name": "Steady", "g": 70.0, "p/g": 20.01, "pV": 1.7766, "Rank": 13}]
+    wednesday = [{"Name": "Steady", "g": 64.0, "p/g": 20.01, "pV": 1.70, "Rank": 20}]
+    capture(session, season=2027, value_type="total", rows=monday, captured_on=MON)
+    assert (
+        capture(session, season=2027, value_type="total", rows=tuesday, captured_on=TUE).changed
+        == 0
+    )
+    assert (
+        capture(session, season=2027, value_type="total", rows=wednesday, captured_on=WED).changed
+        == 1
+    )
+    assert [v.first_seen for v in history(session, 2027, "Steady")] == [MON, WED]

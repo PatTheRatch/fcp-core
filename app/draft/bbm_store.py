@@ -7,8 +7,9 @@ move on the projection that was in front of the manager that day.
 
 STORED AS VERSIONS, NOT COPIES
 
-A player's row is written when it changes; an unchanged row only moves its
-version's `last_seen` forward. The row BBM served on a date is the version
+A player's row is written when it changes (`CHANGE_COLUMNS`: his projected
+stats, games, dollar values, team, injury, notes and flags); an unchanged row
+only moves its version's `last_seen` forward. The row BBM served on a date is the version
 whose `first_seen <= date <= last_seen`. `bbm_captures` logs every pull, with
 how many rows changed, so a missing day reads as a pull that did not run
 rather than as a quiet day.
@@ -55,8 +56,50 @@ def read_export(body: bytes) -> list[dict[str, Any]]:
     return rows
 
 
+#: The columns whose change means BBM changed its view of a player, and how
+#: finely each is compared (decimal places; None for text). Everything else in
+#: the row is stored but not compared. Found 2026-09-17 when two pulls five
+#: hours apart differed in every row: BBM recomputes its derived value columns
+#: (pV ... toV, the D/DH splits, LeagV, PuntV, PosV, BZ, Punt+, 1W+-) against
+#: the pool on each export, so they wander in the third decimal with nothing
+#: new, and ranks, ADP, ownership and Age move daily for reasons of their own.
+CHANGE_COLUMNS: dict[str, int | None] = {
+    "Team": None,
+    "Pos": None,
+    "Note": None,
+    "Inj": None,
+    "Inj Risk": None,
+    "Status": None,
+    "Conf": None,
+    "Role": None,
+    "Tier": None,
+    "g": 0,
+    "m/g": 1,
+    "p/g": 1,
+    "3/g": 1,
+    "r/g": 1,
+    "a/g": 1,
+    "s/g": 1,
+    "b/g": 1,
+    "to/g": 1,
+    "fga/g": 1,
+    "fta/g": 1,
+    "fg%": 3,
+    "ft%": 3,
+    "$": 0,
+    "Leag$": 0,
+}
+
+
 def row_hash(row: dict[str, Any]) -> str:
-    return hashlib.sha256(json.dumps(row, sort_keys=True, default=str).encode()).hexdigest()
+    """A fingerprint of what BBM thinks of the player, blind to recomputation noise."""
+    key = {}
+    for column, places in CHANGE_COLUMNS.items():
+        value = row.get(column)
+        if places is not None and isinstance(value, int | float):
+            value = round(float(value), places) + 0.0
+        key[column] = value
+    return hashlib.sha256(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()
 
 
 @dataclass(frozen=True)

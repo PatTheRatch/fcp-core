@@ -8,7 +8,7 @@ poking at the data and guessing.
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import SessionDep
 from app.api.schemas import IngestHealthOut, IngestRunOut, Page
@@ -26,6 +26,10 @@ STALENESS_THRESHOLD_HOURS = 36
 RUN_PAGE_LIMIT = 200
 
 MODE_HELP = "Count only runs of this mode: 'full', 'recent', 'settings' or 'status'"
+
+
+#: The mode the listener's status passes record their runs under.
+LISTENER_MODE = "status"
 
 
 @router.get("/ingest-runs", summary="Ingest history, newest first")
@@ -80,8 +84,18 @@ def get_current_ingest_health(
     Deliberately takes no season: asking about a fixed year is how a stale
     schedule hides, since a finished season refreshed nightly looks perfectly
     healthy while the live one goes unrecorded.
+
+    The listener follows the newest season ESPN serves, which through
+    September is the one about to start, so for its status passes "now" is the
+    newest season they have recorded rather than the calendar's.
     """
-    return get_ingest_health(current_season(), session, mode)
+    season = current_season()
+    if mode == LISTENER_MODE:
+        newest = session.scalar(
+            select(func.max(IngestRun.season)).where(IngestRun.mode == LISTENER_MODE)
+        )
+        season = max(season, int(newest)) if newest is not None else season
+    return get_ingest_health(season, session, mode)
 
 
 @router.get(

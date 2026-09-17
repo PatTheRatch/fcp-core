@@ -183,3 +183,13 @@ def test_health_can_be_asked_about_the_listener_alone(
         "items"
     ][:1]
     assert run["mode"] == "status" and run["detail"] == {"label": "report"}
+
+
+def test_the_current_listener_health_follows_the_season_it_records(
+    client: TestClient, seeded: sessionmaker[Session]
+) -> None:
+    """In September the calendar says last season; the listener already watches the next."""
+    with record_run(seeded, espn_league_id=LEAGUE_ID, season=2099, mode="status"):
+        pass
+    body = client.get("/ingest-runs/health", params={"mode": "status"}).json()
+    assert body["season"] == 2099 and body["stale"] is False
