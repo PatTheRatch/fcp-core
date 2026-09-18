@@ -9,6 +9,10 @@ Usage:
 
 Then http://127.0.0.1:8765/api/state, or /docs for every endpoint.
 
+Without a Basketball Monster membership, `--projection-set <id>` drafts on an
+uploaded set instead (scripts/upload_projections.py). The two are exclusive,
+and the state and every card name whichever source the room was loaded from.
+
 Every accepted pick and undo is written to --log (by default
 logs/draft-<season>.jsonl) and replayed on start, so stopping and starting
 this mid-draft loses nothing. Start a fresh draft -- after a mock, say --
@@ -48,6 +52,7 @@ from app.draft.live import RoomError, load_room
 from app.draft.rehearsal import Rehearsal, load_nominations
 from app.draft.service import PageFeed, create_draft_app
 from app.draft.session import DraftLog, DraftSession, process_executor
+from app.projections.sources import describe
 
 
 def main() -> int:
@@ -56,6 +61,11 @@ def main() -> int:
     ap.add_argument("--me", required=True, help="our team's name")
     ap.add_argument("--bbm", type=Path, help="Basketball Monster export, Total Games Value")
     ap.add_argument("--bbm-per-game", type=Path, help="the same export on Per Game Value")
+    ap.add_argument(
+        "--projection-set",
+        type=int,
+        help="an uploaded projection set to draft on instead of --bbm",
+    )
     ap.add_argument("--page", help="the ESPN draft room URL; omit to enter picks by hand")
     ap.add_argument("--trust-money", action="store_true", help="apply picks inferred from budgets")
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between page reads")
@@ -83,6 +93,7 @@ def main() -> int:
             restarts=args.restarts,
             bbm=args.bbm,
             bbm_per_game=args.bbm_per_game,
+            projection_set=args.projection_set,
             plan=args.plan,
             plan_slack=args.plan_slack,
         )
@@ -102,6 +113,7 @@ def main() -> int:
         room, log=DraftLog(log_path), executor=process_executor(room, args.workers)
     )
     print(room.pool_note, flush=True)
+    print(f"source: {room.projection_source} ({describe(room.projection_source)})", flush=True)
     print(
         f"log {log_path}: {len(session.state.picks)} picks replayed"
         + (f", {len(session.replay_warnings)} skipped" if session.replay_warnings else ""),

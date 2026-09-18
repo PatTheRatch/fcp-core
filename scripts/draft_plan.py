@@ -7,6 +7,14 @@ Usage:
         --bbm-per-game data/bbm/BBM_Projections_2027_pergame.xls \\
         --out logs/draft-plan-2027.json
 
+    python scripts/draft_plan.py --season 2027 --me "Through The Wire" \\
+        --projection-set 4 --out logs/draft-plan-2027.json
+
+The pool is a BBM export or an uploaded projection set, never both. The page
+names which, and refuses to be written at all for a reader who may not see the
+source it was built from (`app.projections.sources.may_show`); BBM's numbers
+are paid, so a plan page built on them is not to be shared.
+
 Everything here is read from the same room the draft screen loads, before the
 first pick: the league's winning spending shape, the tested going price (ESPN
 average and board, fitted to this league), BBM's league values, and our
@@ -40,6 +48,7 @@ from app.draft.optimizer import roster_totals, score
 from app.draft.room import resolve
 from app.draft.session import _compute, process_executor
 from app.draft.valuation import value_players
+from app.projections.sources import describe, may_show
 
 CATEGORIES = ("PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%")
 
@@ -54,8 +63,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--season", type=int, required=True)
     ap.add_argument("--me", required=True)
-    ap.add_argument("--bbm", type=Path, required=True)
+    ap.add_argument("--bbm", type=Path, help="a Basketball Monster export (.xls)")
     ap.add_argument("--bbm-per-game", type=Path)
+    ap.add_argument(
+        "--projection-set",
+        type=int,
+        help="plan on a stored uploaded projection set instead of --bbm",
+    )
     ap.add_argument("--restarts", type=int, default=4)
     ap.add_argument("--workers", type=int, default=7)
     ap.add_argument("--out", type=Path, default=Path("logs/draft-plan.json"))
@@ -66,6 +80,8 @@ def main() -> int:
         "--fan-team", default="CLE", help="NBA team to find a loyalty pick from (default CLE)"
     )
     args = ap.parse_args()
+    if (args.bbm is None) == (args.projection_set is None):
+        raise SystemExit("pass one pool: --bbm <export.xls> or --projection-set <id>")
 
     try:
         room = load_room(
@@ -77,6 +93,7 @@ def main() -> int:
             restarts=args.restarts,
             bbm=args.bbm,
             bbm_per_game=args.bbm_per_game,
+            projection_set=args.projection_set,
             plan="history",
         )
     except RoomError as exc:
@@ -84,18 +101,24 @@ def main() -> int:
     state = room.state
     market = market_prices(room, state)
 
-    # League-standard category values, for each player's profile.
+    # League-standard category values, for each player's profile. Valued on
+    # the pool the room was loaded from, whichever source that is.
     projections = [c for c in room.candidates]
     from app.config import get_settings
     from app.db.session import make_engine, make_session_factory
     from app.draft.bbm import load_bbm
+    from app.projections.upload import load_projection_set
 
     factory = make_session_factory(make_engine(get_settings().database_url))
     with factory() as session:
-        loaded = load_bbm(session, args.bbm, args.season)
+        pool = (
+            load_projection_set(session, args.projection_set)
+            if args.projection_set is not None
+            else load_bbm(session, args.bbm, args.season).projections
+        )
     profile = {
         v.player_id: {c.abbreviation: round(c.value, 2) for c in v.categories}
-        for v in value_players(loaded.projections, list(CATEGORIES))
+        for v in value_players(pool, list(CATEGORIES))
     }
 
     considered = []
@@ -275,11 +298,23 @@ def main() -> int:
             for d in room.distributions
         },
         "pool": room.pool_note,
+        "source": room.projection_source,
+        "source_note": describe(room.projection_source),
         "players": players,
         "builds": builds,
     }
     out["exported"] = args.exported
     out["generated"] = "computed " + datetime.date.today().strftime("%-d %b %Y")
+    # One of the two places the gate is asked (the other is the draft screen's
+    # card, app/draft/session.py). This page carries a price, a ceiling and a
+    # target roster for every player, all of it derived from the pool, so a
+    # source the reader does not own means the page is not written at all.
+    # True today: the reader is the account that fetched the numbers.
+    if not may_show(room.projection_source, viewer_owns_source=True):
+        raise SystemExit(
+            f"{describe(room.projection_source)}: these numbers may not be rendered for "
+            "this reader, so no plan was written (docs/projection_sources.md)"
+        )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1))
     page = args.out.with_suffix(".html")

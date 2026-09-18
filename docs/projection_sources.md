@@ -1,9 +1,9 @@
 # Where projections come from, and which of them may leave this machine
 
 **Written:** 2026-09-17, after the BBM store and the in-season listener landed.
-**Status:** a constraint and a plan, not built. Nothing here changes how the
-draft room works today; it names what has to be true before anyone else uses
-this, so the next piece is not built the wrong way round.
+**Status:** steps 2 and 3 below are built (2026-09-18); the gate's ownership
+question still waits on accounts. Nothing here changed how the draft room's
+numbers come out; what changed is that every output now names its source.
 
 ## The constraint
 
@@ -73,11 +73,47 @@ mapping for confirmation rather than demanding a fixed template:
 the owner, and refuse to render a gated source for anyone else: one check in
 the API layer and one in the page builders, not a rule people remember.
 
+## What was built, 2026-09-18
+
+**The source rides with the numbers.** `PlayerProjection.source` is "espn"
+(the default, because that is what the database has always held), "bbm" or
+"upload:<set id>". `app/projections/sources.py` names them, says which is
+gated (only BBM) and answers the one question:
+`may_show(source, viewer_owns_source)`. `Room.projection_source` carries the
+pool's source, and the draft plan JSON, the draft screen's state and every
+card name it.
+
+**The gate has a seam, not an answer.** Both page builders call `may_show`:
+`scripts/draft_plan.py` refuses to write the page at all, because it is a file
+on disk carrying a price, a ceiling and a target roster for every player, and
+`app/draft/session.py`'s card returns the name and nothing derived. Both pass
+`viewer_owns_source=True`, which is true of the only account there is. When
+auth lands, that argument is the only thing that has to learn an answer.
+
+**Uploads.** `app/projections/upload.py` reads a CSV, .xlsx or .xls, maps the
+header row by a synonyms table rather than demanding a template, measures
+whether the file is per game or season totals from its own numbers, matches
+names with the room's strict matcher and stores the set
+(`projection_sets`, `projection_rows`; migration 0017).
+`scripts/upload_projections.py` is dry by default and prints the mapping for
+confirmation; `--commit` stores; `load_room(..., projection_set=<id>)` and
+`--projection-set` draft on it. A file carrying a percentage and no attempts
+is refused with the reason.
+
+Two things deliberately not done: the set is not versioned per player per day
+the way `bbm_projections` is (a new upload is a new set, which answers "what
+did I draft on" without the machinery), and an uploaded set is discounted for
+availability like ESPN's, because unlike BBM's it makes no promise about it.
+
 ## What to do next, in order
 
 1. Keep the draft plan artifact private. Nothing to build.
-2. When the draft is over, tag every projection with its source through the
-   room and the pages, so a BBM field can be switched off in one place.
-3. Build the upload path before anyone else is invited to use this. It is also
-   what makes the room testable against a projection set nobody pays for.
+2. ~~Tag every projection with its source through the room and the pages.~~
+   Done 2026-09-18.
+3. ~~Build the upload path before anyone else is invited to use this.~~ Done
+   2026-09-18.
 4. Ask BBM what a member may do with their numbers in a private tool.
+5. Accounts. Until they exist `viewer_owns_source` is a constant, and the API
+   (`app/api`) still serves no BBM field, so nothing leaks; the moment a
+   second person can sign in, that argument and the API's own check are what
+   stand between them and the paid numbers.

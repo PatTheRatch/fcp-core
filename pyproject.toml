@@ -22,10 +22,13 @@ dependencies = [
 live = [
     "playwright>=1.47",
 ]
-# Basketball Monster exports are legacy .xls; xlrd is the one reader for those
-# and only app/draft/bbm.py imports it.
+# Reading projection files. Basketball Monster exports are legacy .xls, which
+# xlrd is the one reader for; an uploaded set (app/projections/upload.py) may
+# also arrive as .xlsx, which openpyxl reads. Both are imported inside the
+# reader that needs them, so a CSV upload needs neither.
 projections = [
     "xlrd>=2.0",
+    "openpyxl>=3.1",
 ]
 # The exact solver (app/draft/exact.py): the gap check in scripts/milp_gap.py
 # and the target builder in scripts/soft_targets.py. Nothing the room needs

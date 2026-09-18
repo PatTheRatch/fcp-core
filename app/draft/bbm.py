@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import re
 import zlib
-from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +49,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Player, PlayerSeasonStat
 from app.draft.feed import normalise
 from app.draft.valuation import PlayerProjection
+from app.projections import sources
 
 #: Per-game columns in BBM's export, and the season-total keys they become.
 _RATES: dict[str, str] = {
@@ -231,7 +231,7 @@ def read_bbm(path: Path) -> list[BBMRow]:
     return rows
 
 
-def _slots_for(position: str) -> frozenset[str]:
+def slots_for(position: str) -> frozenset[str]:
     out: set[str] = set()
     for part in position.replace(",", "/").split("/"):
         out |= _SLOTS.get(part.strip().upper(), frozenset())
@@ -252,6 +252,7 @@ def to_projection(
         totals=totals,
         eligible=frozenset(eligible),
         position=position,
+        source=sources.BBM,
     )
 
 
@@ -297,21 +298,54 @@ def match_player(name: str, known: Mapping[int, str], recency: Mapping[int, int]
     return loose[0] if len(loose) == 1 else None
 
 
-def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
-    """BBM's export as projections keyed on our ESPN ids.
+@dataclass(frozen=True)
+class EspnLookup:
+    """What our database knows about players, for placing a foreign file's names.
 
-    Every row with a games projection becomes a projection: matched rows
-    under our id, the rest under a synthetic one. The load reports what it
-    matched loosely, what was ambiguous and what it could not place, so a
-    run can say so.
+    Shared by every projection file that arrives without ESPN ids -- BBM's
+    export and a manager's upload (`app.projections.upload`) -- so the two
+    place a name and take a player's eligibility by exactly the same rule.
     """
-    known: dict[int, str] = {
-        int(espn_id): str(name)
-        for espn_id, name in session.execute(select(Player.espn_player_id, Player.name)).all()
-    }
-    # For each player, ESPN's eligibility: this season's projection first,
-    # then his most recent line of any kind.
-    lines: dict[int, list[tuple[tuple[int, int], frozenset[str], str | None]]] = defaultdict(list)
+
+    #: ESPN player id -> the name we hold for him.
+    known: dict[int, str]
+    #: ESPN player id -> the most recent season we hold an eligible line for.
+    recency: dict[int, int]
+    #: ESPN player id -> our own `players.id`, for a foreign key.
+    ours: dict[int, int]
+    #: ESPN player id -> (eligible slots, primary position), best line only.
+    lines: dict[int, tuple[frozenset[str], str | None]]
+
+    def eligibility(self, player_id: int, position: str) -> tuple[frozenset[str], str | None, bool]:
+        """Slots and position for a player, and whether ESPN's own line gave them.
+
+        ESPN's eligibility is what the lineup constraint is checked against, so
+        it wins wherever we hold it; a player ESPN has never carried takes
+        slots derived from the file's position string.
+        """
+        held = self.lines.get(player_id)
+        if held is not None:
+            return held[0], held[1], True
+        return slots_for(position), position.split("/")[0].strip() or None, False
+
+
+def espn_lookup(session: Session, season: int) -> EspnLookup:
+    """Names, recency and eligibility by ESPN player id.
+
+    The best line for a player is this season's projection first, then his most
+    recent line of any kind; lines carrying no eligible slots are ignored,
+    because an empty set is unknown eligibility rather than none.
+    """
+    known: dict[int, str] = {}
+    ours: dict[int, int] = {}
+    for player_id, espn_id, name in session.execute(
+        select(Player.id, Player.espn_player_id, Player.name)
+    ).all():
+        known[int(espn_id)] = str(name)
+        ours[int(espn_id)] = int(player_id)
+
+    best: dict[int, tuple[tuple[int, int], frozenset[str], str | None]] = {}
+    recency: dict[int, int] = {}
     for espn_id, line_season, kind, slots, position in session.execute(
         select(
             Player.espn_player_id,
@@ -324,14 +358,35 @@ def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
         eligible = frozenset(str(x) for x in (slots or []))
         if not eligible:
             continue
+        pid = int(espn_id)
         rank = (1 if line_season == season and kind == "projected" else 0, int(line_season))
-        lines[int(espn_id)].append((rank, eligible, position))
-    recency = {pid: max(rank[1] for rank, _, _ in held) for pid, held in lines.items()}
+        recency[pid] = max(recency.get(pid, 0), int(line_season))
+        held = best.get(pid)
+        if held is None or rank > held[0]:
+            best[pid] = (rank, eligible, position)
+    return EspnLookup(
+        known=known,
+        recency=recency,
+        ours=ours,
+        lines={pid: (eligible, position) for pid, (_, eligible, position) in best.items()},
+    )
+
+
+def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
+    """BBM's export as projections keyed on our ESPN ids.
+
+    Every row with a games projection becomes a projection: matched rows
+    under our id, the rest under a synthetic one. The load reports what it
+    matched loosely, what was ambiguous and what it could not place, so a
+    run can say so.
+    """
+    lookup = espn_lookup(session, season)
+    known = lookup.known
 
     out = BBMLoad(projections=[])
     seen: set[int] = set()
     for row in read_bbm(path):
-        found = match_player(row.name, known, recency)
+        found = match_player(row.name, known, lookup.recency)
         if found is not None and found in seen:
             out.ambiguous.append(f"{row.name} (a second name for {known[found]})")
             found = None
@@ -347,13 +402,10 @@ def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
                 out.loose.append(f"{row.name} = {known[found]}")
         seen.add(player_id)
 
-        held = max(lines.get(player_id, []), key=lambda line: line[0], default=None)
-        if held is not None:
-            _, eligible, position = held
+        eligible, position, from_espn = lookup.eligibility(player_id, row.position)
+        if from_espn:
             out.espn_eligibility += 1
         else:
-            eligible = _slots_for(row.position)
-            position = row.position.split("/")[0].strip() or None
             out.derived_eligibility += 1
         out.projections.append(to_projection(row, player_id, eligible=eligible, position=position))
         out.rows[player_id] = row

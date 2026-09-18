@@ -676,6 +676,26 @@ numbers, so the exports, the stored rows and everything derived from them per
 player stay private to the account that fetched them; `docs/projection_sources.md`
 records what that rules out and the upload path other people would need.
 
+**Every projection now names its source** (2026-09-18). A `PlayerProjection`
+carries "espn" (the default), "bbm" or "upload:<set id>";
+`app/projections/sources.py` says which is gated and answers
+`may_show(source, viewer_owns_source)`, which the draft plan page and the
+draft screen's card both call before rendering. The ownership half is a
+constant `True` until accounts exist, which is the point: one function has to
+learn the answer, and nothing else moves. The room's numbers are unchanged.
+
+**Anyone without a BBM membership brings his own numbers.**
+`scripts/upload_projections.py --season 2027 --file proj.csv --name "..."`
+reads a CSV, .xlsx or .xls, maps the header row by synonyms instead of
+demanding a template, measures per-game-or-totals from the numbers, matches
+names with the room's strict matcher and prints all of it; `--commit` stores
+it (`projection_sets`, `projection_rows`, migration 0017) and
+`--projection-set <id>` drafts on it. A file with a percentage and no
+attempts is refused: a roster's FG% is made over attempts and cannot be
+rebuilt from a rate. Checked against BBM's own 115-column export, which
+caught the obvious trap -- `tov` matching its derived turnover *value* column
+rather than `to/g`.
+
 BBM exports live in `data/bbm/` inside the project (git-ignored): a process
 the app launches cannot read `~/Documents` under macOS privacy rules, and
 hung silently trying.

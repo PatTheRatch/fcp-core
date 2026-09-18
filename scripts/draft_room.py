@@ -41,7 +41,15 @@ export on Total Games Value prices missed games, one on Per Game Value
 does not. Pass the total export as --bbm and the per-game one as
 --bbm-per-game and the readout shows both; a wide gap is an injury
 discount, which an active manager with an IR slot can partly collect.
-Without --bbm the room prices from ESPN's stored projections;
+    --projection-set 4                            draft on an uploaded set
+
+A manager without a Basketball Monster membership brings his own numbers
+instead: `scripts/upload_projections.py` stores them as a set and
+--projection-set drafts on it. The two are exclusive, because a room is
+drafted on one pool. An uploaded set makes no promise about availability, so
+the measured discount applies to it as it does to ESPN's.
+
+Without either the room prices from ESPN's stored projections;
 --pool-season and --pool-kind can stand in a prior season's, which the room
 will say so about loudly.
 
@@ -84,6 +92,7 @@ from app.draft.room import (
     inflation,
     resolve,
 )
+from app.projections.sources import describe
 
 # ---------------------------------------------------------------------------
 # printing
@@ -513,6 +522,12 @@ def main() -> int:
         help="a second BBM export made on Per Game Value, shown beside the total value",
     )
     ap.add_argument(
+        "--projection-set",
+        type=int,
+        help="draft on a stored uploaded projection set instead of --bbm (see --list "
+        "in scripts/upload_projections.py)",
+    )
+    ap.add_argument(
         "--plan",
         default="history",
         choices=("history", "optimizer", "none"),
@@ -537,6 +552,7 @@ def main() -> int:
             tier_curve=not args.no_tier_curve,
             bbm=args.bbm,
             bbm_per_game=args.bbm_per_game,
+            projection_set=args.projection_set,
             plan=args.plan,
             plan_slack=args.plan_slack,
         )
@@ -554,6 +570,7 @@ def main() -> int:
         else "board priced from value alone (tier curve off)"
     )
     say(room.pool_note)
+    say(f"source: {room.projection_source} ({describe(room.projection_source)})")
     if room.allocation is not None:
         say(
             f"spending plan ({room.plan_source}, slack {args.plan_slack:.0%}): "
