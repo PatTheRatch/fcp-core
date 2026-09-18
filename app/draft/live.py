@@ -159,6 +159,15 @@ def load_room(
             projections = pool.load_projections(session, source_season, kind=pool_kind)
             projection_source = sources.ESPN
             pool_note = f"pool: ESPN {source_season} {pool_kind}"
+        # One room, one source. The gate and every page read
+        # `projection_source` alone, so a pool that quietly mixed two would
+        # make a paid row invisible to the check that exists to find it.
+        mixed = sources.sources_in(projections) - {projection_source}
+        if mixed:
+            raise RoomError(
+                f"pool tagged {projection_source} carries {', '.join(sorted(mixed))} as well; "
+                "a room is drafted on one source"
+            )
         if not projections and pool_season is None:
             raise RoomError(
                 f"no {pool_kind} lines stored for {season}. ESPN publishes projections in "
