@@ -31,13 +31,71 @@ from app.draft.room import (
 from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
-from app.draft.valuation import value_players
+from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection, value_players
 from app.projections import sources
 from app.projections.upload import load_projection_set, set_headline, set_note
 
 
 class RoomError(RuntimeError):
     """A room that cannot be opened: missing season, budget, pool or team."""
+
+
+#: The nine categories in the order every page shows them. ESPN's own order
+#: is whatever the league's settings say and has moved between seasons; the
+#: screen's does not, so a reader's eye learns one place per category.
+SCREEN_CATEGORIES = ("FG%", "FT%", "3PM", "PTS", "REB", "AST", "STL", "BLK", "TO")
+
+
+@dataclass(frozen=True)
+class PlayerLine:
+    """One player's projected season as a per-game line, for display only.
+
+    The room values players on season totals (`app.draft.valuation`), which is
+    right for a head-to-head league and unreadable on a page: nobody knows
+    what 1,742 points is. This is the same projection divided by the games it
+    is spread over, with the two percentages left as rates and the attempts
+    behind them carried alongside, because a rate cannot be averaged or
+    compared across a roster without them. Rounded here: it exists to be
+    drawn, and a screen that shades by rank does not need the last digit.
+    """
+
+    games: float
+    #: The nine categories of `SCREEN_CATEGORIES`. A percentage is None when
+    #: the player takes no shots of that kind, which is not the same as zero.
+    per_game: dict[str, float | None]
+    #: Field goals and free throws attempted per game, which is what weights
+    #: the two rates into a roster's or a pool's own rate.
+    fga: float
+    fta: float
+
+
+def player_lines(projections: Sequence[PlayerProjection]) -> dict[int, PlayerLine]:
+    """Every projection as a per-game line, keyed by player id.
+
+    A projection with no games is left out rather than divided by zero: a
+    player nobody expects to play has no line to draw.
+    """
+    lines: dict[int, PlayerLine] = {}
+    for projection in projections:
+        games = float(projection.games or 0.0)
+        if games <= 0:
+            continue
+        per_game: dict[str, float | None] = {}
+        for category in SCREEN_CATEGORIES:
+            components = PERCENTAGE_COMPONENTS.get(category)
+            if components is None:
+                per_game[category] = round(projection.get(category) / games, 3)
+                continue
+            made, attempted = components
+            shots = projection.get(attempted)
+            per_game[category] = round(projection.get(made) / shots, 4) if shots else None
+        lines[projection.player_id] = PlayerLine(
+            games=round(games, 1),
+            per_game=per_game,
+            fga=round(projection.get("FGA") / games, 2),
+            fta=round(projection.get("FTA") / games, 2),
+        )
+    return lines
 
 
 @dataclass(frozen=True)
@@ -81,6 +139,12 @@ class Room:
     #: room. Candidates carry the going price, which is what the optimizer
     #: plans with; this is kept for the blend and for display.
     board: dict[int, int] = field(default_factory=dict)
+    #: The pool's per-game lines, for the screen to shade, rank and total
+    #: (`GET /api/pool`). Numbers derived per player from the projections, so
+    #: they go out through the same gate as everything else derived from them.
+    #: A room built by hand, as the tests build one, carries none and the
+    #: screen degrades to the names and the money.
+    lines: dict[int, PlayerLine] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +346,7 @@ def load_room(
             projection_source=projection_source,
             source_detail=source_detail,
             board=board_prices,
+            lines=player_lines(projections),
         )
 
 

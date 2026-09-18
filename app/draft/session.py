@@ -40,7 +40,7 @@ from typing import Any
 
 from app.draft.bbm import ROLES
 from app.draft.feed import LoggedPick, OnBlock, match_name, match_team
-from app.draft.live import Room, bargain_warning, market_prices
+from app.draft.live import SCREEN_CATEGORIES, Room, bargain_warning, market_prices
 from app.draft.optimizer import Candidate, RosterPlan
 from app.draft.room import (
     Allocation,
@@ -637,6 +637,55 @@ class DraftSession:
             market, _ = self._prices()
             priced = sorted(ids, key=lambda pid: -(market.get(pid, (None, ""))[0] or 0))
             return [self.card(pid) for pid in priced[:limit]]
+
+    def pool_view(self) -> dict[str, Any]:
+        """Every player on the board, with the line the screen draws him from.
+
+        The state carries the money and the picks; this carries the numbers
+        behind them, once, so the screen can shade a strip, count what is
+        left in a category and total a rival's roster without asking the
+        service a question per player. It is the whole pool in one response
+        because every one of those sums is over the whole pool.
+
+        Read-only, and through the same gate as a card: the lines are derived
+        from the projections per player, so a source this viewer does not own
+        leaves names, positions, eligibility and who bought whom.
+        """
+        with self._lock:
+            state, room = self._state, self.room
+            shown = may_show(room.projection_source, viewer_owns_source=True)
+            taken = {p.player_id: p for p in state.picks}
+            market, boards = self._prices() if shown else ({}, {})
+            players: list[dict[str, Any]] = []
+            for candidate in room.candidates:
+                bought = taken.get(candidate.player_id)
+                row: dict[str, Any] = {
+                    "player_id": candidate.player_id,
+                    "name": candidate.name,
+                    "position": candidate.position,
+                    "eligible": sorted(candidate.eligible),
+                    "team_id": bought.team_id if bought else None,
+                    "price": bought.price if bought else None,
+                }
+                if shown:
+                    line = room.lines.get(candidate.player_id)
+                    row |= {
+                        "games": line.games if line else None,
+                        "line": dict(line.per_game) if line else None,
+                        "fga": line.fga if line else None,
+                        "fta": line.fta if line else None,
+                        "board_price": boards.get(candidate.player_id),
+                        "market_price": market.get(candidate.player_id, (None, ""))[0],
+                    }
+                players.append(row)
+            return {
+                "source": room.projection_source,
+                "source_note": describe(room.projection_source, room.source_detail),
+                "categories": list(SCREEN_CATEGORIES),
+                "withheld": not shown,
+                "withheld_note": None if shown else describe(room.projection_source),
+                "players": players,
+            }
 
     def plan_view(self) -> dict[str, Any]:
         plan = self.plan()

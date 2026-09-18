@@ -17,6 +17,17 @@
         "--rehearse", "2026", "--seconds", "20", "--port", "8765"
       ],
       "port": 8765
+    },
+    {
+      "name": "draft-rehearsal-espn",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "scripts/draft_service.py", "--season", "2027", "--me", "Through The Wire",
+        "--pool-season", "2026", "--pool-kind", "projected",
+        "--rehearse", "2026", "--seconds", "20", "--port", "8766",
+        "--log", "/tmp/fcp-core/draft-rehearsal-espn.jsonl"
+      ],
+      "port": 8766
     }
   ]
 }

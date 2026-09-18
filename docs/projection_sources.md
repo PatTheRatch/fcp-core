@@ -112,6 +112,15 @@ gated, because only BBM is; the check is asked anyway, on every response, and
 `ProjectionSet.owner` is the field it compares the caller against once
 accounts exist. The API still serves no BBM field.
 
+**The draft screen and its pool.** `GET /api/pool` hands the whole board's
+per-game lines to the screen in one response, because its strips, its scarcity
+panel and its team standings are sums over the whole pool. It is derived per
+player from the projections, so it asks the same `may_show` and, when the
+answer is false, carries `"withheld": true` and nothing but names, positions,
+eligibility and who bought whom; the screen then draws the board, the money and
+the picks and says in each emptied place why it is empty. `docs/draft_room.md`
+describes the screen, its dark and light palettes and the route in full.
+
 **Both pages name the source.** The plan page carries a line under its title
 and the draft screen carries one under its header, from
 `sources.describe(source, detail)`: "Basketball Monster (paid; not to be

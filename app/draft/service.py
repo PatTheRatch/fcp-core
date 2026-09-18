@@ -15,6 +15,7 @@ started by `scripts/draft_service.py`, with nothing shared with
     POST /api/block             who is on the block, when typing rather than reading
     GET  /api/players?q=        search, most expensive by market price first
     GET  /api/players/{id}      one player's card; starts his ceiling if it is not ready
+    GET  /api/pool              the whole board's per-game lines, for the screen's arithmetic
     GET  /api/plan              the best roster we can still finish
 
 A refused pick is a 409 with the rule it broke. A name that matches nobody,
@@ -149,6 +150,13 @@ def create_draft_app(
     def player(player_id: int, wait: float = 0.0) -> dict[str, Any]:
         session.ceiling(player_id, wait=max(0.0, min(wait, 20.0)))
         return session.card(player_id)
+
+    @app.get("/api/pool")
+    def pool() -> dict[str, Any]:
+        # The screen's scarcity, its strips and its standings are sums over
+        # the whole pool, so the pool goes out once rather than a card at a
+        # time. Gated like a card: see DraftSession.pool_view.
+        return session.pool_view()
 
     @app.get("/api/plan")
     def plan() -> dict[str, Any]:
