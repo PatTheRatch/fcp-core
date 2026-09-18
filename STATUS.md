@@ -3,8 +3,9 @@
 ## Works today
 
 - FastAPI application boots (`create_app()`)
-- Read-only HTTP API over the stored seasons, 26 endpoints (see below),
-  including seven narrative routes. Writes stay with the ingest.
+- HTTP API over the stored seasons (see below), including seven narrative
+  routes, the pickup reports and the in-season pages. Writes stay with the
+  ingest, except a manager's own projection upload.
 - Nightly scheduled ingest keeping the current season current, and the next
   season's settings current while its draft is ahead, with every run recorded
   and queryable. **Runs on the VPS**, not a laptop.
@@ -17,15 +18,61 @@
   minutes spike read from the stored box scores), and fetches news into
   `player_news` for the players that changed and the tracked team's roster.
   Migration 0016; `scripts/status_pass.py`; `deploy/fcp-core-status.timer`.
-  **Built 2026-09-17, not yet deployed**: see "The listener" below for the
-  VPS steps.
+  **Running on the VPS since 2026-09-17.** Status history cannot be
+  backfilled, so 2027 is the first season with any.
 - The morning digest (`app/digest.py`, `scripts/digest.py`): what changed on
   the tracked roster, where that roster stands, which free agents are worth
   a look, and the team's adds in a fortnight. Plain text, under forty lines,
   no ESPN request. Delivered by one POST to `FCP_DIGEST_URL`, and an event
   is marked notified only once that POST has succeeded. The later passes
   send a one-line alert instead, and only for a player of yours being ruled
-  out. **Built 2026-09-17, not yet deployed**, with the listener.
+  out. **Running on the VPS**, delivered to Telegram. Since 2026-09-18 it
+  also carries the day's plan ("THIS WEEK": the matchup, adds used of the
+  budget, the empty days and the moves worth a look), goes to email as well
+  when the six `FCP_SMTP_*`/`FCP_EMAIL_*` settings are set
+  (`scripts/notify_test.py --email` to check), and is followed by
+  `scripts/warm_pages.py`, which asks the API for our team's two reports so
+  the pages open at once. The full digest is the pass labelled morning,
+  15:00 UTC.
+- The pickup recommender (`app/pickups`, docs/pickups.md), deployed. Every
+  move is judged in one currency, categories, over both horizons: this
+  week's head-to-head change plus the rest-of-season change per week times
+  the weeks left (`app/pickups/judge.py`), with the season's projected
+  category record with and without the move. The drop charge is the gap to
+  the wire on both sides of the place, so streaming a fringe player costs
+  nothing and dropping a real one is charged. It knows the league's add
+  budget (one per day of the period, spent on any days; not stored by ESPN
+  in anything we ingest), plans up to two independent moves a day, and will
+  not seat a player on waivers before he clears. Hurdles set by the backtest
+  and Patrick on 2026-09-18: 0.20 categories streaming, 0.10 / 0.05 a week
+  for a paid / free season move. Language is "worth a look", never
+  "recommended": the tool suggests, the manager decides.
+- The recommender backtest (`scripts/pickups_backtest.py`,
+  docs/pickups_backtest.md): every 2026 team, 616 decision points, scored in
+  categories by replaying the real matchup with the lineup re-solved both
+  ways. Streaming moves delivered +0.17 categories a matchup, season moves
+  +0.98 to +1.06 over 30 days, against the league's own swaps at +0.05 and
+  -0.56.
+- Projection sources and uploads (docs/projection_sources.md): every
+  projection carries its source (ESPN, BBM, or an uploaded set), BBM's are
+  gated to the member who fetched them, and a manager can upload his own
+  CSV or spreadsheet through `scripts/upload_projections.py` or the
+  `/projections/sets` routes, with the column mapping guessed and shown
+  before anything is stored (migration 0017).
+- The draft room rebuilt as an auction board (docs/draft_room.md,
+  docs/draft_night.md for the runbook): dark by default with a light switch,
+  the whole room's money and places on one board, hover cards, category
+  scarcity and every team's projected totals, working on ESPN, BBM or an
+  upload. `scripts/draft_plan.py --top-place N` runs the plan as a what-if
+  with a bigger star cap; on 2026-09-18 $80 and $121 both came out worse
+  than history's $60.
+- In-season pages (docs/in_season_pages.md), served by the API: a team's
+  week, its rest of season, and a league index, in the season report's light
+  house style. `?today=N` replays any day of a played season.
+- Every played season's NBA schedule is stored (`pro_team_games`,
+  `scripts/backfill_pro_schedule.py`, 2019-2026), so the recommenders and
+  the pages run on a past season and not only on the one the listener
+  follows.
 - The API is served on the VPS at `http://100.105.64.94:8001`, reachable from
   the tailnet only.
 - Local PostgreSQL 16 via Docker Compose (`fcp` and `fcp_test` databases)
@@ -133,8 +180,27 @@ names a scoring period and defaults to the calendar day turned into one:
 | `.../teams/{tid}/pickups/stream` | who to stream this week, the empty days, and whether anything clears the hurdle |
 | `.../teams/{tid}/pickups/season` | the best add, swap and two-swap for the rest of the year, the drops, the stashes, the churn guard and what to bid |
 
-Both are a 409, not an empty report, for a season the listener never ran
-for: with no schedule, roster or wire there is nothing to decide from.
+Both are a 409, not an empty report, for a season with no stored schedule
+or no roster: there is nothing to decide from. A played season with no
+listener snapshots uses the historical wire (a player with a line that
+period and no lineup row) and says so.
+
+Projection uploads, the one write this API accepts (docs/projection_sources.md):
+
+| Route | What it gives |
+|---|---|
+| `POST /projections/sets/preview` | read a CSV or spreadsheet, report the guessed mapping and unmatched names, store nothing |
+| `POST /projections/sets` | the same, stored as a set; 422 with the reasons when the columns cannot be used |
+| `GET /projections/sets`, `.../{id}`, `.../{id}/rows` | stored sets and their per-game lines |
+
+In-season pages, plain HTML over the routes above (docs/in_season_pages.md):
+
+| Route | What it gives |
+|---|---|
+| `GET /pages/teams/{lid}/{yr}` | every team, ours first, linking to both pages |
+| `GET /pages/teams/{lid}/{yr}/{tid}/week` | the streaming report as a page; `?today=` for a past day |
+| `GET /pages/teams/{lid}/{yr}/{tid}/season` | the rest-of-season report as a page |
+| `.../pages/context` | the day, the period's days and the team names the pages need |
 
 The derivation lives in `app/narratives.py`, not in the routers, because it
 is domain logic rather than HTTP. One idea carries most of it: a matchup is
@@ -1438,21 +1504,26 @@ picking a winner silently.
 2. ~~Alerting on a stale season~~ done: `scripts/watchdog.py` checks the
    ingest, the listener, the BBM pull and the backups once a day and sends
    one message when a job has gone quiet (`deploy/fcp-core-watchdog.*`).
-3. A frontend, if and when there is something to read the API. That is the
-   decision that would force the auth question.
-4. In-season pickups, designed in `docs/pickups.md`. The listener and the
-   digest (phases 1 and 1b) are built and wait on the VPS steps under "The
-   listener" below; the listener has to be running before the season opens
-   around 2026-10-20, since status history cannot be backfilled. The
-   streaming recommender (phase 2, this week) is built, under "The streaming
-   recommender" below. Still to build: the rest-of-season recommender, the
-   bids, and the backtest on the stored 2026 season, which is what would
-   fill the two sections the digest currently leaves out.
+3. ~~A frontend~~ started 2026-09-18: the draft room and the in-season
+   pages. Direction: the auction board, dark, for the room; the season
+   report's light house style for everything else; the nine categories
+   always in the same order as a shaded strip.
+4. ~~In-season pickups~~ built, backtested and deployed 2026-09-18 (above).
+   What is left is the first honest test, on real 2027 games from about
+   2026-10-20: the minutes tilt and the injury logic have never fired on
+   live data.
 5. The end-of-week matchup predictor, designed in `docs/week_predictor.md`:
    each category's chance of being won this week, and the matchup's, from the
    fitted knowable line, the stored NBA schedule and the listener's
    availability. ESPN data only, so it needs no paid source, and it is
    backtestable on 2026 except for availability, which has no history.
+6. Before the draft on 2026-10-10: Patrick rehearses in the new room with
+   docs/draft_night.md open, and runs one ESPN mock with the page reader.
+7. 2026-10-05: check Basketball Monster's daily and weekly tools, then store
+   them in season if they are live.
+8. Accounts, planned for November: the ESPN connection, the team, the
+   projection owner and the notification channel per account. Until then
+   everything assumes one manager (`viewer_owns_source` is a constant).
 
 ### Prior seasons
 
@@ -1920,7 +1991,7 @@ a good sign the two are genuinely the same pipeline.
 | `fcp-core-bbm.timer` | 09:30 | BBM's two exports, into `data/bbm/` and the database |
 | `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days |
 | `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet |
-| `fcp-core-status.timer` | 15:00, 22:30, 00:30 | listener passes, then the digest or an alert |
+| `fcp-core-status.timer` | 15:00, 22:30, 00:30 | listener passes, then the digest (15:00, with the day's plan, then warming the pages) or an alert |
 
 The watchdog exists because silence is the failure mode that matters: a
 failed run shows up in `systemctl --failed` and in its own row, while a timer
@@ -2016,18 +2087,13 @@ points on a day their best starter managed 5.
   holds days up to 174, since NBA games continue past the fantasy playoffs.
 - `roster_slots` (weekly) and `daily_lineup_slots` (daily) overlap by design.
   Worth revisiting only if the weekly table stops earning its keep.
-
-## Open questions
-
 - Rosters are snapshots per matchup period, which is the finest grain the box
   scores expose. Daily roster movement within a period is not recoverable
   from this source.
 
 ## Not building yet
 
-- frontend
-- auth
-- projections
-- optimizer
+- auth (planned for November; see Next)
+- other platforms (Yahoo, Fantrax, Sleeper) and roto or points scoring
 - newsroom
 - AI features

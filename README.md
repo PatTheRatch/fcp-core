@@ -338,3 +338,18 @@ sends a one-line test to whichever are set up. With no channel configured the
 message is printed and nothing is marked as sent, so the next run repeats it.
 That is deliberate: an event is only ever marked notified once a delivery has
 actually succeeded somewhere.
+
+## Where the rest is written down
+
+STATUS.md is the map: what works, what is deployed, what is next. The design
+notes and measurements live in `docs/`:
+
+| Doc | What it covers |
+|---|---|
+| docs/draft_night.md | the draft-night runbook: what to run, and what to do when something dies |
+| docs/draft_room.md | the auction-board draft screen and its `/api/pool` |
+| docs/in_season_pages.md | the week, season and index pages the API serves |
+| docs/pickups.md | the listener, the digest and the pickup recommender, with as-built notes |
+| docs/pickups_backtest.md | the recommender replayed on every 2026 team, scored in categories |
+| docs/projection_sources.md | ESPN, BBM and uploaded projections, and the gate on paid numbers |
+| docs/week_predictor.md | the end-of-week matchup predictor, designed, not built |
