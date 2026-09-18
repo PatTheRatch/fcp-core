@@ -21,6 +21,7 @@ one manager, so a second user is a row in a table and not a rewrite.
 | What members see of each other | League pages shared; each manager's plans private. |
 | Who connects ESPN | One connection per league, by whoever adds it. Members only claim a team. |
 | When the domain moves | When sign-in works. Nothing is public before auth. |
+| What is paid | The league pages are free; the team layer (planning, pickups, bids, alerts, projections, the draft room) is paid. Decided 2026-09-19; price and billing not yet. |
 
 ## Two scopes
 
@@ -40,6 +41,49 @@ The rule a route answers is one of three: anyone signed in (the account
 pages), a member of this league (league pages), the manager of this team
 (team pages). Nothing is served to someone who is not signed in except the
 sign-in page and a landing page.
+
+## Free and paid
+
+The two scopes are also the two tiers.
+
+**Free: the league.** Everything in the league scope, for every member of a
+connected league, with no card. It is what gets a league to sign up, and the
+thing a member shows the group chat.
+
+**Paid: your team.** Everything in the team scope: the week and season plans,
+the moves worth a look, bids, the projected record, the per-team digest and
+alerts, BBM or uploaded projections, the scorecard of your own moves, and the
+draft room when it is hosted. This is where the work is, and what earns a
+subscription.
+
+So the scope check gains a fourth question for team routes: the manager of
+this team **and** entitled to the paid tier. It is written from the start as
+one dependency (`require_entitlement`) that answers yes for everyone until
+billing exists, the same way `viewer_owns_source` answers yes for one user
+today. Turning the paywall on is then a table and a payment provider, not a
+change to every route.
+
+A free member of a league still gets a taste of the paid layer on the free
+pages, without the plan itself: his own team's expected categories this
+week and his projected record, with "see the moves worth a look" linking to
+the upgrade. The league digest (standings, the week's matchups, league news)
+can be free by email; the team plan in it is paid.
+
+**Not decided yet, and not needed until the cutover:** the price; per user
+or per team (per user is simpler, since a user may manage teams in several
+leagues); a free trial or a free first week; whether the person who connects
+a league gets his own team free; and the provider (Stripe is the default:
+hosted checkout and a customer portal mean no card data ever touches this
+server). Patrick's own teams are entitled, always.
+
+**One risk to settle before charging anyone.** Every league's data comes
+from ESPN's unofficial, undocumented API, read with the member's own login.
+That is fine for a tool a manager runs on his own league, but charging money
+for a product built on it is a different position, and so is charging for
+anything derived from Basketball Monster's paid projections. The paid tier
+should sell our own analysis (the plans, the judgement, the backtested
+recommendations) on data the user brings, and the terms of ESPN and BBM are
+worth reading, or a lawyer's hour, before the first invoice.
 
 ## Navigation
 
@@ -91,6 +135,7 @@ ESPN allows co-owners and `team_owners` already models it.
 | `invites` | per league, a revocable token |
 | `notification_channels` | per user: email address or Telegram chat, verified flag |
 | `user_secrets` | per user, encrypted: a BBM login, anything else that is only his |
+| `entitlements` | per user: tier, source (`owner`, `subscription`, `trial`, `comp`), valid until; written by the payment provider's webhook |
 
 `projection_sets.owner` becomes a user id, and `viewer_owns_source` stops
 being a constant: it is "this viewer is the user whose secrets fetched it".
@@ -149,8 +194,10 @@ project of its own; nothing above closes that door.
 
 ## Build order
 
-1. **Accounts:** users, magic-link sign-in, sessions, the three scope checks
-   as FastAPI dependencies, and every existing route put behind one.
+1. **Accounts:** users, magic-link sign-in, sessions, the scope checks as
+   FastAPI dependencies (signed in, league member, team manager, entitled),
+   and every existing route put behind one. `require_entitlement` answers
+   yes for everyone until step 7.
 2. **Memberships and claims:** league connections (encrypted), invites, team
    claims with the owner-GUID check and manual approval.
 3. **The shell:** the navigation, the league switcher, the account pages,
@@ -161,3 +208,6 @@ project of its own; nothing above closes that door.
    tailnet, Full Court Press is invited.
 6. **Platform columns:** `platform` on leagues and players, before any
    second platform is written.
+7. **Billing:** the entitlements table filled by a payment provider's
+   webhook, the upgrade page, and `require_entitlement` switched on. After
+   the price is decided and the ESPN and BBM terms are read.
