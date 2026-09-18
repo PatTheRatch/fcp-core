@@ -324,16 +324,21 @@ def load_free_agents(
     week: TeamWeek,
     *,
     player_ids: Iterable[int] | None = None,
+    days: Sequence[int] | None = None,
 ) -> tuple[RosteredPlayer, ...]:
     """The wire, as the week sees it: the latest pass's free agents.
 
     `free_agent_snapshots` only ever holds unrostered players, so the pool
     is every row of the most recent pass, not the latest row per player (a
     player claimed since would otherwise still be on the wire). `player_ids`
-    names the pool instead, for a test or a backtest.
+    names the pool instead, for a test or a backtest. `days` counts each
+    man's games over a window other than the rest of this period, which is
+    what the rest-of-season report needs.
     """
     ids = set(player_ids) if player_ids is not None else _latest_pool(session, league_season)
-    return build_players(session, league_season, ids, week.scoring_periods_remaining)
+    return build_players(
+        session, league_season, ids, days if days is not None else week.scoring_periods_remaining
+    )
 
 
 def build_players(

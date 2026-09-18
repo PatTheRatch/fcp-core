@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, auction draft, FAAB
 **Written:** 2026-09-16, five weeks before the 2027 season tips off (ESPN labels a season by the year it ends in)
-**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and wait on the VPS steps in `STATUS.md` under "The listener". Phase 2's short-term half is built (2026-09-18: `app/pickups/state.py`, `projection.py`, `stream.py`, `scripts/stream.py`); the rest-of-season recommender, the bids, the backtest and phases 3 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
+**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and wait on the VPS steps in `STATUS.md` under "The listener". Phase 2 is built (2026-09-18: `app/pickups/state.py`, `projection.py`, `stream.py`, `season.py`, `bids.py`, `app/api/pickups.py`, `scripts/stream.py`, `scripts/season.py`); the backtest (§4.6), the digest's sections 3 and 4, the free-agent and week routes and phases 3 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
 **Companions:** [`waiver_value.md`](waiver_value.md) (what the wire offered), [`acquirable_value.md`](acquirable_value.md) (what real moves returned), [`stars_and_waivers.md`](stars_and_waivers.md) (whether pickups rescue a draft)
 
 ---
@@ -328,9 +328,13 @@ Report the single best swap and the best two-swap, each with Δ `expected_wins` 
 
 **Volume guard**: report a rolling count of the team's adds over the last 14 days beside every recommendation, with the league's own finding that heavier churn returned less per move.
 
+**As built** (2026-09-18, `app/pickups/season.py`, `scripts/season.py`): the optimizer is asked the same question three ways rather than once. `locked` is the roster less the men a move would drop, `excluded` is those men, `starts` is the current roster and `roster_slots` is exactly the places the move leaves open, so a single swap's answer is the exact best replacement rather than a local search's. `minimum_bid=0` and `restarts=0` go with `budget=0`: a floor of a dollar a place under a budget of nothing leaves a roster short, and a shuffled start would only cost time when all but one or two places are locked. The three drop candidates are the same computation read from the other end, so the best swap and the cheapest drop are one number. The horizon is the rest of the **regular season** from the stored matchup periods, or the playoff periods once it is over, and `weeks_remaining` is its days over seven; `rest_of_season_line` counts each man's games over the same window, so the weekly line is games a week over the stretch the report plans for. The pool is ranked by the rest-of-season line's `weight` rather than `value_players`, which needs no z-score pool and is the ordering `stream` and `bids` already use. A move that drops a player is charged the paid hurdle, an add into an open place the free one, which is the note's rule stated in terms of the move rather than the waiver state. Every move that clears its hurdle carries a `Bid` (§4.5). A stash's healthy value counts every game his NBA team has left, ignoring the injury, because that is the question a stash asks.
+
 ### 4.5 What to bid: `app/pickups/bids.py`
 
 From `transactions` and `transaction_items` for this league across seasons with FAAB (2026 onward, `league_seasons.auction_budget`): for each winning waiver claim, the bid and the claimed player's value rank at the time (rest-of-season value among free agents that day). Fit the median and 75th percentile winning bid by value-rank bucket (1-5, 6-15, 16-40, 41+). Recommend the 75th percentile when the swap's Δ is above twice the hurdle, the median otherwise, capped by `faab_remaining` and never more than a share of remaining budget proportional to weeks remaining. Report the historical range so the number is checkable. One season of FAAB is thin; say so in the output until 2027 adds a second.
+
+**As built** (2026-09-18, `app/pickups/bids.py`): the FAAB seasons are found by `league_seasons.uses_faab`, not `auction_budget`, which is the draft's pot (the same correction §4.1 made). The claim's rank is taken on the **per-game** knowable line's `weight`, not the rest-of-season line's: a rank is ordinal, every NBA team plays the same 82 games, so over the rest of a season the two orderings are the same, and `pro_team_games` only exists from 2027 while the one FAAB season on record is 2026. A day's wire is §4.6's definition widened from the day to the matchup period, because a free agent only has a line on the days his NBA team plays; the claimed player is added to it whatever the lineup rows say, since being claimed is what proves he was free. Before the ranking, the day's wire is narrowed to the 120 men with the most composite production in the last fortnight: a rank past 41 changes no bucket, so the pre-filter cannot move a claim between buckets and it keeps a fit to seconds. The tilt is off in the fit (it keys on listener events, and no fitted season has any). The share cap is rounded up, so a single week left can still buy something, and the output names which cap bound it. The fit is cached per league season and re-read when the number of claims on record changes, because the API is a long-running process and a season gains claims every week.
 
 ### 4.6 Backtest against 2026: `scripts/pickups_backtest.py`
 
@@ -369,6 +373,15 @@ Read-only, keyed on ESPN ids like the rest of the API.
 | `GET /players/{pid}/news` | stored news, newest first |
 
 Schemas in `app/api/schemas.py`. Follow the existing rule: bounded collections return a list, growing ones return the `{items, total, limit, offset}` envelope.
+
+**As built** (2026-09-18, `app/api/pickups.py`): the recommender's two routes are
+
+| route | returns |
+|---|---|
+| `GET /leagues/{id}/seasons/{yr}/teams/{tid}/pickups/stream?today=N` | `StreamReportOut`: the week both sides project to, P(win) per category, the moves with the categories each one shifts and its bid, the empty days, and `recommended` (null when nothing clears the hurdle) |
+| `GET /leagues/{id}/seasons/{yr}/teams/{tid}/pickups/season?today=N` | `SeasonReportOut`: the roster's ordinary week, the best add, swap and two-swap each with its own hurdle and bid, the drop candidates, the stashes, and the churn guard |
+
+Two reports rather than one `/pickups`, because they answer different questions on different horizons and a caller usually wants one of them; `/week` and `/free-agents` are still to come, and the `TeamWeek` state is visible inside the stream report meanwhile. `today` is a scoring period and defaults to the calendar day turned into one through the stored NBA schedule. Player ids go out as ESPN's, like the rest of the API. An unknown team is a 404 (`TeamDep`); a season the listener has never run for — no `pro_team_games`, no `player_status_snapshots` — is a **409**, because with no schedule, roster or wire there is nothing to decide from, and that is a different answer from "no move is worth making". Neither route makes an ESPN request. Both reports are bounded, so both return an object rather than a `Page`.
 
 ### 5.2 The digest, `scripts/digest.py`
 
@@ -417,8 +430,8 @@ Update `STATUS.md` "Works today" with the new tables, routes and timer when each
 |---|---|---|---|---|
 | 1 | Listener tables, pool fetch, event diff, status timer, `IngestRun mode=status`, `/events`, `/players/{pid}/status` | Three passes a day recorded on the VPS for a week; events appear for real status changes; tests in §3.7 pass | before 2026-10-20 | written 2026-09-17, tests pass; the VPS week is still owed |
 | 1b | Digest, text only, tracked team | Morning message arrives with events and a roster status line | opening week | written 2026-09-17; the first real message is still owed |
-| 2 | `TeamWeek`, streaming recommender, empty-day check, `/week`, digest section 3 | Backtest §4.6 on the 7-day horizon beats the baseline; live output sane for two weeks | November | design |
-| 3 | Rest-of-season recommender, drops, stashes, bids, `/pickups`, `/free-agents`, digest section 4 | Backtest on the 30-day horizon beats the baseline; hurdles recorded here | December | design |
+| 2 | `TeamWeek`, streaming recommender, empty-day check, `/week`, digest section 3 | Backtest §4.6 on the 7-day horizon beats the baseline; live output sane for two weeks | November | written 2026-09-18; the backtest, `/week` and the digest section are owed |
+| 3 | Rest-of-season recommender, drops, stashes, bids, `/pickups`, `/free-agents`, digest section 4 | Backtest on the 30-day horizon beats the baseline; hurdles recorded here | December | written 2026-09-18 (`pickups/season`, `pickups/stream` routes); the backtest, `/free-agents` and the digest section are owed |
 | 4 | News summarisation, then a frontend | | 2027 | design |
 
 Phase 1 is the only one with a hard date. Phases 2 and 3 can be built entirely against 2026 data in the test database and on a laptop.
