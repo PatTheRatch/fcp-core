@@ -20,7 +20,9 @@
 
   header { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center;
     padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-  header h1 { font-size: 15px; margin: 0 8px 0 0; letter-spacing: .02em; }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+  header .title { display: grid; gap: 1px; margin-right: 8px; }
+  header .title .faint { font-size: 11px; }
   .stat { display: flex; flex-direction: column; }
   .stat b { font-size: 16px; } .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
   .pill { padding: 3px 9px; border-radius: 999px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); }
@@ -102,7 +104,10 @@
 </head>
 <body>
 <header>
-  <h1>Draft Room</h1>
+  <div class="title">
+    <h1>Draft Room</h1>
+    <span class="faint" id="h-source"></span>
+  </div>
   <div class="stat"><b class="num" id="h-pick">–</b><span>pick</span></div>
   <div class="stat"><b class="num" id="h-mine">–</b><span>our money</span></div>
   <div class="stat"><b class="num" id="h-field">–</b><span>field max bid</span></div>
@@ -218,6 +223,8 @@ function render() {
   $("h-field").textContent = money(S.field_ceiling);
   $("h-infl").textContent = S.inflation.toFixed(2);
   $("h-nom").textContent = S.to_nominate ? S.to_nominate.name : "–";
+  // Where the board's numbers came from (docs/projection_sources.md).
+  $("h-source").textContent = S.source_note || "";
   renderFeed(); renderCard(); renderTeams(me); renderPicks(); renderMine(me); renderTeamSelect(); refreshBoard();
 }
 

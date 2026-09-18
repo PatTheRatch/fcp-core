@@ -46,7 +46,7 @@ from __future__ import annotations
 import csv
 import io
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
@@ -258,6 +258,22 @@ class ColumnMapping:
         if basis is not None:
             out["basis"] = basis
         return out
+
+
+def parse_overrides(entries: Iterable[str]) -> dict[str, str]:
+    """`["Points=PTS"]` as `{"Points": "PTS"}`, or a ValueError naming the entry.
+
+    The terminal spells these `--map "Points=PTS"` and the API spells them
+    `map=Points=PTS`; both arrive as the same strings, so both parse them here
+    rather than each having its own idea of what a malformed one looks like.
+    """
+    out: dict[str, str] = {}
+    for entry in entries:
+        header, sep, field_name = entry.partition("=")
+        if not sep or not header.strip() or not field_name.strip():
+            raise ValueError(f"map {entry!r}: expected HEADER=FIELD, e.g. 'Points=PTS'")
+        out[header.strip()] = field_name.strip()
+    return out
 
 
 def guess_mapping(
@@ -689,6 +705,19 @@ def load_projection_set(session: Session, set_id: int) -> list[PlayerProjection]
             )
         )
     return out
+
+
+def set_headline(session: Session, set_id: int) -> str:
+    """What a set is called and where its numbers came from, for a page header.
+
+    Shorter than `set_note`, which counts the matching as well: a header wants
+    the one thing a reader cannot see from the board itself.
+    """
+    projection_set = session.get(ProjectionSet, set_id)
+    if projection_set is None:
+        raise ValueError(f"no projection set {set_id}")
+    note = projection_set.source_note.strip()
+    return f"{projection_set.name!r}{f': {note}' if note else ''}"
 
 
 def stored_sets(session: Session, season: int | None = None) -> list[ProjectionSet]:

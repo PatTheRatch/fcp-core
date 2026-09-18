@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Through The Wire Draft Plan</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +42,7 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   header { display: grid; gap: 12px; }
+  .source { color: var(--muted); font-size: 13px; }
   .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 14px; }
   .facts b { color: var(--ink); font-weight: 600; }
 
@@ -121,6 +123,7 @@
   <header>
     <span class="eyebrow" id="eyebrow"></span>
     <h1>Through The Wire<br>Draft Plan</h1>
+    <p class="source" id="source"></p>
     <div class="facts" id="facts"></div>
   </header>
 
@@ -315,6 +318,8 @@ $("pot").textContent = "$" + (PLAN.teams * PLAN.budget).toLocaleString("en-US");
   $("top-star").textContent = `${star.name} at $${star.going}`;
 }
 $("eyebrow").textContent = `${PLAN.season - 1}–${String(PLAN.season).slice(2)} auction · ${PLAN.teams} teams · nine categories`;
+// Where every number on this page came from (docs/projection_sources.md).
+$("source").textContent = PLAN.source_note ? `Projections: ${PLAN.source_note}` : "";
 $("cap").textContent = "$" + PLAN.cap;
 const ladder = PLAN.allocation, ladderTop = Math.max(...ladder);
 $("bars").innerHTML = ladder.map((v, i) => `<div class="bar ${i < 3 ? "top" : "rest"}" style="height:${Math.max(3, (v / ladderTop) * 100)}%"><span>$${v}</span></div>`).join("");

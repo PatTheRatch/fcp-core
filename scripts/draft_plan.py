@@ -299,7 +299,14 @@ def main() -> int:
         },
         "pool": room.pool_note,
         "source": room.projection_source,
-        "source_note": describe(room.projection_source),
+        # The page's one line about where its numbers came from. `--exported`
+        # is when the BBM exports were pulled, which the room cannot know;
+        # otherwise the room's own detail (the export, or the uploaded set's
+        # name and note) says it.
+        "source_note": describe(
+            room.projection_source,
+            f"pulled {args.exported}" if args.exported else room.source_detail,
+        ),
         "players": players,
         "builds": builds,
     }

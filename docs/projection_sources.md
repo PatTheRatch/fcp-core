@@ -100,6 +100,24 @@ confirmation; `--commit` stores; `load_room(..., projection_set=<id>)` and
 `--projection-set` draft on it. A file carrying a percentage and no attempts
 is refused with the reason.
 
+**The API.** `app/api/projections.py` is the same path over HTTP, for anyone
+who is not going to run a script. `POST /projections/sets/preview` reads an
+uploaded file and returns the mapping it guessed, the basis it measured and
+who it could not match, storing nothing; `POST /projections/sets` stores the
+set and returns its id, and refuses a file whose columns cannot be used with
+422 and the same reasons the CLI prints. `GET /projections/sets?season=` lists
+what is stored, `GET /projections/sets/{id}` is one set's metadata and
+`GET /projections/sets/{id}/rows` its per-game lines. Nothing served there is
+gated, because only BBM is; the check is asked anyway, on every response, and
+`ProjectionSet.owner` is the field it compares the caller against once
+accounts exist. The API still serves no BBM field.
+
+**Both pages name the source.** The plan page carries a line under its title
+and the draft screen carries one under its header, from
+`sources.describe(source, detail)`: "Basketball Monster (paid; not to be
+shared), pulled 2026-09-17", or an uploaded set's own name and note. A reader
+should not have to ask what the board was built on.
+
 Two things deliberately not done: the set is not versioned per player per day
 the way `bbm_projections` is (a new upload is a new set, which answers "what
 did I draft on" without the machinery), and an uploaded set is discounted for
@@ -111,7 +129,8 @@ availability like ESPN's, because unlike BBM's it makes no promise about it.
 2. ~~Tag every projection with its source through the room and the pages.~~
    Done 2026-09-18.
 3. ~~Build the upload path before anyone else is invited to use this.~~ Done
-   2026-09-18.
+   2026-09-18, the CLI and ~~the upload route~~ (`app/api/projections.py`,
+   2026-09-18) both.
 4. Ask BBM what a member may do with their numbers in a private tool.
 5. Accounts. Until they exist `viewer_owns_source` is a constant, and the API
    (`app/api`) still serves no BBM field, so nothing leaks; the moment a

@@ -8,13 +8,16 @@ from app.api.listener import router as listener_router
 from app.api.narratives import router as narratives_router
 from app.api.pickups import router as pickups_router
 from app.api.players import router as players_router
+from app.api.projections import router as projections_router
 from app.api.scorecard import router as scorecard_router
 from app.api.teams import router as teams_router
 from app.api.transactions import router as transactions_router
 
 DESCRIPTION = """Read-only access to stored ESPN fantasy basketball seasons.
 
-Writes belong to the ingest, not to this API.
+Writes belong to the ingest, not to this API, with one exception: a manager's
+own projections are uploaded through `/projections/sets`, because no ingest
+can fetch a file that only he has (docs/projection_sources.md).
 
 Paths are keyed on ESPN's own identifiers, so a URL can be built from a
 league id and a year. Two details are worth knowing before reading results:
@@ -38,4 +41,5 @@ def create_app() -> FastAPI:
     app.include_router(scorecard_router)
     app.include_router(listener_router)
     app.include_router(pickups_router)
+    app.include_router(projections_router)
     return app
