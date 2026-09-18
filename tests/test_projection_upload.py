@@ -26,6 +26,7 @@ from app.projections.upload import (
     import_set,
     load_projection_set,
     read_table,
+    set_headline,
     set_note,
     stored_sets,
 )
@@ -385,6 +386,9 @@ def test_a_stored_set_is_listed_and_describes_itself(
     note = set_note(scoring_session, report.set_id)
     assert "uploaded set" in note and "2 matched to ESPN ids" in note
     assert "from a site I pay for" in note
+
+    # The header wants the name and the note, and not the matching counts.
+    assert set_headline(scoring_session, report.set_id) == "'preseason': from a site I pay for"
 
 
 # ---------------------------------------------------------------------------

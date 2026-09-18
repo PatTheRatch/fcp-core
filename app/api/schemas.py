@@ -666,3 +666,74 @@ class SeasonReportOut(BaseModel):
     faab_remaining: int
     open_slots: int
     ir_slot_free: bool
+
+
+class ProjectionSetOut(BaseModel):
+    """One stored upload of a manager's own projections.
+
+    `owner` is a label today and a user id once accounts exist, which is also
+    when it starts deciding who may read the rows (docs/projection_sources.md).
+    """
+
+    id: int
+    season: int
+    name: str
+    owner: str = Field(description="Whose set it is; a label until accounts exist")
+    uploaded_at: datetime
+    source_note: str = Field(description="Where the numbers came from, in the uploader's words")
+    rows: int = Field(description="How many player rows were stored")
+    column_map: dict[str, Any] = Field(
+        description="How this file's headers were read, exactly as applied"
+    )
+
+
+class RejectedRowOut(BaseModel):
+    """A row the importer could not read, and why it could not."""
+
+    where: str = Field(description="Which row, counting the header as row 1")
+    why: str
+
+
+class ProjectionImportOut(BaseModel):
+    """What an import read, mapped, matched and refused.
+
+    The same shape for a preview and for a stored set. `set_id` is null unless
+    a set was stored, and `ok` is false when the mapping cannot be used at
+    all, in which case `reasons` says why and nothing was stored.
+    """
+
+    ok: bool
+    dry_run: bool = Field(description="True for a preview, which never stores")
+    set_id: int | None
+    season: int
+    name: str
+    filename: str
+    basis: str = Field(description="'per_game' or 'totals', measured from the file's own numbers")
+    column_map: dict[str, Any] = Field(description="Which header each field was read from")
+    rows_read: int
+    rows_stored: int
+    matched: int = Field(description="Rows matched to a player we already hold")
+    unmatched: list[str] = Field(description="On the board by name only: no player of ours matched")
+    loose: list[str] = Field(description="Matched through a short first name rather than the full")
+    ambiguous: list[str] = Field(description="A second row for a player another row already took")
+    duplicates: list[str] = Field(description="The same player twice in the file; the second went")
+    rejected: list[RejectedRowOut]
+    reasons: list[str] = Field(description="Why the mapping is unusable; empty when ok")
+
+
+class ProjectionLineOut(BaseModel):
+    """One player's line in a stored set, per game.
+
+    Per game because that is how a set is stored and how two sets compare; the
+    room multiplies back up by `games`, which is what makes availability
+    visible (`app.projections.upload.load_projection_set`).
+    """
+
+    name: str = Field(description="The name as uploaded, not as we spell it")
+    espn_player_id: int | None = Field(description="Null when no player of ours matched the name")
+    team: str | None
+    position: str | None
+    games: float
+    per_game: dict[str, float] = Field(
+        description="PTS, REB, AST, STL, BLK, 3PM, TO, FGM, FGA, FTM and FTA"
+    )

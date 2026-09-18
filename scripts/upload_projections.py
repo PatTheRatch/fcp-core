@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.session import make_engine, make_session_factory
-from app.projections.upload import import_set, stored_sets
+from app.projections.upload import import_set, parse_overrides, stored_sets
 
 
 def main() -> int:
@@ -76,9 +76,9 @@ def main() -> int:
         raise SystemExit(f"no such file: {args.file}")
 
     try:
-        overrides = dict(_pair(entry) for entry in args.map)
+        overrides = parse_overrides(args.map)
     except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+        raise SystemExit(f"--{exc}") from exc
 
     dry_run = not args.commit
     with factory() as session:
@@ -123,13 +123,6 @@ def _list(session: Session, season: int) -> int:
         if stored.source_note:
             print(f"{'':>4}  {stored.source_note}")
     return 0
-
-
-def _pair(entry: str) -> tuple[str, str]:
-    header, sep, field = entry.partition("=")
-    if not sep or not header.strip() or not field.strip():
-        raise ValueError(f"--map {entry!r}: expected HEADER=FIELD, e.g. --map 'Points=PTS'")
-    return header.strip(), field.strip()
 
 
 if __name__ == "__main__":
