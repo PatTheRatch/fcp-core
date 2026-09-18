@@ -1810,12 +1810,17 @@ the move and without it, beside the week's numbers; the difference between
 the two records is exactly the net.
 
 **The backtest (section 4.6) is built and scores in categories.** A move is
-replayed against the matchup that actually happened: the dropped man's
-started lines come out from the decision day on, the added man's real box
-scores go in on the days that are left (capped at the starts the place had),
-the nine totals are rebuilt and counted against the opponent's real period
-totals, and the categories the team actually won are subtracted. The season
-score is the same replay over the next 30 days. The baseline is the league's
+replayed against the matchup that actually happened, with the daily lineup
+re-solved: on each day the roster the team really held is read from
+`daily_lineup_slots`, the swap applied to it, and the ten starting slots
+filled by the recommender's own seating rule, ordered by what each man had
+averaged before that day so no hindsight sets the lineup. The roster without
+the swap is re-solved the same way, and the two lines are counted against the
+opponent's real period totals and subtracted. Re-solving both sides is what
+keeps lineup optimisation out of a move's credit; the gap between the
+re-solve and the manager's own starts is reported as drift and enters no
+score, and on 2026 it is -0.02 categories a period. The season score is the
+same replay over the next 30 days. The baseline is the league's
 own one-for-one swaps replayed backwards and negated, so a real claim and a
 recommendation are one quantity. The composite-scored first cut of
 2026-09-18 read -3.2 composite a day at a 20% win rate, and that was a
@@ -1823,8 +1828,19 @@ measurement of composite: the recommender spends points on purpose to win the
 categories that are close, and composite charges it for every point. Beside
 the sweep the run reports what the recommender claimed against what it
 delivered, which is the calibration a win rate cannot answer. What the replay
-cannot do is re-run the daily lineup matching for the swapped roster, so a
-pickup who fills an empty day is measured pessimistically.
+cannot do is know what lineup the manager would really have set; both sides
+of every move assume the same seating model, and the drift number says how
+far that is from what he did.
+
+Measured on one team, 2026, tilt on (44 decision points, 275 s), after the
+re-solve: the streaming report delivers +0.24 to +0.28 categories a matchup
+at 86-89% of moves costing nothing, and the rest-of-season report +0.72 to
++1.17 categories over thirty days. The league's own 1,120 one-for-one swaps,
+replayed backwards through the same code, deliver +0.05 a matchup and -0.56
+over thirty days. The recommender therefore beats the league's own moves on
+this roster, which the capped replay could not show: it scored the streaming
+side at +0.00 with 60% of named moves at exactly zero. One team is a smoke
+test, so no hurdle constant was changed; the full run belongs on the VPS.
 
 Not built here, for the next brief: the digest's sections 3 and 4, and a
 full-league backtest run on the VPS (the dev database is read-only here, so

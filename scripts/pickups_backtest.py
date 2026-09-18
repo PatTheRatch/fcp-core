@@ -26,31 +26,47 @@ points a night to win blocks and steals is a good move and a terrible composite.
 So a move is scored in the currency it was chosen in: **categories won**,
 by replaying the matchup that actually happened with the swap in it.
 
-- **The week.** Take the team's real started lines for the matchup period
-  (`app.scoring.lines`), remove the dropped man's from the decision day on, and
-  put the added man's *real box scores* on the days that are left, capped at the
-  number of days the dropped man had started so a streamer cannot get more
-  starts than the place had. Rebuild the nine totals, count the categories that
-  beat the opponent's real period totals (`matchup_team_stats`), and subtract
-  the categories the team actually won. The answer is in whole categories: +1
-  means the swap flipped one.
+- **The week.** Re-solve the lineup, day by day, over the rest of the matchup
+  period -- once with the swap and once without it. On each day the roster is
+  what `daily_lineup_slots` says the team held, the swap is applied to it, and
+  the ten starting slots are filled by the recommender's own seating rule
+  (`app.pickups.stream._seat`: take the men with a game in order of value and
+  keep each one the matching can still seat). The day's line is the seated men's
+  real box scores. Rebuild the nine totals of each side, count the categories
+  each beats the opponent's real period totals in (`matchup_team_stats`), and
+  subtract. +1 means the swap flipped one category.
 - **The season.** The same replay over the next 30 days, summed across every
   matchup period that window touches.
 - **The baseline.** The league's own one-for-one swaps of 2026, scored by the
-  same code: a real move is replayed *backwards* (put the dropped man back, take
-  the added man out) and the sign flipped, so "what the move was worth" means
-  the same thing for a recommendation and for a real claim. One currency, one
-  comparison.
+  same code and the same re-solve: a real move is replayed *backwards* (put the
+  dropped man back, take the added man out) and the sign flipped, so "what the
+  move was worth" means the same thing for a recommendation and for a real
+  claim. One currency, one comparison.
 - **Calibration.** Beside them, what the recommender CLAIMED (the judgement's
   net over both horizons, `app.pickups.judge`) against what it DELIVERED. A tool
   that says +0.5 and delivers +0.1 is not the same tool as one that says +0.5
   and delivers +0.5, even at the same win rate.
 
-What the replay cannot do is re-run the lineup: the swapped roster is assumed to
-start the new man on the days the old one started, rather than re-solving the
-daily matching. That over-serves a pickup whose games fall on days the lineup
-was already full, and under-serves one who fills a day it left empty. Both are
-stated in the write-up.
+WHY BOTH SIDES ARE RE-SOLVED
+
+The first category-scored cut capped the added man at the number of days the
+dropped man had started, so a move that dropped a man who was not starting --
+which is exactly what an empty-day pickup does -- scored zero by construction.
+Sixty per cent of named streaming moves scored exactly zero, and a measurement
+that cannot separate a good stream from a bad one cannot tune a hurdle.
+
+Re-solving the swapped roster fixes that, but only if the unswapped roster is
+re-solved too. Scoring a re-solved lineup against the manager's actual starts
+would pay every move the difference between a well-set lineup and a badly-set
+one, which is not what the move did. So both sides are seated by the same rule
+and the difference is the move alone. The gap between the re-solve and what the
+manager really did is printed beside the run as a diagnostic (`drift`) and
+enters no score.
+
+The seating order is what each man had averaged *before* that day, not what he
+posted on it: a manager sets Tuesday's lineup on Tuesday morning. Seating by
+the night's own box score would hand every counterfactual a lineup nobody could
+have set, and would flatter every pickup.
 
 TWO DEFECTS THIS SCRIPT WORKS AROUND
 
@@ -101,7 +117,7 @@ import importlib
 import statistics
 import sys
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -121,10 +137,13 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import LeagueSeason
 from app.db.session import make_engine, make_session_factory
+from app.draft.lineup import max_matching
+from app.draft.pool import lineup_for
+from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.valuation import INVERTED_CATEGORIES
 from app.pickups.season import SeasonReport, season_recommendations
 from app.pickups.state import _PRO_TEAM_IDS, season_calendar
-from app.pickups.stream import StreamReport, stream_recommendations
+from app.pickups.stream import StreamReport, stream_recommendations, weight
 from app.scoring.lines import COUNTS, EMPTY, CategoryLine
 
 SEASON = 2026
@@ -240,6 +259,10 @@ class Setting:
     below_hurdle: int = 0
     #: Run-level counters, shared by every setting.
     counters: dict[str, int] = field(default_factory=dict)
+    #: Categories a period the re-solved lineup won that the manager's own
+    #: did not. Not a score: the size of the seating assumption, shared by
+    #: every setting of the run.
+    drift: float = 0.0
 
     @property
     def cleared(self) -> list[Scored]:
@@ -640,21 +663,39 @@ class PeriodWindow:
     is_playoff: bool
 
 
+#: Lineup slots that mean a man is held but cannot be started, so the
+#: re-solve must not seat him: ESPN's bench, injured reserve, and the marker
+#: for a player who left the roster during the period.
+UNSEATABLE_SLOTS = ("FA", "IR")
+
+
 @dataclass
 class Replay:
     """One season's played rows, read once, ready to replay any swap.
 
-    Everything the category score needs is a lookup after this: who started
-    for whom on which day and what they posted, every player's real box score
+    Everything the category score needs is a lookup after this: who a team
+    held on each day and what each man posted, every player's real box score
     by day (a free agent has no lineup row, so his line has to come from the
-    box scores), each period's window, and each matchup's opponent and final
-    totals. Four queries for the season, against one per move otherwise.
+    box scores), who may sit in which slot, each period's window, and each
+    matchup's opponent and final totals. Six queries for the season, against
+    one per move otherwise.
     """
 
     #: (team row id, scoring period, player id) -> what he posted, started.
     started: dict[tuple[int, int, int], CategoryLine]
+    #: (team row id, scoring period) -> every man held that day who could be
+    #: started, bench included. The roster the re-solve seats from.
+    rostered: dict[tuple[int, int], tuple[int, ...]]
     #: (player id, scoring period) -> his real line, started or not.
     games: dict[tuple[int, int], CategoryLine]
+    #: Player id -> the lineup slots he may occupy, from the same
+    #: `player_season_stats.eligible_slots` the recommender reads.
+    eligible: dict[int, frozenset[str]]
+    #: The season's starting lineup, as `app.draft.pool.lineup_for` reads it.
+    lineup: tuple[str, ...]
+    #: (player id, scoring period) -> the value of what he had averaged
+    #: *before* that day, which is what orders the seating. See `_seat`.
+    form: dict[tuple[int, int], float]
     periods: tuple[PeriodWindow, ...]
     #: (period, team row id) -> the other side's team row id.
     opponent: dict[tuple[int, int], int]
@@ -665,6 +706,9 @@ class Replay:
     #: (team row id, period) -> the whole period's started line, memoized: a
     #: replay asks for the same one on every move of the same decision.
     _team_periods: dict[tuple[int, int], CategoryLine] = field(default_factory=dict)
+    #: (team, period, first day, last day) -> the re-solved line with no move,
+    #: memoized because every move at a decision point shares it.
+    _without: dict[tuple[int, int, int, int], CategoryLine] = field(default_factory=dict)
 
     @classmethod
     def load(cls, session: Session, league_season: LeagueSeason) -> Replay:
@@ -685,6 +729,20 @@ class Replay:
         ):
             started[(int(row[0]), int(row[1]), int(row[2]))] = _line(row[3:])
 
+        rostered: dict[tuple[int, int], list[int]] = {}
+        for team, day, player_id in session.execute(
+            text(
+                """
+                SELECT dls.team_id, dls.scoring_period, dls.player_id
+                FROM daily_lineup_slots dls
+                JOIN teams t ON t.id = dls.team_id
+                WHERE t.league_season_id = :ls AND dls.slot <> ALL(:unseatable)
+                """
+            ),
+            {"ls": league_season.id, "unseatable": list(UNSEATABLE_SLOTS)},
+        ):
+            rostered.setdefault((int(team), int(day)), []).append(int(player_id))
+
         games: dict[tuple[int, int], CategoryLine] = {}
         for row in session.execute(
             text(
@@ -697,6 +755,17 @@ class Replay:
             {"season": SEASON},
         ):
             games[(int(row[0]), int(row[1]))] = _line(row[2:])
+
+        eligible: dict[int, frozenset[str]] = {}
+        for player_id, slots in session.execute(
+            text(
+                "SELECT player_id, eligible_slots FROM player_season_stats "
+                "WHERE season = :season AND eligible_slots IS NOT NULL"
+            ),
+            {"season": SEASON},
+        ):
+            key = int(player_id)
+            eligible[key] = eligible.get(key, frozenset()) | frozenset(str(s) for s in slots)
 
         periods = tuple(
             PeriodWindow(int(period), int(first), int(final), bool(playoff))
@@ -749,7 +818,11 @@ class Replay:
         )
         return cls(
             started=started,
+            rostered={key: tuple(sorted(ids)) for key, ids in rostered.items()},
             games=games,
+            eligible=eligible,
+            lineup=tuple(lineup_for(league_season)),
+            form=_prior_form(games, category_distributions(session, league_season)),
             periods=periods,
             opponent=opponent,
             totals={key: CategoryLine(counts) for key, counts in totals.items()},
@@ -777,8 +850,71 @@ class Replay:
             self._team_periods[key] = line
         return self._team_periods[key]
 
-    def started_days(self, team: int, player: int, first: int, last: int) -> list[int]:
-        return [day for day in range(first, last + 1) if (team, day, player) in self.started]
+    def started_line(self, team: int, first: int, last: int) -> CategoryLine:
+        """What the team's started men posted over [first, last], as it was."""
+        line = EMPTY
+        for (team_id, day, _player), found in self.started.items():
+            if team_id == team and first <= day <= last:
+                line = line + found
+        return line
+
+    def seat(self, roster: Collection[int], day: int) -> tuple[int, ...]:
+        """The men a lineup would start from `roster` on `day`.
+
+        The recommender's own seating (`app.pickups.stream._seat`): take the
+        men with a game in order of value and keep each one the matching can
+        still seat, which is exact for a transversal matroid rather than an
+        approximation of it. The order is `form` -- what each man had averaged
+        *before* that day -- because a manager setting Tuesday's lineup on
+        Tuesday morning knows that and not what Tuesday will bring. Seating by
+        the night's own box score would hand every counterfactual a lineup
+        nobody could have set, and would flatter every added player.
+        """
+        available = sorted(
+            (player for player in roster if (player, day) in self.games),
+            key=lambda player: (-self.form.get((player, day), 0.0), player),
+        )
+        chosen: dict[int, frozenset[str]] = {}
+        seated: list[int] = []
+        for player in available:
+            if len(seated) >= len(self.lineup):
+                break
+            trial = {**chosen, player: self.eligible.get(player, frozenset())}
+            if max_matching(trial, self.lineup) > len(seated):
+                chosen = trial
+                seated.append(player)
+        return tuple(seated)
+
+    def day_line(self, roster: Collection[int], day: int) -> CategoryLine:
+        """What `roster` would have posted on `day`, seated by `seat`."""
+        line = EMPTY
+        for player in self.seat(roster, day):
+            line = line + self.games[(player, day)]
+        return line
+
+    def resolved(
+        self,
+        team: int,
+        window: PeriodWindow,
+        first: int,
+        last: int,
+        dropped: Sequence[int] = (),
+        added: Sequence[int] = (),
+    ) -> CategoryLine:
+        """The period's line with the swap in it, the lineup re-solved daily.
+
+        Days before `first` and after `last` keep the manager's own started
+        line: the move had not happened yet, or its window has closed, so
+        there is nothing to re-solve. Over the window the roster of the day is
+        read from `daily_lineup_slots`, the swap applied to it, and the lineup
+        seated from scratch.
+        """
+        line = self.started_line(team, window.first, first - 1)
+        gone, arrived = set(dropped), set(added)
+        for day in range(first, last + 1):
+            roster = (set(self.rostered.get((team, day), ())) - gone) | arrived
+            line = line + self.day_line(roster, day)
+        return line + self.started_line(team, last + 1, window.final)
 
     def categories_won(self, mine: CategoryLine, theirs: CategoryLine) -> float:
         """Categories the first line beats the second in; a tie is half."""
@@ -803,12 +939,15 @@ class Replay:
     ) -> float:
         """Categories the swap would have won the team, over one matchup period.
 
-        The men leaving lose their started lines from `from_day` on; the men
-        arriving take their real box scores over the same days, each capped at
-        the number of starts the man he replaces was getting, so a streamer
-        cannot be credited with more of the place than the place had. A move
-        that drops nobody (a free add, an injured-reserve move) is uncapped:
-        the place really was empty.
+        Both sides are re-solved: the roster of each day is seated from
+        scratch with the swap in it, and again without it. The comparison is
+        therefore between two lineups set by the same rule, and none of the
+        credit for a move is really credit for setting a better lineup, which
+        is what the earlier cap-the-starts rule could not separate. The
+        manager's own seating is kept only as a diagnostic (`drift`).
+
+        The no-move line is memoized per (team, period, window), since every
+        move considered at one decision point shares it.
         """
         other = self.opponent.get((window.period, team))
         if other is None:
@@ -816,25 +955,39 @@ class Replay:
         theirs = self.totals.get((window.period, other))
         if theirs is None:
             return 0.0
-        actual = self.team_line(team, window)
         first = max(from_day, window.first)
         last = min(to_day, window.final)
         if first > last:
             return 0.0
 
-        line = actual
-        caps: list[int | None] = []
-        for player in dropped:
-            days = self.started_days(team, player, first, last)
-            caps.append(len(days))
-            for day in days:
-                line = line - self.started[(team, day, player)]
-        for index, player in enumerate(added):
-            cap = caps[index] if index < len(caps) else None
-            days = [day for day in range(first, last + 1) if (player, day) in self.games]
-            for day in days if cap is None else days[:cap]:
-                line = line + self.games[(player, day)]
-        return self.categories_won(line, theirs) - self.categories_won(actual, theirs)
+        key = (team, window.period, first, last)
+        if key not in self._without:
+            self._without[key] = self.resolved(team, window, first, last)
+        without = self._without[key]
+        with_swap = self.resolved(team, window, first, last, dropped, added)
+        return self.categories_won(with_swap, theirs) - self.categories_won(without, theirs)
+
+    def drift(self, team: int, window: PeriodWindow, from_day: int) -> float:
+        """Categories the re-solve wins that the manager's own lineup did not.
+
+        Not part of any score: it says how far the seating model is from what
+        the team actually did, which is the honest size of the "assume a
+        perfectly set lineup" assumption. Positive means the re-solve did
+        better than the manager.
+        """
+        other = self.opponent.get((window.period, team))
+        theirs = self.totals.get((window.period, other)) if other is not None else None
+        if theirs is None:
+            return 0.0
+        first = max(from_day, window.first)
+        if first > window.final:
+            return 0.0
+        key = (team, window.period, first, window.final)
+        if key not in self._without:
+            self._without[key] = self.resolved(team, window, first, window.final)
+        return self.categories_won(self._without[key], theirs) - self.categories_won(
+            self.team_line(team, window), theirs
+        )
 
     def score(
         self, team: int, day: int, dropped: Sequence[int], added: Sequence[int]
@@ -859,6 +1012,33 @@ def _line(values: Sequence[Any]) -> CategoryLine:
     )
 
 
+def _prior_form(
+    games: Mapping[tuple[int, int], CategoryLine],
+    distributions: Sequence[CategoryDistribution],
+) -> dict[tuple[int, int], float]:
+    """Each man's value on each of his game days, from the games before it.
+
+    The order the re-solve seats a day in. `app.pickups.stream.weight` is the
+    same ordering the recommender uses to decide who sits on a full day; the
+    line it is given here is the player's mean box score *strictly before*
+    that day, so the seating knows only what a manager setting the lineup
+    that morning knew. A man playing his first game of the season has no
+    prior and sorts last, which is what an unknown quantity deserves.
+    """
+    by_player: dict[int, list[int]] = {}
+    for player_id, day in games:
+        by_player.setdefault(player_id, []).append(day)
+    out: dict[tuple[int, int], float] = {}
+    for player_id, days in by_player.items():
+        running = EMPTY
+        for played, day in enumerate(sorted(days)):
+            out[(player_id, day)] = (
+                weight(running.scaled(1.0 / played), distributions) if played else 0.0
+            )
+            running = running + games[(player_id, day)]
+    return out
+
+
 def value_move(
     replay: Replay,
     *,
@@ -868,9 +1048,9 @@ def value_move(
     kind: str,
     rank: int,
     cleared: bool,
-    added_id: int,
+    added_ids: Sequence[int],
     added_name: str,
-    dropped_id: int | None,
+    dropped_ids: Sequence[int],
     dropped_name: str | None,
     claimed: float,
     weeks: float,
@@ -878,19 +1058,22 @@ def value_move(
     fills_empty_day: bool = False,
     costs_faab: bool = False,
 ) -> Scored:
-    """Replay one move and record the categories it won."""
-    week, season = replay.score(
-        team_row_id, day, [dropped_id] if dropped_id else [], [added_id] if added_id else []
-    )
+    """Replay one move and record the categories it won.
+
+    Every man the move moves is replayed, a two-swap's second pair included:
+    with the lineup re-solved there is nothing left to cap, so nothing has to
+    be left out and called an upper bound.
+    """
+    week, season = replay.score(team_row_id, day, dropped_ids, added_ids)
     return Scored(
         team_id=team_id,
         day=day,
         kind=kind,
         rank=rank,
         cleared=cleared,
-        added_id=added_id,
+        added_id=added_ids[0] if added_ids else 0,
         added_name=added_name,
-        dropped_id=dropped_id,
+        dropped_id=dropped_ids[0] if dropped_ids else None,
         dropped_name=dropped_name,
         claimed=claimed,
         weeks=weeks,
@@ -987,6 +1170,7 @@ def replay(
     counters = {"decisions": 0, "stream_errors": 0, "season_errors": 0, "pool_empty": 0}
     total = len(teams) * len(points)
     done = 0
+    drifts: list[float] = []
 
     for team_id in teams:
         for _period, day in points:
@@ -1011,6 +1195,9 @@ def replay(
             row = team_rows[team_id]
             stream_scored = _score_stream_moves(book, team_id, row, day, stream_report)
             season_scored = _score_season_moves(book, team_id, row, day, season_report)
+            window = book.period_for(day)
+            if window is not None:
+                drifts.append(book.drift(row, window, day))
 
             for (stream_hurdle, paid, free), (stream, season) in settings.items():
                 stream.decisions += 1
@@ -1023,8 +1210,20 @@ def replay(
                 print(f"   ... {done}/{total} decision points")
 
     _POSTED_CAP[0] = None
+    if drifts:
+        # Not a score: how far the re-solved lineup is from the one the
+        # manager actually set, which is the size of the "assume a perfectly
+        # set lineup" assumption both sides of every move now rest on.
+        print(
+            f"   lineup re-solve against the manager's own: "
+            f"{statistics.fmean(drifts):+.2f} categories a period "
+            f"(median {statistics.median(drifts):+.2f}, {len(drifts)} periods)"
+        )
+    mean_drift = statistics.fmean(drifts) if drifts else 0.0
     for _key, (_stream, _season) in settings.items():
         _stream.counters.update(counters)
+        _stream.drift = mean_drift
+        _season.drift = mean_drift
     return settings
 
 
@@ -1085,9 +1284,9 @@ def _score_stream_moves(
             kind=move.kind,
             rank=rank,
             cleared=False,
-            added_id=move.add.player_id,
+            added_ids=[move.add.player_id],
             added_name=move.add.name,
-            dropped_id=move.drop.player_id if move.drop else None,
+            dropped_ids=[move.drop.player_id] if move.drop else [],
             dropped_name=move.drop.name if move.drop else None,
             claimed=move.net,
             weeks=move.judgement.weeks_covered,
@@ -1106,8 +1305,6 @@ def _score_season_moves(
         return []
     out: list[Scored] = []
     for rank, move in enumerate(report.moves[:TOP_N]):
-        added = move.into[0] if move.into else None
-        dropped = move.out[0] if move.out else None
         out.append(
             value_move(
                 book,
@@ -1117,13 +1314,12 @@ def _score_season_moves(
                 kind=move.kind,
                 rank=rank,
                 cleared=False,
-                added_id=added.player_id if added else 0,
-                added_name=added.name if added else "",
-                dropped_id=dropped.player_id if dropped else None,
-                dropped_name=dropped.name if dropped else None,
-                # A two-swap drops two men and only the first is replayed, so
-                # its score is an upper bound. A single swap is one for one,
-                # which is the comparison the baseline makes.
+                # Both men of a two-swap, both ways: the re-solve caps nothing,
+                # so the whole move is replayed rather than half of it.
+                added_ids=[player.player_id for player in move.into],
+                added_name=", ".join(player.name for player in move.into),
+                dropped_ids=[player.player_id for player in move.out],
+                dropped_name=", ".join(player.name for player in move.out) or None,
                 claimed=move.net,
                 weeks=move.judgement.weeks_covered,
                 horizon="season",
@@ -1216,6 +1412,11 @@ def _pct(value: float) -> str:
     return f"{value:.1%}"
 
 
+def _teams(count: int) -> str:
+    """One team or twelve teams, so the write-up reads as English."""
+    return f"{count} team" + ("" if count == 1 else "s")
+
+
 def report(
     results: Mapping[str, Mapping[tuple[float, float, float], tuple[Setting, Setting]]],
     baseline: Sequence[Scored],
@@ -1229,13 +1430,17 @@ def report(
     base_week = statistics.fmean([b.week for b in baseline]) if baseline else 0.0
     base_season = statistics.fmean([b.season for b in baseline]) if baseline else 0.0
     base_win = sum(1 for b in baseline if b.week >= 0) / len(baseline) if baseline else 0.0
+    drift = next(
+        (stream.drift for settings in results.values() for stream, _s in settings.values()),
+        0.0,
+    )
     lines: list[str] = []
 
     lines.append("# Pickup recommender: the 2026 backtest, scored in categories")
     lines.append("")
     lines.append(
         f"Full Court Press (ESPN 3853870), 2026. Generated by "
-        f"`scripts/pickups_backtest.py`. {teams} teams x {points} decision points, "
+        f"`scripts/pickups_backtest.py`. {_teams(teams)} x {points} decision points, "
         f"tilt {tilt_run}, {runtime:.0f}s."
     )
     lines.append("")
@@ -1245,11 +1450,19 @@ def report(
     lines.append(
         "Every number in this document is **categories won**, not composite production. "
         "A move is scored by replaying the matchup that actually happened with the swap "
-        "in it: the dropped man's started lines come out from the decision day on, the "
-        "added man's real box scores go in on the days that are left (capped at the "
-        "starts the place had), the nine totals are rebuilt and counted against the "
-        "opponent's real period totals, and the categories the team actually won are "
-        "subtracted. +1 means the swap flipped one category."
+        "in it. Day by day over the window, the roster the team really held is taken "
+        "from `daily_lineup_slots`, the swap applied to it, and the ten starting slots "
+        "filled by the recommender's own seating rule; the day's line is the seated "
+        "men's real box scores. The same is done without the swap. Both lines are "
+        "counted against the opponent's real period totals and subtracted. +1 means the "
+        "swap flipped one category."
+    )
+    lines.append("")
+    lines.append(
+        "Both sides are re-solved -- the roster without the swap is seated by the same "
+        "rule -- so none of a move's credit is really credit for setting a better "
+        "lineup. How far the re-solve is from what the manager actually did is reported "
+        "as `drift` in section 4 and enters no score."
     )
     lines.append("")
     lines.append(
@@ -1346,9 +1559,8 @@ def report(
         "rescaled to the window the delivery is measured over -- one matchup for a "
         f"stream, {SEASON_WINDOW} days for a season move -- because the raw net spans "
         "every week left in the year. The ratio is delivered over claimed. `zero` is "
-        "the share of named moves that changed no category at all, which is mostly "
-        "the replay's cap rather than the move: a man who was not starting frees no "
-        "starts."
+        "the share of named moves that changed no category at all -- now a fact about "
+        "the move rather than about the scorer, since nothing caps the replay."
     )
     lines.append("")
     for tilt_label, settings in results.items():
@@ -1416,6 +1628,20 @@ def report(
             f"{_pct(stream.no_move_rate)} no-move)."
         )
     lines.append("")
+    lines.append(
+        f"**No hurdle constant was changed by this run.** It covers {_teams(teams)} of "
+        "the league; the constants are set by the full run on the VPS, not by a smoke "
+        "test on one roster."
+    )
+    lines.append("")
+    lines.append(
+        f"**Drift: {drift:+.2f} categories a period.** That is how much the re-solved "
+        "lineup wins that the manager's own starts did not, averaged over the periods "
+        "replayed. A number near zero says the seating model is close to what this "
+        "league actually does, so the counterfactual both sides of every move rest on "
+        "is not a fantasy roster."
+    )
+    lines.append("")
 
     lines.append("## 5. Two defects in the stored data, and what was done about them")
     lines.append("")
@@ -1459,22 +1685,23 @@ def report(
     lines.append("## 6. Caveats")
     lines.append("")
     lines.append(
-        "- **The replay does not re-run the lineup.** The swapped roster is assumed to "
-        "start the new man on the days the old one started. That over-serves a pickup "
-        "whose games fall on days the lineup was already full, and under-serves one who "
-        "fills a day it left empty -- which is exactly the case `fills_empty_day` "
-        "exists for, so the empty-day rule is measured pessimistically here."
+        "- **The replay assumes a perfectly set lineup, on both sides.** Every day is "
+        "seated from scratch by the same rule with the swap and without it, so the "
+        "difference is the move and not the lineup; but neither side is the lineup the "
+        "manager actually set. The gap between the re-solve and his own starts is "
+        "printed beside the run and enters no score."
     )
     lines.append(
         "- **No injury history.** There are no 2026 status snapshots, so every player "
         "is treated as available and the stash logic is under-served by construction."
     )
     lines.append(
-        f"- **{points} decision points a team, {teams} teams.** Small. One season, one league."
+        f"- **{points} decision points a team, {_teams(teams)}.** Small. One season, one league."
     )
     lines.append(
-        "- **The two-swap is scored as an upper bound.** It drops two men and only the "
-        "first is replayed."
+        "- **A move is replayed against the roster the team really held**, so a man the "
+        "manager dropped for other reasons later in the window leaves the counter"
+        "factual roster one place larger than thirteen for the rest of it."
     )
     lines.append(
         "- **A move's week score is zero on a bye**, and on a decision day in a period "
@@ -1501,12 +1728,16 @@ DECISIONS: tuple[str, ...] = (
     "Moves are scored in categories, by replaying the real matchup with the swap in "
     "it, and composite is gone. The recommender optimises categories; scoring it in "
     "anything else measures the scorer.",
-    "The added man takes the days the dropped man started, capped at that count. The "
-    "alternative -- re-solving the daily lineup matching for the swapped roster -- is "
-    "the honest counterfactual and a much larger job; the cap is the conservative "
-    "reading, and it is stated as a caveat rather than hidden.",
-    "A move that drops nobody is uncapped: the place really was empty, so every game "
-    "the added man played in the window counts.",
+    "The lineup is re-solved day by day for the swapped roster, and for the unswapped "
+    "one as well. Scoring a re-solved lineup against the manager's own starts would "
+    "pay every move the difference between a well-set lineup and a badly-set one.",
+    "The seating order is each man's form before that day, not his line on it. A "
+    "manager sets the lineup in the morning; hindsight seating would flatter every "
+    "pickup and would not be a lineup anybody could have set.",
+    "The earlier rule -- cap the added man at the dropped man's started days -- is "
+    "gone. It scored 60% of named streaming moves at exactly zero, because an "
+    "empty-day pickup replaces a man who was not starting, so the measurement could "
+    "not tune the streaming hurdle at all.",
     "The baseline is the league's own swaps replayed backwards and negated, rather "
     "than quoted from `docs/acquirable_value.md`. The note's +0.57 is composite a day "
     "and is not the same quantity as a category.",
