@@ -171,7 +171,11 @@ SEASON_WINDOW = 30
 #: (`app.pickups.judge.Judgement`), which is the unit each constant was
 #: written in (docs/pickups.md sections 4.3 and 4.4).
 STREAM_GRID: tuple[float, ...] = (0.05, 0.10, 0.15, 0.20)
-SEASON_GRID: tuple[tuple[float, float], ...] = ((0.02, 0.05), (0.05, 0.10), (0.10, 0.20))
+#: (paid, free) pairs, the free bar below the paid one as the constants have
+#: it. The 2026-09-18 run's grid ran the free bar above the paid one by
+#: mistake; adds into an open place are rare enough that its cells measured
+#: the paid bar alone, which is how they were read.
+SEASON_GRID: tuple[tuple[float, float], ...] = ((0.05, 0.02), (0.10, 0.05), (0.20, 0.10))
 
 #: A setting is eligible only when it still says "no move" often enough to be a
 #: filter rather than a machine gun, and beats the league's own moves on the
