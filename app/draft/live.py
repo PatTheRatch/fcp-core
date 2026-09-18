@@ -33,7 +33,7 @@ from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import value_players
 from app.projections import sources
-from app.projections.upload import load_projection_set, set_note
+from app.projections.upload import load_projection_set, set_headline, set_note
 
 
 class RoomError(RuntimeError):
@@ -73,6 +73,10 @@ class Room:
     #: and the two page builders ask `may_show` before rendering it, because a
     #: gated source's per-player numbers are not ours to show.
     projection_source: str = sources.ESPN
+    #: The part of the source a page should name and the tag cannot carry: the
+    #: export it was read from, or an uploaded set's name and note. Passed to
+    #: `sources.describe` so the plan page and the screen say the same thing.
+    source_detail: str = ""
     #: Our board's price for each player: the valuation, before sizing to the
     #: room. Candidates carry the going price, which is what the optimizer
     #: plans with; this is kept for the blend and for display.
@@ -141,6 +145,7 @@ def load_room(
             projections = loaded.projections
             bbm_rows = loaded.rows
             projection_source = sources.BBM
+            source_detail = bbm.name
             pool_note = (
                 f"pool: Basketball Monster, {bbm.name}: {len(projections)} players, "
                 f"{loaded.matched} matched to ESPN ids ({len(loaded.loose)} by short first name), "
@@ -150,6 +155,7 @@ def load_room(
             try:
                 projections = load_projection_set(session, projection_set)
                 pool_note = set_note(session, projection_set)
+                source_detail = set_headline(session, projection_set)
             except ValueError as exc:
                 raise RoomError(str(exc)) from exc
             if not projections:
@@ -158,6 +164,7 @@ def load_room(
         else:
             projections = pool.load_projections(session, source_season, kind=pool_kind)
             projection_source = sources.ESPN
+            source_detail = f"{source_season} {pool_kind}"
             pool_note = f"pool: ESPN {source_season} {pool_kind}"
         # One room, one source. The gate and every page read
         # `projection_source` alone, so a pool that quietly mixed two would
@@ -273,6 +280,7 @@ def load_room(
             per_game_dollars=_per_game(bbm_rows, bbm_per_game),
             pool_note=pool_note,
             projection_source=projection_source,
+            source_detail=source_detail,
             board=board_prices,
         )
 

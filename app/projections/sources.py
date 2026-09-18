@@ -71,8 +71,20 @@ def sources_in(projections: Iterable[PlayerProjection]) -> set[str]:
     return {projection.source for projection in projections}
 
 
-def describe(source: str) -> str:
-    """The source in the words a page should use."""
+def describe(source: str, detail: str = "") -> str:
+    """The source in the words a page should use, as one line.
+
+    `detail` is the part this module cannot know and the page should still
+    say: when a BBM export was pulled, what an uploaded set is called and
+    where its numbers came from. A room carries it (`Room.source_detail`) so
+    the plan page and the draft screen name a source the same way.
+    """
+    named = _named(source)
+    detail = detail.strip()
+    return f"{named}, {detail}" if detail else named
+
+
+def _named(source: str) -> str:
     if source == ESPN:
         return "ESPN's projections"
     if source == BBM:

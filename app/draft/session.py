@@ -526,7 +526,7 @@ class DraftSession:
                 "feed": dict(self.feed_status),
                 "pool": room.pool_note,
                 "source": room.projection_source,
-                "source_note": describe(room.projection_source),
+                "source_note": describe(room.projection_source, room.source_detail),
                 "stand_in": room.stand_in,
                 "replay_warnings": list(self.replay_warnings),
             }

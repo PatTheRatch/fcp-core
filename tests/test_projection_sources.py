@@ -6,6 +6,8 @@ pin the default (nothing that existed before this claims to be anything but
 ESPN's), which source is gated, and that `may_show` is the whole rule.
 """
 
+from typing import Any
+
 from app.draft.valuation import PlayerProjection
 from app.projections import sources
 
@@ -13,7 +15,9 @@ LINE = {"PTS": 1500.0, "REB": 400.0, "FGM": 500.0, "FGA": 1000.0}
 
 
 def projection(name: str, source: str | None = None) -> PlayerProjection:
-    extra = {} if source is None else {"source": source}
+    # Typed loosely on purpose: `source` is left out entirely when it is None,
+    # which is how the default gets exercised at all.
+    extra: dict[str, Any] = {} if source is None else {"source": source}
     return PlayerProjection(player_id=1, name=name, games=70.0, totals=dict(LINE), **extra)
 
 
@@ -55,3 +59,13 @@ def test_a_source_describes_itself_for_a_page() -> None:
     assert sources.describe(sources.ESPN) == "ESPN's projections"
     assert "not to be shared" in sources.describe(sources.BBM)
     assert sources.describe(sources.upload_source(4)) == "uploaded projection set 4"
+
+
+def test_a_page_adds_the_detail_the_tag_cannot_carry() -> None:
+    """One line, so the page names the source and where it came from at once."""
+    assert sources.describe(sources.BBM, "pulled 2026-09-17").endswith(", pulled 2026-09-17")
+    assert (
+        sources.describe(sources.upload_source(4), "'Hashtag preseason': a site I pay for")
+        == "uploaded projection set 4, 'Hashtag preseason': a site I pay for"
+    )
+    assert sources.describe(sources.ESPN, "   ") == "ESPN's projections"
