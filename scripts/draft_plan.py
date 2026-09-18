@@ -36,6 +36,7 @@ import datetime
 import json
 import sys
 from concurrent.futures import as_completed
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -43,9 +44,9 @@ from sqlalchemy import select
 
 from app.db.models import LeagueSeason
 from app.draft.bbm import ROLES
-from app.draft.live import RoomError, load_room, market_prices
+from app.draft.live import Room, RoomError, load_room, market_prices
 from app.draft.optimizer import roster_totals, score
-from app.draft.room import resolve
+from app.draft.room import Allocation, _fit, resolve
 from app.draft.session import _compute, process_executor
 from app.draft.valuation import value_players
 from app.projections.sources import describe, may_show
@@ -57,6 +58,23 @@ CONSIDER_FROM = 3
 
 #: The plan page; the computed plan is injected where `__PLAN_DATA__` sits.
 TEMPLATE = Path(__file__).resolve().parents[1] / "app" / "draft" / "static" / "draft_plan.html"
+
+
+def with_top_place(room: Room, top: int) -> Room:
+    """The room with its plan's first place forced to `top`, for a what-if.
+
+    The other places keep history's proportions, fitted to what is left of
+    the budget, so the plan still spends every dollar and no place falls
+    below the minimum bid.
+    """
+    if room.allocation is None:
+        return room
+    state = room.state
+    rest = list(room.allocation.places[1:])
+    floor = state.minimum_bid
+    top = max(floor, min(top, state.budget - floor * len(rest)))
+    places = (top, *_fit(rest, state.budget - top, floor))
+    return replace(room, allocation=Allocation(places, room.allocation.slack))
 
 
 def main() -> int:
@@ -79,6 +97,15 @@ def main() -> int:
     ap.add_argument(
         "--fan-team", default="CLE", help="NBA team to find a loyalty pick from (default CLE)"
     )
+    ap.add_argument(
+        "--top-place",
+        type=int,
+        help=(
+            "force the plan's most expensive place to this many dollars and spread the rest"
+            " of the budget over the other places in history's proportions; the cap is this"
+            " plus the plan's slack (a what-if: history's shape puts it at $55, a $60 cap)"
+        ),
+    )
     args = ap.parse_args()
     if (args.bbm is None) == (args.projection_set is None):
         raise SystemExit("pass one pool: --bbm <export.xls> or --projection-set <id>")
@@ -99,6 +126,14 @@ def main() -> int:
     except RoomError as exc:
         raise SystemExit(str(exc)) from exc
     state = room.state
+    if args.top_place is not None:
+        room = with_top_place(room, args.top_place)
+        print(
+            f"what-if: top place ${args.top_place}, cap ${room.allocation.cap(state)}"
+            if room.allocation
+            else "what-if: no allocation to change",
+            flush=True,
+        )
     market = market_prices(room, state)
 
     # League-standard category values, for each player's profile. Valued on
