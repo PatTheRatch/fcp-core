@@ -27,7 +27,31 @@ class Settings(BaseSettings):
     #: Set as well for Telegram's shape; unset posts ntfy's.
     fcp_digest_chat_id: str | None = None
 
-    @field_validator("fcp_digest_url", "fcp_digest_chat_id", mode="before")
+    #: The email channel (app/notify.py). Plain SMTP, so any transactional
+    #: provider's endpoint will do. Configured when the host, the sender and
+    #: at least one recipient are all set; anything less delivers no mail.
+    #: `fcp_email_to` is one address or several, comma separated.
+    fcp_email_to: str | None = None
+    fcp_email_from: str | None = None
+    fcp_smtp_host: str | None = None
+    #: 587 is submission with STARTTLS, which is what nearly every provider
+    #: wants; 465 is implicit TLS and `notify.send_email` switches on it.
+    fcp_smtp_port: int = 587
+    fcp_smtp_user: str | None = None
+    #: Lives only in `.env` on the VPS. Never logged, never printed, and
+    #: never put in an error message.
+    fcp_smtp_password: str | None = None
+
+    @field_validator(
+        "fcp_digest_url",
+        "fcp_digest_chat_id",
+        "fcp_email_to",
+        "fcp_email_from",
+        "fcp_smtp_host",
+        "fcp_smtp_user",
+        "fcp_smtp_password",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: str | None) -> str | None:
         """An empty value in `.env` or the environment means unset, not "".
@@ -38,6 +62,25 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("fcp_smtp_port", mode="before")
+    @classmethod
+    def _blank_port_is_the_default(cls, value: object) -> object:
+        """`FCP_SMTP_PORT=` with nothing after it is the default, not a crash."""
+        if isinstance(value, str) and not value.strip():
+            return 587
+        return value
+
+    @property
+    def email_recipients(self) -> list[str]:
+        """The addresses `fcp_email_to` names, blanks dropped."""
+        raw = self.fcp_email_to or ""
+        return [address.strip() for address in raw.split(",") if address.strip()]
+
+    @property
+    def email_configured(self) -> bool:
+        """Whether there is enough to send mail: a host, a sender, a recipient."""
+        return bool(self.fcp_smtp_host and self.fcp_email_from and self.email_recipients)
 
     @field_validator("database_url", "test_database_url")
     @classmethod

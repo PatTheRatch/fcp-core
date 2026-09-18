@@ -688,3 +688,57 @@ def test_the_later_passes_alert_carries_no_plan(session: Session) -> None:
     text, _ids = alert
     assert "THIS WEEK" not in text and "worth a look" not in text
     assert text.startswith("Kawhi Leonard: ")
+
+
+def test_the_script_attempts_every_configured_channel_and_marks_nothing_when_all_fail(
+    session: Session, test_database_url: str, tmp_path: Path
+) -> None:
+    """Both channels are tried, both are reported, and an event nobody
+    received stays unsent.
+
+    Both are pointed at a closed port on the loopback, so each refuses at
+    once and no packet leaves the machine. What is under test is that the
+    second channel is attempted after the first has failed, and that the
+    log line names them both.
+    """
+    _pass(session, _baseline(), FIRST)
+    out = _baseline()
+    out[0] = fake_pool_entry(100, "Kawhi Leonard", on_team_id=MINE, injury_status="OUT")
+    _pass(session, out, LATER)
+
+    completed = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "digest.py")],
+        env={
+            **os.environ,
+            "DATABASE_URL": test_database_url,
+            "TEST_DATABASE_URL": test_database_url,
+            "ESPN_LEAGUE_ID": str(LEAGUE_ID),
+            "ESPN_SWID": "{x}",
+            "ESPN_S2": "y",
+            "FCP_TRACKED_TEAM_ID": str(MINE),
+            "PYTHONPATH": str(REPO_ROOT),
+            "ESPN_SEASON": "",
+            "FCP_DIGEST_URL": "http://127.0.0.1:1/nothing-listens-here",
+            "FCP_SMTP_HOST": "127.0.0.1",
+            "FCP_SMTP_PORT": "1",
+            "FCP_EMAIL_FROM": "fcp@example.net",
+            "FCP_EMAIL_TO": "patrick@example.com",
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 1, "a failed channel is visible in the unit"
+    assert "Sent" in completed.stdout
+    assert "0 of 2 channel(s)" in completed.stdout
+    assert "url FAILED: " in completed.stdout, "the push was attempted"
+    assert "email FAILED: " in completed.stdout, "and so was the email, after it"
+    assert "marked 0 event(s) notified" in completed.stdout
+
+    # Nobody received it, so it is still to send.
+    session.expire_all()
+    [event] = session.scalars(select(PlayerStatusEvent).where(PlayerStatusEvent.kind == "went_out"))
+    assert event.notified_at is None
