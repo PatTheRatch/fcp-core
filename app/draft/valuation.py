@@ -54,6 +54,12 @@ class PlayerProjection:
     eligible: frozenset[str] = frozenset()
     #: Primary position, which is what roster position limits count.
     position: str | None = None
+    #: Where these numbers came from: "espn", "bbm" or "upload:<set id>". The
+    #: names are `app.projections.sources`, which is where the question of who
+    #: may see them is answered; the default is ESPN's because that is what the
+    #: database has always held. Not imported from there: that module reads
+    #: this one.
+    source: str = "espn"
 
     def get(self, abbreviation: str) -> float:
         value = self.totals.get(abbreviation)

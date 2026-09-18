@@ -1,0 +1,83 @@
+"""Which projections a number came from, and who is allowed to see it.
+
+Basketball Monster's projections are behind a paid membership and nobody has
+given permission to republish them, so BBM's rows -- and the board prices,
+ceilings and target rosters computed from them per player -- stay private to
+the member whose account fetched them (`docs/projection_sources.md`). ESPN's
+projections are already ours to show, and a manager's own upload is his.
+
+The rule cannot be a thing people remember, so the source rides with the
+numbers: every `PlayerProjection` carries one, a `Room` carries the source its
+pool was built from, and the two page builders ask `may_show` before they
+render. The ownership half of that question needs an account, which does not
+exist yet; until it does the builders pass `viewer_owns_source=True`, which is
+true of the only person running this. The seam is here so that when auth
+lands, one function learns the answer and nothing else moves.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from app.draft.valuation import PlayerProjection
+
+#: ESPN's own season projections, ingested for every season. Public-safe:
+#: they came with the league we are in.
+ESPN = "espn"
+
+#: Basketball Monster's export. Paid, and the only gated source.
+BBM = "bbm"
+
+#: A manager's uploaded set, tagged with the row id of the set it came from,
+#: e.g. "upload:7". Public-safe: they are his numbers, not ours to gate.
+UPLOAD_PREFIX = "upload:"
+
+
+def upload_source(set_id: int) -> str:
+    """The source tag for one stored projection set."""
+    return f"{UPLOAD_PREFIX}{set_id}"
+
+
+def upload_set_id(source: str) -> int | None:
+    """The set id behind an upload tag, or None for any other source."""
+    if not source.startswith(UPLOAD_PREFIX):
+        return None
+    tail = source[len(UPLOAD_PREFIX) :]
+    return int(tail) if tail.isdigit() else None
+
+
+def is_gated(source: str) -> bool:
+    """Whether per-player numbers from this source may leave their owner.
+
+    Only BBM's are. An uploaded set belongs to the manager who uploaded it and
+    an ESPN line belongs to the league, so neither is withheld from anyone who
+    can already see the room.
+    """
+    return source == BBM
+
+
+def may_show(source: str, viewer_owns_source: bool) -> bool:
+    """Whether this viewer may be shown numbers from this source.
+
+    The whole gate, in one place: an ungated source is always shown, a gated
+    one only to the account that supplied it. `viewer_owns_source` is the part
+    auth will answer; today every caller is the owner and passes True.
+    """
+    return not is_gated(source) or viewer_owns_source
+
+
+def sources_in(projections: Iterable[PlayerProjection]) -> set[str]:
+    """Every source represented in a pool, for a readout or a gate check."""
+    return {projection.source for projection in projections}
+
+
+def describe(source: str) -> str:
+    """The source in the words a page should use."""
+    if source == ESPN:
+        return "ESPN's projections"
+    if source == BBM:
+        return "Basketball Monster (paid; not to be shared)"
+    set_id = upload_set_id(source)
+    if set_id is not None:
+        return f"uploaded projection set {set_id}"
+    return source
