@@ -1044,3 +1044,88 @@ class PlayerStatusEvent(Base):
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     player: Mapped[Player] = relationship()
+
+
+class ProjectionSet(Base):
+    """One upload of a manager's own projections, as a set.
+
+    The answer to a second person using this software: BBM's numbers are paid
+    and stay with the member who fetched them (docs/projection_sources.md), so
+    a manager brings his own from wherever he pays for them and the room is
+    loaded from those instead. A set is immutable once stored; a fresh upload
+    is a fresh set, which is what makes "the board I drafted on" answerable
+    later.
+
+    `column_map` keeps the header-to-field mapping that was actually applied,
+    so a set can be read back knowing how it was interpreted, and a mapping
+    that went wrong is visible rather than guessed at.
+    """
+
+    __tablename__ = "projection_sets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: What the manager called it, e.g. "Hashtag preseason".
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: Whose set it is. A label for now; a user id once accounts exist, which
+    #: is also when it starts deciding who may read the rows.
+    owner: Mapped[str] = mapped_column(String, nullable=False)
+    #: Where the numbers came from, in the uploader's own words.
+    source_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    #: canonical field -> the header it was read from, plus how the two
+    #: percentages were rebuilt. Written by `app.projections.upload`.
+    column_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    #: How many rows were stored, so a set's size is one read.
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ProjectionRow(Base):
+    """One player's line in an uploaded set, as per-game rates.
+
+    Stored per game rather than as totals because that is the form a set can
+    be checked against another: totals are `rate * games`, which is what
+    `app.projections.upload.load_projection_set` hands the room. Makes *and*
+    attempts are both columns for each percentage, because a percentage alone
+    cannot be rebuilt into a roster's percentage (`app/scoring/lines.py`).
+
+    An unmatched name keeps `player_id` empty and is still stored: the room
+    puts him on the board under a synthetic id, the same way BBM's rookies go
+    on it (`app.draft.bbm.synthetic_id`).
+    """
+
+    __tablename__ = "projection_rows"
+    __table_args__ = (
+        UniqueConstraint("set_id", "name_key", name="uq_projection_rows_name"),
+        Index("ix_projection_rows_set_player", "set_id", "player_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    set_id: Mapped[int] = mapped_column(
+        ForeignKey("projection_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The name as uploaded, and the normalised key it was matched on.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    name_key: Mapped[str] = mapped_column(String, nullable=False)
+    #: Our player, when the name matched one strictly (`app.draft.bbm.match_player`).
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id", ondelete="SET NULL"))
+
+    games: Mapped[float] = mapped_column(Float, nullable=False)
+    points: Mapped[float] = mapped_column(Float, nullable=False)
+    rebounds: Mapped[float] = mapped_column(Float, nullable=False)
+    assists: Mapped[float] = mapped_column(Float, nullable=False)
+    steals: Mapped[float] = mapped_column(Float, nullable=False)
+    blocks: Mapped[float] = mapped_column(Float, nullable=False)
+    three_pointers_made: Mapped[float] = mapped_column(Float, nullable=False)
+    turnovers: Mapped[float] = mapped_column(Float, nullable=False)
+    field_goals_made: Mapped[float] = mapped_column(Float, nullable=False)
+    field_goals_attempted: Mapped[float] = mapped_column(Float, nullable=False)
+    free_throws_made: Mapped[float] = mapped_column(Float, nullable=False)
+    free_throws_attempted: Mapped[float] = mapped_column(Float, nullable=False)
+
+    position: Mapped[str | None] = mapped_column(String)
+    team: Mapped[str | None] = mapped_column(String)
+    #: The row exactly as uploaded, so a column we do not model yet is not lost.
+    raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
