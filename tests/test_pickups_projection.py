@@ -9,13 +9,15 @@ the availability discount on a season line and not on a week's.
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.listener.events import MINUTES_DROP, MINUTES_SPIKE
 from app.pickups.projection import (
     ESPN_AVAILABILITY,
     TILT_CEILING,
     TILT_FLOOR,
+    cache_stats,
+    clear_cache,
     minutes_tilt,
     per_game_line,
     rest_of_period_line,
@@ -153,3 +155,62 @@ def test_the_rate_is_the_knowable_line_not_the_projection_alone(session: Session
     # Five of fifteen-plus-five toward thirty, then fifteen percent of thirty on top.
     base = 20.0 + 10.0 * (5 / 20)
     assert line.get("PTS") == pytest.approx((1 - RECENT_WEIGHT) * base + RECENT_WEIGHT * 30.0)
+
+
+# The cache (the module docstring). What is pinned here is the key: the same
+# ask is answered once, a different day or a different horizon is a different
+# answer, and one session's answers are never served to another.
+
+
+def test_the_same_line_is_computed_once_and_served_again(session: Session) -> None:
+    who = player(session, "Asked Twice")
+    projected(session, who, 70, RATE)
+    clear_cache()
+
+    first = per_game_line(session, SEASON, who.id, today=6)
+    second = per_game_line(session, SEASON, who.id, today=6)
+
+    assert second is first, "the cached line itself, not an equal one"
+    assert cache_stats()["per_game_misses"] == 1
+    assert cache_stats()["per_game_hits"] == 1
+
+
+def test_a_new_day_and_a_new_horizon_are_new_keys(session: Session) -> None:
+    who = player(session, "Asked Across Days")
+    projected(session, who, 70, RATE)
+    clear_cache()
+
+    per_game_line(session, SEASON, who.id, today=6)
+    per_game_line(session, SEASON, who.id, today=7)
+    per_game_line(session, SEASON, who.id, today=6, tilt=False)
+    rest_of_season_line(session, SEASON, who.id, today=6, games=40)
+    rest_of_season_line(session, SEASON, who.id, today=6, games=41)
+
+    stats = cache_stats()
+    assert stats["per_game_misses"] == 3, "the day and the tilt switch both key it"
+    assert stats["rest_of_season_misses"] == 2, "so do the games it is spread over"
+    assert stats["rest_of_season_hits"] == 0
+
+
+def test_one_sessions_lines_are_never_served_to_another(
+    session: Session, scoring_factory: sessionmaker[Session]
+) -> None:
+    """The guard that lets the cache be module-level and outlive a report.
+
+    A second session is a second view of the database -- another request on
+    the API, another test with the ids restarted -- and it must do its own
+    reading. Without this the digest would serve yesterday's roster all day.
+    """
+    who = player(session, "Shared Id")
+    projected(session, who, 70, RATE)
+    session.commit()
+    clear_cache()
+
+    mine = per_game_line(session, SEASON, who.id, today=6)
+    with scoring_factory() as other:
+        theirs = per_game_line(other, SEASON, who.id, today=6)
+
+    assert theirs == mine, "same rows, same answer"
+    assert theirs is not mine, "but read again, not served from the other session"
+    assert cache_stats()["per_game_misses"] == 2
+    assert cache_stats()["per_game_hits"] == 0
