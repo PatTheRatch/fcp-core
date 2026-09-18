@@ -32,12 +32,45 @@ ESPN-projected players actually delivered (0.881, measured against 2026 in
 the `app.draft.bbm` docstring). A rest-of-period line is not: the days left
 in a week are a known schedule and a known status, not a season's worth of
 unforeseen injuries.
+
+THE CACHE
+
+`per_game_line` and `rest_of_season_line` are pure functions of the stored
+rows for a given `(player, season, today, games, tilt, as_of)`, and the
+recommender asks for the same player's line many times over: once per roster
+member when it values the roster, once per free agent when it ranks the
+wire, again inside `app.pickups.judge` for the season charge, and again for
+every re-run of the week a two-move plan costs. On the 2026 database that
+was ~33,000 single-row queries for one decision point. So both are memoized
+here, in a bounded LRU per function (`CACHE_SIZE` entries), and every caller
+gets it: `stream` and `bids` import `per_game_line`, `season` and `judge`
+import `rest_of_season_line`, and the cache being inside the function means
+none of those import sites has to know about it. `rest_of_period_line` rides
+on `per_game_line`'s.
+
+`today` is part of the key, so a new scoring period is a new entry and no
+answer is carried across days; a process restart clears the whole thing, and
+nothing is persisted. The key also carries a **token for the session**, so
+one session's answers are never served to another. That is not caution about
+tests alone: the API is a long-lived process with a session per request, and
+between two requests on the same day the listener may have written the box
+scores of the day before, which `today`'s line reads. A per-session key
+gives the cache exactly the lifetime the backtest's own context manager gave
+it -- the span of one report -- while keeping the store module-level and
+bounded. The token is an integer kept in `Session.info`, rather than the
+session itself, so a finished session is not held alive by a cache entry
+that has not been evicted yet.
+
+Call `clear_cache()` to empty it; nothing in the recommender needs to.
 """
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from datetime import date
+from itertools import count
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -62,6 +95,80 @@ ESPN_AVAILABILITY = 0.88
 
 #: The event kinds that carry a role change.
 _MINUTES_KINDS = (MINUTES_SPIKE, MINUTES_DROP)
+
+#: Lines each cache keeps before the least recently used one is dropped. One
+#: streaming report asks for about two hundred distinct keys (a roster, an
+#: opponent's roster and eighty free agents, per game and over the season)
+#: and a season report for a few hundred more, so a few thousand holds a
+#: whole day's work for one team without thrashing, and a `CategoryLine` is
+#: eleven floats.
+CACHE_SIZE = 4096
+
+#: Where a session's cache token is kept on the session itself.
+_TOKEN_KEY = "app.pickups.projection.token"
+_tokens = count(1)
+
+
+def _session_token(session: Session) -> int:
+    """A small integer standing for this session, for the cache key.
+
+    The session is not itself put in the key: an entry that has not been
+    evicted would then keep a finished session, and its whole identity map,
+    alive. The token is stored on the session, so it dies with it.
+    """
+    token = session.info.get(_TOKEN_KEY)
+    if token is None:
+        token = next(_tokens)
+        session.info[_TOKEN_KEY] = token
+    return int(token)
+
+
+class _LineCache:
+    """A bounded LRU of category lines. Not thread-safe, like a Session."""
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._entries: OrderedDict[Hashable, CategoryLine] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: Hashable, build: Callable[[], CategoryLine]) -> CategoryLine:
+        found = self._entries.get(key)
+        if found is not None:
+            self._entries.move_to_end(key)
+            self.hits += 1
+            return found
+        self.misses += 1
+        line = build()
+        self._entries[key] = line
+        if len(self._entries) > self._size:
+            self._entries.popitem(last=False)
+        return line
+
+    def clear(self) -> None:
+        self._entries.clear()
+        self.hits = 0
+        self.misses = 0
+
+
+_PER_GAME = _LineCache(CACHE_SIZE)
+_REST_OF_SEASON = _LineCache(CACHE_SIZE)
+
+
+def clear_cache() -> None:
+    """Empty both caches. For a long-lived process that wants a clean slate."""
+    _PER_GAME.clear()
+    _REST_OF_SEASON.clear()
+
+
+def cache_stats() -> dict[str, int]:
+    """Hits and misses per cache, for measuring a run."""
+    return {
+        "per_game_hits": _PER_GAME.hits,
+        "per_game_misses": _PER_GAME.misses,
+        "rest_of_season_hits": _REST_OF_SEASON.hits,
+        "rest_of_season_misses": _REST_OF_SEASON.misses,
+    }
 
 
 @dataclass(frozen=True)
@@ -131,7 +238,25 @@ def per_game_line(
     tilt: bool = True,
     as_of: date | None = None,
 ) -> CategoryLine:
-    """The knowable per-game line as of `today`, tilted when a role changed."""
+    """The knowable per-game line as of `today`, tilted when a role changed.
+
+    Memoized for the life of `session` (the module docstring).
+    """
+    key = (_session_token(session), player_id, season, today, tilt, as_of)
+    return _PER_GAME.get(
+        key, lambda: _per_game_line(session, season, player_id, today, tilt=tilt, as_of=as_of)
+    )
+
+
+def _per_game_line(
+    session: Session,
+    season: int,
+    player_id: int,
+    today: int,
+    *,
+    tilt: bool,
+    as_of: date | None,
+) -> CategoryLine:
     line = knowable(session, player_id, season, today, as_of=as_of).per_game
     if tilt:
         found = minutes_tilt(session, season, player_id, today)
@@ -173,9 +298,18 @@ def rest_of_season_line(
     `games` is his NBA team's remaining games less the days before his
     return date; `ESPN_AVAILABILITY` then takes the share a season's
     unforeseen absences cost.
+
+    Memoized for the life of `session` (the module docstring); `games` is
+    part of the key, since the same player is counted over several horizons.
     """
-    rate = per_game_line(session, season, player_id, today, tilt=tilt, as_of=as_of)
-    return _over(rate, games * ESPN_AVAILABILITY)
+    key = (_session_token(session), player_id, season, today, games, tilt, as_of)
+    return _REST_OF_SEASON.get(
+        key,
+        lambda: _over(
+            per_game_line(session, season, player_id, today, tilt=tilt, as_of=as_of),
+            games * ESPN_AVAILABILITY,
+        ),
+    )
 
 
 def _over(rate: CategoryLine, games: float) -> CategoryLine:

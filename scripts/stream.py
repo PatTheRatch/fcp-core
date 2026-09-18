@@ -72,9 +72,9 @@ def _names(session: Session, league_season: LeagueSeason) -> dict[int, str]:
     }
 
 
-#: Adds left in the period at or below which the recommendation says so.
-#: Not a second hurdle: the move is the move, but a manager with one add
-#: left should know he is spending his last one.
+#: Adds left in the period at or below which the plan says so. Not a second
+#: bar: the move is the move, but a manager with one add left should know he
+#: is spending his last one.
 SCARCE_ADDS = 2
 
 
@@ -191,16 +191,16 @@ def render(
     if report.adds_left == 0:
         add(
             f"no adds left this period ({_adds(report.adds_used, report.adds_budget)}), "
-            "so nothing is recommended today; the moves above are what the wire offers."
+            "so there is nothing to plan today; the moves above are what the wire offers."
         )
         add(f"projected record either way: {_record(outlook.record_without)}")
     elif not plan:
-        add(f"no move clears the hurdle ({report.hurdle:.2f} categories, or an empty day filled).")
+        add(f"nothing clears the bar ({report.hurdle:.2f} categories, or an empty day filled).")
         add(f"projected record either way: {_record(outlook.record_without)}")
     elif len(plan) == 1:
         chosen = plan[0]
         add(
-            f"recommended: {_describe(chosen, report.today)} "
+            f"worth a look: {_describe(chosen, report.today)} "
             f"({chosen.net:+.3f} categories net){_scarcity(report.adds_left)}"
         )
         for line in _judged(chosen.judgement):
@@ -208,7 +208,7 @@ def render(
     else:
         # Each move was found against the roster the one before it leaves, so
         # they are independent and the order is the order to make them in.
-        add(f"recommended, in this order{_scarcity(report.adds_left)}:")
+        add(f"worth a look, in this order{_scarcity(report.adds_left)}:")
         for rank, chosen in enumerate(plan, start=1):
             add(f"  {rank}. {_describe(chosen, report.today)} ({chosen.net:+.3f} categories net)")
             for line in _judged(chosen.judgement):

@@ -1,28 +1,40 @@
 """The morning digest: what changed, for the one team being tracked.
 
 Layer 3 of docs/pickups.md, phase 1b. Plain text, built from stored rows
-only: no ESPN request, no recommendation. Two sections and two lines:
+only: no ESPN request. Four sections:
 
 1. The tracked roster, from the listener's events (went out, returned, a
    moved return date, a minutes drop), then where that roster stands now.
 2. The wire, from events on unrostered players worth a look (a minutes
    spike, an ownership surge, dropped by a rival, waivers clearing).
-3. Churn, the team's adds in the last fortnight, because this league's own
+3. This week: the matchup as it stands and the day's streaming plan, from
+   `app.pickups.stream` (section 3 of the design note).
+4. Churn, the team's adds in the last fortnight, because this league's own
    history says the heavier movers returned less per move
    (docs/acquirable_value.md, r = -0.63 between add volume and return).
 
-Sections 3 and 4 of the design note, the streaming and rest-of-season
-advice, need the recommender and are not here. Nor is a value rank for a
-free agent: percent owned stands in until phase 2 can price him.
+Section 4 of the design note, the rest-of-season advice, is still to come,
+as is a value rank for a free agent: percent owned stands in meanwhile.
+
+THE PLAN NEVER BREAKS THE DIGEST
+
+Section 3 is the only one that runs the recommender, and the recommender
+needs a schedule, a roster, a wire and a matchup period. On a bye, before
+the season's first matchup, or with any of those missing, the section is one
+line saying so and the other three are untouched. `week_plan` therefore
+catches everything, including exceptions it cannot name: a digest that
+fails to go out because a pickup report could not be built would lose the
+roster news too, which is the part that is always worth reading.
 
 Every event the digest reports on, including the ones it summarises as "and
 N more", is marked `notified_at` by the caller once delivery has actually
 succeeded. Kinds the digest never shows are never queried and never marked.
+The plan marks nothing: it reports state, not news.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -40,6 +52,9 @@ from app.db.models import (
 from app.listener import events as kinds
 from app.listener.pool import UNROSTERED_STATUSES
 from app.listener.snapshots import latest_snapshots
+from app.pickups.judge import Judgement
+from app.pickups.state import RosteredPlayer, season_calendar
+from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
 from app.scoring.wire import WIRE_TYPES
 
 #: What a change to your own player can be: anything that moves whether he
@@ -68,15 +83,20 @@ WIRE_KINDS = (
 #: an alert that fires for everything is an alert nobody reads.
 URGENT_KINDS = (kinds.WENT_OUT,)
 
-#: Line budgets. The whole message stays under forty lines, which is what
-#: makes it readable on a phone; anything past a cap is counted, not listed,
-#: and the events route has the rest.
+#: Line budgets. Anything past a cap is counted, not listed, and the events
+#: route has the rest.
 ROSTER_EVENT_LIMIT = 8
 WIRE_EVENT_LIMIT = 10
 #: A roster with seven players carrying a status at once is exceptional, and
 #: the count line below still says how many there are.
 STATUS_LINE_LIMIT = 6
-MAX_LINES = 40
+#: Empty days named before the rest are counted. Three is already a bad week.
+EMPTY_DAY_LIMIT = 3
+#: The whole message's cap, which is what makes it readable on a phone. It
+#: was forty before the week section; that section is a header, at most
+#: `EMPTY_DAY_LIMIT` + 1 empty-day lines and at most `PLAN_MOVES` move lines,
+#: so a dozen more keeps every other section's budget exactly where it was.
+MAX_LINES = 52
 
 #: The window the churn line counts over, from docs/pickups.md section 4.4.
 CHURN_DAYS = 14
@@ -124,6 +144,9 @@ class Digest:
     wire: list[Line] = field(default_factory=list)
     wire_extra: int = 0
     adds_recently: int = 0
+    #: The week section, already rendered and indented (`week_plan`). One
+    #: line when there is no plan to make; never empty.
+    plan: list[str] = field(default_factory=list)
     #: Every event reported on, to mark notified once this has been sent.
     event_ids: list[int] = field(default_factory=list)
 
@@ -155,6 +178,10 @@ class Digest:
         out.append("")
         out.append("ON THE WIRE")
         out.extend(_render(self.wire, self.wire_extra, "nothing new"))
+
+        out.append("")
+        out.append("THIS WEEK")
+        out.extend(self.plan or ["  no plan today"])
 
         out.append("")
         out.append("CHURN")
@@ -290,6 +317,113 @@ def adds_in_window(
     )
 
 
+def _side(move: Move, today: int) -> str:
+    """One move in the streaming CLI's own words, on one line.
+
+    `scripts/stream.py` spreads this over four lines; a phone message cannot
+    afford them, so the same facts -- who comes in, for how many of his games
+    left, who goes out, and whether the man coming in is still on waivers --
+    go on one, phrased as the CLI phrases them.
+    """
+    add: RosteredPlayer = move.add
+    coming = f"{add.name} ({move.add_starts} of {add.games_remaining_this_period} games)"
+    if not add.seatable_on(today) and add.waiver_clears_at is not None:
+        coming += f", on waivers, clears {add.waiver_clears_at:%a}"
+    if move.kind == ADD:
+        return f"add {coming} into the open place"
+    if move.kind == IR_MOVE and move.to_ir is not None:
+        return f"add {coming}, {move.to_ir.name} to IR"
+    if move.drop is not None:
+        going = f"{move.drop.name} ({move.drop_starts} of {move.drop.games_remaining_this_period})"
+        return f"add {coming}, drop {going}"
+    return f"add {coming}"
+
+
+def _record(record: tuple[float, float]) -> str:
+    return f"{record[0]:.1f}-{record[1]:.1f}"
+
+
+def _worth(judgement: Judgement) -> str:
+    """Both horizons, the net, and the season record either way."""
+    return (
+        f"week {judgement.delta_week:+.2f} + season "
+        f"{judgement.delta_season_per_week:+.2f}/wk = net {judgement.delta_total:+.2f}; "
+        f"record {_record(judgement.record_without)} without, "
+        f"{_record(judgement.record_with)} with"
+    )
+
+
+def _week_lines(report: StreamReport, opponent: str | None) -> list[str]:
+    """The week section's body, from a report that was built."""
+    first, last = report.scoring_periods_remaining[0], report.scoring_periods_remaining[-1]
+    out = [f"  period {report.matchup_period}, days {first}-{last} left ({report.days_remaining})"]
+    if report.on_bye:
+        out.append("  on a bye this period, so there is no week to plan for")
+        return out
+
+    out[0] += f", v {opponent or report.opponent_team_id}"
+    out.append(
+        f"  {report.expected_wins:.2f} of 9 categories as things stand; "
+        f"adds this period: used {report.adds_used} of {report.adds_budget}"
+    )
+
+    for day in report.empty_days[:EMPTY_DAY_LIMIT]:
+        out.append(f"  day {day.scoring_period}: {', '.join(day.empty_slots)} going empty")
+    hidden = len(report.empty_days) - EMPTY_DAY_LIMIT
+    if hidden > 0:
+        out.append(f"  and {hidden} more day(s) with a slot going empty")
+
+    plan = report.recommended
+    if report.adds_left == 0:
+        out.append("  no adds left this period, so there is nothing to plan today")
+    elif not plan:
+        out.append(
+            f"  nothing clears the bar ({report.hurdle:.2f} categories, or an empty day "
+            f"filled); {report.pool_size} free agents were weighed"
+        )
+    elif len(plan) == 1:
+        out.append(f"  worth a look: {_side(plan[0], report.today)}")
+        out.append(f"    {_worth(plan[0].judgement)}")
+    else:
+        out.append("  worth a look, in this order:")
+        for rank, move in enumerate(plan, start=1):
+            out.append(f"  {rank}. {_side(move, report.today)}")
+            out.append(f"    {_worth(move.judgement)}")
+    return out
+
+
+def week_plan(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    on: date,
+) -> list[str]:
+    """The week section for `on`, as indented lines. Never raises.
+
+    The recommender is the one part of the digest that can fail on rows the
+    listener has not written yet, and the digest must go out anyway (the
+    module docstring). So every failure becomes one line: a missing schedule
+    and a `today` in no matchup period name themselves, and anything else is
+    named by its type rather than its message, since an exception's text can
+    carry a query and a connection string.
+    """
+    season = int(league_season.season)
+    try:
+        calendar = season_calendar(session, season)
+        if calendar is None:
+            return [f"  no NBA schedule stored for {season}, so no plan today"]
+        report = stream_recommendations(
+            session, league_season, espn_team_id, calendar.scoring_period_on(on)
+        )
+        opponent = _team_names(session, league_season).get(report.opponent_team_id or -1)
+    except ValueError as error:
+        return [f"  no plan today: {error}"]
+    except Exception as error:  # The digest goes out regardless.
+        return [f"  no plan today: the week could not be built ({type(error).__name__})"]
+    return _week_lines(report, opponent)
+
+
 def _standing(roster: Sequence[PlayerStatusSnapshot]) -> tuple[list[str], int]:
     """Who on the roster carries a status worth knowing, and how many do not."""
     lines: list[str] = []
@@ -323,6 +457,11 @@ def build_digest(
     puts him on the tracked team, whatever his status was when it fired, and
     on the wire when he is unrostered now. An event on a rival's roster is
     neither, and stays unreported.
+
+    The week section is built for the calendar day of `now`, and says so in
+    one line when it cannot be (`week_plan`). This is the morning message;
+    `build_alert`, which is what the later passes send, has no plan in it,
+    because an add is not what a player being ruled out at 22:30 calls for.
     """
     generated_at = now or datetime.now(UTC)
     snapshots = latest_snapshots(session, league_season.season)
@@ -368,6 +507,7 @@ def build_digest(
         healthy=healthy,
         wire=wire_events[:WIRE_EVENT_LIMIT],
         wire_extra=max(0, len(wire_events) - WIRE_EVENT_LIMIT),
+        plan=week_plan(session, league_season, espn_team_id, on=generated_at.date()),
         adds_recently=adds_in_window(
             session,
             league_season,

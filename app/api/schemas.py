@@ -619,7 +619,7 @@ class EmptyDayOut(BaseModel):
 
 
 class StreamReportOut(BaseModel):
-    """Who to stream this week, and whether anyone clears the hurdle."""
+    """Who to stream this week, and whether anyone is worth a look."""
 
     espn_team_id: int
     matchup_period: int
@@ -632,8 +632,8 @@ class StreamReportOut(BaseModel):
     moves: list[StreamMoveOut]
     recommended: list[StreamMoveOut] = Field(
         description=(
-            "The plan: independent moves to make today, in order, each over the hurdle "
-            "on its own. Empty when no move is worth making and when no adds are left"
+            "The plan: independent moves worth a look today, in order, each clearing the "
+            "bar on its own. Empty when nothing clears it and when no adds are left"
         )
     )
     empty_days: list[EmptyDayOut]
@@ -700,7 +700,7 @@ class SeasonReportOut(BaseModel):
     best_add: SeasonSwapOut | None
     best_swap: SeasonSwapOut | None
     best_two_swap: SeasonSwapOut | None
-    recommended: SeasonSwapOut | None = Field(description="Null when no move clears its hurdle")
+    recommended: SeasonSwapOut | None = Field(description="Null when nothing clears its bar")
     drops: list[DropCandidateOut]
     stashes: list[StashCandidateOut]
     churn: VolumeGuardOut

@@ -323,9 +323,18 @@ The streaming and rest-of-season advice needs the recommender and is not in it
 yet.
 
 `scheduled_status.sh` runs the digest after the morning pass and an alert
-after the later ones, so nothing extra needs installing. Delivery is one POST
-to `FCP_DIGEST_URL`: an ntfy topic URL works as it is, and setting
-`FCP_DIGEST_CHAT_ID` as well switches to the Telegram shape. With no URL the
+after the later ones, so nothing extra needs installing. It is delivered to
+every channel that is configured:
+
+- **A push**, one POST to `FCP_DIGEST_URL`: an ntfy topic URL works as it is,
+  and setting `FCP_DIGEST_CHAT_ID` as well switches to the Telegram shape.
+- **An email** over plain SMTP, when `FCP_SMTP_HOST`, `FCP_EMAIL_FROM` and
+  `FCP_EMAIL_TO` are all set (with `FCP_SMTP_PORT`, `FCP_SMTP_USER` and
+  `FCP_SMTP_PASSWORD` beside them). Any provider's SMTP endpoint will do.
+  The password belongs in `.env` on the VPS and nowhere else.
+
+One channel failing does not stop the other, and `python scripts/notify_test.py`
+sends a one-line test to whichever are set up. With no channel configured the
 message is printed and nothing is marked as sent, so the next run repeats it.
 That is deliberate: an event is only ever marked notified once a delivery has
-actually succeeded.
+actually succeeded somewhere.

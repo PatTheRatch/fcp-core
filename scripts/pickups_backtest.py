@@ -113,7 +113,6 @@ the write-up says so.
 from __future__ import annotations
 
 import argparse
-import importlib
 import statistics
 import sys
 import time
@@ -507,86 +506,13 @@ def patched_state() -> Any:
         _POSTED_CAP[0] = None
 
 
-@contextmanager
-def cached_projections() -> Any:
-    """Memoize the two projection entry points for the life of one day.
-
-    `per_game_line` and `rest_of_season_line` are pure functions of the stored
-    rows for a given `(player, today, games, tilt, as_of)`, but the recommender
-    asks for the same player's line many times over: once per roster member when
-    it values the roster, once per free agent when it ranks the wire, and again
-    inside every optimizer call. On this database that is ~33,000 single-row
-    queries for one decision point, and the season report took 31s a call.
-
-    The cache is keyed on the day as well as the player, and a fresh cache is
-    built for each decision point, so it cannot carry an answer across days and
-    cannot leak anything the day did not already know. Verified on this data:
-    identical move deltas to nine decimals, 11.6x faster (31.15s -> 2.68s,
-    33,286 queries -> 337).
-    """
-    import app.pickups.projection as projection
-
-    real_per_game = projection.per_game_line
-    real_rest = projection.rest_of_season_line
-    lines: dict[tuple[Any, ...], CategoryLine] = {}
-    over: dict[tuple[Any, ...], CategoryLine] = {}
-
-    def per_game_line(
-        session: Session,
-        season: int,
-        player_id: int,
-        today: int,
-        *,
-        tilt: bool = True,
-        as_of: date | None = None,
-    ) -> CategoryLine:
-        key = (player_id, season, today, tilt, as_of)
-        if key not in lines:
-            lines[key] = real_per_game(session, season, player_id, today, tilt=tilt, as_of=as_of)
-        return lines[key]
-
-    def rest_of_season_line(
-        session: Session,
-        season: int,
-        player_id: int,
-        today: int,
-        games: int,
-        *,
-        tilt: bool = True,
-        as_of: date | None = None,
-    ) -> CategoryLine:
-        key = (player_id, season, today, games, tilt, as_of)
-        if key not in over:
-            over[key] = real_rest(session, season, player_id, today, games, tilt=tilt, as_of=as_of)
-        return over[key]
-
-    # Every module that imported these names holds its own binding, so each has
-    # to be replaced or the cache is bypassed on some paths: `stream` and `bids`
-    # import `per_game_line`, `season` imports `rest_of_season_line`. The
-    # targets are named as strings because these modules re-export an imported
-    # name rather than defining it, which `mypy --strict` will not let us
-    # address as an attribute.
-    targets: tuple[tuple[str, str], ...] = (
-        ("app.pickups.projection", "per_game_line"),
-        ("app.pickups.projection", "rest_of_season_line"),
-        ("app.pickups.stream", "per_game_line"),
-        ("app.pickups.bids", "per_game_line"),
-        ("app.pickups.season", "rest_of_season_line"),
-    )
-    original: list[tuple[Any, str, Any]] = []
-    for module_name, attribute in targets:
-        module = importlib.import_module(module_name)
-        original.append((module, attribute, getattr(module, attribute)))
-    try:
-        for module, attribute, _value in original:
-            replacement = (
-                rest_of_season_line if attribute == "rest_of_season_line" else per_game_line
-            )
-            setattr(module, attribute, replacement)
-        yield
-    finally:
-        for module, attribute, value in original:
-            setattr(module, attribute, value)
+# The projection cache this replay used to install by hand now lives in
+# `app.pickups.projection` itself (its module docstring), keyed on the same
+# `(player, season, today, games, tilt, as_of)` and so still unable to carry
+# an answer across decision points. With the cache inside the two functions,
+# the five import sites this file used to patch -- `stream` and `bids` for
+# `per_game_line`, `season` and `judge` for `rest_of_season_line` -- get it
+# without being touched, and the numbers are the ones they always were.
 
 
 def load_season(session: Session) -> LeagueSeason:
@@ -1186,14 +1112,12 @@ def replay(
                 continue
             counters["decisions"] += 1
 
+            # The projection cache is `app.pickups.projection`'s own now, and
+            # keyed on the day, so the two reports below share every line
+            # they both need and neither sees another decision point's.
             _POSTED_CAP[0] = day
-            with cached_projections():
-                stream_report = _run_stream(
-                    session, league_season, team_id, day, pool, tilt, counters
-                )
-                season_report = _run_season(
-                    session, league_season, team_id, day, pool, tilt, counters
-                )
+            stream_report = _run_stream(session, league_season, team_id, day, pool, tilt, counters)
+            season_report = _run_season(session, league_season, team_id, day, pool, tilt, counters)
 
             # Score each distinct move once; every hurdle setting then only
             # decides which of those scored moves it would have named.
