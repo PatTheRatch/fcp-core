@@ -1521,9 +1521,12 @@ picking a winner silently.
    docs/draft_night.md open, and runs one ESPN mock with the page reader.
 7. 2026-10-05: check Basketball Monster's daily and weekly tools, then store
    them in season if they are live.
-8. Accounts, planned for November: the ESPN connection, the team, the
-   projection owner and the notification channel per account. Until then
-   everything assumes one manager (`viewer_owns_source` is a constant).
+8. Accounts, planned for November, designed in docs/product.md: magic-link
+   sign-in, one ESPN connection per league, invites and verified team
+   claims, league pages shared and each manager's plans private, per-league
+   jobs with stored reports, and the domain moved to fcp-core once sign-in
+   works. Until then everything assumes one manager (`viewer_owns_source`
+   is a constant).
 
 ### Prior seasons
 
