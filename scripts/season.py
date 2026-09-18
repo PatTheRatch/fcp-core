@@ -35,7 +35,7 @@ from app.pickups.state import season_calendar
 # The league id, the stored-season lookup and the schema guard are the
 # streaming CLI's, not copied: the two scripts must refuse the same database
 # for the same reason and name the same league.
-from scripts.stream import LEAGUE_ID, _league_season, _missing_tables
+from scripts.stream import LEAGUE_ID, _judged, _league_season, _missing_tables, _record
 
 
 def describe_bid(bid: Bid | None) -> str:
@@ -83,20 +83,29 @@ def render(
     )
     add(f"adds in the last {report.churn.days} days: {report.churn.adds}")
     add(f"  {report.churn.finding}")
+    outlook = report.outlook
+    add(
+        f"season so far: {_record(outlook.banked)} in categories; projected to end "
+        f"{_record(outlook.record_without)} with no move, "
+        f"{outlook.weeks_remaining:.1f} weeks left after this one"
+    )
 
     add("")
-    add("moves, by change in expected categories won per week:")
+    add("moves, by net categories over both horizons:")
     if not report.moves:
         add("  none legal")
     for move in report.moves:
         mark = "clears" if move.clears(report.hurdle_paid, report.hurdle_free) else "below"
         add(
-            f"  {move.kind:<9} {move.delta:+.3f}  {describe(move)}  "
-            f"({mark} its hurdle of {move.hurdle(report.hurdle_paid, report.hurdle_free):.2f})"
+            f"  {move.kind:<9} {move.net:+.3f}  {describe(move)}  "
+            f"({mark} its hurdle of {move.hurdle(report.hurdle_paid, report.hurdle_free):.2f} a "
+            f"week; this move is {move.judgement.per_week:+.3f} a week)"
         )
+        for line in _judged(move.judgement):
+            add(f"     {line}")
         moved = ", ".join(f"{s.abbreviation} {s.delta:+.2f}" for s in move.moved()[:4])
         if moved:
-            add(f"     {moved}")
+            add(f"     an ordinary week: {moved}")
         priced = describe_bid(move.bid)
         if priced:
             add(f"   {priced}")
@@ -127,8 +136,11 @@ def render(
             f"no move clears the hurdle ({report.hurdle_paid:.2f} categories a week for a "
             f"claim, {report.hurdle_free:.2f} for a free add)."
         )
+        add(f"projected record either way: {_record(outlook.record_without)}")
     else:
-        add(f"recommended: {describe(chosen)} ({chosen.delta:+.3f} a week)")
+        add(f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net)")
+        for line in _judged(chosen.judgement):
+            add(f"  {line}")
         priced = describe_bid(chosen.bid)
         if priced:
             add(priced.strip())

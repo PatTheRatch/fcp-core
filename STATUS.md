@@ -1783,8 +1783,52 @@ Decisions taken while building it, beyond the design note:
   "no move is worth making" and "nothing to decide from" are different
   answers and must not look alike.
 
-Not built here, for the next brief: the backtest (section 4.6), which is
-what sets the three hurdles, and the digest's sections 3 and 4.
+**One currency, both horizons**, added 2026-09-18 in `app/pickups/judge.py`.
+Every move either half of the recommender can make is valued in one place
+and in one unit, categories, across both horizons at once: the gain in this
+week's matchup, plus the change in what the roster place yields in an
+ordinary week from then on, times the matchup weeks after this one. The
+ranking and the hurdles read that net, so a week's gain bought by dropping a
+man worth half a category a week for fifteen weeks is refused rather than
+recommended.
+
+What dropping a player costs is **not** his rest-of-season value. The place
+never goes empty, so the charge is his value less what the wire gives the
+place back: `value(dropped) - max(value(added), wire_replacement)`, where
+`wire_replacement` is the best free agent still available after the one being
+added, floored at a typical pickup (`TYPICAL_PICKUP` 0.06 categories a week,
+the lowest recent season's median in `app/scoring/replacement.py`). Streaming
+a fringe player is therefore free, dropping a real one is charged his gap to
+the wire, and a genuine keeper counts for more than a streamer on the way in
+because the `max` takes the better of "he stays" and "the place is streamed
+again". `value()` is the league-standard lens `app/scoring/players.py` grades
+a season with: his weekly line inside `average_team_line`, through
+`app.scoring.value.marginal` -- comparable across players and blind to fit,
+which is right for a charge about what a man is worth to whoever picks him
+up. Every report now shows the projected end-of-season category record with
+the move and without it, beside the week's numbers; the difference between
+the two records is exactly the net.
+
+**The backtest (section 4.6) is built and scores in categories.** A move is
+replayed against the matchup that actually happened: the dropped man's
+started lines come out from the decision day on, the added man's real box
+scores go in on the days that are left (capped at the starts the place had),
+the nine totals are rebuilt and counted against the opponent's real period
+totals, and the categories the team actually won are subtracted. The season
+score is the same replay over the next 30 days. The baseline is the league's
+own one-for-one swaps replayed backwards and negated, so a real claim and a
+recommendation are one quantity. The composite-scored first cut of
+2026-09-18 read -3.2 composite a day at a 20% win rate, and that was a
+measurement of composite: the recommender spends points on purpose to win the
+categories that are close, and composite charges it for every point. Beside
+the sweep the run reports what the recommender claimed against what it
+delivered, which is the calibration a win rate cannot answer. What the replay
+cannot do is re-run the daily lineup matching for the swapped roster, so a
+pickup who fills an empty day is measured pessimistically.
+
+Not built here, for the next brief: the digest's sections 3 and 4, and a
+full-league backtest run on the VPS (the dev database is read-only here, so
+only a one-team smoke run has been made).
 
 ### Why the API is tailnet-only, and why owners have opaque ids
 

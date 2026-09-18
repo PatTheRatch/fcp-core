@@ -35,6 +35,7 @@ from app.config import get_settings
 from app.db.models import League, LeagueSeason, Team
 from app.db.session import make_engine, make_session_factory
 from app.inseason.startable import team_by_name, team_names
+from app.pickups.judge import Judgement
 from app.pickups.state import season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
 
@@ -86,6 +87,24 @@ def _describe(move: Move) -> str:
     return f"{add}, {rest}".rstrip(", ")
 
 
+def _record(record: tuple[float, float]) -> str:
+    return f"{record[0]:.1f}-{record[1]:.1f}"
+
+
+def _judged(judgement: Judgement) -> list[str]:
+    """The two horizons, the net, and the season record either way."""
+    season = judgement.delta_season_per_week
+    out = [
+        f"week {judgement.delta_week:+.3f}  +  season {season:+.3f}/wk x "
+        f"{judgement.weeks_remaining:.1f} wks  =  net {judgement.delta_total:+.3f} categories",
+        f"projected record {_record(judgement.record_without)} without, "
+        f"{_record(judgement.record_with)} with",
+    ]
+    if not judgement.measured:
+        out.append("(no league standard measurable yet, so nothing is charged for the season)")
+    return out
+
+
 def render(
     report: StreamReport,
     *,
@@ -113,6 +132,12 @@ def render(
         f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
         f"{report.pool_size} free agents evaluated"
     )
+    outlook = report.outlook
+    add(
+        f"season so far: {_record(outlook.banked)} in categories; projected to end "
+        f"{_record(outlook.record_without)} with no move, "
+        f"{outlook.weeks_remaining:.1f} weeks left after this one"
+    )
 
     add("")
     add("empty days (a slot nobody on the roster can fill, that a free agent could):")
@@ -128,22 +153,27 @@ def render(
     if report.on_bye:
         add("moves: none ranked on a bye")
     else:
-        add("moves, by change in expected categories won:")
+        add("moves, by net categories over both horizons:")
         if not report.moves:
             add("  none legal")
         for rank, move in enumerate(report.moves, start=1):
             moved = ", ".join(f"{s.abbreviation} {s.delta:+.2f}" for s in move.moved()[:4])
             flag = "  fills an empty day" if move.fills_empty_day else ""
-            add(f"  {rank}. {move.delta:+.3f}  {_describe(move)}{flag}")
+            add(f"  {rank}. {move.net:+.3f}  {_describe(move)}{flag}")
+            for line in _judged(move.judgement):
+                add(f"       {line}")
             if moved:
-                add(f"       {moved}")
+                add(f"       this week: {moved}")
 
     add("")
     chosen = report.recommended
     if chosen is None:
         add(f"no move clears the hurdle ({report.hurdle:.2f} categories, or an empty day filled).")
+        add(f"projected record either way: {_record(outlook.record_without)}")
     else:
-        add(f"recommended: {_describe(chosen)} ({chosen.delta:+.3f})")
+        add(f"recommended: {_describe(chosen)} ({chosen.net:+.3f} categories net)")
+        for line in _judged(chosen.judgement):
+            add(f"  {line}")
     return "\n".join(out)
 
 

@@ -563,6 +563,30 @@ class CategoryShiftOut(BaseModel):
     delta: float
 
 
+class JudgementOut(BaseModel):
+    """A move in one currency over both horizons (`app.pickups.judge`).
+
+    `delta_total` is what the ranking and the hurdle read: the change in this
+    week's matchup plus the change per week over the rest of the season, times
+    the weeks left. The projected records are the season's category record as
+    it would end, with the move and without it.
+    """
+
+    delta_week: float = Field(description="Change in expected categories won this matchup")
+    delta_season_per_week: float = Field(description="Change in an ordinary week from then on")
+    weeks_remaining: float = Field(description="Matchup weeks after this one")
+    delta_total: float = Field(description="The net, in categories")
+    per_week: float = Field(description="The net over the weeks it covers")
+    replacement: float = Field(description="What the wire gives a place back, categories a week")
+    banked_won: float = Field(description="Categories won in settled matchups so far")
+    banked_lost: float
+    record_without: list[float] = Field(description="Projected [won, lost] with no move")
+    record_with: list[float]
+    measured: bool = Field(
+        description="False when the season has posted nothing to measure a league standard against"
+    )
+
+
 class StreamMoveOut(BaseModel):
     """One move and what it does to the week (docs/pickups.md section 4.3)."""
 
@@ -571,6 +595,8 @@ class StreamMoveOut(BaseModel):
     drop: PickupPlayerOut | None
     to_ir: PickupPlayerOut | None
     delta: float = Field(description="Change in expected categories won this period")
+    net: float = Field(description="The judgement's net over both horizons; the ranking reads it")
+    judgement: JudgementOut
     add_starts: int
     drop_starts: int
     fills_empty_day: bool
@@ -599,6 +625,7 @@ class StreamReportOut(BaseModel):
     moves: list[StreamMoveOut]
     recommended: StreamMoveOut | None = Field(description="Null when no move is worth making")
     empty_days: list[EmptyDayOut]
+    outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle: float
     pool_size: int
     faab_remaining: int
@@ -613,8 +640,10 @@ class SeasonSwapOut(BaseModel):
     out: list[PickupPlayerOut]
     into: list[PickupPlayerOut]
     delta: float = Field(description="Change in expected categories won per week")
+    net: float = Field(description="The judgement's net over both horizons")
+    judgement: JudgementOut
     costs_faab: bool
-    hurdle: float
+    hurdle: float = Field(description="The bar, in categories a week")
     clears_hurdle: bool
     moved: list[CategoryShiftOut]
     bid: BidOut | None
@@ -660,6 +689,7 @@ class SeasonReportOut(BaseModel):
     drops: list[DropCandidateOut]
     stashes: list[StashCandidateOut]
     churn: VolumeGuardOut
+    outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle_paid: float
     hurdle_free: float
     pool_size: int

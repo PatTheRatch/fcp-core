@@ -26,6 +26,7 @@ from app.pickups.season import (
     season_recommendations,
     weeks_between,
 )
+from scripts.season import render
 from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
@@ -156,6 +157,50 @@ def test_the_optimizer_takes_the_better_of_a_two_player_pool(session: Session) -
     assert report.recommended is swap
     assert swap.moved(), "the categories that moved are named"
     assert swap.bid is not None, "a move that clears the hurdle is priced"
+
+
+def test_every_swap_carries_a_judgement_over_both_horizons(session: Session) -> None:
+    """Section 4.4's second pass: the week half is the streaming report's own
+    head-to-head, the season half is the optimizer's Δ per week, and the
+    hurdle is read on the net spread over the weeks it covers."""
+    ls, home, first = build_season(session)
+    full_roster(session, ls, home, first)
+    free_agent(session, ls, "Star", scaled(1.4), pro_team=20)
+    games(session, 20, EVERY_DAY)
+
+    report = season_recommendations(session, ls, HOME, today=1, distributions=WEEK)
+
+    swap = report.best_swap
+    assert swap is not None
+    judgement = swap.judgement
+    assert judgement.delta_season_per_week == pytest.approx(swap.delta), "the optimizer's own Δ"
+    assert judgement.weeks_remaining == pytest.approx(1.0), "period 2, and no more"
+    assert swap.net == pytest.approx(
+        judgement.delta_week + judgement.delta_season_per_week * judgement.weeks_remaining
+    )
+    assert judgement.per_week == pytest.approx(swap.net / (judgement.weeks_remaining + 1.0))
+    assert swap.clears(report.hurdle_paid, report.hurdle_free) is (
+        judgement.per_week >= SEASON_HURDLE_PAID
+    )
+    assert report.outlook.delta_total == 0.0
+    assert report.outlook.record_with == report.outlook.record_without
+
+
+def test_the_cli_prints_both_horizons_and_the_projected_record(session: Session) -> None:
+    """As on the streaming side: the layout is the CLI's, but a field it
+    cannot read is a crash on a real day."""
+    ls, home, first = build_season(session)
+    full_roster(session, ls, home, first)
+    free_agent(session, ls, "Star", scaled(1.4), pro_team=20)
+    games(session, 20, EVERY_DAY)
+    report = season_recommendations(session, ls, HOME, today=1, distributions=WEEK)
+
+    text = render(report, season=2026, team_name="Home", when=None)
+
+    assert "moves, by net categories over both horizons:" in text
+    assert "projected record" in text
+    assert "season so far:" in text
+    assert "a week; this move is" in text, "the hurdle is a week, the net is not"
 
 
 def test_the_drop_candidates_are_the_men_who_cost_least_to_lose(session: Session) -> None:

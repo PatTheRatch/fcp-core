@@ -13,18 +13,44 @@ replays the two recommender questions -- who to stream this week
 (`app.pickups.season`) -- from the state knowable on that day, then scores what
 it recommended against what actually happened.
 
-The score is the currency `docs/acquirable_value.md` uses: the added player's
-composite (PTS + REB + AST + STL + BLK + 3PM - TO) less the dropped player's,
-over the next 7 days for a stream and 30 for a season move, per day. A move is
-a win when that difference is positive. The baseline is the league's own 2026
-one-for-one swaps scored identically: mean 0.57 composite a day, win rate
-53.8% (docs/acquirable_value.md).
+THE SCORE IS CATEGORIES, NOT COMPOSITE
 
-The scoring package's own currency -- the categories a player's started line
-added to a team (`app.scoring.value.marginal`) -- cannot score these moves. It
-reads `daily_lineup_slots` to learn when a man started *for this team*, and a
-recommended player was never on the team, so no such row exists and his started
-value is identically zero. Composite is the honest comparison.
+The first cut of this script scored a move by the added player's composite
+(PTS + REB + AST + STL + BLK + 3PM - TO) less the dropped player's, and found
+-3.2 composite a day at a 20% win rate. That number is not a finding about the
+recommender; it is a finding about composite. The recommender trades points for
+the categories that are close on purpose -- that is what expected categories won
+means -- and composite punishes exactly that trade. A move that gives up eleven
+points a night to win blocks and steals is a good move and a terrible composite.
+
+So a move is scored in the currency it was chosen in: **categories won**,
+by replaying the matchup that actually happened with the swap in it.
+
+- **The week.** Take the team's real started lines for the matchup period
+  (`app.scoring.lines`), remove the dropped man's from the decision day on, and
+  put the added man's *real box scores* on the days that are left, capped at the
+  number of days the dropped man had started so a streamer cannot get more
+  starts than the place had. Rebuild the nine totals, count the categories that
+  beat the opponent's real period totals (`matchup_team_stats`), and subtract
+  the categories the team actually won. The answer is in whole categories: +1
+  means the swap flipped one.
+- **The season.** The same replay over the next 30 days, summed across every
+  matchup period that window touches.
+- **The baseline.** The league's own one-for-one swaps of 2026, scored by the
+  same code: a real move is replayed *backwards* (put the dropped man back, take
+  the added man out) and the sign flipped, so "what the move was worth" means
+  the same thing for a recommendation and for a real claim. One currency, one
+  comparison.
+- **Calibration.** Beside them, what the recommender CLAIMED (the judgement's
+  net over both horizons, `app.pickups.judge`) against what it DELIVERED. A tool
+  that says +0.5 and delivers +0.1 is not the same tool as one that says +0.5
+  and delivers +0.5, even at the same win rate.
+
+What the replay cannot do is re-run the lineup: the swapped roster is assumed to
+start the new man on the days the old one started, rather than re-solving the
+daily matching. That over-serves a pickup whose games fall on days the lineup
+was already full, and under-serves one who fills a day it left empty. Both are
+stated in the write-up.
 
 TWO DEFECTS THIS SCRIPT WORKS AROUND
 
@@ -73,6 +99,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import statistics
+import sys
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
@@ -81,26 +108,27 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+# Run by path, so `scripts/` is on sys.path and the repo root is not. Without
+# this, `app` resolves to whichever checkout the interpreter's venv installed,
+# which is not this one when a worktree borrows another checkout's .venv --
+# and a backtest that measures a different copy of the recommender measures
+# nothing. The streaming CLI does the same for the same reason.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import LeagueSeason
 from app.db.session import make_engine, make_session_factory
+from app.draft.valuation import INVERTED_CATEGORIES
 from app.pickups.season import SeasonReport, season_recommendations
 from app.pickups.state import _PRO_TEAM_IDS, season_calendar
 from app.pickups.stream import StreamReport, stream_recommendations
-from app.scoring.lines import COUNTS, CategoryLine
+from app.scoring.lines import COUNTS, EMPTY, CategoryLine
 
 SEASON = 2026
 REPORT = Path("docs/pickups_backtest.md")
-
-#: The composite `docs/acquirable_value.md` measures a move in, as a SQL
-#: expression over `player_game_stats`.
-COMPOSITE = (
-    "pgs.points + pgs.rebounds + pgs.assists + pgs.steals + pgs.blocks "
-    "+ pgs.three_pointers_made - pgs.turnovers"
-)
 
 #: The historical free-agent definition of `scripts/waiver_value.py`: a played
 #: line that day, and no `daily_lineup_slots` row that scoring period.
@@ -114,20 +142,22 @@ FREE_AGENT = """
     )
 """
 
-#: Windows a move is scored over, in days.
-STREAM_WINDOW = 7
+#: Days the season score replays over. The week score needs no window: it is
+#: the matchup period the decision day falls in, whatever its length.
 SEASON_WINDOW = 30
 
-#: The hurdles swept: streaming, then the (paid, free) pairs for the season
-#: report (docs/pickups.md section 4.6 and the task's grid).
+#: The hurdles swept. The streaming bar is read against the judgement's net
+#: over both horizons and the season bars against the same net per week
+#: (`app.pickups.judge.Judgement`), which is the unit each constant was
+#: written in (docs/pickups.md sections 4.3 and 4.4).
 STREAM_GRID: tuple[float, ...] = (0.05, 0.10, 0.15, 0.20)
 SEASON_GRID: tuple[tuple[float, float], ...] = ((0.02, 0.05), (0.05, 0.10), (0.10, 0.20))
 
 #: A setting is eligible only when it still says "no move" often enough to be a
-#: filter rather than a machine gun, and beats the baseline win rate.
+#: filter rather than a machine gun, and beats the league's own moves on the
+#: mean categories it delivers. The bar itself is measured in the run, since
+#: it is now in categories rather than the composite the note quoted.
 MIN_NO_MOVE = 0.20
-BASELINE_MEAN = 0.57
-BASELINE_WIN = 0.538
 
 #: Decision points: the first and the fourth day of each matchup period.
 DECISION_OFFSETS = (0, 3)
@@ -139,7 +169,7 @@ TOP_N = 5
 
 @dataclass
 class Scored:
-    """One recommended move, and what it actually returned."""
+    """One recommended move, and the categories it actually returned."""
 
     team_id: int
     day: int
@@ -150,21 +180,46 @@ class Scored:
     added_name: str
     dropped_id: int | None
     dropped_name: str | None
-    delta_expected: float
-    #: Composite per day over the window.
-    net_per_day: float
-    net_total: float
-    days: int
+    #: What the recommender claimed: the judgement's net over both horizons.
+    claimed: float
+    #: Weeks that net covers, so a per-week hurdle can be read off it.
+    weeks: float
+    #: Categories delivered in the matchup period the decision fell in.
+    week: float
+    #: Categories delivered over the next `SEASON_WINDOW` days.
+    season: float
     #: Whether the move seats a man on a day a slot was going empty, which is
     #: the second way `stream.Move.clears` can pass.
     fills_empty_day: bool = False
     #: Whether the move costs FAAB, which picks the season hurdle's paid or
     #: free bar.
     costs_faab: bool = False
+    #: Which of the two windows is this move's headline: a stream is judged on
+    #: its week, a rest-of-season move on its thirty days.
+    horizon: str = "week"
+
+    @property
+    def delivered(self) -> float:
+        return self.week if self.horizon == "week" else self.season
+
+    @property
+    def claimed_here(self) -> float:
+        """The claim, rescaled to the window the delivery is measured over.
+
+        The raw claim is the net over both horizons, which spans this matchup
+        and every week after it; the delivery is one matchup, or thirty days.
+        Comparing them as they stand would say the recommender overclaims by
+        a factor of the season's length, which is a fact about arithmetic and
+        not about the tool.
+        """
+        window = 1.0 if self.horizon == "week" else SEASON_WINDOW / 7.0
+        return (self.claimed / self.weeks) * window
 
     @property
     def won(self) -> bool:
-        return self.net_per_day > 0
+        """A move that did not cost categories. Ties count, since a swap that
+        changes nothing costs nothing but the transaction."""
+        return self.delivered >= 0
 
 
 @dataclass
@@ -202,11 +257,11 @@ class Setting:
 
     @staticmethod
     def _mean(rows: Sequence[Scored]) -> float:
-        return statistics.fmean([m.net_per_day for m in rows]) if rows else 0.0
+        return statistics.fmean([m.delivered for m in rows]) if rows else 0.0
 
     @staticmethod
     def _median(rows: Sequence[Scored]) -> float:
-        return statistics.median([m.net_per_day for m in rows]) if rows else 0.0
+        return statistics.median([m.delivered for m in rows]) if rows else 0.0
 
     @staticmethod
     def _win(rows: Sequence[Scored]) -> float:
@@ -225,6 +280,30 @@ class Setting:
         return self._win(self.cleared)
 
     @property
+    def claimed(self) -> float:
+        """Mean claim for the moves it named, over the delivered window."""
+        rows = self.cleared
+        return statistics.fmean([m.claimed_here for m in rows]) if rows else 0.0
+
+    @property
+    def unmoved(self) -> float:
+        """Share of named moves that changed no category at all.
+
+        The replay gives the added man only as many starts as the place had,
+        so a move that drops a man who was not starting delivers exactly
+        zero by construction -- including the empty-day moves, whose whole
+        point is a start the lineup did not have. This share says how much of
+        the measurement is that, rather than a swap that truly did nothing.
+        """
+        rows = self.cleared
+        return sum(1 for m in rows if m.delivered == 0.0) / len(rows) if rows else 0.0
+
+    @property
+    def calibration(self) -> float:
+        """Delivered over claimed: 1.0 is a tool that means what it says."""
+        return self.mean / self.claimed if self.claimed else 0.0
+
+    @property
     def top_mean(self) -> float:
         return self._mean(self.top)
 
@@ -236,9 +315,9 @@ class Setting:
     def no_move_rate(self) -> float:
         return self.no_move / self.decisions if self.decisions else 1.0
 
-    @property
-    def eligible(self) -> bool:
-        return self.no_move_rate > MIN_NO_MOVE and self.win_rate > BASELINE_WIN
+    def eligible(self, baseline: float) -> bool:
+        """Says no often enough to be a filter, and beats the league's own moves."""
+        return self.no_move_rate > MIN_NO_MOVE and self.mean > baseline
 
 
 #: The day the posted totals are capped at. One element because
@@ -521,6 +600,17 @@ def team_ids(session: Session, league_season: LeagueSeason) -> list[int]:
     ]
 
 
+def team_rows(session: Session, league_season: LeagueSeason) -> dict[int, int]:
+    """ESPN's team id -> this database's team row id, which the replay is keyed on."""
+    return {
+        int(espn): int(row_id)
+        for espn, row_id in session.execute(
+            text("SELECT espn_team_id, id FROM teams WHERE league_season_id = :ls"),
+            {"ls": league_season.id},
+        )
+    }
+
+
 def free_agent_pool(session: Session, league_season: LeagueSeason, day: int) -> list[int]:
     """The wire on day N, by the historical definition."""
     return [
@@ -540,36 +630,241 @@ def free_agent_pool(session: Session, league_season: LeagueSeason, day: int) -> 
     ]
 
 
-def composite(
-    session: Session, player_ids: Sequence[int], first: int, last: int
-) -> dict[int, float]:
-    """Composite each player produced over [first, last], played games only."""
-    wanted = [int(p) for p in player_ids if p]
-    if not wanted:
-        return {}
-    rows = session.execute(
-        text(
-            f"""
-            SELECT pgs.player_id, COALESCE(sum({COMPOSITE}), 0) AS comp
-            FROM player_game_stats pgs
-            WHERE pgs.season = :season
-              AND pgs.scoring_period BETWEEN :first AND :last
-              AND pgs.played AND pgs.minutes > 0
-              AND pgs.player_id = ANY(:ids)
-            GROUP BY pgs.player_id
-            """
-        ),
-        {"season": SEASON, "first": first, "last": last, "ids": wanted},
-    ).all()
-    return {int(player_id): float(value or 0.0) for player_id, value in rows}
+@dataclass(frozen=True)
+class PeriodWindow:
+    """One matchup period's window, in scoring periods."""
+
+    period: int
+    first: int
+    final: int
+    is_playoff: bool
+
+
+@dataclass
+class Replay:
+    """One season's played rows, read once, ready to replay any swap.
+
+    Everything the category score needs is a lookup after this: who started
+    for whom on which day and what they posted, every player's real box score
+    by day (a free agent has no lineup row, so his line has to come from the
+    box scores), each period's window, and each matchup's opponent and final
+    totals. Four queries for the season, against one per move otherwise.
+    """
+
+    #: (team row id, scoring period, player id) -> what he posted, started.
+    started: dict[tuple[int, int, int], CategoryLine]
+    #: (player id, scoring period) -> his real line, started or not.
+    games: dict[tuple[int, int], CategoryLine]
+    periods: tuple[PeriodWindow, ...]
+    #: (period, team row id) -> the other side's team row id.
+    opponent: dict[tuple[int, int], int]
+    #: (period, team row id) -> what ESPN recorded for the whole period.
+    totals: dict[tuple[int, int], CategoryLine]
+    #: The league's scored categories, in ESPN's order.
+    categories: tuple[str, ...]
+    #: (team row id, period) -> the whole period's started line, memoized: a
+    #: replay asks for the same one on every move of the same decision.
+    _team_periods: dict[tuple[int, int], CategoryLine] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, session: Session, league_season: LeagueSeason) -> Replay:
+        columns = ", ".join(f"pgs.{column}" for column in _POSTED_COLUMNS)
+        started: dict[tuple[int, int, int], CategoryLine] = {}
+        for row in session.execute(
+            text(
+                f"""
+                SELECT dls.team_id, dls.scoring_period, dls.player_id, {columns}
+                FROM daily_lineup_slots dls
+                JOIN teams t ON t.id = dls.team_id
+                JOIN player_game_stats pgs ON pgs.player_id = dls.player_id
+                  AND pgs.scoring_period = dls.scoring_period AND pgs.season = :season
+                WHERE t.league_season_id = :ls AND dls.started AND pgs.played
+                """
+            ),
+            {"ls": league_season.id, "season": SEASON},
+        ):
+            started[(int(row[0]), int(row[1]), int(row[2]))] = _line(row[3:])
+
+        games: dict[tuple[int, int], CategoryLine] = {}
+        for row in session.execute(
+            text(
+                f"""
+                SELECT pgs.player_id, pgs.scoring_period, {columns}
+                FROM player_game_stats pgs
+                WHERE pgs.season = :season AND pgs.played
+                """
+            ),
+            {"season": SEASON},
+        ):
+            games[(int(row[0]), int(row[1]))] = _line(row[2:])
+
+        periods = tuple(
+            PeriodWindow(int(period), int(first), int(final), bool(playoff))
+            for period, first, final, playoff in session.execute(
+                text(
+                    "SELECT period, first_scoring_period, final_scoring_period, is_playoff "
+                    "FROM matchup_periods WHERE league_season_id = :ls "
+                    "AND first_scoring_period IS NOT NULL ORDER BY period"
+                ),
+                {"ls": league_season.id},
+            )
+        )
+
+        opponent: dict[tuple[int, int], int] = {}
+        for period, home, away in session.execute(
+            text(
+                "SELECT mp.period, m.home_team_id, m.away_team_id FROM matchups m "
+                "JOIN matchup_periods mp ON mp.id = m.matchup_period_id "
+                "WHERE mp.league_season_id = :ls AND m.away_team_id IS NOT NULL"
+            ),
+            {"ls": league_season.id},
+        ):
+            opponent[(int(period), int(home))] = int(away)
+            opponent[(int(period), int(away))] = int(home)
+
+        totals: dict[tuple[int, int], dict[str, float]] = {}
+        for period, team, abbreviation, value in session.execute(
+            text(
+                "SELECT mp.period, mts.team_id, mts.abbreviation, mts.value "
+                "FROM matchup_team_stats mts "
+                "JOIN matchups m ON m.id = mts.matchup_id "
+                "JOIN matchup_periods mp ON mp.id = m.matchup_period_id "
+                "WHERE mp.league_season_id = :ls"
+            ),
+            {"ls": league_season.id},
+        ):
+            if str(abbreviation) in COUNTS:
+                bucket = totals.setdefault((int(period), int(team)), {})
+                bucket[str(abbreviation)] = float(value or 0.0)
+
+        categories = tuple(
+            str(abbreviation)
+            for abbreviation in session.scalars(
+                text(
+                    "SELECT abbreviation FROM league_season_categories "
+                    "WHERE league_season_id = :ls ORDER BY position"
+                ),
+                {"ls": league_season.id},
+            )
+        )
+        return cls(
+            started=started,
+            games=games,
+            periods=periods,
+            opponent=opponent,
+            totals={key: CategoryLine(counts) for key, counts in totals.items()},
+            categories=categories,
+        )
+
+    def period_for(self, day: int) -> PeriodWindow | None:
+        for window in self.periods:
+            if window.first <= day <= window.final:
+                return window
+        return None
+
+    def touched(self, first_day: int, last_day: int) -> list[PeriodWindow]:
+        """Every matchup period the window [first_day, last_day] overlaps."""
+        return [w for w in self.periods if w.first <= last_day and w.final >= first_day]
+
+    def team_line(self, team: int, window: PeriodWindow) -> CategoryLine:
+        """What the team's started men actually posted over the whole period."""
+        key = (team, window.period)
+        if key not in self._team_periods:
+            line = EMPTY
+            for (team_id, day, _player), found in self.started.items():
+                if team_id == team and window.first <= day <= window.final:
+                    line = line + found
+            self._team_periods[key] = line
+        return self._team_periods[key]
+
+    def started_days(self, team: int, player: int, first: int, last: int) -> list[int]:
+        return [day for day in range(first, last + 1) if (team, day, player) in self.started]
+
+    def categories_won(self, mine: CategoryLine, theirs: CategoryLine) -> float:
+        """Categories the first line beats the second in; a tie is half."""
+        my_totals = mine.totals(self.categories)
+        their_totals = theirs.totals(self.categories)
+        won = 0.0
+        for category in self.categories:
+            edge = my_totals[category] - their_totals[category]
+            if category in INVERTED_CATEGORIES:
+                edge = -edge
+            won += 1.0 if edge > 0 else 0.0 if edge < 0 else 0.5
+        return won
+
+    def delta(
+        self,
+        team: int,
+        window: PeriodWindow,
+        from_day: int,
+        to_day: int,
+        dropped: Sequence[int],
+        added: Sequence[int],
+    ) -> float:
+        """Categories the swap would have won the team, over one matchup period.
+
+        The men leaving lose their started lines from `from_day` on; the men
+        arriving take their real box scores over the same days, each capped at
+        the number of starts the man he replaces was getting, so a streamer
+        cannot be credited with more of the place than the place had. A move
+        that drops nobody (a free add, an injured-reserve move) is uncapped:
+        the place really was empty.
+        """
+        other = self.opponent.get((window.period, team))
+        if other is None:
+            return 0.0
+        theirs = self.totals.get((window.period, other))
+        if theirs is None:
+            return 0.0
+        actual = self.team_line(team, window)
+        first = max(from_day, window.first)
+        last = min(to_day, window.final)
+        if first > last:
+            return 0.0
+
+        line = actual
+        caps: list[int | None] = []
+        for player in dropped:
+            days = self.started_days(team, player, first, last)
+            caps.append(len(days))
+            for day in days:
+                line = line - self.started[(team, day, player)]
+        for index, player in enumerate(added):
+            cap = caps[index] if index < len(caps) else None
+            days = [day for day in range(first, last + 1) if (player, day) in self.games]
+            for day in days if cap is None else days[:cap]:
+                line = line + self.games[(player, day)]
+        return self.categories_won(line, theirs) - self.categories_won(actual, theirs)
+
+    def score(
+        self, team: int, day: int, dropped: Sequence[int], added: Sequence[int]
+    ) -> tuple[float, float]:
+        """(categories this matchup period, categories over the next 30 days)."""
+        window = self.period_for(day)
+        week = (
+            self.delta(team, window, day, window.final, dropped, added)
+            if window is not None
+            else 0.0
+        )
+        season = sum(
+            self.delta(team, found, day, day + SEASON_WINDOW, dropped, added)
+            for found in self.touched(day, day + SEASON_WINDOW)
+        )
+        return week, season
+
+
+def _line(values: Sequence[Any]) -> CategoryLine:
+    return CategoryLine(
+        {key: float(value or 0.0) for key, value in zip(COUNTS, values, strict=True)}, 1
+    )
 
 
 def value_move(
-    session: Session,
+    replay: Replay,
     *,
     team_id: int,
+    team_row_id: int,
     day: int,
-    window: int,
     kind: str,
     rank: int,
     cleared: bool,
@@ -577,15 +872,16 @@ def value_move(
     added_name: str,
     dropped_id: int | None,
     dropped_name: str | None,
-    delta_expected: float,
+    claimed: float,
+    weeks: float,
+    horizon: str,
     fills_empty_day: bool = False,
     costs_faab: bool = False,
 ) -> Scored:
-    """Value one move by composite over the next `window` days."""
-    produced = composite(
-        session, [added_id] + ([dropped_id] if dropped_id else []), day + 1, day + window
+    """Replay one move and record the categories it won."""
+    week, season = replay.score(
+        team_row_id, day, [dropped_id] if dropped_id else [], [added_id] if added_id else []
     )
-    total = produced.get(added_id, 0.0) - (produced.get(dropped_id, 0.0) if dropped_id else 0.0)
     return Scored(
         team_id=team_id,
         day=day,
@@ -596,41 +892,49 @@ def value_move(
         added_name=added_name,
         dropped_id=dropped_id,
         dropped_name=dropped_name,
-        delta_expected=delta_expected,
-        net_per_day=total / window,
-        net_total=total,
-        days=window,
+        claimed=claimed,
+        weeks=weeks,
+        week=week,
+        season=season,
         fills_empty_day=fills_empty_day,
         costs_faab=costs_faab,
+        horizon=horizon,
     )
 
 
-def league_baseline(session: Session, league_season: LeagueSeason) -> list[Scored]:
-    """The league's own 2026 one-for-one executed swaps, scored the same way."""
+def league_baseline(session: Session, league_season: LeagueSeason, replay: Replay) -> list[Scored]:
+    """The league's own 2026 one-for-one swaps, scored by the same replay.
+
+    A real move already happened, so it is replayed **backwards** -- the man
+    who left goes back in and the man who arrived comes out -- and the sign is
+    flipped. That makes "what the move was worth" one quantity for a claim
+    somebody made and a claim the recommender would have made.
+    """
     rows = session.execute(
         text(
             """
-            SELECT t.scoring_period, ti_add.player_id, ti_drop.player_id
+            SELECT t.scoring_period, t.team_id, ti_add.player_id, ti_drop.player_id
             FROM transactions t
             JOIN transaction_items ti_add
               ON ti_add.transaction_id = t.id AND ti_add.item_type = 'ADD'
             JOIN transaction_items ti_drop
               ON ti_drop.transaction_id = t.id AND ti_drop.item_type = 'DROP'
             WHERE t.league_season_id = :ls AND t.status = 'EXECUTED'
+              AND t.team_id IS NOT NULL
             """
         ),
         {"ls": league_season.id},
     ).all()
     out: list[Scored] = []
-    for day, added_id, dropped_id in rows:
+    for day, team_row_id, added_id, dropped_id in rows:
         if added_id is None or dropped_id is None:
             continue
+        # Backwards: the added man is the one whose started lines come out.
+        week, season = replay.score(int(team_row_id), int(day), [int(added_id)], [int(dropped_id)])
         out.append(
-            value_move(
-                session,
-                team_id=0,
+            Scored(
+                team_id=int(team_row_id),
                 day=int(day),
-                window=STREAM_WINDOW,
                 kind="league",
                 rank=0,
                 cleared=True,
@@ -638,7 +942,11 @@ def league_baseline(session: Session, league_season: LeagueSeason) -> list[Score
                 added_name="",
                 dropped_id=int(dropped_id),
                 dropped_name="",
-                delta_expected=0.0,
+                claimed=0.0,
+                weeks=1.0,
+                week=-week,
+                season=-season,
+                horizon="week",
             )
         )
     return out
@@ -650,6 +958,8 @@ def replay(
     teams: Sequence[int],
     points: Sequence[tuple[int, int]],
     *,
+    book: Replay,
+    team_rows: Mapping[int, int],
     stream_hurdles: Sequence[float],
     season_hurdles: Sequence[tuple[float, float]],
     tilt: bool,
@@ -698,8 +1008,9 @@ def replay(
 
             # Score each distinct move once; every hurdle setting then only
             # decides which of those scored moves it would have named.
-            stream_scored = _score_stream_moves(session, team_id, day, stream_report)
-            season_scored = _score_season_moves(session, team_id, day, season_report)
+            row = team_rows[team_id]
+            stream_scored = _score_stream_moves(book, team_id, row, day, stream_report)
+            season_scored = _score_season_moves(book, team_id, row, day, season_report)
 
             for (stream_hurdle, paid, free), (stream, season) in settings.items():
                 stream.decisions += 1
@@ -760,17 +1071,17 @@ def _run_season(
 
 
 def _score_stream_moves(
-    session: Session, team_id: int, day: int, report: StreamReport | None
+    book: Replay, team_id: int, team_row_id: int, day: int, report: StreamReport | None
 ) -> list[Scored]:
-    """Value the top moves of one stream report, hurdle aside."""
+    """Replay the top moves of one stream report, hurdle aside."""
     if report is None:
         return []
     return [
         value_move(
-            session,
+            book,
             team_id=team_id,
+            team_row_id=team_row_id,
             day=day,
-            window=STREAM_WINDOW,
             kind=move.kind,
             rank=rank,
             cleared=False,
@@ -778,7 +1089,9 @@ def _score_stream_moves(
             added_name=move.add.name,
             dropped_id=move.drop.player_id if move.drop else None,
             dropped_name=move.drop.name if move.drop else None,
-            delta_expected=move.delta,
+            claimed=move.net,
+            weeks=move.judgement.weeks_covered,
+            horizon="week",
             fills_empty_day=move.fills_empty_day,
         )
         for rank, move in enumerate(report.moves[:TOP_N])
@@ -786,9 +1099,9 @@ def _score_stream_moves(
 
 
 def _score_season_moves(
-    session: Session, team_id: int, day: int, report: SeasonReport | None
+    book: Replay, team_id: int, team_row_id: int, day: int, report: SeasonReport | None
 ) -> list[Scored]:
-    """Value the top moves of one season report, hurdle aside."""
+    """Replay the top moves of one season report, hurdle aside."""
     if report is None:
         return []
     out: list[Scored] = []
@@ -797,10 +1110,10 @@ def _score_season_moves(
         dropped = move.out[0] if move.out else None
         out.append(
             value_move(
-                session,
+                book,
                 team_id=team_id,
+                team_row_id=team_row_id,
                 day=day,
-                window=SEASON_WINDOW,
                 kind=move.kind,
                 rank=rank,
                 cleared=False,
@@ -808,11 +1121,12 @@ def _score_season_moves(
                 added_name=added.name if added else "",
                 dropped_id=dropped.player_id if dropped else None,
                 dropped_name=dropped.name if dropped else None,
-                # A two-swap drops two men and only the first is charged, so
+                # A two-swap drops two men and only the first is replayed, so
                 # its score is an upper bound. A single swap is one for one,
-                # which is the comparison the baseline makes for the same
-                # reason (docs/acquirable_value.md).
-                delta_expected=move.delta,
+                # which is the comparison the baseline makes.
+                claimed=move.net,
+                weeks=move.judgement.weeks_covered,
+                horizon="season",
                 costs_faab=move.costs_faab,
             )
         )
@@ -822,12 +1136,12 @@ def _score_season_moves(
 def _apply_stream(setting: Setting, scored: Sequence[Scored], hurdle: float) -> None:
     """Record a stream report's moves under one hurdle.
 
-    Mirrors `stream.Move.clears`: over the bar, or a filled empty day that
-    helps at all.
+    Mirrors `stream.Move.clears`: the net over both horizons is over the bar,
+    or a filled empty day that helps at all.
     """
 
     def clears(move: Scored) -> bool:
-        return move.delta_expected >= hurdle or (move.fills_empty_day and move.delta_expected > 0)
+        return move.claimed >= hurdle or (move.fills_empty_day and move.claimed > 0)
 
     for move in scored:
         setting.moves.append(replace(move, cleared=clears(move)))
@@ -838,11 +1152,16 @@ def _apply_stream(setting: Setting, scored: Sequence[Scored], hurdle: float) -> 
 
 
 def _apply_season(setting: Setting, scored: Sequence[Scored], paid: float, free: float) -> None:
-    """Record a season report's moves under one (paid, free) pair."""
+    """Record a season report's moves under one (paid, free) pair.
+
+    The season bars are categories a week, and `Swap.clears` reads them
+    against the net per week; the claimed figure carried here is the net over
+    both horizons, so the same division is applied.
+    """
     any_cleared = False
     for move in scored:
         bar = paid if move.costs_faab else free
-        cleared = move.delta_expected >= bar
+        cleared = move.claimed / max(1.0, move.weeks) >= bar
         any_cleared = any_cleared or cleared
         setting.moves.append(replace(move, cleared=cleared))
     if not scored or not any_cleared:
@@ -857,6 +1176,8 @@ def sweep(
     teams: Sequence[int],
     points: Sequence[tuple[int, int]],
     *,
+    book: Replay,
+    team_rows: Mapping[int, int],
     tilt: bool,
 ) -> dict[tuple[float, float, float], tuple[Setting, Setting]]:
     """The full grid, per the task: 4 streaming hurdles x 3 season pairs."""
@@ -866,6 +1187,8 @@ def sweep(
         league_season,
         teams,
         points,
+        book=book,
+        team_rows=team_rows,
         stream_hurdles=STREAM_GRID,
         season_hurdles=SEASON_GRID,
         tilt=tilt,
@@ -873,9 +1196,11 @@ def sweep(
     for (stream_hurdle, paid, free), (stream, season) in sorted(settings.items()):
         print(
             f"   stream {stream_hurdle:.2f} n={stream.n} mean={stream.mean:+.3f} "
-            f"win={stream.win_rate:.1%} nomove={stream.no_move_rate:.1%} | "
+            f"win={stream.win_rate:.1%} nomove={stream.no_move_rate:.1%} "
+            f"claimed={stream.claimed:+.3f} zero={stream.unmoved:.1%} | "
             f"season {paid:.2f}/{free:.2f} n={season.n} mean={season.mean:+.3f} "
-            f"win={season.win_rate:.1%} nomove={season.no_move_rate:.1%}"
+            f"win={season.win_rate:.1%} nomove={season.no_move_rate:.1%} "
+            f"claimed={season.claimed:+.3f} zero={season.unmoved:.1%}"
         )
     return settings
 
@@ -901,12 +1226,12 @@ def report(
     tilt_run: str,
 ) -> str:
     """The write-up, in the style of docs/punt_builds.md."""
-    base_mean = statistics.fmean([b.net_per_day for b in baseline])
-    base_median = statistics.median([b.net_per_day for b in baseline])
-    base_win = sum(1 for b in baseline if b.won) / len(baseline)
+    base_week = statistics.fmean([b.week for b in baseline]) if baseline else 0.0
+    base_season = statistics.fmean([b.season for b in baseline]) if baseline else 0.0
+    base_win = sum(1 for b in baseline if b.week >= 0) / len(baseline) if baseline else 0.0
     lines: list[str] = []
 
-    lines.append("# Pickup recommender: the 2026 backtest")
+    lines.append("# Pickup recommender: the 2026 backtest, scored in categories")
     lines.append("")
     lines.append(
         f"Full Court Press (ESPN 3853870), 2026. Generated by "
@@ -915,39 +1240,35 @@ def report(
     )
     lines.append("")
 
-    lines.append("## 1. Summary")
+    lines.append("## 1. What is measured, and in what")
     lines.append("")
     lines.append(
-        f"- **The recommender loses to the league's own moves at every hurdle "
-        f"setting.** The baseline is {base_mean:+.2f} composite a day on {len(baseline)} "
-        f"real swaps, winning {_pct(base_win)} of them; the best cell of the sweep is "
-        f"below zero on both counts."
+        "Every number in this document is **categories won**, not composite production. "
+        "A move is scored by replaying the matchup that actually happened with the swap "
+        "in it: the dropped man's started lines come out from the decision day on, the "
+        "added man's real box scores go in on the days that are left (capped at the "
+        "starts the place had), the nine totals are rebuilt and counted against the "
+        "opponent's real period totals, and the categories the team actually won are "
+        "subtracted. +1 means the swap flipped one category."
     )
+    lines.append("")
     lines.append(
-        "- **No hurdle setting qualifies, so no hurdle was changed.** The tuning rule "
-        "was: best mean among settings whose no-move rate is above 20% and whose win "
-        "rate beats the baseline. No setting meets the second condition, at any "
-        "hurdle, on either report."
-    )
-    lines.append(
-        "- **The hurdle is not what is wrong.** Raising the streaming bar from 0.05 "
-        "to 0.20 changes the decision at very few points, and moves the mean by a "
-        "fraction of a point; a bar cannot repair a ranking."
-    )
-    lines.append(
-        "- **Two defects in the stored data had to be worked around first**, and "
-        "without them the measurement is identically zero. Both are recorded in "
-        "section 4; neither is fixed by this branch."
+        "The composite-scored run of 2026-09-18 read -3.2 composite a day at a 20% win "
+        "rate. That was a measurement of composite, not of the recommender: the "
+        "objective spends points to win the categories that are close, and composite "
+        "charges it for every point it spends. The two scores disagree by construction, "
+        "and only one of them is the league's scoring."
     )
     lines.append("")
 
     lines.append("## 2. The headline")
     lines.append("")
     lines.append(
-        "Every number below is composite per day (PTS+REB+AST+STL+BLK+3PM-TO, played "
-        "games only), added player minus dropped player, over the next 7 days for a "
-        "stream and 30 for a season move. `n` is decisions where a move cleared the "
-        "hurdle. The no-move rate is over decisions with a usable pool."
+        "`n` is decisions where a move cleared the hurdle; the mean and the win rate "
+        "are over those moves. The streaming report is judged on the matchup period the "
+        "decision fell in, the rest-of-season report over the next "
+        f"{SEASON_WINDOW} days. `claimed` is the mean net the recommender said the move "
+        "was worth (`app.pickups.judge`), so `delivered/claimed` is its calibration."
     )
     lines.append("")
 
@@ -960,14 +1281,16 @@ def report(
                 [
                     f"{stream_hurdle:.2f}",
                     f"{paid:.2f}/{free:.2f}",
-                    str(stream.decisions - stream.no_move),
+                    str(stream.n),
                     f"{stream.mean:+.2f}",
                     _pct(stream.win_rate),
                     _pct(stream.no_move_rate),
-                    str(season.decisions - season.no_move),
+                    f"{stream.claimed:+.2f}",
+                    str(season.n),
                     f"{season.mean:+.2f}",
                     _pct(season.win_rate),
                     _pct(season.no_move_rate),
+                    f"{season.claimed:+.2f}",
                 ]
             )
         lines += _table(
@@ -975,71 +1298,129 @@ def report(
                 "stream hurdle",
                 "season (paid/free)",
                 "stream n",
-                "stream mean",
-                "stream win",
+                "stream cats",
+                "stream >= 0",
                 "stream no-move",
+                "stream claimed",
                 "season n",
-                "season mean",
-                "season win",
+                "season cats",
+                "season >= 0",
                 "season no-move",
+                "season claimed",
             ],
             rows,
         )
         lines.append("")
 
-    lines.append("### Against the baseline")
+    lines.append("### Against the league's own moves")
     lines.append("")
     lines += _table(
-        ["report", "n", "mean/day", "median/day", "win rate"],
+        ["population", "n", "categories, the week", "categories, 30 days", "share >= 0"],
         [
             [
-                "league's own 2026 swaps",
+                "league's own 2026 one-for-one swaps",
                 str(len(baseline)),
-                f"{base_mean:+.2f}",
-                f"{base_median:+.2f}",
+                f"{base_week:+.2f}",
+                f"{base_season:+.2f}",
                 _pct(base_win),
             ]
         ],
     )
     lines.append("")
     lines.append(
-        "The baseline here reproduces `docs/acquirable_value.md`'s swap-only figure "
-        f"closely ({base_mean:+.2f} against its 0.57, {_pct(base_win)} against its "
-        "53.8%; the small gap is the 7-day scoring window this script uses against "
-        "the 14-day window that note measures over, which the note itself says "
-        "roughly halves a total). It is the same population: executed transactions "
-        "with exactly one add and one drop."
+        "The baseline is scored by the same replay, run backwards: a real move is "
+        "undone (the dropped man goes back in, the added man comes out) and the sign "
+        "flipped, so a recommendation and a real claim are the same quantity. It is the "
+        "same population `docs/acquirable_value.md` measured -- executed transactions "
+        "with exactly one add and one drop -- in a different currency, so that note's "
+        "composite figure of +0.57 a day is not comparable to the number above and is "
+        "not quoted as if it were."
     )
     lines.append("")
 
-    lines.append("## 3. What the recommender actually recommends")
+    lines.append("## 3. Calibration: claimed against delivered")
     lines.append("")
     lines.append(
-        "The mean is not negative because the picks are merely unlucky. At team 1 on "
-        "day 56 of 2026, all five streaming moves the report named dropped the same "
-        "man -- a 35-minute-a-game starter -- for a 21-minute bench player. Across "
-        "the team-days examined while building this, the top streaming move dropped "
-        "a rostered star (Cade Cunningham, Alperen Sengun, Kawhi Leonard, Jaren "
-        "Jackson Jr., Jalen Duren among them) in almost every case, and the added "
-        "player out-produced the dropped one in only about one case in five."
+        "A recommender that says +0.5 and delivers +0.1 is a different tool from one "
+        "that says +0.5 and delivers +0.5, at the same win rate. The claim is "
+        "rescaled to the window the delivery is measured over -- one matchup for a "
+        f"stream, {SEASON_WINDOW} days for a season move -- because the raw net spans "
+        "every week left in the year. The ratio is delivered over claimed. `zero` is "
+        "the share of named moves that changed no category at all, which is mostly "
+        "the replay's cap rather than the move: a man who was not starting frees no "
+        "starts."
     )
     lines.append("")
+    for tilt_label, settings in results.items():
+        rows = []
+        for (stream_hurdle, paid, free), (stream, season) in sorted(settings.items()):
+            rows.append(
+                [
+                    tilt_label,
+                    f"{stream_hurdle:.2f}",
+                    f"{stream.claimed:+.2f}",
+                    f"{stream.mean:+.2f}",
+                    f"{stream.calibration:.2f}",
+                    _pct(stream.unmoved),
+                    f"{paid:.2f}/{free:.2f}",
+                    f"{season.claimed:+.2f}",
+                    f"{season.mean:+.2f}",
+                    f"{season.calibration:.2f}",
+                    _pct(season.unmoved),
+                ]
+            )
+        lines += _table(
+            [
+                "tilt",
+                "stream hurdle",
+                "stream claimed",
+                "stream delivered",
+                "ratio",
+                "stream zero",
+                "season hurdle",
+                "season claimed",
+                "season delivered",
+                "ratio",
+                "season zero",
+            ],
+            rows,
+        )
+        lines.append("")
+
+    lines.append("## 4. The tuning rule, and what it chose")
+    lines.append("")
     lines.append(
-        "That is a property of the objective, not of the bar. `stream` ranks by the "
-        "change in expected categories won, and a move that adds a body who can be "
-        "seated on a day the lineup was going empty clears the hurdle by design "
-        "(`Move.clears`: `delta >= hurdle or (fills_empty_day and delta > 0)`). A "
-        "dropped man who could not have been seated anyway costs the projection "
-        "nothing, so the objective scores a free lunch that is really a starter "
-        "traded for a bench player."
+        "A setting qualifies when it still says *no move* on more than "
+        f"{MIN_NO_MOVE:.0%} of decisions -- a tool that always names a pickup makes its "
+        "user worse, which is the league's own finding -- and when the categories it "
+        f"delivers beat the league's own moves ({base_week:+.2f} a week). Among the "
+        "qualifying settings, the best mean wins."
     )
+    lines.append("")
+    for tilt_label, settings in results.items():
+        qualifying = [
+            (key, stream, season)
+            for key, (stream, season) in sorted(settings.items())
+            if stream.eligible(base_week)
+        ]
+        if not qualifying:
+            lines.append(
+                f"- Tilt {tilt_label}: **no streaming setting qualifies**, so "
+                "`STREAM_HURDLE` is left where the design note put it."
+            )
+            continue
+        key, stream, _season = max(qualifying, key=lambda row: row[1].mean)
+        lines.append(
+            f"- Tilt {tilt_label}: best qualifying streaming hurdle **{key[0]:.2f}** "
+            f"({stream.mean:+.2f} categories over {stream.n} moves, "
+            f"{_pct(stream.no_move_rate)} no-move)."
+        )
     lines.append("")
 
-    lines.append("## 4. Two defects in the stored data, and what was done about them")
+    lines.append("## 5. Two defects in the stored data, and what was done about them")
     lines.append("")
     lines.append(
-        "Neither is fixed on this branch: both live in `app/`, and only the two "
-        "hurdle constants may change."
+        "Neither is fixed on this branch: both live in `app/`, and this run only measures."
     )
     lines.append("")
     lines.append("### The 2026 schedule does not exist")
@@ -1049,112 +1430,60 @@ def report(
         "`pro_team_games`, which holds no 2026 rows at all (only 2027 has any; the "
         "listener that writes it started in 2027). With no schedule every player has "
         "no game days, `stream._Week.project` seats nobody, and every move's change "
-        "in expected wins is exactly 0.0 -- so no hurdle can ever be cleared and the "
-        "sweep is identically zero. Measured: the full set of move deltas at team 1, "
-        "day 8 is `{0.0}`."
-    )
-    lines.append("")
-    lines.append(
-        "**Workaround.** The script reconstructs a schedule from the box scores: a "
-        "played line on scoring period N is a game on N, and the player's NBA team "
-        "comes from the weekly roster row, the same fallback `state.build_players` "
-        "uses. Verified: 30 NBA teams, 2,461 team-game slots against the 2,460 a full "
-        "82-game season needs, no player with two games on one day, no team with two "
-        "games on one day."
+        "in expected wins is exactly 0.0. **Workaround:** the script reconstructs a "
+        "schedule from the box scores -- a played line on scoring period N is a game "
+        "on N, and the player's NBA team comes from the weekly roster row, the same "
+        "fallback `state.build_players` uses. Verified: 30 NBA teams, 2,461 team-game "
+        "slots against the 2,460 a full 82-game season needs."
     )
     lines.append("")
     lines.append("### The matchup totals leak the rest of the week")
     lines.append("")
     lines.append(
         "`state.load_team_week` reads `my_totals` and `opp_totals` from "
-        "`matchup_team_stats`, which holds one row per (matchup, team, category) -- "
-        "the period's **final** total, with no day column to cap it by. At day N of a "
-        "period the recommender sees the whole period, including days that have not "
-        "happened. This is not a small amount: at day 56 of period 9 the stored total "
-        "already includes days 57-62."
+        "`matchup_team_stats`, the period's **final** total, with no day column to cap "
+        "it by. **Workaround:** the script rebuilds the totals from the started lines "
+        "on days up to N within that period only, which at the period's last day "
+        "reproduces `matchup_team_stats` exactly."
     )
     lines.append("")
     lines.append(
-        "**Workaround.** The script rebuilds the totals from the started lines on "
-        "days up to N within that period only. Verified against ESPN: at the "
-        "period's last day the rebuild reproduces `matchup_team_stats` exactly -- 84 "
-        "of 84 category comparisons across 3 periods x 12 team-matchups, 0 "
-        "mismatches. The partial sums rise monotonically to that same total."
-    )
-    lines.append("")
-    lines.append(
-        "**Verified no leak** in the two places the design note §4.6 asks about: "
+        "**Verified no leak** in the two places the design note asks about: "
         "`app/scoring/knowable.py` filters to `scoring_period < day` and the "
-        "projection's minutes tilt does the same, so the knowable line carries "
-        "nothing after N. `app/pickups/bids.bid_fit` reads the whole season's "
-        "transactions, which would be a look-ahead if a bid were taken as advice; the "
-        "replay never scores a bid, so nothing here is priced off future claims."
-    )
-    lines.append("")
-
-    lines.append("## 5. Reading")
-    lines.append("")
-    lines.append(
-        "**The hurdles are not the problem, and changing them would be a mistake.** A "
-        "hurdle can only reject moves the ranking already produced. The ranking is "
-        "what is wrong here: it prefers dropping a starter for a waiver body, because "
-        "a man who could not be seated costs the projection nothing when he goes. No "
-        "value of `STREAM_HURDLE` repairs that, and a sweep that raised the bar would "
-        "merely reject the same bad moves a little more often -- which is what the "
-        "table shows: from 0.05 to 0.20 the mean moves by a few tenths of a point and "
-        "the win rate by about a point, while the no-move rate barely doubles."
-    )
-    lines.append("")
-    lines.append(
-        "**The season report behaves differently and is closer to usable.** Its "
-        "hurdle does bind -- the no-move rate rises from about 9% at 0.02/0.05 to "
-        "about 33% at 0.10/0.20 -- because it goes through the draft optimizer, which "
-        "has a real roster-shape constraint rather than a seating model. Its win rate "
-        "still does not beat a coin flip, so it also fails the tuning rule, but its "
-        "structure is sound in a way the streaming side's is not."
-    )
-    lines.append("")
-    lines.append(
-        "**What this does not say.** It does not say pickups are worthless: the "
-        "league's own swaps returned +0.47 a day, which is the real, modest edge that "
-        "`docs/acquirable_value.md` measured. What it says is that this recommender, "
-        "on this data, does not capture it, and that the reason is upstream of the "
-        "hurdle."
+        "projection's minutes tilt does the same. `app/pickups/bids.bid_fit` reads the "
+        "whole season's transactions, which would be a look-ahead if a bid were taken "
+        "as advice; the replay never scores a bid."
     )
     lines.append("")
 
     lines.append("## 6. Caveats")
     lines.append("")
     lines.append(
-        "- **No injury history.** There are no 2026 status snapshots, so every player "
-        "is treated as available. The stash logic is under-served by construction and "
-        "nothing here measures it."
+        "- **The replay does not re-run the lineup.** The swapped roster is assumed to "
+        "start the new man on the days the old one started. That over-serves a pickup "
+        "whose games fall on days the lineup was already full, and under-serves one who "
+        "fills a day it left empty -- which is exactly the case `fills_empty_day` "
+        "exists for, so the empty-day rule is measured pessimistically here."
     )
     lines.append(
-        "- **Composite is not the league's scoring.** The recommender optimizes "
-        "categories won; this scores composite production. The two can diverge, and "
-        "the note says so itself. The scoring package's own currency cannot score a "
-        "recommended move at all: it needs a `daily_lineup_slots` row for that player "
-        "on that team, and a recommended player was never on the team."
+        "- **No injury history.** There are no 2026 status snapshots, so every player "
+        "is treated as available and the stash logic is under-served by construction."
     )
     lines.append(
         f"- **{points} decision points a team, {teams} teams.** Small. One season, one league."
     )
     lines.append(
-        "- **The reconstructed schedule is coarser than `pro_team_games` in one "
-        "place**: a man traded mid-season gets his final team's days all season, and "
-        "a player who sat a game still has his team's day. A team day is the unit "
-        "`pro_team_games` reports, so this is the right grain, but it is a rebuild."
+        "- **The two-swap is scored as an upper bound.** It drops two men and only the "
+        "first is replayed."
     )
     lines.append(
-        "- **The two-swap is scored as an upper bound.** It drops two men and only "
-        "the first is charged."
+        "- **A move's week score is zero on a bye**, and on a decision day in a period "
+        "with no recorded opponent, since there are no categories to win."
     )
     lines.append(
-        "- **Ten 2026 days carry no box scores at all** (including a six-day run at "
-        "116-121), and `daily_lineup_slots` stops at day 160 while stats run to 174. "
-        "Decision points falling on an empty day yield no pool and are counted "
-        "separately as `pool_empty`, not as no-move."
+        "- **Ten 2026 days carry no box scores at all**, and `daily_lineup_slots` stops "
+        "at day 160 while stats run to 174. Decision points falling on an empty day "
+        "yield no pool and are counted separately as `pool_empty`."
     )
     lines.append("")
 
@@ -1169,30 +1498,40 @@ def report(
 #: Choices this backtest makes that a reader could reasonably have made
 #: differently, recorded because the note's convention is to write them down.
 DECISIONS: tuple[str, ...] = (
-    "The schedule was reconstructed from box scores rather than declared a dead "
-    "end, because without it the measurement is identically zero and carries no "
-    "information at all. The reconstruction is verified in section 4.",
-    "The matchup totals were capped at day N rather than left leaking, because the "
-    "leak is large and would flatter or damage every move by an unknown amount. The "
-    "cap is verified exact against ESPN at the full period.",
+    "Moves are scored in categories, by replaying the real matchup with the swap in "
+    "it, and composite is gone. The recommender optimises categories; scoring it in "
+    "anything else measures the scorer.",
+    "The added man takes the days the dropped man started, capped at that count. The "
+    "alternative -- re-solving the daily lineup matching for the swapped roster -- is "
+    "the honest counterfactual and a much larger job; the cap is the conservative "
+    "reading, and it is stated as a caveat rather than hidden.",
+    "A move that drops nobody is uncapped: the place really was empty, so every game "
+    "the added man played in the window counts.",
+    "The baseline is the league's own swaps replayed backwards and negated, rather "
+    "than quoted from `docs/acquirable_value.md`. The note's +0.57 is composite a day "
+    "and is not the same quantity as a category.",
+    "A tie in a category counts half to each side, so a swap that changes nothing "
+    "scores exactly zero rather than flipping on a rounding.",
+    "A move is a win at >= 0 rather than > 0, since a swap that costs no categories "
+    "costs nothing but the transaction.",
+    "The season's played rows are loaded once into `Replay` -- four queries -- because "
+    "the category replay asks the same questions of the same rows hundreds of times a "
+    "team. `SeasonBook` was not reused: it aggregates started lines per matchup "
+    "period, and the replay needs them per day.",
+    "The schedule was reconstructed from box scores rather than declared a dead end, "
+    "because without it the measurement is identically zero.",
+    "The matchup totals were capped at day N rather than left leaking. The cap is "
+    "verified exact against ESPN at the full period.",
     "The hurdle grid is applied after one evaluation per decision point, not by "
-    "re-running per cell. The hurdle is a reporting filter in both modules, so this "
-    "is exact and not an approximation; it is what makes a 4 x 3 sweep affordable.",
+    "re-running per cell. The hurdle is a reporting filter in both modules, so this is "
+    "exact and not an approximation.",
     "The projection entry points are memoized per decision point. Verified identical "
-    "move deltas to nine decimals, 11.6x faster. The cache is keyed on the day and "
+    "move deltas to nine decimals, 11.6x faster; the cache is keyed on the day and "
     "rebuilt per decision point, so it cannot carry an answer across days.",
-    "Both workarounds are installed by attribute substitution on "
-    "`app.pickups.state` and on the two projection modules, and removed in a "
-    "`finally`. This branch may not change `app/`, and a monkeypatch inside the "
-    "script is the only way to measure anything without changing it.",
-    "Moves are scored on composite, per the task and `docs/acquirable_value.md`. The "
-    "scoring package's category currency cannot score a move that was never made.",
-    "The baseline was re-derived here rather than quoted, so it is scored by exactly "
-    "the same code path as the recommendations. It reproduces the note's number.",
+    "Both workarounds are installed by attribute substitution and removed in a "
+    "`finally`, so nothing on disk changes.",
     "The top 5 moves per decision are scored, not only the recommended one, so the "
     "top-ranked move's return is visible whether or not it cleared the bar.",
-    "No hurdle constant was changed. The tuning rule requires beating the baseline "
-    "win rate; no cell does, so there is nothing to write into the constants.",
 )
 
 
@@ -1216,6 +1555,12 @@ def main() -> None:
             teams = teams[: args.limit]
         print(f"season {SEASON}: {len(teams)} teams x {len(points)} decision points")
         print(f"  calendar: {season_calendar(session, SEASON)}")
+        book = Replay.load(session, league_season)
+        rows = team_rows(session, league_season)
+        print(
+            f"  replay: {len(book.started)} started lines, {len(book.games)} box scores, "
+            f"{len(book.periods)} periods, {len(book.categories)} categories"
+        )
 
         tilts = [True, False] if args.tilt == "both" else [args.tilt == "on"]
         results: dict[str, dict[tuple[float, float, float], tuple[Setting, Setting]]] = {}
@@ -1223,15 +1568,15 @@ def main() -> None:
         with patched_state():
             for tilt in tilts:
                 results["on" if tilt else "off"] = sweep(
-                    session, league_season, teams, points, tilt=tilt
+                    session, league_season, teams, points, book=book, team_rows=rows, tilt=tilt
                 )
 
-            base = league_baseline(session, league_season)
+            base = league_baseline(session, league_season, book)
             print(
                 f"baseline: n={len(base)} "
-                f"mean={statistics.fmean([b.net_per_day for b in base]):+.3f} "
-                f"median={statistics.median([b.net_per_day for b in base]):+.3f} "
-                f"win={sum(1 for b in base if b.won) / len(base):.1%}"
+                f"week={statistics.fmean([b.week for b in base]):+.3f} "
+                f"season={statistics.fmean([b.season for b in base]):+.3f} "
+                f"share>=0={sum(1 for b in base if b.week >= 0) / len(base):.1%}"
             )
 
     runtime = time.time() - started

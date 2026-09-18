@@ -145,6 +145,29 @@ def test_the_stream_route_reports_the_week_and_the_moves(client: TestClient) -> 
     assert isinstance(star["clears_hurdle"], bool)
 
 
+def test_the_stream_route_carries_the_judgement_and_the_projected_record(
+    client: TestClient,
+) -> None:
+    """Section 4.3's second pass: a caller sees both horizons and the record."""
+    body = client.get(url(), params={"today": 1}).json()
+
+    outlook = body["outlook"]
+    assert outlook["delta_total"] == 0.0, "no move, no change"
+    assert outlook["record_without"] == outlook["record_with"]
+    assert sum(outlook["record_without"]) == pytest.approx(9 * (outlook["weeks_remaining"]))
+    assert outlook["replacement"] > 0.0
+
+    star = next(move for move in body["moves"] if move["add"]["name"] == "Star")
+    judgement = star["judgement"]
+    assert star["net"] == pytest.approx(judgement["delta_total"])
+    assert judgement["delta_total"] == pytest.approx(
+        judgement["delta_week"] + judgement["delta_season_per_week"] * judgement["weeks_remaining"]
+    )
+    moved = judgement["record_with"][0] - judgement["record_without"][0]
+    assert moved == pytest.approx(round(judgement["delta_total"], 1), abs=0.11)
+    assert judgement["measured"] is True
+
+
 def test_the_season_route_reports_the_drops_and_the_churn(client: TestClient) -> None:
     body = client.get(url(which="season"), params={"today": 1}).json()
 
@@ -161,6 +184,13 @@ def test_the_season_route_reports_the_drops_and_the_churn(client: TestClient) ->
     assert body["churn"] == {"adds": 0, "days": 14, "finding": body["churn"]["finding"]}
     assert "r = -0.63" in body["churn"]["finding"]
     assert body["stashes"] == []
+    swap = body["best_swap"]
+    assert swap["net"] == pytest.approx(swap["judgement"]["delta_total"])
+    assert swap["judgement"]["per_week"] == pytest.approx(
+        swap["judgement"]["delta_total"] / (swap["judgement"]["weeks_remaining"] + 1.0)
+    )
+    assert swap["clears_hurdle"] is (swap["judgement"]["per_week"] >= swap["hurdle"])
+    assert body["outlook"]["record_without"] == body["outlook"]["record_with"]
 
 
 def test_the_day_defaults_to_the_calendars_own(client: TestClient) -> None:
