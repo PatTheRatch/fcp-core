@@ -28,6 +28,7 @@ from app.api.schemas import (
     CategoryShiftOut,
     DropCandidateOut,
     EmptyDayOut,
+    JudgementOut,
     PickupPlayerOut,
     SeasonReportOut,
     SeasonSwapOut,
@@ -38,6 +39,7 @@ from app.api.schemas import (
 )
 from app.db.models import LeagueSeason, Player, PlayerStatusSnapshot, ProTeamGame
 from app.pickups.bids import Bid
+from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
 from app.pickups.state import RosteredPlayer, SeasonCalendar, season_calendar
@@ -191,6 +193,22 @@ def _bid_out(bid: Bid | None) -> BidOut | None:
     )
 
 
+def _judgement_out(judgement: Judgement) -> JudgementOut:
+    return JudgementOut(
+        delta_week=judgement.delta_week,
+        delta_season_per_week=judgement.delta_season_per_week,
+        weeks_remaining=judgement.weeks_remaining,
+        delta_total=judgement.delta_total,
+        per_week=judgement.per_week,
+        replacement=judgement.replacement,
+        banked_won=judgement.banked[0],
+        banked_lost=judgement.banked[1],
+        record_without=list(judgement.record_without),
+        record_with=list(judgement.record_with),
+        measured=judgement.measured,
+    )
+
+
 def _move_out(move: Move, hurdle: float, espn: dict[int, int]) -> StreamMoveOut:
     return StreamMoveOut(
         kind=move.kind,
@@ -198,6 +216,8 @@ def _move_out(move: Move, hurdle: float, espn: dict[int, int]) -> StreamMoveOut:
         drop=_player_out(move.drop, espn) if move.drop is not None else None,
         to_ir=_player_out(move.to_ir, espn) if move.to_ir is not None else None,
         delta=move.delta,
+        net=move.net,
+        judgement=_judgement_out(move.judgement),
         add_starts=move.add_starts,
         drop_starts=move.drop_starts,
         fills_empty_day=move.fills_empty_day,
@@ -228,6 +248,7 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
             )
             for day in report.empty_days
         ],
+        outlook=_judgement_out(report.outlook),
         hurdle=report.hurdle,
         pool_size=report.pool_size,
         faab_remaining=report.faab_remaining,
@@ -242,6 +263,8 @@ def _swap_out(swap: Swap, report: SeasonReport, espn: dict[int, int]) -> SeasonS
         out=[_player_out(player, espn) for player in swap.out],
         into=[_player_out(player, espn) for player in swap.into],
         delta=swap.delta,
+        net=swap.net,
+        judgement=_judgement_out(swap.judgement),
         costs_faab=swap.costs_faab,
         hurdle=swap.hurdle(report.hurdle_paid, report.hurdle_free),
         clears_hurdle=swap.clears(report.hurdle_paid, report.hurdle_free),
@@ -290,6 +313,7 @@ def _season_out(report: SeasonReport, espn: dict[int, int]) -> SeasonReportOut:
         churn=VolumeGuardOut(
             adds=report.churn.adds, days=report.churn.days, finding=report.churn.finding
         ),
+        outlook=_judgement_out(report.outlook),
         hurdle_paid=report.hurdle_paid,
         hurdle_free=report.hurdle_free,
         pool_size=report.pool_size,
