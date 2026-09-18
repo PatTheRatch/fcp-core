@@ -1,231 +1,645 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>Draft Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-  :root {
-    --bg: #0f1216; --panel: #171b21; --panel-2: #1e232b; --line: #2a3039;
-    --text: #e8ebef; --muted: #8b94a1; --faint: #5d6672;
-    --accent: #f5a524; --good: #3fb872; --bad: #ef5a5a; --info: #5aa9ef; --me: #2a3a2f;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  button, input, select { font: inherit; color: inherit; }
-  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .muted { color: var(--muted); } .faint { color: var(--faint); }
+/* ---------------------------------------------------------------------------
+   The palette. Two sets of the same tokens and nothing else: dark is the
+   default (the skin that was approved), [data-theme="light"] is the same
+   bones in daylight. No colour is written outside this block.
+   --------------------------------------------------------------------------- */
+:root{
+  --ground:#121316; --surface:#191A1E; --sunk:#24262B; --rule:#33363D; --rule-strong:#E9E6DD;
+  --ink:#ECE9E1; --muted:#A4A7AE; --faint:#6C7078;
+  --accent:#F08A4B; --accent-ink:#121316; --accent-soft:#3B2A20;
+  --good:#63B58E; --warn:#D9A43B; --stop:#E56B60;
+  --good-soft:#1C3128; --warn-soft:#332714; --stop-soft:#37201E;
+  --shade-0:transparent; --shade-1:#23262B; --shade-2:#2F343B; --shade-3:#3E454E;
+  --shadow:0 8px 28px rgba(0,0,0,.45); --glow:0 0 22px rgba(240,138,75,.35);
+  --display:"Oswald","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Serif 4",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+:root[data-theme="light"]{
+  --ground:#E8E6DF; --surface:#F7F6F2; --sunk:#DEDBD2; --rule:#C6C2B6; --rule-strong:#16181A;
+  --ink:#16181A; --muted:#5E6167; --faint:#8E9096;
+  --accent:#C4551F; --accent-ink:#FFFFFF; --accent-soft:#F1DCCF;
+  --good:#2F6F4E; --warn:#9A6A00; --stop:#B23A30;
+  --good-soft:#DFEBE3; --warn-soft:#F3E7CA; --stop-soft:#F4DDDA;
+  --shade-0:transparent; --shade-1:#E2E0D8; --shade-2:#D2CFC4; --shade-3:#C0BCAE;
+  --shadow:0 8px 28px rgba(0,0,0,.20); --glow:none;
+}
+:root[data-theme="light"]{ color-scheme:light }
+:root[data-theme="dark"]{ color-scheme:dark }
 
-  header { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center;
-    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-  header h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
-  header .title { display: grid; gap: 1px; margin-right: 8px; }
-  header .title .faint { font-size: 11px; }
-  .stat { display: flex; flex-direction: column; }
-  .stat b { font-size: 16px; } .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-  .pill { padding: 3px 9px; border-radius: 999px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); }
-  .pill.ok { color: var(--good); border-color: #2f5a41; } .pill.warn { color: var(--accent); border-color: #6a4f1c; }
-  .pill.err { color: var(--bad); border-color: #6a2a2a; }
-  .spacer { flex: 1; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;padding-block:0 32px}
+button,input,select{font:inherit;color:inherit}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.lab{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--muted)}
+h1,h2,.disp{font-family:var(--display);font-weight:600;margin:0;line-height:1;text-wrap:balance}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+[hidden]{display:none !important}
 
-  main { display: grid; grid-template-columns: minmax(420px, 1.35fr) minmax(320px, 1fr) minmax(300px, .9fr);
-    gap: 12px; padding: 12px; align-items: start; }
-  @media (max-width: 1200px) { main { grid-template-columns: 1fr 1fr; } .col3 { grid-column: span 2; } }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } .col3 { grid-column: auto; } }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
-  section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600;
-    display: flex; align-items: center; gap: 8px; }
+/* masthead */
+.mast{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 28px;padding:18px 16px 10px;border-bottom:3px solid var(--rule-strong);background:var(--ground)}
+.mast h1{font-size:22px;letter-spacing:.02em}
+.mast .sub{font-size:14px;color:var(--muted);font-style:italic}
+.mast .counter{margin-left:auto;display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end}
+.mast .counter div{display:flex;flex-direction:column;align-items:flex-end}
+.mast .counter b{font-family:var(--mono);font-weight:600;font-size:18px}
+.mast .counter .word b{font-family:var(--display);font-size:15px;font-weight:500}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pill{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;padding:4px 9px;border:1px solid var(--rule);color:var(--muted);background:var(--surface)}
+.pill.ok{color:var(--good);border-color:var(--good)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
+.pill.err{color:var(--stop);border-color:var(--stop)}
+button.btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:11px;padding:5px 10px;background:var(--surface);border:1px solid var(--rule);cursor:pointer}
+button.btn:hover{border-color:var(--rule-strong)}
+button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.btn.tiny{padding:2px 7px;font-size:10px}
+.rehearse{display:flex;gap:8px;align-items:center}
+.rehearse .count{font-family:var(--mono);font-size:18px;color:var(--accent);min-width:30px;text-align:right}
 
-  /* the card */
-  .card-name { font-size: 26px; font-weight: 700; line-height: 1.15; }
-  .card-sub { color: var(--muted); margin: 2px 0 12px; }
-  .bignums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-  .big { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .big b { display: block; font-size: 24px; font-family: var(--mono); }
-  .big span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  .big.hero { border-color: #6a4f1c; } .big.hero b { color: var(--accent); }
-  .verdict { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; font-weight: 600; }
-  .verdict.good { background: #16301f; color: var(--good); } .verdict.bad { background: #331a1a; color: var(--bad); }
-  .verdict.wait { background: var(--panel-2); color: var(--muted); font-weight: 400; }
-  .tag { border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
-  .tag.breakout, .tag.sleeper { background: #16301f; color: var(--good); }
-  .tag.bust, .tag.tank { background: #331a1a; color: var(--bad); }
-  .tag.battle, .tag.other { background: #3a2c10; color: var(--accent); }
-  .note { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 2px 0 8px; padding-left: 10px; border-left: 2px solid var(--line); max-width: 70ch; }
-  .note b { color: var(--text); font-weight: 600; }
-  .verdict.warn-news { background: #3a2c10; color: var(--accent); font-weight: 500; }
-  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .fact { background: var(--panel-2); border-radius: 6px; padding: 3px 8px; font-size: 13px; }
-  .fact.flag { background: #3a2c10; color: var(--accent); }
-  .risk-E, .risk-H { color: var(--bad); } .risk-M { color: var(--accent); } .risk-L { color: var(--good); }
-  .empty { color: var(--faint); padding: 18px 0; text-align: center; }
-  .offer { font-size: 13px; color: var(--info); margin-bottom: 8px; }
+/* the block */
+.block{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px 32px;padding:18px 16px 16px;border-bottom:1px solid var(--rule);background:var(--surface)}
+.block .who .lab{color:var(--accent)}
+.block .name{font-size:clamp(36px,6vw,64px);letter-spacing:-.005em;margin-top:2px}
+.block .meta{font-size:15px;color:var(--muted);margin-top:6px}
+.block .meta b{color:var(--ink);font-weight:600}
+.money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-left:1px solid var(--rule)}
+.money div{padding:4px 0 4px 18px}
+.money b{display:block;font-family:var(--mono);font-size:clamp(30px,4vw,44px);font-weight:600;line-height:1.05;text-shadow:var(--glow)}
+.money .ours b{color:var(--accent)}
+.money small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border:1px solid var(--rule);border-width:1px 0 1px 1px}
+.strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
+.strip .lab{display:block;text-align:right;margin-bottom:2px}
+.strip b{font-family:var(--mono);font-weight:500;font-size:16px}
+.strip .s1{background:var(--shade-1)} .strip .s2{background:var(--shade-2)} .strip .s3{background:var(--shade-3)}
+.blocknote{grid-column:1/-1;font-size:14px;color:var(--muted);margin:0}
+.blocknote b{color:var(--ink);font-weight:600}
+.verdict{display:inline-block;padding:4px 10px;margin:0 8px 6px 0;font-size:13.5px;border:1px solid var(--rule)}
+.verdict.good{color:var(--good);border-color:var(--good);background:var(--good-soft)}
+.verdict.bad{color:var(--stop);border-color:var(--stop);background:var(--stop-soft)}
+.verdict.news{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.verdict.wait{color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+.fact{background:var(--sunk);padding:2px 8px;font-size:12.5px;color:var(--muted)}
+.fact b{color:var(--ink)}
+.fact.flag{background:var(--warn-soft);color:var(--warn)}
+.analyst{font-size:13.5px;color:var(--muted);border-left:2px solid var(--accent);padding-left:10px;margin:6px 0 0;max-width:80ch}
+.analyst b{color:var(--ink);font-weight:600}
+.risk-E,.risk-H{color:var(--stop)} .risk-M{color:var(--warn)} .risk-L{color:var(--good)}
 
-  /* entry */
-  .entry { display: grid; grid-template-columns: 1fr 190px 80px; gap: 6px; }
-  .entry input, .entry select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; }
-  .entry input:focus, .entry select:focus { outline: 2px solid var(--info); outline-offset: -1px; }
-  .buttons { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  button.primary { background: var(--accent); color: #1a1204; border-color: var(--accent); font-weight: 700; }
-  button.small { padding: 3px 8px; font-size: 12px; }
-  .suggest { position: relative; }
-  .suggest ul { position: absolute; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px; list-style: none; background: var(--panel-2);
-    border: 1px solid var(--line); border-radius: 6px; z-index: 10; max-height: 260px; overflow: auto; }
-  .suggest li { padding: 5px 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
-  .suggest li.active, .suggest li:hover { background: var(--line); }
+/* the desk: entering picks, and what is still for sale */
+.desk{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px 40px;padding:16px;border-bottom:1px solid var(--rule)}
+.desk h2,.sect h2,.lower h2{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-family:var(--display);font-weight:500;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--rule)}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) 190px 88px;gap:6px}
+.entry input,.entry select,.search input{background:var(--ground);border:1px solid var(--rule);padding:8px 10px;width:100%;color:var(--ink)}
+.entry input:focus,.entry select:focus,.search input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.buttons{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.suggest{position:relative}
+.suggest ul{position:absolute;left:0;right:0;top:100%;margin:2px 0 0;padding:0;list-style:none;background:var(--surface);border:1px solid var(--rule-strong);z-index:15;max-height:260px;overflow:auto;box-shadow:var(--shadow)}
+.suggest li{padding:5px 9px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+.suggest li.active,.suggest li:hover{background:var(--sunk)}
+.search input{margin-bottom:8px}
+.sale{width:100%;border-collapse:collapse;font-size:13.5px}
+.sale th{text-align:left;font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;color:var(--muted);font-weight:500;padding:4px 6px;border-bottom:1px solid var(--rule)}
+.sale td{padding:4px 6px;border-bottom:1px dotted var(--rule)}
+.sale td.r,.sale th.r{text-align:right;font-family:var(--mono)}
+.sale tr.click{cursor:pointer} .sale tr.click:hover td{background:var(--sunk)}
+.sale .under{color:var(--good);font-weight:600}
+.scrollbox{max-height:340px;overflow:auto}
+.ours-so-far{font-size:13px;color:var(--muted);margin-top:10px}
+.ours-so-far b{color:var(--ink);font-weight:600}
 
-  /* tables */
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
-    padding: 4px 6px; border-bottom: 1px solid var(--line); }
-  td { padding: 5px 6px; border-bottom: 1px solid #20252d; }
-  td.r, th.r { text-align: right; }
-  tr.me td { background: var(--me); }
-  tr.click { cursor: pointer; } tr.click:hover td { background: var(--panel-2); }
-  .scroll { max-height: 420px; overflow: auto; }
-  .roster { font-size: 12px; color: var(--muted); padding: 2px 6px 8px; }
+/* the board */
+.boardwrap{overflow-x:auto;border-bottom:3px solid var(--rule-strong)}
+table.board{border-collapse:collapse;table-layout:fixed;min-width:1300px;width:100%}
+.board th,.board td{border-right:1px solid var(--rule);padding:0;vertical-align:top}
+.board th:last-child,.board td:last-child{border-right:0}
+.board thead th{border-bottom:2px solid var(--rule-strong);text-align:left;padding:10px 8px 6px;font-weight:600;font-family:var(--display);font-size:13px;letter-spacing:.02em;line-height:1.15;height:64px}
+.board thead th .n{display:block;font-family:var(--mono);font-weight:500;font-size:11px;color:var(--faint);letter-spacing:0;margin-bottom:3px}
+.board tbody td{height:30px;border-bottom:1px solid var(--rule)}
+.cell{display:flex;justify-content:space-between;align-items:baseline;gap:6px;padding:6px 8px;font-size:13px;line-height:1.15;white-space:nowrap;overflow:hidden}
+.cell .p{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cell .d{font-family:var(--mono);font-size:13px;color:var(--muted);flex:none}
+.cell.big .d{color:var(--ink);font-weight:600}
+.cell.star .d{color:var(--accent);font-weight:600}
+.cell.plan{color:var(--faint);font-style:italic;font-family:var(--body)}
+.cell.plan .d{color:var(--faint);font-style:normal}
+.board tfoot td{border-top:2px solid var(--rule-strong);padding:8px 8px 10px;background:var(--surface)}
+.foot{display:grid;grid-template-columns:auto 1fr;gap:1px 6px;font-size:11px}
+.foot span{color:var(--muted)} .foot b{font-family:var(--mono);font-weight:600;text-align:right;font-size:14px}
+/* Our column and the team on the clock. The class is on the cell itself, so
+   these are `th.me` and `th.nom`: the mock wrote `.me th`, which matches a th
+   inside our column rather than the column's own heading, and never fired. */
+.board th.me{background:var(--accent);color:var(--accent-ink)} .board th.me .n{color:var(--accent-ink);opacity:.8}
+.board td.me{background:var(--accent-soft)} .board td.me.foot-cell{background:var(--accent-soft)}
+.board th.nom{box-shadow:inset 0 -4px 0 var(--accent)}
+.board td[data-pid]{cursor:help}
 
-  .places { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
-  .place { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; }
-  .place.top { border-color: var(--accent); color: var(--accent); }
+/* under the board */
+.sect{padding:22px 16px 0}
+.lower{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px 40px;padding:18px 16px 0}
+.agate{columns:2;column-gap:28px;font-size:13.5px;line-height:1.5}
+.agate div{break-inside:avoid;display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--rule);padding:2px 0}
+.agate .d{font-family:var(--mono);color:var(--muted)}
+.agate .own{color:var(--good);font-weight:600}
+.tape{font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--muted);white-space:normal}
+.tape b{color:var(--ink);font-weight:500}
+.tape i{font-style:normal;color:var(--faint)}
+.lede{font-size:14.5px;line-height:1.5;margin:0 0 10px}
+.lede b{font-weight:600}
+.ladder{display:flex;gap:3px;align-items:flex-end;height:54px;margin:22px 0 4px}
+.ladder span{flex:1;background:var(--sunk);position:relative;min-width:0}
+.ladder span.top{background:var(--accent)}
+.ladder span i{position:absolute;top:-15px;left:0;right:0;text-align:center;font-family:var(--mono);font-style:normal;font-size:10px;color:var(--muted)}
+.note{padding:22px 16px 0;font-size:13px;color:var(--faint);line-height:1.5;max-width:75ch}
+.note b{color:var(--muted);font-weight:600}
 
-  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #331a1a; color: #ffd6d6;
-    border: 1px solid #6a2a2a; border-radius: 8px; padding: 10px 14px; z-index: 50; max-width: 90vw; }
-  .toast.ok { background: #16301f; color: #c9f2d7; border-color: #2f5a41; }
-  .toast button { margin-left: 6px; }
-  .rehearse { display: flex; gap: 6px; align-items: center; }
-  .count { font-size: 20px; color: var(--accent); min-width: 34px; text-align: right; }
-  kbd { font-family: var(--mono); font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+/* what is left on the board */
+.scar{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border:1px solid var(--rule);border-width:1px 0 1px 1px}
+.scar div{border-right:1px solid var(--rule);padding:8px 8px 10px;min-width:0}
+.scar .lab{display:block;margin-bottom:4px}
+.scar b{font-family:var(--mono);font-weight:600;font-size:17px;display:block;line-height:1.1}
+.scar small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.scar .bar{height:6px;background:var(--sunk);margin-top:7px;position:relative}
+.scar .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--muted)}
+.scar .tight b{color:var(--stop)} .scar .tight .bar i{background:var(--stop)}
+.scar .loose b{color:var(--good)} .scar .loose .bar i{background:var(--good)}
+.scar .him{font-family:var(--display);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);display:block;margin-top:5px;min-height:13px}
+
+/* where every team stands */
+.standwrap{overflow-x:auto}
+table.stand{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+.stand th,.stand td{padding:5px 8px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap}
+.stand th{font-family:var(--display);font-weight:500;letter-spacing:.06em;text-transform:uppercase;font-size:11px;color:var(--muted);border-bottom:2px solid var(--rule-strong)}
+.stand td:first-child,.stand th:first-child{text-align:left;font-family:var(--body);text-transform:none;letter-spacing:0;font-size:13px}
+.stand td{font-family:var(--mono)}
+.stand tr.me td{background:var(--accent-soft)} .stand tr.me td:first-child{font-weight:600}
+.stand td.s1{background:var(--shade-1)} .stand td.s2{background:var(--shade-2)} .stand td.s3{background:var(--shade-3);font-weight:600}
+.stand td.rk{font-size:10px;color:var(--faint)}
+
+/* hover card */
+.card{position:fixed;z-index:20;width:320px;max-width:calc(100vw - 24px);background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);box-shadow:var(--shadow);padding:10px 12px 12px;pointer-events:none;opacity:0;transition:opacity .08s}
+.card.on{opacity:1}
+.card .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05}
+.card .cm{font-size:12.5px;color:var(--muted);margin:3px 0 8px}
+.card .cm b{color:var(--ink);font-weight:600}
+.card .strip{grid-column:auto;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border-width:1px 0 1px 1px}
+.card .strip div{padding:3px 4px} .card .strip .lab{font-size:8.5px;letter-spacing:.04em} .card .strip b{font-size:11.5px}
+
+/* the toast */
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--stop);color:var(--ink);padding:10px 14px;z-index:40;max-width:90vw;box-shadow:var(--shadow);font-size:14px}
+.toast.ok{border-color:var(--good)}
+.toast button{margin-left:6px}
+kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px solid var(--rule);padding:0 4px}
+.empty{color:var(--faint);padding:14px 0}
+@media (max-width:860px){
+  .scar{grid-template-columns:repeat(3,minmax(0,1fr))} .scar div{border-bottom:1px solid var(--rule)}
+  .block{grid-template-columns:1fr}
+  .money{border-left:0;border-top:1px solid var(--rule);padding-top:8px} .money div{padding-left:0;padding-right:12px}
+  .lower,.desk{grid-template-columns:1fr} .agate{columns:1}
+  .entry{grid-template-columns:1fr}
+  .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px} .strip div{border-bottom:1px solid var(--rule)}
+}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 </head>
 <body>
-<header>
-  <div class="title">
-    <h1>Draft Room</h1>
-    <span class="faint" id="h-source"></span>
+
+<header class="mast">
+  <h1>Full Court Press &middot; Draft Room</h1>
+  <span class="sub" id="sub"></span>
+  <div class="counter">
+    <div><b class="num" id="c-pick">–</b><span class="lab">pick</span></div>
+    <div><b class="num" id="c-infl">–</b><span class="lab">inflation</span></div>
+    <div><b class="num" id="c-field">–</b><span class="lab">field max bid</span></div>
+    <div class="word"><b id="c-nom">–</b><span class="lab">nominates next</span></div>
   </div>
-  <div class="stat"><b class="num" id="h-pick">–</b><span>pick</span></div>
-  <div class="stat"><b class="num" id="h-mine">–</b><span>our money</span></div>
-  <div class="stat"><b class="num" id="h-field">–</b><span>field max bid</span></div>
-  <div class="stat"><b class="num" id="h-infl">–</b><span>inflation</span></div>
-  <div class="stat"><b id="h-nom">–</b><span>to nominate</span></div>
-  <div class="spacer"></div>
-  <div class="rehearse" id="rehearse" hidden>
-    <span class="pill warn" id="r-label">rehearsal</span>
-    <b class="num count" id="r-count"></b>
-    <button class="small" id="r-pause">Pause</button>
-    <button class="small" id="r-skip" title="sell him now to his real buyer">Sell now</button>
+  <div class="tools">
+    <div class="rehearse" id="rehearse" hidden>
+      <span class="pill warn" id="r-label">rehearsal</span>
+      <b class="count" id="r-count"></b>
+      <button class="btn tiny" id="r-pause">Pause</button>
+      <button class="btn tiny" id="r-skip" title="sell him now to his real buyer">Sell now</button>
+    </div>
+    <span class="pill" id="feed">connecting…</span>
+    <button class="btn tiny" id="theme" aria-pressed="false" title="light or dark">Lights up</button>
   </div>
-  <span class="pill" id="feed">connecting…</span>
 </header>
 
-<main>
-  <div>
-    <section>
-      <h2>On the block <span class="faint" id="block-hint"></span></h2>
-      <div id="card"><div class="empty">Nobody on the block. Click a player on the board, or type one below.</div></div>
-    </section>
+<section class="block">
+  <div class="who">
+    <span class="lab">On the block</span>
+    <h2 class="name" id="b-name">Nobody</h2>
+    <p class="meta" id="b-meta">Click a player on the board, search below, or type one in.</p>
+  </div>
+  <div class="money">
+    <div class="ours"><span class="lab">Our price</span><b class="num" id="b-ours">–</b><small id="b-ours-note">the board's valuation</small></div>
+    <div><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
+    <div><span class="lab" id="b-went-lab">Went for</span><b class="num" id="b-went">–</b><small id="b-went-note"></small></div>
+  </div>
+  <div class="strip" id="b-strip"></div>
+  <div class="blocknote" id="b-note"></div>
+</section>
 
-    <section>
-      <h2>Enter a pick <span class="faint"><kbd>/</kbd> to type · <kbd>Enter</kbd> to save</span></h2>
-      <form class="entry" id="e-form" autocomplete="off">
-        <div class="suggest">
-          <input id="e-player" placeholder="Player" autocomplete="off">
-          <ul id="e-suggest" hidden></ul>
-        </div>
-        <select id="e-team"></select>
-        <input id="e-price" class="num" type="number" min="1" placeholder="$">
-        <button type="submit" hidden></button>
-      </form>
-      <div class="buttons">
-        <button class="primary" id="e-save">Save pick</button>
-        <button id="e-block">Put on block</button>
-        <button id="e-undo">Undo last pick</button>
+<section class="desk">
+  <div>
+    <h2>Enter a pick <span class="faint" style="text-transform:none;letter-spacing:0"><kbd>/</kbd> to type &middot; <kbd>Enter</kbd> to save</span></h2>
+    <form class="entry" id="e-form" autocomplete="off">
+      <div class="suggest">
+        <input id="e-player" placeholder="Player" autocomplete="off" aria-label="Player">
+        <ul id="e-suggest" hidden></ul>
       </div>
-    </section>
-
-    <section>
-      <h2>Our roster <span class="faint" id="mine-sum"></span></h2>
-      <div id="mine"></div>
-      <div id="plan-places"></div>
-      <div class="buttons"><button class="small" id="plan-btn">Best finish from here</button></div>
-      <div id="plan"></div>
-    </section>
+      <select id="e-team" aria-label="Team"></select>
+      <input id="e-price" class="num" type="number" min="1" placeholder="$" aria-label="Price">
+      <button type="submit" hidden></button>
+    </form>
+    <div class="buttons">
+      <button class="btn primary" id="e-save" type="button">Save pick</button>
+      <button class="btn" id="e-block" type="button">Put on block</button>
+      <button class="btn" id="e-undo" type="button">Undo last pick</button>
+      <button class="btn" id="e-clear" type="button">Clear the block</button>
+    </div>
+    <p class="ours-so-far" id="ours"></p>
   </div>
+  <div class="search">
+    <h2>Still for sale <span class="faint" style="text-transform:none;letter-spacing:0">most expensive first</span></h2>
+    <input id="b-search" placeholder="Search players" autocomplete="off" aria-label="Search players">
+    <div class="scrollbox"><table class="sale"><thead><tr>
+      <th>Player</th><th class="r">Going</th><th class="r">Ceiling</th><th class="r" id="s-bbm-head" hidden>BBM</th><th></th>
+    </tr></thead><tbody id="sale"></tbody></table></div>
+  </div>
+</section>
 
+<div class="boardwrap"><table class="board" id="board"></table></div>
+
+<section class="sect">
+  <h2>What is left on the board</h2>
+  <p class="lede" id="scar-lede"></p>
+  <div class="scar" id="scar"></div>
+</section>
+
+<section class="sect">
+  <h2>Where every team stands, as drafted so far</h2>
+  <p class="lede" id="stand-lede"></p>
+  <div class="standwrap"><table class="stand" id="stand"></table></div>
+</section>
+
+<section class="lower">
   <div>
-    <section>
-      <h2>Board <span class="faint">most expensive still available</span></h2>
-      <input id="b-search" placeholder="Search players" autocomplete="off"
-        style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;margin-bottom:8px">
-      <div class="scroll"><table><thead><tr>
-        <th>Player</th><th class="r">Going</th><th class="r">Ceiling</th><th class="r">BBM</th><th></th>
-      </tr></thead><tbody id="board"></tbody></table></div>
-    </section>
+    <h2>The roster we can still finish</h2>
+    <p class="lede" id="p-lede"></p>
+    <div class="agate" id="p-list"></div>
   </div>
+  <div>
+    <h2>What each open place should cost</h2>
+    <div class="ladder" id="ladder"></div>
+    <p class="lede" id="ladder-note" style="color:var(--muted);font-size:13px"></p>
+    <h2 style="margin-top:18px">The tape</h2>
+    <p class="tape" id="tape"></p>
+  </div>
+</section>
 
-  <div class="col3">
-    <section>
-      <h2>Teams <span class="faint">by max bid</span></h2>
-      <table><thead><tr><th>Team</th><th class="r">Left</th><th class="r">Open</th><th class="r">Max</th></tr></thead>
-      <tbody id="teams"></tbody></table>
-    </section>
-    <section>
-      <h2>Picks <span class="faint">latest first</span></h2>
-      <div class="scroll" style="max-height:300px"><table><tbody id="picks"></tbody></table></div>
-    </section>
-  </div>
-</main>
+<p class="note" id="note"></p>
+<div class="card" id="card" role="tooltip"></div>
 <div id="toast" class="toast" hidden></div>
 
 <script>
+"use strict";
+/* ---------------------------------------------------------------------------
+   The draft screen. Plain HTML, CSS and JS: no framework and no build step,
+   because on draft night the page has to come up from a file on disk.
+
+   It draws three things the service gives it:
+     GET /api/state (and /api/events, the same thing on every change) -- the
+     money, the picks, who is on the block, the plan's open places;
+     GET /api/pool -- every player on the board with his per-game line, which
+     is what the strips, the scarcity and the standings are computed from;
+     GET /api/plan -- the best roster we can still finish.
+   Everything a source may not show arrives already emptied (`withheld`), so
+   the page never has to know which source is gated: it draws what it is given.
+   --------------------------------------------------------------------------- */
+
 const $ = (id) => document.getElementById(id);
-const money = (v) => v === null || v === undefined ? "–" : "$" + v;
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-let S = null;             // latest snapshot
-let viewing = null;       // player id shown in the card when not the block
-let openTeam = null;
+const esc = (s) => String(s === null || s === undefined ? "" : s)
+  .replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const money = (v) => (v === null || v === undefined || Number.isNaN(v) ? "–" : "$" + v);
+const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+
+//: The nine categories, in the order the service fixes them (app/draft/live.py).
+const CATS = ["FG%", "FT%", "3PM", "PTS", "REB", "AST", "STL", "BLK", "TO"];
+
+let S = null;          // the latest snapshot
+let PLAN = null;       // the latest /api/plan, with the pick it was solved at
+let viewing = null;    // a player id being looked at when nobody is on the block
 let toastTimer = null;
+
+// ---------------------------------------------------------------------------
+// theme: dark unless the reader says otherwise, and remembered
+// ---------------------------------------------------------------------------
+
+function readTheme() {
+  try { return window.localStorage.getItem("fcp-theme"); } catch (e) { return null; }
+}
+function writeTheme(value) {
+  try { window.localStorage.setItem("fcp-theme", value); } catch (e) { /* private window */ }
+}
+function setTheme(value) {
+  const theme = value === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  const button = $("theme");
+  button.textContent = theme === "dark" ? "Lights up" : "Lights down";
+  button.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+}
+setTheme(readTheme() || "dark");
+$("theme").onclick = () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  setTheme(next); writeTheme(next);
+};
+
+// ---------------------------------------------------------------------------
+// talking to the service
+// ---------------------------------------------------------------------------
 
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(typeof body.detail === "string" ? body.detail : body.detail?.message || response.statusText), { detail: body.detail });
+  if (!response.ok) {
+    const detail = body && body.detail;
+    const message = typeof detail === "string" ? detail : (detail && detail.message) || response.statusText;
+    throw Object.assign(new Error(message), { detail });
+  }
   return body;
 }
 
 function toast(message, ok = false, alternatives = []) {
   const el = $("toast");
   el.className = "toast" + (ok ? " ok" : "");
-  el.innerHTML = esc(message) + alternatives.map((a) => ` <button class="small" data-alt="${esc(a)}">${esc(a)}</button>`).join("");
+  el.innerHTML = esc(message) + alternatives
+    .map((a) => ` <button class="btn tiny" data-alt="${esc(a)}">${esc(a)}</button>`).join("");
   el.hidden = false;
-  el.querySelectorAll("[data-alt]").forEach((b) => b.onclick = () => { $("e-player").value = b.dataset.alt; el.hidden = true; $("e-price").focus(); });
+  el.querySelectorAll("[data-alt]").forEach((b) => {
+    b.onclick = () => { $("e-player").value = b.dataset.alt; el.hidden = true; $("e-price").focus(); };
+  });
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.hidden = true, alternatives.length ? 9000 : 3500);
+  toastTimer = setTimeout(() => { el.hidden = true; }, alternatives.length ? 9000 : 3500);
 }
 
-// -- live state -------------------------------------------------------------
+/* ===========================================================================
+   THE POOL'S ARITHMETIC
+   One small module, ported from the mock that was approved on real data
+   (scratchpad/board/build.py). Three sums, all over the whole pool, which is
+   why the pool arrives in one response rather than a card at a time:
+
+     PERCENTILES      where a player sits in a category among everyone on the
+                      board, which is what shades a strip cell. Turnovers are
+                      read upside down: fewer is better.
+     SCARCITY         a "source" is a player in the top quarter of the
+                      draftable pool for a category on impact, where the
+                      draftable pool is the best N by a plain z-composite and
+                      N is how many players get drafted. Percentages count as
+                      made shots above the pool's rate on the same attempts,
+                      so volume counts; turnovers are negated.
+     STANDINGS        a roster's projected per-game totals, the two
+                      percentages weighted by attempts, ranked among the teams.
+
+   Everything here is defensive about a missing line: a player the pool has no
+   numbers for is left out of the sums rather than counted as zero.
+   =========================================================================== */
+
+const Pool = {
+  loaded: false,
+  withheld: false,
+  note: "",
+  byId: new Map(),     // player id -> row
+  rows: [],            // rows with a usable line
+  sorted: {},          // category -> that category's values, ascending
+  draftable: [],       // the best N by z-composite
+  sources: {},         // category -> Set of player ids in the top quarter
+  sourceCount: {},     // category -> how many that is
+  size: 0,             // how many players have a line
+};
+
+const lineOf = (row) => (row && row.line ? row.line : null);
+
+/** One player's impact in a category, on the pool's own rates. */
+function impact(row, cat, rates) {
+  const line = lineOf(row);
+  if (!line) return NaN;
+  const value = num(line[cat]);
+  if (value === null) return NaN;
+  if (cat === "FG%") return (value - rates["FG%"]) * (num(row.fga) || 0);
+  if (cat === "FT%") return (value - rates["FT%"]) * (num(row.fta) || 0);
+  if (cat === "TO") return -value;
+  return value;
+}
+
+/** Attempt-weighted pool rates over a set of rows, for FG% and FT%. */
+function poolRates(rows) {
+  const out = { "FG%": 0, "FT%": 0 };
+  [["FG%", "fga"], ["FT%", "fta"]].forEach(([cat, att]) => {
+    let made = 0, shots = 0;
+    rows.forEach((row) => {
+      const line = lineOf(row); if (!line) return;
+      const rate = num(line[cat]), attempts = num(row[att]);
+      if (rate === null || attempts === null) return;
+      made += rate * attempts; shots += attempts;
+    });
+    out[cat] = shots ? made / shots : 0;
+  });
+  return out;
+}
+
+/** Build everything the page reads from the pool. Called when both the pool
+ *  and the first state have arrived, since the draftable size is the room's
+ *  total picks. */
+function poolPrepare(totalPicks) {
+  const rows = Pool.rows;
+  Pool.size = rows.length;
+  if (!rows.length) return;
+
+  // percentiles: each category's values once, ascending, searched by bisection
+  CATS.forEach((cat) => {
+    const values = [];
+    rows.forEach((row) => { const v = num(lineOf(row)[cat]); if (v !== null) values.push(v); });
+    values.sort((a, b) => a - b);
+    Pool.sorted[cat] = values;
+  });
+
+  // the draftable pool: the best N by a plain z-composite, N = total picks.
+  // The first pass uses fixed league-average rates, exactly as the mock did,
+  // because the pool's own rate cannot be known before the pool is chosen.
+  const rough = { "FG%": 0.47, "FT%": 0.78 };
+  const stats = {};
+  CATS.forEach((cat) => {
+    const values = rows.map((r) => impact(r, cat, rough)).filter((x) => isFinite(x));
+    const mean = values.reduce((a, b) => a + b, 0) / (values.length || 1);
+    const spread = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / (values.length || 1)) || 1;
+    stats[cat] = { mean, spread };
+  });
+  const scored = rows.map((row) => ({
+    row,
+    z: CATS.reduce((a, cat) => {
+      const x = impact(row, cat, rough);
+      return a + (isFinite(x) ? (x - stats[cat].mean) / stats[cat].spread : 0);
+    }, 0),
+  }));
+  scored.sort((a, b) => b.z - a.z);
+  const size = Math.max(1, Math.min(scored.length, totalPicks || scored.length));
+  Pool.draftable = scored.slice(0, size).map((s) => s.row);
+
+  // the sources: the top quarter of the draftable pool per category, on
+  // impact measured against the draftable pool's own shooting rates.
+  const rates = poolRates(Pool.draftable);
+  Pool.rates = rates;
+  CATS.forEach((cat) => {
+    const ranked = Pool.draftable
+      .map((row) => ({ row, x: impact(row, cat, rates) }))
+      .filter((r) => isFinite(r.x))
+      .sort((a, b) => b.x - a.x);
+    const n = Math.max(1, Math.round(ranked.length / 4));
+    Pool.sources[cat] = new Set(ranked.slice(0, n).map((r) => r.row.player_id));
+    Pool.sourceCount[cat] = Pool.sources[cat].size;
+  });
+}
+
+/** Where a value sits among the board, 0 to 1, more always better. */
+function percentile(cat, value) {
+  const values = Pool.sorted[cat];
+  if (!values || !values.length || value === null || value === undefined) return 0;
+  let lo = 0, hi = values.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (values[mid] < value) lo = mid + 1; else hi = mid; }
+  const q = lo / values.length;
+  return cat === "TO" ? 1 - q : q;
+}
+
+const shadeOf = (q) => (q >= 0.9 ? "s3" : q >= 0.7 ? "s2" : q >= 0.5 ? "s1" : "");
+const showCat = (cat, v) => (v === null || v === undefined ? "–"
+  : cat.endsWith("%") ? Number(v).toFixed(3).replace(/^0/, "") : Number(v).toFixed(1));
+
+/** The nine-cell strip for one line. */
+function stripHtml(line) {
+  return CATS.map((cat) => {
+    const v = line ? num(line[cat]) : null;
+    const cls = Pool.size ? shadeOf(percentile(cat, v)) : "";
+    return `<div class="${cls}"><span class="lab">${cat}</span><b>${showCat(cat, v)}</b></div>`;
+  }).join("");
+}
+
+/** How much of each category is still to be bought. */
+function scarcity(drafted) {
+  return CATS.map((cat) => {
+    const ids = Pool.sources[cat];
+    if (!ids || !ids.size) return { cat, total: 0, left: 0, share: 0 };
+    let left = 0;
+    ids.forEach((id) => { if (!drafted.has(id)) left += 1; });
+    return { cat, total: ids.size, left, share: left / ids.size };
+  });
+}
+
+/** A roster's projected per-game line: counting stats summed, the two
+ *  percentages rebuilt from the attempts behind them. */
+function rosterLine(playerIds) {
+  const rows = playerIds.map((id) => Pool.byId.get(id)).filter((r) => r && lineOf(r));
+  const out = {};
+  CATS.forEach((cat) => {
+    if (cat === "FG%" || cat === "FT%") {
+      const att = cat === "FG%" ? "fga" : "fta";
+      let made = 0, shots = 0;
+      rows.forEach((row) => {
+        const rate = num(lineOf(row)[cat]), attempts = num(row[att]);
+        if (rate === null || attempts === null) return;
+        made += rate * attempts; shots += attempts;
+      });
+      out[cat] = shots ? made / shots : null;
+    } else {
+      let total = 0, seen = 0;
+      rows.forEach((row) => { const v = num(lineOf(row)[cat]); if (v !== null) { total += v; seen += 1; } });
+      out[cat] = seen ? total : null;
+    }
+  });
+  return out;
+}
+
+/* ======================= end of the pool's arithmetic ====================== */
+
+// ---------------------------------------------------------------------------
+// live state
+// ---------------------------------------------------------------------------
 
 function connect() {
-  const events = new EventSource("/api/events");
-  events.addEventListener("state", (e) => { S = JSON.parse(e.data); render(); });
-  events.onerror = () => { $("feed").textContent = "service not reachable — retrying"; $("feed").className = "pill err"; };
+  let events;
+  try { events = new EventSource("/api/events"); } catch (e) { return; }
+  events.addEventListener("state", (e) => {
+    try { S = JSON.parse(e.data); } catch (err) { return; }
+    if (!Pool.loaded) loadPool();
+    render();
+  });
+  events.onerror = () => {
+    const el = $("feed");
+    el.textContent = "service not reachable — retrying";
+    el.className = "pill err";
+  };
+}
+
+async function loadPool() {
+  let data;
+  try { data = await api("/api/pool"); } catch (e) { return; }
+  Pool.loaded = true;
+  Pool.withheld = !!data.withheld;
+  Pool.note = data.withheld_note || "";
+  Pool.byId = new Map();
+  Pool.rows = [];
+  (data.players || []).forEach((row) => {
+    Pool.byId.set(row.player_id, row);
+    if (row.line && num(row.games) !== null) Pool.rows.push(row);
+  });
+  poolPrepare(S ? S.total_picks : 0);
+  render();
 }
 
 function render() {
-  const me = S.teams.find((t) => t.is_me);
-  $("h-pick").textContent = `${S.pick_number} / ${S.total_picks}`;
-  $("h-mine").textContent = `$${me.remaining} · ${me.open_slots} open`;
-  $("h-field").textContent = money(S.field_ceiling);
-  $("h-infl").textContent = S.inflation.toFixed(2);
-  $("h-nom").textContent = S.to_nominate ? S.to_nominate.name : "–";
-  // Where the board's numbers came from (docs/projection_sources.md).
-  $("h-source").textContent = S.source_note || "";
-  renderFeed(); renderCard(); renderTeams(me); renderPicks(); renderMine(me); renderTeamSelect(); refreshBoard();
+  if (!S) return;
+  const me = S.teams.find((t) => t.is_me) || null;
+  renderMast();
+  renderFeed();
+  renderBlock();
+  renderBoard(me);
+  renderScarcity();
+  renderStandings();
+  renderPlanSection(me);
+  renderLadder();
+  renderTape();
+  renderNote();
+  renderTeamSelect();
+  renderOurs(me);
+  schedulePlan();
+  refreshSale();
+}
+
+// ---------------------------------------------------------------------------
+// the masthead
+// ---------------------------------------------------------------------------
+
+function renderMast() {
+  const teams = S.teams.length;
+  const stand = S.stand_in ? ` · pool ${esc(S.stand_in)}` : "";
+  $("sub").textContent = `${S.season} draft · ${teams} teams · $${S.budget} · ${S.roster_slots} places`
+    + (S.source_note ? ` · ${S.source_note}` : "") + stand;
+  $("c-pick").textContent = `${S.pick_number} / ${S.total_picks}`;
+  $("c-infl").textContent = typeof S.inflation === "number" ? S.inflation.toFixed(2) : "–";
+  $("c-field").textContent = money(S.field_ceiling);
+  $("c-nom").textContent = S.to_nominate && S.to_nominate.name ? S.to_nominate.name : "–";
 }
 
 function renderFeed() {
@@ -234,11 +648,12 @@ function renderFeed() {
   $("rehearse").hidden = !r;
   if (r) {
     $("r-label").textContent = r.done ? "rehearsal finished" : `rehearsal · nomination ${r.nomination} of ${r.of}`;
-    $("r-count").textContent = r.seconds_left ?? "";
+    $("r-count").textContent = r.seconds_left === null || r.seconds_left === undefined ? "" : r.seconds_left;
     $("r-pause").textContent = r.paused ? "Resume" : "Pause";
   }
   if (f.mode === "page") {
-    el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}` : `ESPN page not connected${f.error ? ": " + f.error : ""}`;
+    el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}`
+      : `ESPN page not connected${f.error ? ": " + f.error : ""}`;
     el.className = "pill " + (f.connected ? "ok" : "err");
     if (f.unlogged) toast("Money moved but the log did not show: " + f.unlogged.join("; "));
     if (f.problems) toast("Could not apply: " + f.problems.join("; "));
@@ -246,219 +661,614 @@ function renderFeed() {
     el.textContent = f.mode === "rehearsal" ? "rehearsal feed" : "typed entry";
     el.className = "pill";
   }
-  if (f.ceiling_error) { el.textContent += " · ceiling error"; el.className = "pill err"; el.title = f.ceiling_error; }
+  if (f.ceiling_error) {
+    el.textContent += " · ceiling error";
+    el.className = "pill err";
+    el.title = f.ceiling_error;
+  }
 }
 
-// -- the card -----------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// the block
+// ---------------------------------------------------------------------------
 
-async function renderCard() {
-  const block = S.block;
-  let card = null, offer = "";
-  if (block && block.player) {
-    card = block.player; viewing = null;
-    $("block-hint").textContent = "";
-    if (block.current_offer) offer = `Current offer $${block.current_offer}${block.high_bidder ? " · " + block.high_bidder : ""}`;
-  } else if (block && block.name) {
-    $("card").innerHTML = `<div class="card-name">${esc(block.name)}</div><div class="card-sub">Not on our board — no projection. Enter the pick when he sells.</div>`;
+let viewedCard = null;   // the card fetched for whoever the reader clicked
+
+function blockSubject() {
+  // Who the top of the page is about: whoever is on the block, or whoever the
+  // reader clicked when nobody is.
+  const b = S.block;
+  if (b && (b.player || b.name)) return { card: b.player || null, name: b.name || (b.player || {}).name, block: b };
+  if (viewing !== null) {
+    const row = Pool.byId.get(viewing);
+    return { card: viewedCard, name: (viewedCard && viewedCard.name) || (row && row.name) || "", block: null };
+  }
+  return null;
+}
+
+function renderBlock() {
+  const subject = blockSubject();
+  const strip = $("b-strip"), note = $("b-note");
+  if (!subject) {
+    $("b-name").textContent = "Nobody";
+    $("b-meta").textContent = "Click a player on the board, search below, or type one in.";
+    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
+    $("b-went-lab").textContent = "Went for";
+    strip.innerHTML = ""; note.innerHTML = "";
     return;
-  } else if (viewing !== null) {
-    $("block-hint").textContent = "(viewing, not on the block)";
-    try { card = await api(`/api/players/${viewing}`); } catch (e) { return; }
+  }
+  const card = subject.card, block = subject.block;
+  const row = card ? Pool.byId.get(card.player_id) : null;
+  $("b-name").textContent = subject.name || "Nobody";
+
+  // A card the gate emptied: the name, and why there is nothing under it.
+  if (card && card.withheld) {
+    $("b-meta").innerHTML = `Not this reader's to see. <span class="faint">${esc(card.withheld)}</span>`;
+    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
+    strip.innerHTML = ""; note.innerHTML = "";
+    return;
   }
   if (!card) {
-    $("block-hint").textContent = "";
-    $("card").innerHTML = `<div class="empty">Nobody on the block. Click a player on the board, or type one below.</div>`;
+    // On the block but not on our board: a name the page reader saw.
+    $("b-meta").textContent = "Not on our board — no projection for him. Enter the pick when he sells.";
+    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-note").textContent = "";
+    const offer = block && block.current_offer;
+    $("b-went-lab").textContent = offer ? "Current offer" : "Went for";
+    $("b-went").textContent = offer ? money(offer) : "–";
+    $("b-went-note").textContent = offer && block.high_bidder ? `high bid ${block.high_bidder}` : "";
+    strip.innerHTML = ""; note.innerHTML = "";
     return;
   }
-  $("card").innerHTML = cardHtml(card, offer);
-  const buy = $("c-buy");
-  if (buy) buy.onclick = () => { $("e-player").value = card.name; $("e-team").value = String(S.me); $("e-price").focus(); };
-}
 
-function tagClass(tag) {
-  const t = tag.toLowerCase();
-  if (t.includes("breakout")) return "breakout";
-  if (t.includes("sleeper")) return "sleeper";
-  if (t.includes("bust")) return "bust";
-  if (t.includes("tank")) return "tank";
-  if (t.includes("battle")) return "battle";
-  return "other";
-}
+  const where = (card.eligible || []).filter((e) => !["BE", "IR", "UT"].includes(e));
+  const games = row && num(row.games) !== null ? `${row.games} games projected` : "games not projected";
+  $("b-meta").innerHTML = `<b>${esc(card.position || (where[0] || ""))}</b> · ${esc(games)}`
+    + (where.length ? ` · eligible ${esc(where.join(", "))}` : "");
 
-function cardHtml(c, offer) {
-  const ce = c.ceiling || {}, b = c.bbm, me = S.teams.find((t) => t.is_me);
-  const slots = ["PG", "SG", "SF", "PF", "C"].filter((p) => (c.eligible || []).includes(p) || c.position === p);
-  const where = slots.join("/") || c.position || "";
-  if (c.taken) {
-    return `<div class="card-name">${esc(c.name)}</div><div class="card-sub">${esc(where)}</div>
-      <div class="verdict wait">Sold to ${esc(c.taken.team)} for $${c.taken.price}</div>`;
+  $("b-ours").textContent = money(card.board_price);
+  $("b-ours-note").textContent = card.market_price === null || card.market_price === undefined
+    ? "our board's valuation" : `expected to go ${money(card.market_price)}`;
+
+  const planRow = PLAN && PLAN.players ? PLAN.players.find((p) => p.player_id === card.player_id) : null;
+  $("b-plan").textContent = planRow ? money(planRow.price) : "–";
+  $("b-plan-note").textContent = !PLAN ? "working out the best roster…"
+    : planRow ? "he is in the best roster we can still finish" : "not in the roster we can still finish";
+
+  const offer = block && block.current_offer;
+  if (card.taken) {
+    $("b-went-lab").textContent = "Went for";
+    $("b-went").textContent = money(card.taken.price);
+    $("b-went-note").textContent = `to ${card.taken.team}`;
+  } else if (offer) {
+    $("b-went-lab").textContent = "Current offer";
+    $("b-went").textContent = money(offer);
+    $("b-went-note").textContent = block.high_bidder ? `high bid ${block.high_bidder}` : "";
+  } else {
+    $("b-went-lab").textContent = "Went for";
+    $("b-went").textContent = "–";
+    $("b-went-note").textContent = "still on the block";
   }
-  let verdict;
-  if (ce.status !== "ready") verdict = `<div class="verdict wait">Working out our ceiling…</div>`;
-  else if (ce.price === null) verdict = `<div class="verdict bad">Do not bid — he adds less than the floor bid buys elsewhere</div>`;
-  else if (ce.verdict.startsWith("inside")) verdict = `<div class="verdict good">Inside our ceiling — worth up to $${ce.price}${ce.capped ? " (the plan's cap)" : ""}</div>`;
-  else verdict = `<div class="verdict bad">Likely goes for more than ${ce.capped ? "our plan allows" : "he's worth to us"} — let him go past $${ce.price}</div>`;
 
+  strip.innerHTML = row && lineOf(row) ? stripHtml(lineOf(row)) : "";
+  note.innerHTML = blockNote(card, row);
+  const buy = $("c-buy");
+  if (buy) buy.onclick = () => {
+    $("e-player").value = card.name;
+    $("e-team").value = String(S.me);
+    $("e-price").focus();
+  };
+}
+
+function blockNote(card, row) {
+  const ce = card.ceiling || {}, b = card.bbm, me = S.teams.find((t) => t.is_me);
+  let verdict = "";
+  if (card.taken) {
+    verdict = `<span class="verdict wait">Sold to ${esc(card.taken.team)} for $${card.taken.price}</span>`;
+  } else if (ce.status === "withheld") {
+    verdict = "";
+  } else if (ce.status !== "ready") {
+    verdict = `<span class="verdict wait">Working out our ceiling…</span>`;
+  } else if (ce.price === null) {
+    verdict = `<span class="verdict bad">Do not bid — he adds less than the floor bid buys elsewhere</span>`;
+  } else if (String(ce.verdict || "").startsWith("inside")) {
+    verdict = `<span class="verdict good">Inside our ceiling — worth up to $${ce.price}${ce.capped ? " (the plan's cap)" : ""}</span>`;
+  } else {
+    verdict = `<span class="verdict bad">Likely goes for more than ${ce.capped ? "our plan allows" : "he's worth to us"} — let him go past $${ce.price}</span>`;
+  }
+  const warning = card.warning ? `<span class="verdict news">${esc(card.warning)}</span>` : "";
+
+  // Everything Basketball Monster knows, when the room was loaded on BBM and
+  // only then: an ESPN or uploaded room carries no `bbm` and shows none of it.
   const facts = [];
   if (b) {
-    if (b.age) facts.push(`<span class="fact">age ${b.age.toFixed(1)}</span>`);
-    facts.push(`<span class="fact">${Math.round(b.games)} games</span>`);
+    if (b.age) facts.push(`<span class="fact">age ${Number(b.age).toFixed(1)}</span>`);
+    if (num(b.games) !== null) facts.push(`<span class="fact">${Math.round(b.games)} games</span>`);
     if (b.injury_risk) facts.push(`<span class="fact">injury risk <b class="risk-${esc(b.injury_risk)}">${esc(b.injury_risk)}</b></span>`);
     if (b.injury) facts.push(`<span class="fact">${esc(b.injury)}</span>`);
-    if (b.league_total !== null) facts.push(`<span class="fact">BBM league <b>$${b.league_total}</b>${b.league_per_game !== null ? ` total · $${b.league_per_game} per game` : ""}</span>`);
-    if (b.espn_avg !== null) facts.push(`<span class="fact">ESPN avg $${b.espn_avg}</span>`);
-    if (b.yahoo_avg !== null) facts.push(`<span class="fact">Yahoo avg $${b.yahoo_avg}</span>`);
-    if (b.injury_discount) facts.push(`<span class="fact flag">injury discount $${b.injury_discount} — worth more if you can stash him on IR</span>`);
-    if (b.confidence) facts.push(`<span class="fact">BBM confidence <b>${b.confidence}</b>/10</span>`);
+    if (num(b.league_total) !== null) {
+      facts.push(`<span class="fact">BBM league <b>$${b.league_total}</b>`
+        + (num(b.league_per_game) !== null ? ` total · $${b.league_per_game} per game` : "") + `</span>`);
+    }
+    if (num(b.espn_avg) !== null) facts.push(`<span class="fact">ESPN avg $${b.espn_avg}</span>`);
+    if (num(b.yahoo_avg) !== null) facts.push(`<span class="fact">Yahoo avg $${b.yahoo_avg}</span>`);
+    if (b.injury_discount) facts.push(`<span class="fact flag">injury discount $${b.injury_discount} — worth more stashed on IR</span>`);
+    if (b.confidence) facts.push(`<span class="fact">BBM confidence <b>${esc(b.confidence)}</b>/10</span>`);
     if (b.role) facts.push(`<span class="fact">${esc(b.role)}</span>`);
     (b.status || []).forEach((st) => facts.push(`<span class="fact">${esc(st)}</span>`));
+    (b.tags || []).forEach((t) => facts.push(`<span class="fact">${esc(t)}</span>`));
   }
-  const tags = b ? (b.tags || []).map((t) => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join("") : "";
-  const note = b && b.note ? `<div class="note"><b>${esc(b.note_by || "BBM")}:</b> ${esc(b.note)}</div>` : "";
-  return `
-    <div class="card-name">${esc(c.name)}</div>
-    <div class="card-sub">${esc(where)} · going price from ${esc(c.market_source)}</div>
-    ${offer ? `<div class="offer">${esc(offer)}</div>` : ""}
-    <div class="bignums">
-      <div class="big hero"><b>${money(c.market_price)}</b><span>expected to go</span></div>
-      <div class="big"><b>${ce.status === "ready" ? money(ce.price) : "…"}</b><span>our ceiling</span></div>
-      <div class="big"><b>${money(S.plan ? S.plan.cap : null)}</b><span>plan cap</span></div>
-      <div class="big"><b>${money(me.max_bid)}</b><span>we can bid</span></div>
-    </div>
-    ${verdict}
-    ${c.warning ? `<div class="verdict warn-news">${esc(c.warning)}</div>` : ""}
-    ${tags ? `<div class="facts">${tags}</div>` : ""}
-    <div class="facts">${facts.join("")}</div>
-    ${note}
-    <div class="muted" style="font-size:12px">field can bid ${money(S.field_ceiling)} · our board prices him ${money(c.board_price)}${ce.marginal_at_floor !== undefined && ce.marginal_at_floor !== null ? ` · adds ${ce.marginal_at_floor.toFixed(2)} cats/week at $1` : ""}</div>
-    <div class="buttons"><button class="small" id="c-buy">We won him →</button></div>`;
+  const analyst = b && b.note ? `<p class="analyst"><b>${esc(b.note_by || "BBM")}:</b> ${esc(b.note)}</p>` : "";
+
+  const bits = [];
+  if (card.market_source) bits.push(`going price from ${esc(card.market_source)}`);
+  bits.push(`field can bid ${money(S.field_ceiling)}`);
+  if (me) bits.push(`we can bid ${money(me.max_bid)}`);
+  if (S.plan && S.plan.cap !== null && S.plan.cap !== undefined) bits.push(`the plan caps one player at ${money(S.plan.cap)}`);
+  if (num(ce.marginal_at_floor) !== null) bits.push(`he adds ${Number(ce.marginal_at_floor).toFixed(2)} categories a week at $1`);
+  const strip = Pool.size
+    ? `Read the strip against the room: each cell is shaded by where he sits among the ${Pool.size} players on this board. <b>Bid to our price; stop at the plan's.</b>`
+    : "";
+
+  return `${verdict}${warning}${facts.length ? `<div class="facts">${facts.join("")}</div>` : ""}${analyst}
+    <p style="margin:6px 0 0">${esc(bits.join(" · "))}</p>
+    ${strip ? `<p style="margin:4px 0 0">${strip}</p>` : ""}
+    ${card.taken ? "" : `<div class="buttons"><button class="btn tiny" id="c-buy" type="button">We won him →</button></div>`}`;
 }
 
-// -- board, teams, picks, roster ----------------------------------------------
+// ---------------------------------------------------------------------------
+// the board: teams across, roster places down
+// ---------------------------------------------------------------------------
 
-let boardTimer = null, boardVersion = -1;
-function refreshBoard(force = false) {
-  if (!force && S.version === boardVersion) return;
-  clearTimeout(boardTimer);
-  boardTimer = setTimeout(async () => {
-    boardVersion = S.version;
+function surnames() {
+  const counts = {};
+  S.picks.forEach((p) => {
+    const words = String(p.name).trim().split(/\s+/);
+    const last = words[words.length - 1];
+    counts[last] = (counts[last] || 0) + 1;
+  });
+  return counts;
+}
+
+function shortName(name, counts) {
+  const words = String(name).trim().split(/\s+/).filter((w) => !/^(Jr\.?|Sr\.?|II|III|IV)$/.test(w));
+  const last = words[words.length - 1] || String(name);
+  return words.length > 1 && counts[last] > 1 ? words[0][0] + ". " + last : last;
+}
+
+function renderBoard(me) {
+  const teams = S.teams, rows = S.roster_slots, counts = surnames();
+  const byTeam = {};
+  teams.forEach((t) => { byTeam[t.team_id] = []; });
+  S.picks.forEach((p) => { if (byTeam[p.team_id]) byTeam[p.team_id].push(p); });
+  const planPlaces = S.plan && Array.isArray(S.plan.open_places) ? S.plan.open_places : [];
+
+  const head = "<thead><tr>" + teams.map((t, i) => {
+    const nom = S.to_nominate && S.to_nominate.team_id === t.team_id ? " nom" : "";
+    return `<th class="${t.is_me ? "me" : ""}${nom}"><span class="n">${i + 1}</span>${esc(String(t.name).trim())}</th>`;
+  }).join("") + "</tr></thead>";
+
+  let body = "<tbody>";
+  for (let r = 0; r < rows; r++) {
+    body += "<tr>" + teams.map((t) => {
+      const picks = byTeam[t.team_id].slice().sort((a, b) => b.price - a.price);
+      const p = picks[r];
+      if (p) {
+        const row = Pool.byId.get(p.player_id);
+        const cls = p.price >= 40 ? "star" : p.price >= 20 ? "big" : "";
+        return `<td class="${t.is_me ? "me" : ""}" data-pid="${p.player_id}" data-price="${p.price}"`
+          + ` data-team="${esc(String(t.name).trim())}" tabindex="0">`
+          + `<div class="cell ${cls}"><span class="p">${esc(shortName(p.name, counts))}</span>`
+          + `<span class="d">$${p.price}</span></div></td>`;
+      }
+      if (t.is_me) {
+        // Our own open places carry what the plan says each should cost.
+        const k = r - picks.length;
+        const planned = planPlaces[k];
+        return `<td class="me"><div class="cell plan"><span class="p">open</span>`
+          + `<span class="d">${planned === undefined || planned === null ? "" : "$" + planned}</span></div></td>`;
+      }
+      return "<td></td>";
+    }).join("") + "</tr>";
+  }
+  body += "</tbody>";
+
+  const foot = "<tfoot><tr>" + teams.map((t) => `<td class="${t.is_me ? "me foot-cell" : ""}"><div class="foot">`
+    + `<span>left</span><b>$${t.remaining}</b><span>open</span><b>${t.open_slots}</b>`
+    + `<span>max</span><b>$${t.max_bid}</b><span>each</span>`
+    + `<b>${t.open_slots ? "$" + Math.floor(t.remaining / t.open_slots) : "–"}</b></div></td>`).join("") + "</tr></tfoot>";
+
+  $("board").innerHTML = head + body + foot;
+}
+
+// ---------------------------------------------------------------------------
+// what is left on the board
+// ---------------------------------------------------------------------------
+
+function poolMissingNote() {
+  if (Pool.withheld) {
+    return `These numbers are not this reader's to see: ${esc(Pool.note || "the pool's source is gated")}. `
+      + `The board, the money and the picks are all still here; the strips, the scarcity and the standings are not.`;
+  }
+  if (!Pool.loaded) return "Reading the board's projections…";
+  return "No projection lines for this room, so there is nothing to count: the board, the money and the picks are all still here.";
+}
+
+function renderScarcity() {
+  if (!Pool.size) {
+    $("scar").innerHTML = "";
+    $("scar-lede").innerHTML = poolMissingNote();
+    return;
+  }
+  const drafted = new Set(S.picks.map((p) => p.player_id));
+  const subject = blockSubject();
+  const him = subject && subject.card ? subject.card.player_id : null;
+  const rows = scarcity(drafted);
+  const overallLeft = S.total_picks ? 1 - S.pick_number / S.total_picks : 1;
+  $("scar-lede").innerHTML = `A <b>source</b> is a player in the top quarter of the draftable pool `
+    + `(the best ${Pool.draftable.length} by projection, as many as get drafted) for that category, on impact `
+    + `(percentages weighted by attempts, turnovers the fewer the better). `
+    + `${Math.round(overallLeft * 100)}% of the picks are still to come; a category with much less than that left `
+    + `is being cornered, one with more is going cheap.`;
+  $("scar").innerHTML = rows.map((o) => {
+    const cls = o.share < overallLeft - 0.12 ? "tight" : o.share > overallLeft + 0.12 ? "loose" : "";
+    const isHim = him !== null && Pool.sources[o.cat] && Pool.sources[o.cat].has(him);
+    return `<div class="${cls}"><span class="lab">${o.cat === "TO" ? "Low TO" : o.cat}</span>`
+      + `<b>${o.left} of ${o.total}</b><small>sources left</small>`
+      + `<div class="bar"><i style="width:${Math.round(o.share * 100)}%"></i></div>`
+      + `<span class="him">${isHim ? "he is one" : ""}</span></div>`;
+  }).join("");
+}
+
+// ---------------------------------------------------------------------------
+// where every team stands
+// ---------------------------------------------------------------------------
+
+function renderStandings() {
+  if (!Pool.size) {
+    $("stand").innerHTML = "";
+    $("stand-lede").innerHTML = poolMissingNote();
+    return;
+  }
+  const byTeam = {};
+  S.teams.forEach((t) => { byTeam[t.team_id] = []; });
+  S.picks.forEach((p) => { if (byTeam[p.team_id]) byTeam[p.team_id].push(p.player_id); });
+  const lines = S.teams.map((t) => ({ team: t, line: rosterLine(byTeam[t.team_id] || []) }));
+
+  // Rank each category down the column: turnovers the other way up, and a
+  // team with nothing in a category ranked last rather than first.
+  const ranks = {};
+  CATS.forEach((cat) => {
+    const order = lines
+      .map((row, i) => ({ v: row.line[cat] === null ? (cat === "TO" ? Infinity : -Infinity) : row.line[cat], i }))
+      .sort((a, b) => (cat === "TO" ? a.v - b.v : b.v - a.v));
+    ranks[cat] = {};
+    order.forEach((o, k) => { ranks[cat][lines[o.i].team.team_id] = k + 1; });
+  });
+  const n = S.teams.length;
+  const band = Math.max(1, Math.round(n / 4));
+  $("stand-lede").innerHTML = `Each roster's projected per-game totals, shaded by rank among the ${n} teams: `
+    + `the top ${band} darkest. Read across a row for a team's shape, down a column for who owns a category.`;
+  $("stand").innerHTML = `<thead><tr><th>Team</th>${CATS.map((c) => `<th>${c}</th>`).join("")}<th>Picks</th></tr></thead><tbody>`
+    + lines.map(({ team, line }) => `<tr class="${team.is_me ? "me" : ""}"><td>${esc(String(team.name).trim())}</td>`
+      + CATS.map((cat) => {
+        const v = line[cat], rk = ranks[cat][team.team_id];
+        const cls = v === null ? "" : rk <= band ? "s3" : rk <= band * 2 ? "s2" : rk <= band * 3 ? "s1" : "";
+        return `<td class="${cls}">${showCat(cat, v)}<span class="rk"> ${v === null ? "" : rk}</span></td>`;
+      }).join("")
+      + `<td>${(byTeam[team.team_id] || []).length}</td></tr>`).join("")
+    + "</tbody>";
+}
+
+// ---------------------------------------------------------------------------
+// the roster we can still finish, the ladder, the tape
+// ---------------------------------------------------------------------------
+
+let planTimer = null, planWanted = -1, planLoading = false;
+
+function schedulePlan() {
+  // The plan is a solve, not a lookup: a couple of seconds on a full pool.
+  // So it is asked for once the room has settled, and the last one stays on
+  // the page meanwhile, labelled with the pick it was solved at.
+  if (!S || planWanted === S.pick_number) return;
+  planWanted = S.pick_number;
+  clearTimeout(planTimer);
+  planTimer = setTimeout(loadPlan, PLAN ? 1500 : 0);
+}
+
+async function loadPlan() {
+  if (planLoading) return;
+  planLoading = true;
+  const at = S ? S.pick_number : 0;
+  try {
+    const plan = await api("/api/plan");
+    PLAN = { ...plan, at };
+  } catch (e) { /* keep the last one; the note says how old it is */ }
+  planLoading = false;
+  if (S) { renderPlanSection(S.teams.find((t) => t.is_me) || null); renderBlock(); }
+}
+
+function renderPlanSection(me) {
+  if (!PLAN) {
+    $("p-lede").textContent = "Working out the best roster we can still finish…";
+    $("p-list").innerHTML = "";
+    return;
+  }
+  const stale = S && PLAN.at !== S.pick_number ? ` <span class="faint">(solved at pick ${PLAN.at})</span>` : "";
+  const left = me ? me.remaining : null;
+  // The plan prices the whole roster, players we already own included, so what
+  // it asks us to spend from here is the part we have yet to buy.
+  const toBuy = (PLAN.players || []).reduce((a, p) => a + (p.owned ? 0 : p.price), 0);
+  $("p-lede").innerHTML = `Given what is gone and what we have, the best ${S.roster_slots} we can still finish wins `
+    + `<b>${Number(PLAN.expected_wins).toFixed(2)} of ${CATS.length} categories</b> in an ordinary week. `
+    + `It prices out at <b>${money(PLAN.cost)}</b>, of which <b>${money(toBuy)}</b> is still to spend`
+    + `${left === null ? "" : ` from our ${money(left)}`}. `
+    + `Every player below is a real name still on the board at his price.${stale}`;
+  $("p-list").innerHTML = (PLAN.players || []).slice().sort((a, b) => b.price - a.price).map((p) => {
+    const row = Pool.byId.get(p.player_id);
+    const pos = row && row.position ? row.position : "";
+    return `<div><span>${esc(p.name)}${p.owned ? ' <span class="own">ours</span>' : ""}`
+      + `<small class="faint"> ${esc(pos)}</small></span><span class="d">$${p.price}</span></div>`;
+  }).join("") || `<div class="empty">Nothing left to buy.</div>`;
+}
+
+function renderLadder() {
+  const places = S.plan && Array.isArray(S.plan.open_places) ? S.plan.open_places : [];
+  if (!places.length) {
+    $("ladder").innerHTML = "";
+    $("ladder-note").textContent = S.plan
+      ? "No open places left: the roster is full."
+      : "No spending plan in this room — bidding on the ceiling alone.";
+    return;
+  }
+  const peak = Math.max.apply(null, places) || 1;
+  $("ladder").innerHTML = places.map((v, i) =>
+    `<span class="${i < 3 ? "top" : ""}" style="height:${Math.max(4, (v / peak) * 100)}%"><i>$${v}</i></span>`).join("");
+  const cap = S.plan.cap;
+  $("ladder-note").textContent = `${places.length} open places, most expensive first; the three on the left are the ones `
+    + `worth fighting for.${cap === null || cap === undefined ? "" : ` Cap for any one player: $${cap}.`}`;
+}
+
+function renderTape() {
+  const last = S.picks.slice(-14).reverse();
+  $("tape").innerHTML = last.map((p) =>
+    `<b>${p.number}</b> ${esc(p.name)} <i>${esc(p.team)}</i> $${p.price}`).join(" &nbsp;·&nbsp; ")
+    || `<span class="faint">Nothing has sold yet.</span>`;
+}
+
+function renderNote() {
+  const bits = [];
+  if (S.pool) bits.push(S.pool);
+  if (S.source_note) bits.push(`source: ${S.source_note}`);
+  if (S.stand_in) bits.push(`the pool stands in from ${S.stand_in}`);
+  if (Pool.withheld) bits.push(`the per-player numbers are withheld from this reader (${Pool.note})`);
+  if (S.replay_warnings && S.replay_warnings.length) {
+    bits.push(`${S.replay_warnings.length} logged event${S.replay_warnings.length === 1 ? "" : "s"} skipped on replay: `
+      + S.replay_warnings.join("; "));
+  }
+  $("note").textContent = bits.join(". ") + (bits.length ? "." : "");
+}
+
+function renderOurs(me) {
+  if (!me) { $("ours").textContent = ""; return; }
+  const roster = me.roster || [];
+  $("ours").innerHTML = `<b>Ours so far:</b> ` + (roster.length
+    ? roster.slice().sort((a, b) => b.price - a.price).map((p) => `${esc(p.name)} $${p.price}`).join(" · ")
+    : "nobody yet")
+    + ` <span class="faint">· $${me.remaining} left, ${me.open_slots} places open, we can bid $${me.max_bid}</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// the hover card, on every board cell
+// ---------------------------------------------------------------------------
+
+const card = $("card");
+let cardPinned = null;
+
+function showCard(td) {
+  const id = Number(td.dataset.pid);
+  const row = Pool.byId.get(id);
+  const name = row ? row.name : (S.picks.find((p) => p.player_id === id) || {}).name || "";
+  let inner = `<div class="cn">${esc(name)}</div>`;
+  if (!row || !lineOf(row)) {
+    const why = Pool.withheld ? "not this reader's to see" : "no projection for him on this board";
+    inner += `<div class="cm">${esc(why)} · <b>$${esc(td.dataset.price)}</b> to ${esc(td.dataset.team)}</div>`;
+  } else {
+    const games = num(row.games) !== null ? `${row.games} games projected` : "games not projected";
+    inner += `<div class="cm"><b>${esc(row.position || "")}</b> · ${esc(games)} · `
+      + `<b>$${esc(td.dataset.price)}</b> to ${esc(td.dataset.team)}</div>`
+      + `<div class="strip">${stripHtml(lineOf(row))}</div>`;
+  }
+  card.innerHTML = inner;
+  // Below the cell, flipped above it when there is no room, and never off the
+  // edge of a narrow window in either direction.
+  const r = td.getBoundingClientRect(), w = 320, h = card.offsetHeight || 120;
+  const x = Math.max(12, Math.min(window.innerWidth - w - 12, r.left));
+  let y = r.bottom + 6;
+  if (y + h > window.innerHeight - 8) y = r.top - h - 6;
+  y = Math.max(8, Math.min(y, Math.max(8, window.innerHeight - h - 8)));
+  card.style.left = x + "px";
+  card.style.top = y + "px";
+  card.classList.add("on");
+}
+
+function hideCard() { card.classList.remove("on"); cardPinned = null; }
+
+// Delegated, because the board is rebuilt on every version.
+const boardTable = $("board");
+boardTable.addEventListener("mouseover", (e) => {
+  const td = e.target.closest ? e.target.closest("td[data-pid]") : null;
+  if (td) showCard(td);
+});
+boardTable.addEventListener("mouseout", (e) => {
+  const td = e.target.closest ? e.target.closest("td[data-pid]") : null;
+  if (td && !cardPinned) hideCard();
+});
+boardTable.addEventListener("focusin", (e) => {
+  const td = e.target.closest ? e.target.closest("td[data-pid]") : null;
+  if (td) showCard(td);
+});
+boardTable.addEventListener("focusout", () => { if (!cardPinned) hideCard(); });
+boardTable.addEventListener("click", (e) => {
+  const td = e.target.closest ? e.target.closest("td[data-pid]") : null;
+  if (!td) return;
+  // A tap pins the card; a second tap on the same cell lets it go.
+  if (cardPinned === td.dataset.pid) { hideCard(); return; }
+  cardPinned = td.dataset.pid;
+  showCard(td);
+});
+window.addEventListener("scroll", () => { if (!cardPinned) hideCard(); }, { passive: true });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
+
+// ---------------------------------------------------------------------------
+// still for sale: the search
+// ---------------------------------------------------------------------------
+
+let saleTimer = null, saleVersion = -1;
+
+function refreshSale(force = false) {
+  if (!force && S.version === saleVersion) return;
+  clearTimeout(saleTimer);
+  saleTimer = setTimeout(async () => {
+    saleVersion = S.version;
     const q = $("b-search").value.trim();
-    const rows = await api(`/api/players?limit=60&q=${encodeURIComponent(q)}`).catch(() => []);
-    $("board").innerHTML = rows.map((p) => {
-      const ce = p.ceiling;
-      const ceiling = ce.status === "ready" ? (ce.price === null ? `<span class="faint">no</span>` : `$${ce.price}`) : `<span class="faint">…</span>`;
-      const good = ce.status === "ready" && ce.price !== null && p.market_price !== null && p.market_price <= ce.price;
+    let rows;
+    try { rows = await api(`/api/players?limit=60&q=${encodeURIComponent(q)}`); } catch (e) { return; }
+    // The BBM column exists only in a room drafted on BBM.
+    const anyBbm = rows.some((p) => p.bbm && num(p.bbm.league_total) !== null);
+    $("s-bbm-head").hidden = !anyBbm;
+    $("sale").innerHTML = rows.map((p) => {
+      if (p.withheld) {
+        return `<tr data-id="${p.player_id}"><td>${esc(p.name)}</td>`
+          + `<td class="r faint" colspan="${anyBbm ? 3 : 2}">not this reader's to see</td>`
+          + `<td class="r"><button class="btn tiny" data-block="${p.player_id}" type="button">block</button></td></tr>`;
+      }
+      const ce = p.ceiling || {};
+      const ceiling = ce.status === "ready"
+        ? (ce.price === null ? `<span class="faint">no</span>` : `$${ce.price}`)
+        : `<span class="faint">…</span>`;
+      const under = ce.status === "ready" && ce.price !== null && num(p.market_price) !== null && p.market_price <= ce.price;
       return `<tr class="click" data-id="${p.player_id}">
         <td>${esc(p.name)} <span class="faint">${esc(p.position || "")}</span></td>
-        <td class="r num">${money(p.market_price)}</td>
-        <td class="r num" style="color:${good ? "var(--good)" : "inherit"}">${ceiling}</td>
-        <td class="r num faint">${p.bbm && p.bbm.league_total !== null ? "$" + p.bbm.league_total : ""}</td>
-        <td class="r"><button class="small" data-block="${p.player_id}">block</button></td></tr>`;
+        <td class="r">${money(p.market_price)}</td>
+        <td class="r${under ? " under" : ""}">${ceiling}</td>
+        ${anyBbm ? `<td class="r faint">${p.bbm && num(p.bbm.league_total) !== null ? "$" + p.bbm.league_total : ""}</td>` : ""}
+        <td class="r"><button class="btn tiny" data-block="${p.player_id}" type="button">block</button></td></tr>`;
     }).join("") || `<tr><td class="empty" colspan="5">No players match</td></tr>`;
-    $("board").querySelectorAll("tr[data-id]").forEach((tr) => tr.onclick = (e) => {
-      if (e.target.dataset.block) return;
-      viewing = Number(tr.dataset.id);
-      if (!(S.block && S.block.player)) renderCard(); else { toast("Someone is on the block; clear it to view others.", true); }
-    });
-    $("board").querySelectorAll("[data-block]").forEach((b) => b.onclick = () => putOnBlock({ player_id: Number(b.dataset.block) }));
   }, force ? 0 : 150);
 }
 
-function renderTeams(me) {
-  const teams = [...S.teams].sort((a, b) => b.max_bid - a.max_bid);
-  $("teams").innerHTML = teams.map((t) => `
-    <tr class="click ${t.is_me ? "me" : ""}" data-team="${t.team_id}">
-      <td>${esc(t.name)}</td><td class="r num">$${t.remaining}</td><td class="r num">${t.open_slots}</td><td class="r num">$${t.max_bid}</td></tr>
-    ${openTeam === t.team_id ? `<tr><td colspan="4" class="roster">${t.roster.map((p) => `${esc(p.name)} $${p.price}`).join(" · ") || "nobody yet"}</td></tr>` : ""}`).join("");
-  $("teams").querySelectorAll("[data-team]").forEach((tr) => tr.onclick = () => {
-    const id = Number(tr.dataset.team); openTeam = openTeam === id ? null : id; renderTeams(me);
-  });
-}
+$("sale").addEventListener("click", async (e) => {
+  const button = e.target.closest ? e.target.closest("[data-block]") : null;
+  if (button) { putOnBlock({ player_id: Number(button.dataset.block) }); return; }
+  const tr = e.target.closest ? e.target.closest("tr[data-id]") : null;
+  if (!tr) return;
+  if (S.block && S.block.player) { toast("Someone is on the block; clear it to look at others.", true); return; }
+  viewing = Number(tr.dataset.id);
+  try { viewedCard = await api(`/api/players/${viewing}`); } catch (err) { viewedCard = null; }
+  renderBlock(); renderScarcity();
+});
 
-function renderPicks() {
-  $("picks").innerHTML = [...S.picks].reverse().map((p) => `
-    <tr><td class="num faint">${p.number}</td><td>${esc(p.name)}</td><td class="muted">${esc(p.team)}</td><td class="r num">$${p.price}</td></tr>`).join("")
-    || `<tr><td class="empty">No picks yet</td></tr>`;
-}
+$("b-search").oninput = () => refreshSale(true);
 
-function renderMine(me) {
-  $("mine-sum").textContent = `$${me.budget_spent ?? (S.budget - me.remaining)} spent · $${me.remaining} left`;
-  $("mine").innerHTML = me.roster.length
-    ? `<table>${me.roster.map((p) => `<tr><td>${esc(p.name)}</td><td class="r num">$${p.price}</td></tr>`).join("")}</table>`
-    : `<div class="faint">Nobody yet.</div>`;
-  if (S.plan) {
-    const places = S.plan.open_places;
-    $("plan-places").innerHTML = `<div class="muted" style="margin-top:10px;font-size:12px">Spending plan (${esc(S.plan.source)}) — open places; one player capped at $${S.plan.cap}</div>
-      <div class="places">${places.map((v, i) => `<span class="place ${i === 0 ? "top" : ""}">$${v}</span>`).join("")}</div>`;
-  } else {
-    $("plan-places").innerHTML = `<div class="faint" style="margin-top:8px">No spending plan: bidding on the ceiling alone.</div>`;
-  }
-}
+// ---------------------------------------------------------------------------
+// entering a pick
+// ---------------------------------------------------------------------------
 
 function renderTeamSelect() {
-  const sel = $("e-team"), current = sel.value;
-  const options = [...S.teams].sort((a, b) => (b.is_me - a.is_me) || a.name.localeCompare(b.name));
-  const html = options.map((t) => `<option value="${t.team_id}">${esc(t.name)}${t.is_me ? " (us)" : ""}</option>`).join("");
-  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; sel.value = current || String(S.me); }
+  const select = $("e-team"), current = select.value;
+  const options = [...S.teams].sort((a, b) => (b.is_me - a.is_me) || String(a.name).localeCompare(String(b.name)));
+  const html = options.map((t) =>
+    `<option value="${t.team_id}">${esc(t.name)}${t.is_me ? " (us)" : ""}</option>`).join("");
+  if (select.dataset.html !== html) {
+    select.dataset.html = html;
+    select.innerHTML = html;
+    select.value = current || String(S.me);
+  }
 }
-
-// -- actions ------------------------------------------------------------------
 
 async function savePick() {
   const player = $("e-player").value.trim(), price = Number($("e-price").value);
   if (!player || !price) { toast("Player and price, please."); return; }
   try {
-    S = await api("/api/picks", { method: "POST", body: JSON.stringify({ player, team_id: Number($("e-team").value), price }) });
+    S = await api("/api/picks", {
+      method: "POST",
+      body: JSON.stringify({ player, team_id: Number($("e-team").value), price }),
+    });
     const last = S.picks[S.picks.length - 1];
-    toast(`${last.name} → ${last.team} for $${last.price}`, true);
-    $("e-player").value = ""; $("e-price").value = ""; $("e-team").value = String(S.me); hideSuggest();
-    render(); $("e-player").focus();
-  } catch (e) { toast(e.message, false, e.detail?.alternatives || []); }
+    if (last) toast(`${last.name} → ${last.team} for $${last.price}`, true);
+    $("e-player").value = ""; $("e-price").value = "";
+    $("e-team").value = String(S.me);
+    hideSuggest();
+    viewing = null; viewedCard = null;
+    render();
+    $("e-player").focus();
+  } catch (e) {
+    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+  }
 }
 
 async function putOnBlock(body) {
-  try { S = await api("/api/block", { method: "POST", body: JSON.stringify(body) }); viewing = null; render(); }
-  catch (e) { toast(e.message, false, e.detail?.alternatives || []); }
+  try {
+    S = await api("/api/block", { method: "POST", body: JSON.stringify(body) });
+    viewing = null; viewedCard = null;
+    render();
+  } catch (e) {
+    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+  }
 }
 
 $("e-save").onclick = savePick;
-$("e-block").onclick = () => { const p = $("e-player").value.trim(); if (p) putOnBlock({ player: p }); else putOnBlock({}); };
+$("e-block").onclick = () => {
+  const player = $("e-player").value.trim();
+  putOnBlock(player ? { player } : {});
+};
+$("e-clear").onclick = () => putOnBlock({});
 $("e-undo").onclick = async () => {
-  const last = S && S.picks[S.picks.length - 1];
+  const last = S && S.picks.length ? S.picks[S.picks.length - 1] : null;
   if (!last) return;
-  if (!confirm(`Undo ${last.name} to ${last.team} for $${last.price}?`)) return;
-  S = await api("/api/undo", { method: "POST" }); render(); toast("Undone", true);
+  if (!window.confirm(`Undo ${last.name} to ${last.team} for $${last.price}?`)) return;
+  try { S = await api("/api/undo", { method: "POST" }); render(); toast("Undone", true); }
+  catch (e) { toast(e.message); }
 };
-$("plan-btn").onclick = async () => {
-  $("plan").innerHTML = `<div class="faint">Solving…</div>`;
-  const plan = await api("/api/plan");
-  $("plan").innerHTML = `<div class="muted" style="font-size:12px;margin:8px 0 4px">${plan.expected_wins.toFixed(2)} expected categories a week · $${plan.cost}</div>
-    <table>${plan.players.map((p) => `<tr><td>${esc(p.name)}</td><td class="muted">${p.owned ? "owned" : "target"}</td><td class="r num">$${p.price}</td></tr>`).join("")}</table>`;
+$("r-pause").onclick = () => {
+  const r = (S && S.feed && S.feed.rehearsal) || {};
+  api("/api/rehearsal/" + (r.paused ? "resume" : "pause"), { method: "POST" }).catch((e) => toast(e.message));
 };
-$("b-search").oninput = () => refreshBoard(true);
-$("r-pause").onclick = () => api("/api/rehearsal/" + (S.feed.rehearsal.paused ? "resume" : "pause"), { method: "POST" });
-$("r-skip").onclick = () => api("/api/rehearsal/skip", { method: "POST" });
+$("r-skip").onclick = () => api("/api/rehearsal/skip", { method: "POST" }).catch((e) => toast(e.message));
 
-// autocomplete
+// the name box's autocomplete
 let suggestions = [], active = -1, suggestTimer = null;
 function hideSuggest() { $("e-suggest").hidden = true; active = -1; }
+function drawSuggest() {
+  const ul = $("e-suggest");
+  ul.innerHTML = suggestions.map((p, i) =>
+    `<li class="${i === active ? "active" : ""}" data-i="${i}"><span>${esc(p.name)}</span>`
+    + `<span class="faint num">${money(p.market_price)}</span></li>`).join("");
+  ul.hidden = !suggestions.length;
+  ul.querySelectorAll("li").forEach((li) => {
+    li.onmousedown = (e) => { e.preventDefault(); choose(Number(li.dataset.i)); };
+  });
+}
+function choose(i) {
+  if (!suggestions[i]) return;
+  $("e-player").value = suggestions[i].name;
+  hideSuggest();
+  $("e-price").focus();
+}
 $("e-player").oninput = () => {
   clearTimeout(suggestTimer);
   const q = $("e-player").value.trim();
   if (q.length < 2) { hideSuggest(); return; }
   suggestTimer = setTimeout(async () => {
-    suggestions = await api(`/api/players?limit=8&q=${encodeURIComponent(q)}`).catch(() => []);
+    try { suggestions = await api(`/api/players?limit=8&q=${encodeURIComponent(q)}`); }
+    catch (e) { suggestions = []; }
     active = suggestions.length ? 0 : -1;
     drawSuggest();
   }, 120);
 };
-function drawSuggest() {
-  const ul = $("e-suggest");
-  ul.innerHTML = suggestions.map((p, i) => `<li class="${i === active ? "active" : ""}" data-i="${i}"><span>${esc(p.name)}</span><span class="faint num">${money(p.market_price)}</span></li>`).join("");
-  ul.hidden = !suggestions.length;
-  ul.querySelectorAll("li").forEach((li) => li.onmousedown = (e) => { e.preventDefault(); choose(Number(li.dataset.i)); });
-}
-function choose(i) { $("e-player").value = suggestions[i].name; hideSuggest(); $("e-price").focus(); }
 $("e-player").onkeydown = (e) => {
   if ($("e-suggest").hidden) return;
   if (e.key === "ArrowDown") { active = Math.min(active + 1, suggestions.length - 1); drawSuggest(); e.preventDefault(); }
@@ -467,13 +1277,25 @@ $("e-player").onkeydown = (e) => {
   else if (e.key === "Escape") hideSuggest();
 };
 $("e-player").onblur = () => setTimeout(hideSuggest, 100);
-// Enter in the price box saves, whether or not the browser submits the form itself.
+// Enter in the price box saves, whether or not the browser submits the form.
 $("e-price").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); savePick(); } };
-$("e-form").onsubmit = (e) => { e.preventDefault(); if (document.activeElement === $("e-player") && !$("e-price").value) { $("e-price").focus(); return; } savePick(); };
+$("e-form").onsubmit = (e) => {
+  e.preventDefault();
+  if (document.activeElement === $("e-player") && !$("e-price").value) { $("e-price").focus(); return; }
+  savePick();
+};
 document.addEventListener("keydown", (e) => {
-  if (e.key === "/" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) { e.preventDefault(); $("e-player").focus(); }
+  if (e.key === "/" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+    e.preventDefault();
+    $("e-player").focus();
+  }
 });
 
+// ---------------------------------------------------------------------------
+// away we go
+// ---------------------------------------------------------------------------
+
+api("/api/state").then((state) => { S = state; loadPool(); render(); }).catch(() => { /* the stream will bring it */ });
 connect();
 </script>
 </body>
