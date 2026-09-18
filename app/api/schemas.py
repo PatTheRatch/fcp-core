@@ -526,3 +526,143 @@ class PlayerNewsOut(BaseModel):
     story: str
     source: str
     seen_at: datetime
+
+
+class BidOut(BaseModel):
+    """What to pay for a claim, and the history the number came from."""
+
+    amount: int
+    rank: int = Field(description="The added player's value rank on the wire today")
+    bucket: str
+    basis: str = Field(description='"median" or "75th percentile"')
+    uncapped: float = Field(description="That statistic, before the caps")
+    low: int
+    high: int
+    sample: int = Field(description="Winning bids in the bucket")
+    capped_by: str | None
+    note: str
+
+
+class PickupPlayerOut(BaseModel):
+    """One player as the recommender sees him."""
+
+    espn_player_id: int
+    name: str
+    pro_team_id: int
+    position: str | None
+    injury_status: str | None
+    expected_return_date: date | None
+    games_remaining: int = Field(description="Games left in the window the report covers")
+    on_ir: bool
+
+
+class CategoryShiftOut(BaseModel):
+    abbreviation: str
+    before: float = Field(description="Probability of winning the category before the move")
+    after: float
+    delta: float
+
+
+class StreamMoveOut(BaseModel):
+    """One move and what it does to the week (docs/pickups.md section 4.3)."""
+
+    kind: str = Field(description="swap, add or ir_move")
+    add: PickupPlayerOut
+    drop: PickupPlayerOut | None
+    to_ir: PickupPlayerOut | None
+    delta: float = Field(description="Change in expected categories won this period")
+    add_starts: int
+    drop_starts: int
+    fills_empty_day: bool
+    clears_hurdle: bool
+    moved: list[CategoryShiftOut] = Field(description="Categories the move changed")
+    bid: BidOut | None
+
+
+class EmptyDayOut(BaseModel):
+    scoring_period: int
+    empty_slots: list[str]
+    fillers: list[PickupPlayerOut]
+
+
+class StreamReportOut(BaseModel):
+    """Who to stream this week, and whether anyone clears the hurdle."""
+
+    espn_team_id: int
+    matchup_period: int
+    scoring_periods_remaining: list[int]
+    opponent_espn_team_id: int | None = Field(description="Null on a bye")
+    expected_wins: float
+    probabilities: dict[str, float]
+    projected: dict[str, float] = Field(description="Raw counts, the week as projected")
+    opponent_projected: dict[str, float]
+    moves: list[StreamMoveOut]
+    recommended: StreamMoveOut | None = Field(description="Null when no move is worth making")
+    empty_days: list[EmptyDayOut]
+    hurdle: float
+    pool_size: int
+    faab_remaining: int
+    open_slots: int
+    ir_slot_free: bool
+
+
+class SeasonSwapOut(BaseModel):
+    """One move and what it does to an ordinary week (section 4.4)."""
+
+    kind: str = Field(description="free_add, swap or two_swap")
+    out: list[PickupPlayerOut]
+    into: list[PickupPlayerOut]
+    delta: float = Field(description="Change in expected categories won per week")
+    costs_faab: bool
+    hurdle: float
+    clears_hurdle: bool
+    moved: list[CategoryShiftOut]
+    bid: BidOut | None
+
+
+class DropCandidateOut(BaseModel):
+    """A roster member and what replacing him with the best free agent buys."""
+
+    player: PickupPlayerOut
+    replacement: PickupPlayerOut | None
+    delta: float
+
+
+class StashCandidateOut(BaseModel):
+    player: PickupPlayerOut
+    expected_return_date: date
+    weeks_away: float
+    healthy_rank: int = Field(description="Where his healthy value would rank on the wire")
+    needs_drop: bool = Field(description="False when the injured-reserve slot is free")
+
+
+class VolumeGuardOut(BaseModel):
+    adds: int
+    days: int
+    finding: str
+
+
+class SeasonReportOut(BaseModel):
+    """Who to hold for the rest of the year, and who should go."""
+
+    espn_team_id: int
+    today: int
+    last_scoring_period: int
+    weeks_remaining: float
+    total_weeks: float
+    expected_wins: float
+    probabilities: dict[str, float]
+    weekly: dict[str, float] = Field(description="The roster's own weekly category totals")
+    best_add: SeasonSwapOut | None
+    best_swap: SeasonSwapOut | None
+    best_two_swap: SeasonSwapOut | None
+    recommended: SeasonSwapOut | None = Field(description="Null when no move clears its hurdle")
+    drops: list[DropCandidateOut]
+    stashes: list[StashCandidateOut]
+    churn: VolumeGuardOut
+    hurdle_paid: float
+    hurdle_free: float
+    pool_size: int
+    faab_remaining: int
+    open_slots: int
+    ir_slot_free: bool
