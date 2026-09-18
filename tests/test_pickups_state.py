@@ -26,6 +26,7 @@ from tests.pickups_db import (
     OPENING,
     SEASON,
     clear_schedule,
+    clears_waivers_on,
     configure,
     day_date,
     eligible,
@@ -241,6 +242,73 @@ def test_faab_is_the_in_season_pot_less_the_bids_that_won(session: Session) -> N
 
     assert ls.acquisition_budget == 100 and ls.auction_budget == 200
     assert week.faab_remaining == 88, "the other team's bid is theirs"
+
+
+def test_the_add_budget_is_one_for_each_day_of_the_matchup_period(session: Session) -> None:
+    """The league's rule: one add per day of the period, spent on any of its
+    days. The adds already made are this team's executed ones inside the
+    period `today` falls in, and no others."""
+    ls, (home, away), _ = league_season(session, days_per_period=7)
+    configure(ls)
+    games(session, 10, [1])
+    someone = player(session, "Someone")
+    winning_bid(session, home, 1, 0, someone)
+    winning_bid(session, home, 3, 0, someone)
+    winning_bid(session, home, 3, 0, player(session, "Someone Else"))
+    winning_bid(session, home, 9, 0, someone)  # the next period's, not this one's
+    winning_bid(session, away, 2, 0, someone)  # another team's
+
+    week = load_team_week(session, ls, HOME, today=4)
+
+    assert week.adds_budget == 7, "seven days, seven adds"
+    assert week.adds_used == 3, "two of them on one day, which the league allows"
+    assert week.adds_left == 4
+    assert load_team_week(session, ls, HOME, today=9).adds_used == 1, "the next period is its own"
+    assert load_team_week(session, ls, AWAY, today=4).adds_used == 1
+
+
+def test_a_short_period_has_a_short_add_budget(session: Session) -> None:
+    """The opening week of this league is six days, so it allows six adds."""
+    ls, _, _ = league_season(session, days_per_period=6)
+    configure(ls)
+    games(session, 10, [1])
+
+    week = load_team_week(session, ls, HOME, today=2)
+
+    assert week.scoring_periods_remaining == (2, 3, 4, 5, 6)
+    assert week.adds_budget == 6, "the budget is the period's days, not the days left"
+    assert week.adds_used == 0 and week.adds_left == 6
+
+
+def test_a_free_agent_on_waivers_carries_the_period_he_clears_in(session: Session) -> None:
+    """Straight from the latest snapshot, mapped through the season calendar;
+    a pool named by id is taken as men who are free agents now."""
+    ls, _, _ = league_season(session)
+    configure(ls)
+    waiting = player(session, "On Waivers")
+    free = player(session, "Free")
+    for who in (waiting, free):
+        eligible(session, who, GUARD)
+        snapshot(session, who, pro_team_id=10, on_team_id=0)
+    games(session, 10, [1, 2, 3, 4])
+    on_the_wire(session, ls, free)
+    on_the_wire(session, ls, waiting, status="WAIVERS", clears_at=clears_waivers_on(4))
+    week = load_team_week(session, ls, HOME, today=2)
+
+    wire = {found.name: found for found in load_free_agents(session, ls, week)}
+
+    assert wire["Free"].waiver_clears_on is None
+    assert wire["Free"].seatable_on(2) is True
+    assert wire["On Waivers"].waiver_clears_at == day_date(4)
+    assert wire["On Waivers"].waiver_clears_on == 4
+    assert [wire["On Waivers"].seatable_on(day) for day in (2, 3, 4, 5)] == [
+        False,
+        False,
+        True,
+        True,
+    ]
+    named = load_free_agents(session, ls, week, player_ids=[waiting.id])
+    assert named[0].waiver_clears_on is None, "a named pool is taken as given"
 
 
 def test_a_player_the_listener_never_saw_takes_his_team_from_his_roster_row(

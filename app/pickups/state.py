@@ -35,6 +35,15 @@ FAAB
 The in-season pot is `league_seasons.acquisition_budget` (100 every season),
 not `auction_budget`, which is the draft's 200 and what the design note
 named by mistake. What is spent is the sum of executed bids this season.
+
+ADDS, AND WAIVERS
+
+Two league rules bound what the recommender may propose. Adds are budgeted
+by the matchup period -- one for each of its days, spent on any days of it
+(`ADDS_PER_PERIOD_DAY`) -- so a week is a budget of seven and the report
+carries what is left of it. And a free agent the league has on waivers
+cannot play for us before the scoring period in which he clears, so his
+`waiver_clears_on` is carried beside him and the seating reads it.
 """
 
 from __future__ import annotations
@@ -61,11 +70,14 @@ from app.db.models import (
     RosterSlot,
     Team,
     Transaction,
+    TransactionItem,
 )
 from app.draft.pool import roster_size_for
 from app.inseason.startable import NO_PRO_TEAM, RULED_OUT_STATUSES
+from app.listener.pool import WAIVERS
 from app.listener.snapshots import latest_snapshots
 from app.scoring.lines import COUNTS, CategoryLine
+from app.scoring.replacement import ADD_TYPES
 
 #: Lineup slot names that mean the player is held but not in the lineup.
 #: FA is ESPN's marker for a player who left the roster during the period
@@ -75,6 +87,22 @@ GONE_SLOT = "FA"
 
 #: A transaction ESPN carried out, as `transactions.status` spells it.
 EXECUTED = "EXECUTED"
+
+#: Adds a team may make for each day of a matchup period.
+#:
+#: ESPN's raw `acquisitionSettings` for this league, read 2026-09-18 and
+#: confirmed against the 2026 transactions: `matchupAcquisitionLimit` 1.0
+#: with `matchupLimitPerScoringPeriod` true. That is one add per day of the
+#: period, spendable on any days of it -- a seven-day period allows seven,
+#: the six-day opening week six -- and not one add per day: 204 of the 920
+#: 2026 team-days with an add on them had two or more. The season limit is
+#: unlimited, so the period is the only bound.
+#:
+#: The setting is not in the database. `league_seasons.raw_settings` holds
+#: the schedule and the scoring and nothing about acquisitions, so the
+#: number lives here with its provenance rather than being read from a row
+#: that does not exist.
+ADDS_PER_PERIOD_DAY = 1
 
 #: ESPN's abbreviation for each NBA team id, inverted: the fallback from a
 #: weekly roster row's `pro_team` to the id `pro_team_games` is keyed on.
@@ -102,6 +130,12 @@ class RosteredPlayer:
     #: out of, ascending.
     game_days: tuple[int, ...]
     on_ir: bool
+    #: The day he clears waivers, when the league has him on waivers, and
+    #: that day as a scoring period. Set only by `load_free_agents` reading
+    #: the latest snapshot; None for a rostered man and for a pool named by
+    #: id, whose members are free agents now by definition.
+    waiver_clears_at: date | None = None
+    waiver_clears_on: int | None = None
 
     @property
     def games_remaining_this_period(self) -> int:
@@ -111,6 +145,14 @@ class RosteredPlayer:
     def ruled_out(self) -> bool:
         """Whether ESPN has him out of the next game. See `startable`."""
         return (self.injury_status or "").upper() in RULED_OUT_STATUSES
+
+    def seatable_on(self, day: int) -> bool:
+        """Whether he could play for us on scoring period `day`.
+
+        A man on waivers cannot: a claim on him is a bid that resolves when
+        the waiver period ends, and he plays for us from that day on.
+        """
+        return self.waiver_clears_on is None or day >= self.waiver_clears_on
 
 
 @dataclass(frozen=True)
@@ -132,6 +174,15 @@ class TeamWeek:
     #: Roster places not held, injured reserve aside.
     open_slots: int
     ir_slot_free: bool
+    #: Executed adds this team has already made in this matchup period.
+    adds_used: int
+    #: What the period allows: `ADDS_PER_PERIOD_DAY` times its days.
+    adds_budget: int
+
+    @property
+    def adds_left(self) -> int:
+        """Adds still to spend this period, never below zero."""
+        return max(0, self.adds_budget - self.adds_used)
 
     @property
     def today(self) -> int:
@@ -268,11 +319,12 @@ def load_team_week(
 ) -> TeamWeek:
     """The week as it stands for ESPN team `team_id` on scoring period `today`.
 
-    Raises when `today` falls in no matchup period of the season: there is
-    no week to describe, and a caller guessing one would be wrong quietly.
+    Raises when `today` falls in no matchup period of the season, or in one
+    whose days are not recorded: there is no week to describe, and a caller
+    guessing one -- its days, and so its add budget -- would be wrong quietly.
     """
     period = period_for_day(session, league_season, today)
-    if period is None or period.final_scoring_period is None:
+    if period is None or period.first_scoring_period is None or period.final_scoring_period is None:
         raise ValueError(
             f"scoring period {today} is in no matchup period of {league_season.season}"
         )
@@ -302,6 +354,8 @@ def load_team_week(
         on_ir = frozenset()
     roster = build_players(session, league_season, held, remaining, on_ir=on_ir)
 
+    first_day = int(period.first_scoring_period)
+    last_day = int(period.final_scoring_period)
     active = [player for player in roster if not player.on_ir]
     ir_used = len(roster) - len(active)
     return TeamWeek(
@@ -315,7 +369,34 @@ def load_team_week(
         faab_remaining=int(league_season.acquisition_budget) - _faab_spent(session, team),
         open_slots=max(0, roster_size_for(league_season) - len(active)),
         ir_slot_free=int(league_season.injured_reserve_slots or 0) > ir_used,
+        adds_used=_adds_in_period(session, team, first_day, last_day),
+        adds_budget=ADDS_PER_PERIOD_DAY * (last_day - first_day + 1),
     )
+
+
+def _adds_in_period(session: Session, team: Team, first_day: int, last_day: int) -> int:
+    """Executed adds this team made on the days of one matchup period.
+
+    An add is a WAIVER or FREEAGENT transaction ESPN carried out with an
+    ADD item to this team (`app.scoring.replacement.ADD_TYPES`), counted the
+    way `app.pickups.season._adds_in_window` counts a fortnight's: one per
+    item, so a claim that added two men spends two of the budget.
+    """
+    count = session.scalar(
+        select(func.count())
+        .select_from(Transaction)
+        .join(TransactionItem, TransactionItem.transaction_id == Transaction.id)
+        .where(
+            Transaction.league_season_id == team.league_season_id,
+            Transaction.type.in_(ADD_TYPES),
+            Transaction.status == EXECUTED,
+            Transaction.scoring_period >= first_day,
+            Transaction.scoring_period <= last_day,
+            TransactionItem.item_type == "ADD",
+            TransactionItem.to_team_id == team.id,
+        )
+    )
+    return int(count or 0)
 
 
 def load_free_agents(
@@ -331,14 +412,87 @@ def load_free_agents(
     `free_agent_snapshots` only ever holds unrostered players, so the pool
     is every row of the most recent pass, not the latest row per player (a
     player claimed since would otherwise still be on the wire). `player_ids`
-    names the pool instead, for a test or a backtest. `days` counts each
-    man's games over a window other than the rest of this period, which is
-    what the rest-of-season report needs.
+    names the pool instead, for a test or a backtest; a pool named by id is
+    taken as men who are free agents now, so none of them is on waivers and
+    no snapshot is read for them. `days` counts each man's games over a
+    window other than the rest of this period, which is what the
+    rest-of-season report needs.
     """
+    named = player_ids is not None
     ids = set(player_ids) if player_ids is not None else _latest_pool(session, league_season)
-    return build_players(
-        session, league_season, ids, days if days is not None else week.scoring_periods_remaining
+    waivers = (
+        {}
+        if named
+        else waiver_clears(
+            session,
+            league_season,
+            season_calendar(session, int(league_season.season)),
+            ids,
+        )
     )
+    return build_players(
+        session,
+        league_season,
+        ids,
+        days if days is not None else week.scoring_periods_remaining,
+        waivers=waivers,
+    )
+
+
+def waiver_clears(
+    session: Session,
+    league_season: LeagueSeason,
+    calendar: SeasonCalendar | None,
+    player_ids: Iterable[int] | None = None,
+) -> dict[int, tuple[date, int]]:
+    """Who is on waivers, and the day and scoring period he clears on.
+
+    The latest `free_agent_snapshots` row per player, not the latest pass:
+    the question is this one man's waiver state, and the pass that saw him
+    may not be the newest one. Only a row whose status is WAIVERS with a
+    `waiver_clears_at` answers it; everyone else is free to play at once.
+
+    Without a calendar there is no scoring period to map the day to, so
+    nobody is held back rather than everybody being held back on a guess.
+    """
+    if calendar is None:
+        return {}
+    query = (
+        select(
+            FreeAgentSnapshot.player_id,
+            FreeAgentSnapshot.status,
+            FreeAgentSnapshot.waiver_clears_at,
+        )
+        .where(FreeAgentSnapshot.league_season_id == league_season.id)
+        .distinct(FreeAgentSnapshot.player_id)
+        .order_by(FreeAgentSnapshot.player_id, FreeAgentSnapshot.observed_at.desc())
+    )
+    if player_ids is not None:
+        wanted = sorted({int(player_id) for player_id in player_ids})
+        if not wanted:
+            return {}
+        query = query.where(FreeAgentSnapshot.player_id.in_(wanted))
+    out: dict[int, tuple[date, int]] = {}
+    for player_id, status, clears_at in session.execute(query).all():
+        if str(status).upper() != WAIVERS or clears_at is None:
+            continue
+        day = clears_at.date()
+        out[int(player_id)] = (day, calendar.scoring_period_on(day))
+    return out
+
+
+def waiver_state(players: Iterable[RosteredPlayer]) -> dict[int, tuple[date, int]]:
+    """The mapping `build_players` takes, read back off players that carry it.
+
+    So a caller who already has the wire -- the rest-of-season report, whose
+    week half rebuilds the arriving men (`app.pickups.stream.week_deltas`) --
+    passes the waiver state on rather than reading the snapshots again.
+    """
+    return {
+        player.player_id: (player.waiver_clears_at, player.waiver_clears_on)
+        for player in players
+        if player.waiver_clears_at is not None and player.waiver_clears_on is not None
+    }
 
 
 def build_players(
@@ -348,8 +502,13 @@ def build_players(
     days: Sequence[int],
     *,
     on_ir: frozenset[int] = frozenset(),
+    waivers: Mapping[int, tuple[date, int]] | None = None,
 ) -> tuple[RosteredPlayer, ...]:
-    """`RosteredPlayer` for each id, sorted by id, from the tables named above."""
+    """`RosteredPlayer` for each id, sorted by id, from the tables named above.
+
+    `waivers` is `waiver_clears`' answer for these ids, when the caller has
+    read it; without it nobody is on waivers.
+    """
     ids = sorted(set(player_ids))
     if not ids:
         return ()
@@ -376,11 +535,13 @@ def build_players(
     }
     games = schedule(session, season, pro_teams.values(), min(days), max(days)) if days else {}
 
+    on_waivers = waivers or {}
     players: list[RosteredPlayer] = []
     for player_id in ids:
         snapshot = snapshots.get(player_id)
         status = snapshot.injury_status if snapshot is not None else None
         returns = snapshot.expected_return_date if snapshot is not None else None
+        clears = on_waivers.get(player_id)
         players.append(
             RosteredPlayer(
                 player_id=player_id,
@@ -397,6 +558,8 @@ def build_players(
                     expected_return_date=returns,
                 ),
                 on_ir=player_id in on_ir,
+                waiver_clears_at=clears[0] if clears is not None else None,
+                waiver_clears_on=clears[1] if clears is not None else None,
             )
         )
     return tuple(players)
