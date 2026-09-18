@@ -23,17 +23,23 @@ WHAT DROPPING A PLAYER COSTS
 
 Not his rest-of-season value. The roster place never goes empty: the man who
 leaves is replaced, this week or next, by whoever the wire offers. So the
-season charge is his value *less what the wire gives back for that place*:
+charge is what the place was worth less what it is worth after the move, and
+on either side the place is worth the better of the man in it and the wire:
 
-    season_cost = value(dropped) - max(value(added), wire_replacement)
+    season_cost = max(value(dropped), wire) - max(value(added), wire)
 
-`wire_replacement` is the best free agent still available after the one being
-added, floored at `TYPICAL_PICKUP`. The floor is what makes streaming a fringe
-player free: a man worth about what the wire is worth costs about nothing to
-drop. The same term is what makes a genuine keeper count for more than a
-streamer on the way in, since a streamer's place can be re-streamed next week
-and a keeper's cannot be improved on -- `max` takes the better of "he stays"
-and "the place is streamed again", which is principle 3 of the brief.
+`wire` is `wire_replacement`: the best free agent still available after the
+one being added, floored at `TYPICAL_PICKUP`. The same floor sits under both
+sides. That is what makes streaming a fringe player free -- two men both
+worth less than the wire leave the place worth the wire either way, so the
+swap is worth nothing, not a credit -- while a genuine keeper is credited his
+whole gap over the wire on the way in, and a real player is charged his gap
+over the wire on the way out. The `max` takes the better of "he stays" and
+"the place is streamed again", which is principle 3 of the brief; taking it
+on one side only, as the first cut did, paid the floor to every swap between
+two nobodies, and a pre-season run with nobody projected recommended churn at
++0.06 a week. An empty place is the one exception: it yields nothing until it
+is filled, so the add that fills it is credited in full.
 
 A dropped good player is assumed gone: another manager takes him, and he is
 not coming back for the price of a waiver claim.
@@ -261,7 +267,9 @@ def weekly_lines(
     }, weeks
 
 
-def season_cost(dropped_weekly: float, added_weekly: float, replacement: float) -> float:
+def season_cost(
+    dropped_weekly: float, added_weekly: float, replacement: float, *, empty: bool = False
+) -> float:
     """What a swap costs the roster place over the rest of the season.
 
     All three are categories a week through the league-standard lens
@@ -269,12 +277,16 @@ def season_cost(dropped_weekly: float, added_weekly: float, replacement: float) 
     is worth, and what the wire would give the place back if he were streamed
     away again (`wire_replacement`).
 
-    The place is worth the better of keeping the new man and re-streaming it,
-    so a keeper counts for what he is and a streamer is not punished for being
-    one. Negative means the move improves the place, which is the usual case
-    for an add into somewhere empty.
+    On both sides the place is worth the better of the man in it and
+    re-streaming it, so a keeper counts for what he is, a streamer is not
+    punished for being one, and a swap between two men below the wire is worth
+    nothing rather than the floor. The one place worth less than the wire is
+    an `empty` one: it yields nothing until it is filled, and the add that
+    fills it is the streaming, so it is credited the whole of what arrives.
+    Negative means the move improves the place.
     """
-    return dropped_weekly - max(added_weekly, replacement)
+    before = 0.0 if empty else max(dropped_weekly, replacement)
+    return before - max(added_weekly, replacement)
 
 
 def _best_available(values: Mapping[int, float], exclude: Collection[int], floor: float) -> float:
@@ -499,6 +511,7 @@ def judge(
             sum(spots.value(player_id) for player_id in dropped),
             sum(spots.value(player_id) for player_id in added),
             replacement * max(1, len(added)) if added else 0.0,
+            empty=not dropped,
         )
         delta_season_per_week = -cost if spots.measured else 0.0
     weeks = spots.weeks_remaining

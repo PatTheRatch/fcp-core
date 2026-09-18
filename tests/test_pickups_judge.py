@@ -274,3 +274,16 @@ def test_the_book_separates_the_roster_from_the_wire(session: Session) -> None:
     assert spots.replacement() == pytest.approx(spots.value(2)), "the best free agent"
     assert spots.replacement(exclude=[2]) == pytest.approx(max(spots.value(3), TYPICAL_PICKUP))
     assert spots.expected_per_week > 0.0, "the roster wins some categories in an ordinary week"
+
+
+def test_a_swap_between_two_men_below_the_wire_is_worth_nothing() -> None:
+    """The floor sits under both sides of the place. A pre-season run with
+    nobody projected once recommended churn at +0.06 a week because the
+    first cut floored the added side only; two nobodies swapped leave the
+    place worth the wire either way."""
+    assert season_cost(0.0, 0.0, TYPICAL_PICKUP) == 0.0
+    assert season_cost(0.03, 0.05, TYPICAL_PICKUP) == 0.0
+    assert season_cost(0.05, 0.03, TYPICAL_PICKUP) == 0.0
+    # An empty place is the exception: it yields nothing, so filling it with a
+    # man at the floor gains the floor.
+    assert season_cost(0.0, 0.05, TYPICAL_PICKUP, empty=True) == pytest.approx(-TYPICAL_PICKUP)

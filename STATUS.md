@@ -1794,7 +1794,7 @@ recommended.
 
 What dropping a player costs is **not** his rest-of-season value. The place
 never goes empty, so the charge is his value less what the wire gives the
-place back: `value(dropped) - max(value(added), wire_replacement)`, where
+place back on either side: `max(value(dropped), wire) - max(value(added), wire)`, where
 `wire_replacement` is the best free agent still available after the one being
 added, floored at a typical pickup (`TYPICAL_PICKUP` 0.06 categories a week,
 the lowest recent season's median in `app/scoring/replacement.py`). Streaming
