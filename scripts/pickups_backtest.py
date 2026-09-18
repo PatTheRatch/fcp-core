@@ -131,7 +131,7 @@ from typing import Any
 # nothing. The streaming CLI does the same for the same reason.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -141,6 +141,7 @@ from app.draft.lineup import max_matching
 from app.draft.pool import lineup_for
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.valuation import INVERTED_CATEGORIES
+from app.pickups.projection import _MINUTES_KINDS
 from app.pickups.season import SeasonReport, season_recommendations
 from app.pickups.state import _PRO_TEAM_IDS, season_calendar
 from app.pickups.stream import StreamReport, stream_recommendations, weight
@@ -1412,6 +1413,20 @@ def _pct(value: float) -> str:
     return f"{value:.1%}"
 
 
+def minutes_events_stored(session: Session) -> int:
+    """How many minutes events the season holds for the tilt to read."""
+    return int(
+        session.scalar(
+            text(
+                "SELECT count(*) FROM player_status_events "
+                "WHERE season = :season AND kind IN :kinds"
+            ).bindparams(bindparam("kinds", expanding=True)),
+            {"season": SEASON, "kinds": list(_MINUTES_KINDS)},
+        )
+        or 0
+    )
+
+
 def _teams(count: int) -> str:
     """One team or twelve teams, so the write-up reads as English."""
     return f"{count} team" + ("" if count == 1 else "s")
@@ -1425,8 +1440,14 @@ def report(
     points: int,
     runtime: float,
     tilt_run: str,
+    minutes_events: int = 0,
 ) -> str:
-    """The write-up, in the style of docs/punt_builds.md."""
+    """The write-up, in the style of docs/punt_builds.md.
+
+    `minutes_events` is how many minutes events the season holds for the
+    tilt to read; none means tilt on and tilt off are the same run, and the
+    write-up says so rather than presenting the two tables as a comparison.
+    """
     base_week = statistics.fmean([b.week for b in baseline]) if baseline else 0.0
     base_season = statistics.fmean([b.season for b in baseline]) if baseline else 0.0
     base_win = sum(1 for b in baseline if b.week >= 0) / len(baseline) if baseline else 0.0
@@ -1610,30 +1631,61 @@ def report(
     )
     lines.append("")
     for tilt_label, settings in results.items():
-        qualifying = [
-            (key, stream, season)
-            for key, (stream, season) in sorted(settings.items())
+        stream_qualifying = [
+            (key, stream)
+            for key, (stream, _season) in sorted(settings.items())
             if stream.eligible(base_week)
         ]
-        if not qualifying:
+        if not stream_qualifying:
             lines.append(
-                f"- Tilt {tilt_label}: **no streaming setting qualifies**, so "
-                "`STREAM_HURDLE` is left where the design note put it."
+                f"- Tilt {tilt_label}, streaming: **no setting qualifies**. The no-move "
+                "rate never clears the bar, because a move that seats a man on a day "
+                "a slot was going empty is recommended whenever it helps at all "
+                "(`Move.clears`), whatever the hurdle; the hurdle only decides the "
+                "rest. `STREAM_HURDLE` is left where the design note put it."
             )
-            continue
-        key, stream, _season = max(qualifying, key=lambda row: row[1].mean)
-        lines.append(
-            f"- Tilt {tilt_label}: best qualifying streaming hurdle **{key[0]:.2f}** "
-            f"({stream.mean:+.2f} categories over {stream.n} moves, "
-            f"{_pct(stream.no_move_rate)} no-move)."
-        )
+        else:
+            key, stream = max(stream_qualifying, key=lambda row: row[1].mean)
+            lines.append(
+                f"- Tilt {tilt_label}, streaming: best qualifying hurdle **{key[0]:.2f}** "
+                f"({stream.mean:+.2f} categories over {stream.n} moves, "
+                f"{_pct(stream.no_move_rate)} no-move)."
+            )
+        season_qualifying = [
+            (key, season)
+            for key, (_stream, season) in sorted(settings.items())
+            if season.eligible(base_season)
+        ]
+        if not season_qualifying:
+            lines.append(
+                f"- Tilt {tilt_label}, rest of season: **no setting qualifies**, so "
+                "`SEASON_HURDLE_PAID` and `SEASON_HURDLE_FREE` are left where the "
+                "design note put them."
+            )
+        else:
+            key, season = max(season_qualifying, key=lambda row: row[1].mean)
+            lines.append(
+                f"- Tilt {tilt_label}, rest of season: best qualifying hurdles "
+                f"**{key[1]:.2f} paid / {key[2]:.2f} free** ({season.mean:+.2f} "
+                f"categories over 30 days, {season.n} moves, "
+                f"{_pct(season.no_move_rate)} no-move)."
+            )
     lines.append("")
     lines.append(
-        f"**No hurdle constant was changed by this run.** It covers {_teams(teams)} of "
-        "the league; the constants are set by the full run on the VPS, not by a smoke "
-        "test on one roster."
+        f"**This script changes no constant.** The run covers {_teams(teams)}; the "
+        "settings above are its recommendation, and the two hurdle constants are "
+        "changed by hand with this table quoted beside them."
     )
     lines.append("")
+    if minutes_events == 0 and len(results) > 1:
+        lines.append(
+            "**Tilt on and tilt off are the same run here.** The minutes tilt reads "
+            "the listener's minutes events (`player_status_events`), and this season "
+            "holds none: the listener began the season after. Every number above is "
+            "therefore the untilted recommender, and the tilt is unmeasured, not "
+            "measured as worthless."
+        )
+        lines.append("")
     lines.append(
         f"**Drift: {drift:+.2f} categories a period.** That is how much the re-solved "
         "lineup wins that the manager's own starts did not, averaged over the periods "
@@ -1818,6 +1870,7 @@ def main() -> None:
         points=len(points),
         runtime=runtime,
         tilt_run=", ".join(results),
+        minutes_events=minutes_events_stored(session),
     )
     if not args.no_write:
         args.out.parent.mkdir(parents=True, exist_ok=True)

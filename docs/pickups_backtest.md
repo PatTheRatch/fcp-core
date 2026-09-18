@@ -94,10 +94,14 @@ A recommender that says +0.5 and delivers +0.1 is a different tool from one that
 
 A setting qualifies when it still says *no move* on more than 20% of decisions -- a tool that always names a pickup makes its user worse, which is the league's own finding -- and when the categories it delivers beat the league's own moves (+0.05 a week). Among the qualifying settings, the best mean wins.
 
-- Tilt on: **no streaming setting qualifies**, so `STREAM_HURDLE` is left where the design note put it.
-- Tilt off: **no streaming setting qualifies**, so `STREAM_HURDLE` is left where the design note put it.
+- Tilt on, streaming: **no setting qualifies**. The no-move rate never clears the bar, because a move that seats a man on a day a slot was going empty is recommended whenever it helps at all (`Move.clears`), whatever the hurdle; the hurdle only decides the rest. `STREAM_HURDLE` is left where the design note put it.
+- Tilt on, rest of season: best qualifying hurdles **0.10 paid / 0.20 free** (+1.06 categories over 30 days, 453 moves, 24.8% no-move).
+- Tilt off, streaming: **no setting qualifies**. The no-move rate never clears the bar, because a move that seats a man on a day a slot was going empty is recommended whenever it helps at all (`Move.clears`), whatever the hurdle; the hurdle only decides the rest. `STREAM_HURDLE` is left where the design note put it.
+- Tilt off, rest of season: best qualifying hurdles **0.10 paid / 0.20 free** (+1.06 categories over 30 days, 453 moves, 24.8% no-move).
 
-**No hurdle constant was changed by this run.** It covers 14 teams of the league; the constants are set by the full run on the VPS, not by a smoke test on one roster.
+**This script changes no constant.** The run covers 14 teams; the settings above are its recommendation, and the two hurdle constants are changed by hand with this table quoted beside them.
+
+**Tilt on and tilt off are the same run here.** The minutes tilt reads the listener's minutes events (`player_status_events`), and this season holds none: the listener began the season after. Every number above is therefore the untilted recommender, and the tilt is unmeasured, not measured as worthless.
 
 **Drift: +0.02 categories a period.** That is how much the re-solved lineup wins that the manager's own starts did not, averaged over the periods replayed. A number near zero says the seating model is close to what this league actually does, so the counterfactual both sides of every move rest on is not a fantasy roster.
 
