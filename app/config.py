@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     #: never put in an error message.
     fcp_smtp_password: str | None = None
 
+    #: Where this API answers, as the scheduled passes reach it
+    #: (`scripts/warm_pages.py`): the tailnet address on the VPS. Unset means
+    #: the morning pass warms nothing, and the first look at a page each day
+    #: waits for the report to be built.
+    fcp_api_url: str | None = None
+
     @field_validator(
         "fcp_digest_url",
         "fcp_digest_chat_id",
@@ -50,6 +56,7 @@ class Settings(BaseSettings):
         "fcp_smtp_host",
         "fcp_smtp_user",
         "fcp_smtp_password",
+        "fcp_api_url",
         mode="before",
     )
     @classmethod

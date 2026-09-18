@@ -67,4 +67,14 @@ if ! "$PYTHON" scripts/digest.py $DIGEST_ARGS >> "$LOG_FILE" 2>&1; then
     exit 1
 fi
 log "succeeded: digest"
+
+# The morning pass also asks the API for today's reports once, so the week
+# and season pages open at once instead of building for half a minute on
+# the first look. Best effort: it needs FCP_API_URL, and never fails the unit.
+case "${1:-}${2:-}" in
+    *morning*)
+        log "starting: warm pages"
+        "$PYTHON" scripts/warm_pages.py >> "$LOG_FILE" 2>&1 || log "warm pages did not finish; the pages will build on first look"
+        ;;
+esac
 exit 0
