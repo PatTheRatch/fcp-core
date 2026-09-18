@@ -405,6 +405,75 @@ def test_head_to_head_is_settled_with_no_days_left_and_inverts_turnovers() -> No
     assert open_week["PTS"] == pytest.approx(0.5793, abs=0.001)
 
 
+def test_every_move_carries_a_judgement_over_both_horizons(session: Session) -> None:
+    """The ranking and the hurdle read the net, not the week (section 4.3's
+    second pass). The week's own change is still on the move beside it."""
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Scorer", slots=ANY, pro_team=20, per_game={**TEN_POINTS, "PTS": 25.0})
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    move = report.moves[0]
+    judgement = move.judgement
+    assert judgement.delta_week == pytest.approx(move.delta), "the week's half is the week"
+    assert move.net == pytest.approx(
+        judgement.delta_week + judgement.delta_season_per_week * judgement.weeks_remaining
+    )
+    assert judgement.weeks_remaining == pytest.approx(1.0), "period 2 of a two-period season"
+    assert judgement.delta_season_per_week > 0.0, "an add into an open place gains a place"
+    assert judgement.replacement > 0.0, "the wire always gives something back"
+    assert report.moves == tuple(sorted(report.moves, key=lambda m: -m.net)), "ranked on the net"
+
+    outlook = report.outlook
+    assert outlook.delta_total == 0.0 and outlook.record_with == outlook.record_without
+    assert outlook.banked == (0.0, 0.0), "nothing has finished yet"
+
+
+def test_a_week_of_gain_is_refused_when_the_season_costs_more(session: Session) -> None:
+    """The principle's case, through the report: dropping a man who is worth
+    keeping to win a category this week is a loss over the weeks left."""
+    ls, home, away, first = build_week(session, bench=0)
+    for name in ("A", "B"):
+        rostered(session, home, first, name, slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    # A star with no games left in this period and every game after it:
+    # dropping him costs the week nothing at all, and the season a great deal.
+    rostered(
+        session,
+        home,
+        first,
+        "Star",
+        slots=ANY,
+        pro_team=12,
+        per_game={"PTS": 40.0, "REB": 16.0, "AST": 8.0, "FGM": 16.0, "FGA": 30.0},
+    )
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Body", slots=ANY, pro_team=20, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [5, 6, 7])
+    games(session, 12, [1, 2, 8, 9, 10, 11, 12, 13, 14])
+    games(session, 20, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    # Dropping the star wins the week outright: he plays no more games, so
+    # the place he holds is dead, and the body who takes it fills a day the
+    # lineup was leaving empty. A week-only ranking names that move.
+    assert [day.scoring_period for day in report.empty_days] == [5, 6, 7]
+    chosen = report.moves[0]
+    assert chosen.add.name == "Body"
+    assert chosen.drop is not None and chosen.drop.name in ("A", "B"), (
+        "the season charge steers the drop away from the man worth keeping"
+    )
+    assert chosen.judgement.delta_season_per_week == pytest.approx(0.0, abs=0.02), (
+        "swapping one ordinary man for another costs the season nothing"
+    )
+
+
 def test_a_recommended_move_is_priced_in_faab_unless_bids_are_off(session: Session) -> None:
     """The hook section 4.5 adds: a move worth making says what to pay for it.
 

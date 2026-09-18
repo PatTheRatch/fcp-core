@@ -56,6 +56,20 @@ numbers are the note's starting values, to be set by the backtest. Beside
 them the report carries the team's adds over the last fortnight, and the
 league's own finding that the managers who churned most returned least per
 move: the recommender's most valuable answer is often no answer.
+
+BOTH HORIZONS
+
+The optimizer answers about an ordinary week from here on, which is only
+half the question: a swap that is worth a tenth of a category a week may
+still cost this week's matchup. So every `Swap` also carries a
+`app.pickups.judge.Judgement`, whose week half is the streaming report's own
+head-to-head (`app.pickups.stream.week_deltas`, so the two halves of the
+recommender cannot disagree about what a week is worth) and whose season
+half is the optimizer's change per week -- a with-and-without over the whole
+roster, which already charges the drop, in team-fit terms rather than the
+league-standard ones `judge` charges a stream by. The hurdles are read
+against the net spread over the weeks it covers (`Judgement.per_week`), so
+the two constants keep the units and the scale they were set in.
 """
 
 from __future__ import annotations
@@ -67,12 +81,20 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import LeagueSeason, MatchupPeriod, Transaction, TransactionItem
+from app.db.models import LeagueSeason, Transaction, TransactionItem
 from app.draft.optimizer import Candidate, RosterPlan, optimize, roster_totals, score
 from app.draft.pool import lineup_for, position_limits_for, roster_size_for
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.listener.events import OUT
 from app.pickups.bids import Bid, BidFit, bid_fit, recommend_bid, value_rank
+from app.pickups.judge import (
+    DAYS_A_WEEK,
+    Judgement,
+    horizon,
+    judge,
+    load_spots,
+    weeks_between,
+)
 from app.pickups.projection import rest_of_season_line
 from app.pickups.state import (
     EXECUTED,
@@ -85,9 +107,31 @@ from app.pickups.state import (
     season_calendar,
     team_row,
 )
-from app.pickups.stream import CategoryShift, weight
+from app.pickups.stream import CategoryShift, week_deltas, weight
 from app.scoring.lines import CategoryLine
 from app.scoring.replacement import ADD_TYPES
+
+__all__ = [
+    "CHURN_DAYS",
+    "CHURN_FINDING",
+    "DAYS_A_WEEK",
+    "DROP_CANDIDATES",
+    "FREE_ADD",
+    "SEASON_HURDLE_FREE",
+    "SEASON_HURDLE_PAID",
+    "SEASON_POOL_SIZE",
+    "STASH_WEEKS",
+    "SWAP",
+    "TWO_SWAP",
+    "DropCandidate",
+    "SeasonReport",
+    "StashCandidate",
+    "Swap",
+    "VolumeGuard",
+    "horizon",
+    "season_recommendations",
+    "weeks_between",
+]
 
 #: Expected categories a week a swap that costs FAAB has to add
 #: (docs/pickups.md section 4.4, a starting value pending the backtest). A
@@ -122,10 +166,6 @@ CHURN_FINDING = (
     "at +0.63 once volume is removed. Fewer, better moves."
 )
 
-#: Days in a matchup period, the unit the opponent distributions are
-#: measured over and so the unit a season total is divided into.
-DAYS_A_WEEK = 7.0
-
 #: Move kinds, so a caller can branch without counting players.
 FREE_ADD = "free_add"
 SWAP = "swap"
@@ -145,8 +185,16 @@ class Swap:
     delta: float
     #: Every category's win probability before and after.
     shifts: tuple[CategoryShift, ...]
+    #: The move in one currency over both horizons (`app.pickups.judge`):
+    #: this week's head-to-head plus `delta` over the weeks after it.
+    judgement: Judgement
     #: What to pay, when the move costs FAAB and clears its hurdle.
     bid: Bid | None
+
+    @property
+    def net(self) -> float:
+        """Categories the move is worth over both horizons."""
+        return self.judgement.delta_total
 
     @property
     def costs_faab(self) -> bool:
@@ -162,7 +210,13 @@ class Swap:
         return paid if self.costs_faab else free
 
     def clears(self, paid: float, free: float) -> bool:
-        return self.delta >= self.hurdle(paid, free)
+        """Whether the move is worth making, on the net over both horizons.
+
+        The hurdles are categories a week, so the net is spread over the
+        weeks it covers -- this matchup and the ones after it -- rather than
+        compared to a bar in another unit.
+        """
+        return self.judgement.per_week >= self.hurdle(paid, free)
 
     def moved(self, threshold: float = 0.01) -> tuple[CategoryShift, ...]:
         """The categories the move changed, largest change first."""
@@ -230,6 +284,9 @@ class SeasonReport:
     drops: tuple[DropCandidate, ...]
     stashes: tuple[StashCandidate, ...]
     churn: VolumeGuard
+    #: The season as it stands, with no move: the projected record and the
+    #: weeks a judgement is charged over (`app.pickups.judge`).
+    outlook: Judgement
     hurdle_paid: float
     hurdle_free: float
     #: Free agents actually evaluated.
@@ -240,9 +297,9 @@ class SeasonReport:
 
     @property
     def moves(self) -> tuple[Swap, ...]:
-        """Every move found, best first."""
+        """Every move found, best first by the net over both horizons."""
         found = [m for m in (self.best_add, self.best_swap, self.best_two_swap) if m is not None]
-        return tuple(sorted(found, key=lambda move: -move.delta))
+        return tuple(sorted(found, key=lambda move: -move.net))
 
     @property
     def recommended(self) -> Swap | None:
@@ -251,43 +308,6 @@ class SeasonReport:
             if move.clears(self.hurdle_paid, self.hurdle_free):
                 return move
         return None
-
-
-def horizon(session: Session, league_season: LeagueSeason, today: int) -> tuple[int, int, int]:
-    """The stretch the report plans over: (first day, last day, today clamped).
-
-    The regular season while it lasts, since that is what the standings are
-    decided on, and the playoff periods once it is over. Raises when the
-    season has no matchup periods at all, which means nothing to plan over.
-    """
-    rows = session.execute(
-        select(
-            MatchupPeriod.is_playoff,
-            func.min(MatchupPeriod.first_scoring_period),
-            func.max(MatchupPeriod.final_scoring_period),
-        )
-        .where(MatchupPeriod.league_season_id == league_season.id)
-        .group_by(MatchupPeriod.is_playoff)
-    ).all()
-    windows = {
-        bool(is_playoff): (int(first), int(last))
-        for is_playoff, first, last in rows
-        if first is not None and last is not None
-    }
-    regular = windows.get(False)
-    playoffs = windows.get(True)
-    if regular is not None and (today <= regular[1] or playoffs is None):
-        first, last = regular
-    elif playoffs is not None:
-        first, last = playoffs
-    else:
-        raise ValueError(f"season {league_season.season} has no matchup periods to plan over")
-    return first, last, min(max(today, first), last)
-
-
-def weeks_between(first: int, last: int) -> float:
-    """Whole days turned into weeks, never less than a single day's worth."""
-    return max(1, last - first + 1) / DAYS_A_WEEK
 
 
 def season_recommendations(
@@ -402,19 +422,25 @@ def season_recommendations(
             return None
         return plan.expected_wins - base_expected, plan
 
-    def swap_from(kind: str, out: tuple[int, ...], found: tuple[float, RosterPlan]) -> Swap:
-        delta, plan = found
+    def arrivals(out: tuple[int, ...], plan: RosterPlan) -> tuple[int, ...]:
         gone = set(out)
         arrived = plan.player_ids - {player_id for player_id in locked if player_id not in gone}
+        return tuple(player_id for player_id in sorted(arrived) if player_id in by_id)
+
+    def swap_from(
+        kind: str, out: tuple[int, ...], found: tuple[float, RosterPlan], judgement: Judgement
+    ) -> Swap:
+        delta, plan = found
         return Swap(
             kind=kind,
             out=tuple(by_id[player_id] for player_id in out),
-            into=tuple(by_id[player_id] for player_id in sorted(arrived) if player_id in by_id),
+            into=tuple(by_id[player_id] for player_id in arrivals(out, plan)),
             delta=delta,
             shifts=tuple(
                 CategoryShift(key, base_probabilities[key], plan.win_probability[key])
                 for key in base_probabilities
             ),
+            judgement=judgement,
             bid=None,
         )
 
@@ -425,14 +451,6 @@ def season_recommendations(
             singles.append((found[0], (player_id,), found[1]))
     singles.sort(key=lambda row: (-row[0], row[1]))
 
-    best_add: Swap | None = None
-    if week.open_slots > 0:
-        filled = move((), 1)
-        if filled is not None and filled[1].player_ids != frozenset(locked):
-            best_add = swap_from(FREE_ADD, (), filled)
-
-    best_swap = swap_from(SWAP, singles[0][1], (singles[0][0], singles[0][2])) if singles else None
-
     pairs: list[tuple[float, tuple[int, ...], RosterPlan]] = []
     for index, first_out in enumerate(locked):
         for second_out in locked[index + 1 :]:
@@ -441,7 +459,57 @@ def season_recommendations(
             if found is not None:
                 pairs.append((found[0], out, found[1]))
     pairs.sort(key=lambda row: (-row[0], row[1]))
-    best_two_swap = swap_from(TWO_SWAP, pairs[0][1], (pairs[0][0], pairs[0][2])) if pairs else None
+
+    # Every move the report will carry, found first and judged together: the
+    # week's half of a judgement costs one rebuild of the week, so the three
+    # are priced in one call rather than three.
+    candidates_found: list[tuple[str, tuple[int, ...], tuple[float, RosterPlan]]] = []
+    if week.open_slots > 0:
+        filled = move((), 1)
+        if filled is not None and filled[1].player_ids != frozenset(locked):
+            candidates_found.append((FREE_ADD, (), filled))
+    if singles:
+        candidates_found.append((SWAP, singles[0][1], (singles[0][0], singles[0][2])))
+    if pairs:
+        candidates_found.append((TWO_SWAP, pairs[0][1], (pairs[0][0], pairs[0][2])))
+
+    spots = load_spots(
+        session,
+        league_season,
+        team_id,
+        today,
+        roster=[player.player_id for player in roster],
+        wire=[player.player_id for player in wire],
+        weekly={player_id: line.scaled(1.0 / weeks) for player_id, (line, _w) in values.items()},
+        distributions=distributions,
+    )
+    weeks_deltas = week_deltas(
+        session,
+        league_season,
+        team_id,
+        today,
+        [(arrivals(out, found[1]), out) for _kind, out, found in candidates_found],
+        tilt=tilt,
+        distributions=distributions,
+    )
+    judged = {
+        kind: swap_from(
+            kind,
+            out,
+            found,
+            judge(
+                spots,
+                delta_week=delta_week,
+                dropped=out,
+                added=arrivals(out, found[1]),
+                delta_season_per_week=found[0],
+            ),
+        )
+        for (kind, out, found), delta_week in zip(candidates_found, weeks_deltas, strict=True)
+    }
+    best_add = judged.get(FREE_ADD)
+    best_swap = judged.get(SWAP)
+    best_two_swap = judged.get(TWO_SWAP)
 
     drops = tuple(
         DropCandidate(
@@ -461,7 +529,7 @@ def season_recommendations(
             return found
         added = max(found.into, key=lambda player: wire_weights.get(player.player_id, 0.0))
         bid = recommend_bid(
-            found.delta,
+            found.judgement.per_week,
             found.hurdle(hurdle_paid, hurdle_free),
             value_rank(added.player_id, wire_weights),
             week.faab_remaining,
@@ -500,6 +568,7 @@ def season_recommendations(
         churn=VolumeGuard(
             adds=_adds_in_window(session, league_season, team_id, today), days=CHURN_DAYS
         ),
+        outlook=judge(spots, delta_week=0.0, delta_season_per_week=0.0),
         hurdle_paid=hurdle_paid,
         hurdle_free=hurdle_free,
         pool_size=len(chosen),

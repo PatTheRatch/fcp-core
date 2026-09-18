@@ -47,6 +47,18 @@ is listed, not recommended. The design note argues this at length: the
 league's own adds returned less the more of them a manager made, so a tool
 that always names a pickup makes its user worse. The hurdle is the note's
 starting value, to be set by the backtest.
+
+BOTH HORIZONS, ONE CURRENCY
+
+The change in this week's expected wins is no longer the whole answer, and
+it never was: a week's gain bought by dropping a man worth half a category a
+week for the next fifteen weeks is a loss. Every move therefore carries a
+`app.pickups.judge.Judgement`, and the ranking and the hurdle read its
+`delta_total` -- this week's change plus the change per week over the rest of
+the season, times the weeks left. `Move.delta` is still this week's change
+alone, because the report shows both. The season charge, not the drop rules,
+is what stops a good player being dropped: every rostered man is still a
+candidate to drop, and one who is worth keeping is simply too expensive.
 """
 
 from __future__ import annotations
@@ -65,10 +77,12 @@ from app.draft.targets import CategoryDistribution, _normal_cdf, category_distri
 from app.draft.valuation import INVERTED_CATEGORIES, PERCENTAGE_COMPONENTS
 from app.inseason.startable import startable_starts
 from app.listener.events import OUT
+from app.pickups.judge import Judgement, SpotBook, judge, load_spots, weekly_lines
 from app.pickups.projection import per_game_line
 from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
+    build_players,
     load_free_agents,
     load_team_week,
     season_calendar,
@@ -81,6 +95,9 @@ if TYPE_CHECKING:  # A cycle at runtime: `bids` ranks the wire with `weight`.
 #: Categories a move must add to be recommended (docs/pickups.md section
 #: 4.3, a starting value pending the backtest). A typical pickup measured
 #: 0.06-0.13 categories a week (STATUS.md), so this asks for a good one.
+#: Since 2026-09-18 it is read against the judgement's net over both
+#: horizons rather than this week alone: same unit, same number, a move now
+#: has to be worth making on the season and not only on Sunday.
 STREAM_HURDLE = 0.10
 
 #: How many free agents are evaluated, the best by this week's line. Beyond
@@ -148,10 +165,19 @@ class Move:
     shifts: tuple[CategoryShift, ...]
     #: Whether the move seats a player on a day a slot was going empty.
     fills_empty_day: bool
+    #: The move in one currency over both horizons (`app.pickups.judge`).
+    #: This is what the ranking and the hurdle read; `delta` above is the
+    #: week's half of it, kept because the report shows both.
+    judgement: Judgement
     #: What to pay for the added player, on a move that clears the hurdle
     #: (`app.pickups.bids`). None on a move that does not, and when the
     #: caller asked for no bids.
     bid: Bid | None = None
+
+    @property
+    def net(self) -> float:
+        """Categories the move is worth over both horizons."""
+        return self.judgement.delta_total
 
     def moved(self, threshold: float = MOVED_THRESHOLD) -> tuple[CategoryShift, ...]:
         """The categories the move changed, largest change first."""
@@ -165,11 +191,14 @@ class Move:
     def clears(self, hurdle: float) -> bool:
         """Whether the move is worth making. See the module docstring.
 
+        Read on the net over both horizons, not on the week: a week's gain
+        that costs more than it is worth over the weeks left is not a move.
+
         A filled day only counts when the move helps at all: dropping a
         starter for a body that plays on the empty day fills it and loses
-        the week.
+        the season, and the net is what says so.
         """
-        return self.delta >= hurdle or (self.fills_empty_day and self.delta > 0)
+        return self.net >= hurdle or (self.fills_empty_day and self.net > 0)
 
 
 @dataclass(frozen=True)
@@ -197,6 +226,9 @@ class StreamReport:
     #: Best first, one per added player, at most `REPORT_MOVES`; empty on a bye.
     moves: tuple[Move, ...]
     empty_days: tuple[EmptyDay, ...]
+    #: The season as it stands, with no move: the projected record and the
+    #: weeks the judgements are charged over (`app.pickups.judge`).
+    outlook: Judgement
     hurdle: float
     #: Free agents actually evaluated.
     pool_size: int
@@ -383,12 +415,17 @@ def stream_recommendations(
         pool_size,
     )
 
+    spots = _spots(
+        session, league_season, team_id, today, week, wire, tilt=tilt, distributions=distributions
+    )
+    outlook = judge(spots, delta_week=0.0, delta_season_per_week=0.0)
+
     engine = _Week(days, lineup, week.my_totals)
     base = engine.project(mine)
     empty_days = _empty_days(week, wire, lineup)
 
     if week.opponent_team_id is None:
-        return _report(week, base, week.opp_totals, {}, (), empty_days, hurdle, len(wire))
+        return _report(week, base, week.opp_totals, {}, (), empty_days, outlook, hurdle, len(wire))
 
     opponent = load_team_week(session, league_season, week.opponent_team_id, today)
     theirs = {player.player_id: contender(player) for player in opponent.active}
@@ -412,16 +449,25 @@ def stream_recommendations(
         active[add.player_id] = add
         after_projection = engine.project(active)
         after = head_to_head(after_projection.line, their_line, distributions, len(days))
+        delta = sum(after.values()) - sum(before.values())
+        # A man moved to injured reserve keeps his place, so only a drop is
+        # charged against the rest of the season.
         return Move(
             kind=kind,
             add=add.player,
             drop=drop.player if drop is not None else None,
             to_ir=to_ir.player if to_ir is not None else None,
-            delta=sum(after.values()) - sum(before.values()),
+            delta=delta,
             add_starts=after_projection.starts.get(add.player_id, 0),
             drop_starts=base.starts.get(drop.player_id, 0) if drop is not None else 0,
             shifts=tuple(CategoryShift(key, before[key], after[key]) for key in before),
             fills_empty_day=after_projection.empty_slot_days < base.empty_slot_days,
+            judgement=judge(
+                spots,
+                delta_week=delta,
+                dropped=() if drop is None else (drop.player_id,),
+                added=(add.player_id,),
+            ),
         )
 
     moves: list[Move] = []
@@ -448,11 +494,117 @@ def stream_recommendations(
                 if legal(active, [*positions.values(), add.player.position]):
                     moves.append(evaluate(IR_MOVE, add, None, hurt))
 
-    moves.sort(key=lambda move: (-move.delta, move.add.player_id, _id_of(move.drop)))
+    moves.sort(key=lambda move: (-move.net, move.add.player_id, _id_of(move.drop)))
     reported = _best_per_add(moves)
     if bids:
         reported = _priced(session, league_season, week, reported, wire, hurdle)
-    return _report(week, base, their_line, before, reported, empty_days, hurdle, len(wire))
+    return _report(week, base, their_line, before, reported, empty_days, outlook, hurdle, len(wire))
+
+
+def _spots(
+    session: Session,
+    league_season: LeagueSeason,
+    team_id: int,
+    today: int,
+    week: TeamWeek,
+    wire: Sequence[Contender],
+    *,
+    tilt: bool,
+    distributions: Sequence[CategoryDistribution] | None,
+) -> SpotBook:
+    """What every man in play is worth to a roster place for the rest of the year.
+
+    The week's own lines cannot answer this: a four-game week and a role
+    change are different facts, and the season charge is about the second.
+    So the roster and the evaluated wire are re-counted over the rest of the
+    season, which is the same arithmetic `app.pickups.season` builds its
+    candidates from.
+    """
+    calendar = season_calendar(session, int(league_season.season))
+    as_of = calendar.date_of(today) if calendar is not None else None
+    roster = [player.player_id for player in week.roster]
+    pool = [contender.player_id for contender in wire]
+    weekly, _weeks = weekly_lines(
+        session, league_season, [*roster, *pool], today, tilt=tilt, as_of=as_of
+    )
+    return load_spots(
+        session,
+        league_season,
+        team_id,
+        today,
+        roster=roster,
+        wire=pool,
+        weekly=weekly,
+        distributions=distributions,
+    )
+
+
+def week_deltas(
+    session: Session,
+    league_season: LeagueSeason,
+    team_id: int,
+    today: int,
+    moves: Sequence[tuple[Sequence[int], Sequence[int]]],
+    *,
+    tilt: bool = True,
+    distributions: Sequence[CategoryDistribution] | None = None,
+) -> list[float]:
+    """This week's change in expected categories won, for each (added, dropped).
+
+    The rest-of-season report needs the week's half of a judgement for moves
+    it found by another route, and it must be the same number the streaming
+    report would give: the same seating, the same head-to-head, the same
+    knowable lines. So it is computed here rather than approximated there.
+    Zero for every move on a bye, where there is no head to head at all.
+    """
+    week = load_team_week(session, league_season, team_id, today)
+    if week.opponent_team_id is None:
+        return [0.0 for _ in moves]
+    season = int(league_season.season)
+    calendar = season_calendar(session, season)
+    as_of = calendar.date_of(today) if calendar is not None else None
+    if distributions is None:
+        distributions = category_distributions(session, league_season)
+    days = week.scoring_periods_remaining
+
+    def contender(player: RosteredPlayer) -> Contender:
+        per_game = per_game_line(session, season, player.player_id, today, tilt=tilt, as_of=as_of)
+        return Contender(
+            player=player,
+            per_game=per_game,
+            weight=weight(per_game, distributions or ()),
+            days=frozenset(player.game_days),
+        )
+
+    held = {player.player_id for player in week.roster}
+    incoming = {player_id for added, _dropped in moves for player_id in added} - held
+    arrivals = {
+        player.player_id: contender(player)
+        for player in build_players(session, league_season, incoming, days)
+    }
+    mine = {player.player_id: contender(player) for player in week.active}
+
+    engine = _Week(days, lineup_for(league_season), week.my_totals)
+    opponent = load_team_week(session, league_season, week.opponent_team_id, today)
+    their_line = (
+        _Week(days, lineup_for(league_season), opponent.my_totals)
+        .project({player.player_id: contender(player) for player in opponent.active})
+        .line
+    )
+    base = sum(
+        head_to_head(engine.project(mine).line, their_line, distributions, len(days)).values()
+    )
+
+    out: list[float] = []
+    for added, dropped in moves:
+        active = {k: v for k, v in mine.items() if k not in set(dropped)}
+        for player_id in added:
+            found = arrivals.get(player_id) or mine.get(player_id)
+            if found is not None:
+                active[player_id] = found
+        after = head_to_head(engine.project(active).line, their_line, distributions, len(days))
+        out.append(sum(after.values()) - base)
+    return out
 
 
 def _priced(
@@ -486,7 +638,7 @@ def _priced(
             priced.append(move)
             continue
         bid = recommend_bid(
-            move.delta,
+            move.net,
             hurdle,
             value_rank(move.add.player_id, weights),
             week.faab_remaining,
@@ -567,6 +719,7 @@ def _report(
     before: Mapping[str, float],
     moves: tuple[Move, ...],
     empty_days: tuple[EmptyDay, ...],
+    outlook: Judgement,
     hurdle: float,
     pool_size: int,
 ) -> StreamReport:
@@ -581,6 +734,7 @@ def _report(
         opponent_projected=their_line,
         moves=moves,
         empty_days=empty_days,
+        outlook=outlook,
         hurdle=hurdle,
         pool_size=pool_size,
         faab_remaining=week.faab_remaining,
