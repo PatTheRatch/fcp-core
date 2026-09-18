@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.db.models import LeagueSeason, Matchup, MatchupPeriod, Player, Team
+from app.pickups.bids import clear_cache
 from app.pickups.stream import (
     ADD,
     IR_MOVE,
@@ -402,3 +403,34 @@ def test_head_to_head_is_settled_with_no_days_left_and_inverts_turnovers() -> No
     assert open_week["BLK"] == pytest.approx(0.5)
     # Twenty points over a hundred-point spread, a whole week to go.
     assert open_week["PTS"] == pytest.approx(0.5793, abs=0.001)
+
+
+def test_a_recommended_move_is_priced_in_faab_unless_bids_are_off(session: Session) -> None:
+    """The hook section 4.5 adds: a move worth making says what to pay for it.
+
+    This league has no winning claims on record, so the number is nothing
+    and the note says why. What is pinned here is that the bid is attached
+    to a move that clears the hurdle, to no other, and not at all when the
+    caller asks for none.
+    """
+    clear_cache()
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(
+        session, ls, "Blocker", slots=CENTRE, pro_team=20, per_game={"BLK": 3.0}, position="C"
+    )
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+
+    priced = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+    quiet = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK, bids=False)
+
+    move = priced.recommended
+    assert move is not None and move.bid is not None
+    assert move.bid.amount == 0
+    assert move.bid.rank == 1, "the only man on the wire"
+    assert "no winning FAAB bids on record" in move.bid.note
+    assert all(other.bid is None for other in priced.moves if not other.clears(priced.hurdle))
+    assert quiet.recommended is not None and quiet.recommended.bid is None
