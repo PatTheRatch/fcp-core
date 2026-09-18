@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press</p>
+  <h1 id="title">&nbsp;</h1>
+  <p class="sub" id="sub"></p>
+  <div class="tools">
+    <button class="btn" id="theme" aria-pressed="false" title="light or dark">Lights down</button>
+  </div>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<main id="body" hidden>
+  <section>
+    <div class="shead"><h2>Every team</h2><span class="tag" id="tag"></span></div>
+    <p class="lede">Ours first, then the rest by matchups won. A category record counts
+      categories, not matchups; ESPN reports no matchup record, so that one is derived from
+      the stored matchups.</p>
+    <table class="grid">
+      <thead><tr>
+        <th>Team</th><th>Matchups</th><th>Categories</th><th>Finish</th><th>Reports</th>
+      </tr></thead>
+      <tbody id="teams"></tbody>
+    </table>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script>
+"use strict";
+
+/* The index: every team of one season, with its record, linking to both of
+   its pages. Two fetches, both small and both already existing questions --
+   the standings route derives the records, and the context route says which
+   team is ours and what day the two reports would be about. */
+
+const WHERE = place();
+
+const link = (team, which, label) =>
+  `<a href="/pages/teams/${WHERE.league}/${WHERE.season}/${team}/${which}` +
+  `${params(WHERE)}">${label}</a>`;
+
+function draw(context, standings) {
+  const byId = new Map((standings || []).map((row) => [row.espn_team_id, row]));
+  const teams = (context.teams || []).slice();
+  // Ours first, as the context already ordered it; the rest by matchups won,
+  // which is the order a standings table is read in.
+  teams.sort((a, b) => {
+    if (a.ours !== b.ours) return a.ours ? -1 : 1;
+    const ra = byId.get(a.espn_team_id);
+    const rb = byId.get(b.espn_team_id);
+    const wa = ra ? ra.matchups_won : -1;
+    const wb = rb ? rb.matchups_won : -1;
+    return wb - wa || a.name.localeCompare(b.name);
+  });
+
+  $("teams").innerHTML = teams.map((team) => {
+    const row = byId.get(team.espn_team_id);
+    const matchups = row
+      ? `${row.matchups_won}–${row.matchups_lost}` +
+        (row.matchups_tied ? `–${row.matchups_tied}` : "")
+      : "–";
+    const cats = row
+      ? `${row.categories_won}–${row.categories_lost}` +
+        (row.categories_tied ? `–${row.categories_tied}` : "")
+      : "–";
+    const finish = row && row.final_standing ? `#${row.final_standing}` : "–";
+    return (
+      `<tr class="${team.ours ? "ours" : ""}">` +
+      `<td class="name">${escape(team.name)}` +
+      `${team.ours ? ' <span class="mark clears">ours</span>' : ""}</td>` +
+      `<td>${matchups}</td><td>${cats}</td><td>${finish}</td>` +
+      `<td class="links">${link(team.espn_team_id, "week", "The week")}` +
+      `${link(team.espn_team_id, "season", "Rest of season")}</td></tr>`
+    );
+  }).join("");
+
+  document.title = `Full Court Press ${WHERE.season}`;
+  $("title").textContent = `Season ${WHERE.season}`;
+  $("eyebrow").textContent = `Full Court Press · league ${WHERE.league}`;
+  $("sub").innerHTML =
+    `${count(teams.length, "team")}, each with a streaming report and a rest-of-season one. ` +
+    `Both are built for day <b>${context.today}</b>` +
+    `${context.today_date ? ` (${dayName(context.today_date)})` : ""}; ` +
+    `add <span class="mono">?today=</span> to any link to ask about another day. ` +
+    `Numbers from ${escape(context.source_note)}.`;
+  $("tag").textContent = `day ${context.today}`;
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  $("title").textContent = "Loading…";
+  const [context, standings] = await Promise.all([
+    get(`${base}/pages/context${params(WHERE)}`),
+    get(`${base}/standings`),
+  ]);
+  if (!context.ok) {
+    $("title").textContent = "Not found";
+    fail(`This season cannot be listed: ${context.detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  // A season with no stored matchups has no records, which is a thinner
+  // table and not a failure: the two report links still work.
+  draw(context.body, standings.ok ? standings.body : []);
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Read-only: nothing here writes to the league or the ` +
+    `database. Both reports generate ideas; the manager decides. ` +
+    `<br>The pages: <span class="mono">docs/in_season_pages.md</span>.` +
+    (standings.ok ? "" : `<br>No records: ${escape(standings.detail)}.`);
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

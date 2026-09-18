@@ -104,6 +104,7 @@ from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
     build_players,
+    has_free_agent_snapshots,
     load_free_agents,
     load_team_week,
     schedule,
@@ -302,7 +303,13 @@ class SeasonReport:
     hurdle_free: float
     #: Free agents actually evaluated.
     pool_size: int
+    #: True when the wire was rebuilt from what was played rather than read
+    #: from the listener's snapshots, which is every played season
+    #: (`app.pickups.state.historical_free_agents`). A report says so.
+    historical_wire: bool
     faab_remaining: int
+    #: How far the bid feed's sum ran past the budget; see `app.pickups.state`.
+    faab_overspent: int
     open_slots: int
     ir_slot_free: bool
     #: Adds already made in the matchup period `today` falls in, and what it
@@ -387,6 +394,7 @@ def season_recommendations(
         on_ir=on_ir,
     )
     held = {player.player_id for player in roster}
+    historical_wire = pool is None and not has_free_agent_snapshots(session, league_season)
     wire = [
         player
         for player in load_free_agents(session, league_season, week, player_ids=pool, days=days)
@@ -595,7 +603,9 @@ def season_recommendations(
         hurdle_paid=hurdle_paid,
         hurdle_free=hurdle_free,
         pool_size=len(chosen),
+        historical_wire=historical_wire,
         faab_remaining=week.faab_remaining,
+        faab_overspent=week.faab_overspent,
         open_slots=week.open_slots,
         ir_slot_free=week.ir_slot_free,
         adds_used=week.adds_used,

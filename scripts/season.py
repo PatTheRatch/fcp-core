@@ -38,11 +38,13 @@ from app.pickups.state import season_calendar
 from scripts.stream import (
     LEAGUE_ID,
     _adds,
+    _faab,
     _judged,
     _league_season,
     _missing_tables,
     _record,
     _scarcity,
+    _wire,
 )
 
 
@@ -86,9 +88,10 @@ def render(
     add("  " + "  ".join(f"{key} {p:.2f}" for key, p in report.probabilities.items()))
     add(
         f"roster: {report.open_slots} open place(s), IR slot "
-        f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
+        f"{'free' if report.ir_slot_free else 'used or none'}, "
+        f"{_faab(report.faab_remaining, report.faab_overspent)}, "
         f"{_adds(report.adds_used, report.adds_budget)}, "
-        f"{report.pool_size} free agents evaluated"
+        f"{_wire(report.pool_size, report.historical_wire)}"
     )
     add(f"adds in the last {report.churn.days} days: {report.churn.adds}")
     add(f"  {report.churn.finding}")

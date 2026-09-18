@@ -34,7 +34,35 @@ FAAB
 
 The in-season pot is `league_seasons.acquisition_budget` (100 every season),
 not `auction_budget`, which is the draft's 200 and what the design note
-named by mistake. What is spent is the sum of executed bids this season.
+named by mistake. What is spent is the sum of the executed bids made **on or
+before `today`**: a report about a past day must not charge a team money it
+had not spent yet, which is what `_faab_spent` did before 2026-09-18 and why
+one 2026 team read $-3 on day 100 (it had spent $89 of its $100 by then, and
+the missing $14 was all spent after it).
+
+Even summed correctly the bid feed is a reconstruction, not a ledger. Over
+the whole of 2026 it disagrees with ESPN's own `teams.acquisition_budget_spent`
+for six of the fourteen teams, in both directions (+4, +3, -1, -2, -3, -4);
+team 3's executed claims sum to $103 where ESPN's column says exactly $100.
+ESPN does enforce the cap -- no team's column exceeds the budget, and the
+season carries a `FAILED_AUCTIONBUDGETEXCEEDED` claim -- so the overshoot is
+ours, not the league's. `faab_remaining` is therefore floored at zero and the
+overshoot carried beside it as `faab_overspent`, so a page can say the pot is
+empty and that our arithmetic ran past it, rather than printing a negative
+pot as though a manager could bid it.
+
+THE WIRE ON A PLAYED SEASON
+
+`free_agent_snapshots` is the listener's, and the listener only ever runs for
+the season in progress, so a played season has no rows and the wire would be
+empty. When a season has no snapshots at all, `load_free_agents` falls back to
+the historical definition `scripts/pickups_backtest.py` reconstructs the wire
+with: a man who played that scoring period and whom no team had in its lineup
+that day. It is a weaker definition -- it cannot see a free agent who did not
+play, and it knows nothing about waivers -- so `has_free_agent_snapshots` lets
+a report say which wire it is looking at. A caller that names its own pool
+(`player_ids`, which is what the backtest passes) never reaches the fallback,
+so the backtest's numbers are untouched.
 
 ADDS, AND WAIVERS
 
@@ -64,6 +92,7 @@ from app.db.models import (
     MatchupPeriod,
     MatchupTeamStat,
     Player,
+    PlayerGameStat,
     PlayerSeasonStat,
     PlayerStatusSnapshot,
     ProTeamGame,
@@ -170,7 +199,11 @@ class TeamWeek:
     my_totals: CategoryLine
     opp_totals: CategoryLine
     roster: tuple[RosteredPlayer, ...]
+    #: The pot left as of `today`, never below zero. See the module docstring.
     faab_remaining: int
+    #: How far our sum of the bid feed ran past the budget, normally zero.
+    #: Non-zero means the feed and ESPN's ledger disagree and the pot is spent.
+    faab_overspent: int
     #: Roster places not held, injured reserve aside.
     open_slots: int
     ir_slot_free: bool
@@ -358,6 +391,8 @@ def load_team_week(
     last_day = int(period.final_scoring_period)
     active = [player for player in roster if not player.on_ir]
     ir_used = len(roster) - len(active)
+    budget = int(league_season.acquisition_budget)
+    spent = _faab_spent(session, team, today)
     return TeamWeek(
         team_id=team_id,
         matchup_period=int(period.period),
@@ -366,7 +401,8 @@ def load_team_week(
         my_totals=my_totals,
         opp_totals=opp_totals,
         roster=roster,
-        faab_remaining=int(league_season.acquisition_budget) - _faab_spent(session, team),
+        faab_remaining=max(0, budget - spent),
+        faab_overspent=max(0, spent - budget),
         open_slots=max(0, roster_size_for(league_season) - len(active)),
         ir_slot_free=int(league_season.injured_reserve_slots or 0) > ir_used,
         adds_used=_adds_in_period(session, team, first_day, last_day),
@@ -417,9 +453,21 @@ def load_free_agents(
     no snapshot is read for them. `days` counts each man's games over a
     window other than the rest of this period, which is what the
     rest-of-season report needs.
+
+    On a season the listener never ran for there are no snapshots to read at
+    all, so the pool falls back to `historical_free_agents` on `week.today`
+    and nobody is on waivers, because nothing recorded who was. A caller who
+    named `player_ids` never reaches that fallback.
     """
     named = player_ids is not None
-    ids = set(player_ids) if player_ids is not None else _latest_pool(session, league_season)
+    if player_ids is not None:
+        ids = {int(player_id) for player_id in player_ids}
+    elif has_free_agent_snapshots(session, league_season):
+        ids = _latest_pool(session, league_season)
+    else:
+        # No pass ever ran, so no row says who was on waivers either.
+        ids = historical_free_agents(session, league_season, week.today)
+        named = True
     waivers = (
         {}
         if named
@@ -608,6 +656,58 @@ def _snapshot_roster(session: Session, season: int, team_id: int) -> set[int]:
     }
 
 
+def has_free_agent_snapshots(session: Session, league_season: LeagueSeason) -> bool:
+    """Whether the listener ever recorded a wire for this season.
+
+    False on every played season, because the listener only runs for the one
+    in progress. A report reads it to say which wire it looked at rather than
+    printing "0 free agents evaluated" and leaving the reader to guess why.
+    """
+    return (
+        session.scalar(
+            select(FreeAgentSnapshot.id)
+            .where(FreeAgentSnapshot.league_season_id == league_season.id)
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def historical_free_agents(session: Session, league_season: LeagueSeason, day: int) -> set[int]:
+    """The wire on `day`, rebuilt from what was played and who was held.
+
+    `scripts/pickups_backtest.py`'s `free_agent_pool`, which is the only
+    definition of a past day's wire this database can support: a man who
+    played that scoring period and whom no team in this league had in its
+    lineup that day. It is narrower than the real wire -- a free agent who
+    did not play is invisible, and nothing here knows about waivers -- so a
+    report built on it says so.
+    """
+    held = (
+        select(DailyLineupSlot.player_id)
+        .join(Team, Team.id == DailyLineupSlot.team_id)
+        .where(
+            Team.league_season_id == league_season.id,
+            DailyLineupSlot.scoring_period == day,
+            DailyLineupSlot.player_id == PlayerGameStat.player_id,
+        )
+    )
+    return {
+        int(player_id)
+        for player_id in session.scalars(
+            select(PlayerGameStat.player_id)
+            .where(
+                PlayerGameStat.season == int(league_season.season),
+                PlayerGameStat.scoring_period == day,
+                PlayerGameStat.played.is_(True),
+                PlayerGameStat.minutes > 0,
+                ~held.exists(),
+            )
+            .distinct()
+        ).all()
+    }
+
+
 def _latest_pool(session: Session, league_season: LeagueSeason) -> set[int]:
     """Every player on the wire at the most recent pass."""
     latest = session.scalar(
@@ -644,12 +744,20 @@ def _posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine
     return CategoryLine(counts, 0)
 
 
-def _faab_spent(session: Session, team: Team) -> int:
+def _faab_spent(session: Session, team: Team, through_day: int) -> int:
+    """What this team had spent of the in-season pot by the end of `through_day`.
+
+    The day bound is the whole point: without it a report about a past day
+    charges the team every bid it went on to make, which is how a team with
+    $11 left on day 100 was shown as $-3. A transaction with no scoring
+    period recorded is not counted, because there is no day to place it on.
+    """
     spent = session.scalar(
         select(func.coalesce(func.sum(Transaction.bid_amount), 0)).where(
             Transaction.league_season_id == team.league_season_id,
             Transaction.team_id == team.id,
             Transaction.status == EXECUTED,
+            Transaction.scoring_period <= through_day,
         )
     )
     return int(spent or 0)
