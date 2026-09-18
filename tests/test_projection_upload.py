@@ -425,6 +425,23 @@ def _cell(value: str) -> float | str:
         return value
 
 
+def test_a_room_is_drafted_on_one_pool_not_two() -> None:
+    """Refused before anything is read, so no database is touched."""
+    from app.draft.live import RoomError, load_room
+
+    with pytest.raises(RoomError, match="one pool"):
+        load_room(
+            SEASON,
+            "Through The Wire",
+            pool_season=None,
+            pool_kind="projected",
+            punt=[],
+            restarts=1,
+            bbm=Path("data/bbm/whatever.xls"),
+            projection_set=1,
+        )
+
+
 def test_an_unknown_extension_is_refused(tmp_path: Path) -> None:
     path = write(tmp_path, PER_GAME, "projections.json")
     with pytest.raises(ValueError, match="not a projection file"):

@@ -53,6 +53,7 @@ from app.draft.room import (
     resolve,
 )
 from app.draft.targets import CategoryDistribution
+from app.projections.sources import describe, may_show
 
 
 class UnknownNameError(LookupError):
@@ -524,6 +525,8 @@ class DraftSession:
                 "block": self._block_card(),
                 "feed": dict(self.feed_status),
                 "pool": room.pool_note,
+                "source": room.projection_source,
+                "source_note": describe(room.projection_source),
                 "stand_in": room.stand_in,
                 "replay_warnings": list(self.replay_warnings),
             }
@@ -582,9 +585,19 @@ class DraftSession:
                     "note": row.note or None,
                     "note_by": row.note_by or None,
                 }
+            if not may_show(room.projection_source, viewer_owns_source=True):
+                # One of the two places the gate is asked (the other is
+                # scripts/draft_plan.py). Everything below is derived from the
+                # pool's numbers per player -- the board, the going price, our
+                # ceiling, BBM's own row -- so a source this viewer does not
+                # own leaves nothing but the name. True today because the only
+                # viewer is the account that fetched them; `viewer_owns_source`
+                # is what auth will answer.
+                return _withheld_card(player_id, self.name_of(player_id), room.projection_source)
             return {
                 "player_id": player_id,
                 "name": self.name_of(player_id),
+                "source": room.projection_source,
                 "position": candidate.position if candidate else None,
                 "eligible": sorted(candidate.eligible) if candidate else [],
                 "on_board": candidate is not None,
@@ -646,6 +659,31 @@ class DraftSession:
 
 def _rounded(value: float | None) -> int | None:
     return None if value is None else round(value)
+
+
+def _withheld_card(player_id: int, name: str, source: str) -> dict[str, Any]:
+    """A card for a viewer who may not see this source's numbers.
+
+    The same keys as a real card, so the page renders rather than breaks, with
+    everything derived from the projections emptied: the gate's job is to make
+    a paid source invisible, not to make the room fall over.
+    """
+    return {
+        "player_id": player_id,
+        "name": name,
+        "source": source,
+        "withheld": describe(source),
+        "position": None,
+        "eligible": [],
+        "on_board": False,
+        "board_price": None,
+        "market_price": None,
+        "market_source": "",
+        "taken": None,
+        "bbm": None,
+        "ceiling": {"status": "withheld"},
+        "warning": None,
+    }
 
 
 def _ceiling_view(ceiling: Ceiling | None, going: int | None, pending: bool) -> dict[str, Any]:

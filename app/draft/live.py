@@ -32,6 +32,8 @@ from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import value_players
+from app.projections import sources
+from app.projections.upload import load_projection_set, set_note
 
 
 class RoomError(RuntimeError):
@@ -66,6 +68,11 @@ class Room:
     per_game_dollars: dict[int, float] = field(default_factory=dict)
     #: One line about the pool, for the header.
     pool_note: str = ""
+    #: Where the pool's numbers came from: "espn", "bbm" or "upload:<set id>"
+    #: (`app.projections.sources`). Every page built from this room names it,
+    #: and the two page builders ask `may_show` before rendering it, because a
+    #: gated source's per-player numbers are not ours to show.
+    projection_source: str = sources.ESPN
     #: Our board's price for each player: the valuation, before sizing to the
     #: room. Candidates carry the going price, which is what the optimizer
     #: plans with; this is kept for the blend and for display.
@@ -100,9 +107,15 @@ def load_room(
     tier_curve: bool = True,
     bbm: Path | None = None,
     bbm_per_game: Path | None = None,
+    projection_set: int | None = None,
     plan: str = "history",
     plan_slack: float = 0.10,
 ) -> Room:
+    if bbm is not None and projection_set is not None:
+        raise RoomError(
+            "a room is drafted on one pool: pass a BBM export or an uploaded "
+            "projection set, not both"
+        )
     factory = make_session_factory(make_engine(get_settings().database_url))
     with factory() as session:
         league_season = session.scalars(
@@ -127,13 +140,24 @@ def load_room(
             loaded = load_bbm(session, bbm, season)
             projections = loaded.projections
             bbm_rows = loaded.rows
+            projection_source = sources.BBM
             pool_note = (
                 f"pool: Basketball Monster, {bbm.name}: {len(projections)} players, "
                 f"{loaded.matched} matched to ESPN ids ({len(loaded.loose)} by short first name), "
                 f"{len(loaded.unmatched)} on the board by name only"
             )
+        elif projection_set is not None:
+            try:
+                projections = load_projection_set(session, projection_set)
+                pool_note = set_note(session, projection_set)
+            except ValueError as exc:
+                raise RoomError(str(exc)) from exc
+            if not projections:
+                raise RoomError(f"projection set {projection_set} has no rows stored")
+            projection_source = sources.upload_source(projection_set)
         else:
             projections = pool.load_projections(session, source_season, kind=pool_kind)
+            projection_source = sources.ESPN
             pool_note = f"pool: ESPN {source_season} {pool_kind}"
         if not projections and pool_season is None:
             raise RoomError(
@@ -156,7 +180,9 @@ def load_room(
             # Reshape to how this league actually spends: about half again on
             # the top five, less below rank 60. See app/draft/tiers.py.
             board = apply_tier_curve(board, LEAGUE_TIER_CURVE)
-        # BBM's games already price availability; ESPN's do not.
+        # BBM's games already price availability; ESPN's do not, and an
+        # uploaded set makes no promise either way, so it is discounted like
+        # ESPN's rather than trusted like BBM's.
         availability = 1.0 if bbm is not None else measured_availability(session).factor
         candidates = candidates_from(
             projections,
@@ -195,6 +221,7 @@ def load_room(
             restarts=restarts,
             bbm=bbm_rows,
             board={c.player_id: c.price for c in candidates},
+            projection_source=projection_source,
         )
         # Plan at what players will cost, not at what they are worth: priced
         # at the board, the model built rosters around a $52 Doncic the room
@@ -236,6 +263,7 @@ def load_room(
             bbm=bbm_rows,
             per_game_dollars=_per_game(bbm_rows, bbm_per_game),
             pool_note=pool_note,
+            projection_source=projection_source,
             board=board_prices,
         )
 

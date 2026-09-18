@@ -9,6 +9,7 @@ day.
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,29 @@ def test_the_card_carries_market_bbm_and_the_injury_discount() -> None:
     assert card["bbm"]["league_per_game"] == 52
     assert card["bbm"]["injury_discount"] == 11
     assert session.card(3)["market_source"].startswith("our board")
+
+
+def test_the_card_and_the_state_name_the_source_the_numbers_came_from() -> None:
+    session = DraftSession(replace(make_room(), projection_source="bbm"))
+
+    assert session.card(2)["source"] == "bbm"
+    assert session.snapshot()["source"] == "bbm"
+    assert "not to be shared" in session.snapshot()["source_note"]
+
+
+def test_a_gated_source_the_viewer_does_not_own_leaves_only_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seam auth will land in: today every viewer owns the source."""
+    monkeypatch.setattr("app.draft.session.may_show", lambda source, viewer_owns_source: False)
+    session = DraftSession(replace(make_room(), projection_source="bbm"))
+
+    card = session.card(2)
+    assert card["name"] == "Kawhi Leonard"
+    assert card["bbm"] is None
+    assert card["board_price"] is None and card["market_price"] is None
+    assert card["ceiling"] == {"status": "withheld"}
+    assert "not to be shared" in card["withheld"]
 
 
 def test_the_service_takes_picks_by_name_and_refuses_what_the_rules_refuse(
