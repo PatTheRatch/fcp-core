@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +45,10 @@ from app.digest import (
 )
 from app.listener import events as kinds
 from app.listener.status import next_pass_after, run_status_pass
+from app.pickups.stream import stream_recommendations
 from tests.fakes import attach_pool, fake_league, fake_pool_entry, fake_pro_game, fake_team
+from tests.pickups_db import ANY, WEEK, clear_schedule, day_date, games
+from tests.test_pickups_stream import TEN_POINTS, build_week, free_agent, rostered
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -512,3 +515,176 @@ def test_delivery_settings_come_from_the_env_file_too(monkeypatch: pytest.Monkey
         fcp_digest_chat_id="12345",
     )
     assert set_up.fcp_digest_chat_id == "12345"
+
+
+# ---------------------------------------------------------------------------
+# THIS WEEK: the streaming plan (docs/pickups.md section 5.2, item 3).
+#
+# The rooms come from the streaming tests rather than being rebuilt here, so
+# the digest is proved against exactly the weeks `app.pickups.stream` is
+# proved against and only the rendering is this module's own. `build_week`
+# and friends are plain functions over `tests/pickups_db.py`, not fixtures.
+
+MORNING = datetime.combine(day_date(5), time(9, 0), tzinfo=UTC)
+
+
+def _week_section(rendered: str) -> list[str]:
+    """The lines under THIS WEEK, up to the blank line before CHURN."""
+    body = rendered.split("THIS WEEK\n", 1)[1]
+    return body.split("\n\nCHURN")[0].splitlines()
+
+
+def _two_empty_slots_a_day(session: Session) -> tuple[LeagueSeason, Any, Any]:
+    """One man plays and three do not, against a rival who plays every day.
+
+    Two of the three lineup slots go empty on each remaining day, and two
+    free agents can each fill one.
+    """
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Playing", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    for name in ("Dead One", "Dead Two", "Dead Three"):
+        rostered(session, home, first, name, slots=ANY, pro_team=12, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer One", slots=ANY, pro_team=20, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer Two", slots=ANY, pro_team=21, per_game=TEN_POINTS)
+    for pro_team, days in ((10, [5, 6, 7]), (11, [5, 6, 7]), (20, [5, 6, 7]), (21, [5, 6, 7])):
+        games(session, pro_team, days)
+    games(session, 12, [1, 2])
+    return ls, home, away
+
+
+def test_the_morning_digest_carries_the_days_plan(session: Session) -> None:
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    digest = build_digest(session, ls, 1, now=MORNING)
+    rendered = digest.render()
+    section = _week_section(rendered)
+
+    assert section[0] == "  period 1, days 5-7 left (3), v Away"
+    assert section[1] == ("  4.50 of 9 categories as things stand; adds this period: used 0 of 7")
+    assert "  day 5: F, UT going empty" in section, "the days a slot goes begging"
+    assert [line for line in section if line.startswith("  day ")] == [
+        "  day 5: F, UT going empty",
+        "  day 6: F, UT going empty",
+        "  day 7: F, UT going empty",
+    ]
+    assert section[-2] == (
+        "  worth a look: add Streamer One (3 of 3 games), drop Dead One (0 of 0)"
+    )
+    assert section[-1].strip() == (
+        "week +0.50 + season -0.00/wk = net +0.50; record 4.5-4.5 without, 5.0-4.0 with"
+    )
+
+    # An extra section, not a replacement: the rest of the digest is untouched.
+    assert "YOUR ROSTER" in rendered and "ON THE WIRE" in rendered
+    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert digest.event_ids == [], "the plan reports state; it marks no news"
+    assert len(rendered.splitlines()) <= MAX_LINES
+
+
+def test_a_plan_of_two_moves_is_numbered_in_the_order_to_make_them(session: Session) -> None:
+    """The rendering of the multi-move branch, on a report built with the
+    streaming tests' own category spreads.
+
+    `build_digest` cannot pass those spreads, and the spreads this fixture
+    measures for itself are degenerate (no prior season to measure), which
+    makes every category a step function and a second move worth nothing.
+    So the report is built here and only its rendering is under test.
+    """
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+    report = stream_recommendations(session, ls, 1, today=5, distributions=WEEK)
+    assert len(report.recommended) == 2, "the room the streaming tests pin"
+
+    section = digest_module._week_lines(report, "Away")
+
+    assert section[-5] == "  worth a look, in this order:"
+    numbered = [line for line in section if line.startswith(("  1. ", "  2. "))]
+    assert len(numbered) == 2
+    assert numbered[0].startswith("  1. add Streamer ")
+    assert numbered[1].startswith("  2. add Streamer ")
+    assert {line.split("add Streamer ")[1][0] for line in numbered} == {"O", "T"}, "both men"
+    assert all("drop Dead" in line for line in numbered)
+    judged = [line for line in section if line.strip().startswith("week ")]
+    assert len(judged) == 2, "each move carries its own two horizons"
+    assert all("= net +" in line and " without, " in line and " with" in line for line in judged)
+
+
+def test_the_week_section_says_so_on_a_bye(session: Session) -> None:
+    clear_schedule(session)
+    ls, home, _away, first = build_week(session, bench=1, bye=True)
+    rostered(session, home, first, "Playing", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+
+    section = _week_section(build_digest(session, ls, 1, now=MORNING).render())
+
+    assert section == [
+        "  period 1, days 5-7 left (3)",
+        "  on a bye this period, so there is no week to plan for",
+    ]
+
+
+def test_a_week_that_cannot_be_built_costs_the_digest_nothing(session: Session) -> None:
+    """The failure path, on the digest's own fixtures: the listener wrote a
+    schedule and a roster for 2027 but no matchup periods, so there is no
+    week to describe. One line, and every other section is what it was."""
+    _pass(session, _baseline(), FIRST)
+
+    digest = _digest(session)
+    rendered = digest.render()
+
+    assert _week_section(rendered) == [
+        "  no plan today: scoring period 1 is in no matchup period of 2027"
+    ]
+    assert "Traceback" not in rendered
+    assert digest.team_name == "Through The Wire"
+    assert rendered.count("nothing new") == 2
+    assert "All 2 active" in rendered
+    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+
+
+def test_a_season_with_no_schedule_at_all_says_so(session: Session) -> None:
+    clear_schedule(session)
+    ls, _home, _away, _first = build_week(session, bench=1)
+
+    section = _week_section(build_digest(session, ls, 1, now=MORNING).render())
+
+    assert section == ["  no NBA schedule stored for 2026, so no plan today"]
+
+
+def test_an_unexpected_failure_is_named_by_its_type_and_nothing_else(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exception's text can carry a query or a connection string, so only
+    its type is reported. The digest still goes out."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("password=hunter2 while selecting from player_game_stats")
+
+    monkeypatch.setattr(digest_module, "stream_recommendations", boom)
+    rendered = build_digest(session, ls, 1, now=MORNING).render()
+
+    assert _week_section(rendered) == [
+        "  no plan today: the week could not be built (RuntimeError)"
+    ]
+    assert "hunter2" not in rendered and "player_game_stats" not in rendered
+    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+
+
+def test_the_later_passes_alert_carries_no_plan(session: Session) -> None:
+    """`build_alert` is what the report and late passes send. An add is not
+    what a player being ruled out at 22:30 calls for."""
+    _pass(session, _baseline(), FIRST)
+    out = _baseline()
+    out[0] = fake_pool_entry(100, "Kawhi Leonard", on_team_id=MINE, injury_status="OUT")
+    _pass(session, out, LATER)
+
+    alert = build_alert(session, _stored(session), MINE)
+
+    assert alert is not None
+    text, _ids = alert
+    assert "THIS WEEK" not in text and "worth a look" not in text
+    assert text.startswith("Kawhi Leonard: ")

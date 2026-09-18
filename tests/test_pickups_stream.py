@@ -572,7 +572,7 @@ def test_two_independent_moves_are_planned_for_one_day(session: Session) -> None
     assert plan[1].add_starts == 3, "the second man plays, he does not sit behind the first"
 
     text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
-    assert "recommended, in this order" in text
+    assert "worth a look, in this order" in text
     assert "adds this period: used 0 of 7" in text
 
 
@@ -632,7 +632,7 @@ def test_with_no_adds_left_the_report_still_lists_moves_and_recommends_none(
 
     text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
     assert "no adds left this period (adds this period: used 7 of 7)" in text
-    assert "recommended:" not in text
+    assert "worth a look" not in text
 
 
 def test_a_free_agent_on_waivers_cannot_play_before_he_clears(session: Session) -> None:

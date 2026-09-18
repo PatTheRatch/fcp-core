@@ -107,7 +107,7 @@ def render(
         mark = "clears" if move.clears(report.hurdle_paid, report.hurdle_free) else "below"
         add(
             f"  {move.kind:<9} {move.net:+.3f}  {describe(move)}  "
-            f"({mark} its hurdle of {move.hurdle(report.hurdle_paid, report.hurdle_free):.2f} a "
+            f"({mark} its bar of {move.hurdle(report.hurdle_paid, report.hurdle_free):.2f} a "
             f"week; this move is {move.judgement.per_week:+.3f} a week)"
         )
         for line in _judged(move.judgement):
@@ -142,14 +142,14 @@ def render(
     chosen = report.recommended
     if chosen is None:
         add(
-            f"no move clears the hurdle ({report.hurdle_paid:.2f} categories a week for a "
+            f"nothing clears the bar ({report.hurdle_paid:.2f} categories a week for a "
             f"claim, {report.hurdle_free:.2f} for a free add)."
         )
         add(f"projected record either way: {_record(outlook.record_without)}")
     elif report.adds_left == 0:
         # The move stands; the budget says when it can be made, not whether.
         add(
-            f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net), but "
+            f"worth a look: {describe(chosen)} ({chosen.net:+.3f} categories net), but "
             f"no adds are left this period ({_adds(report.adds_used, report.adds_budget)}), "
             "so it is a move for the next one."
         )
@@ -157,7 +157,7 @@ def render(
             add(f"  {line}")
     else:
         add(
-            f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net)"
+            f"worth a look: {describe(chosen)} ({chosen.net:+.3f} categories net)"
             f"{_scarcity(report.adds_left)}"
         )
         for line in _judged(chosen.judgement):

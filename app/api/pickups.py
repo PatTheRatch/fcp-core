@@ -5,10 +5,16 @@ knows the league, the year and the team id can ask both questions without
 knowing anything about this database's own keys, so player ids go out as
 ESPN's too.
 
+Both reports generate ideas; the manager decides. `recommended` on either
+one is the moves **worth a look**, in the order they are worth making, and
+`hurdle` is a bar a move has to clear to get there -- not an instruction to
+make it. An empty `recommended` says nothing cleared the bar, which is an
+answer in itself (docs/pickups.md section 4).
+
 Neither route talks to ESPN. Both read what the listener and the ingest
 have already stored, which is why a season the listener has never seen is
-a 409 rather than an empty report: the difference between "no move is
-worth making" and "no rows to decide on" is the whole value of the answer.
+a 409 rather than an empty report: the difference between "nothing clears
+the bar" and "no rows to decide on" is the whole value of the answer.
 
 `today` is a scoring period. Left out, it is the calendar day turned into
 one through the stored NBA schedule, which before opening night is the
@@ -82,7 +88,7 @@ def _day(calendar: SeasonCalendar, today: int | None) -> int:
 
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream",
-    summary="Who to stream this week, and whether anyone clears the hurdle",
+    summary="Who to stream this week, and whether anyone is worth a look",
 )
 def stream_report(
     league_season: LeagueSeasonDep,
