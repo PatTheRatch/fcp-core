@@ -136,6 +136,9 @@ def test_the_stream_route_reports_the_week_and_the_moves(client: TestClient) -> 
     assert body["opponent_espn_team_id"] == AWAY
     assert body["faab_remaining"] == 100
     assert body["ir_slot_free"] is False
+    assert (body["adds_used"], body["adds_budget"], body["adds_left"]) == (0, 7, 7)
+    assert isinstance(body["recommended"], list), "a plan of moves, in the order to make them"
+    assert len(body["recommended"]) <= body["adds_left"]
     assert body["moves"], "both free agents are legal pickups"
     names = {move["add"]["name"] for move in body["moves"]}
     assert names == {"Star", "Scrub"}
@@ -182,6 +185,7 @@ def test_the_season_route_reports_the_drops_and_the_churn(client: TestClient) ->
     assert body["best_swap"]["into"][0]["name"] == "Star"
     assert body["best_swap"]["costs_faab"] is True
     assert body["churn"] == {"adds": 0, "days": 14, "finding": body["churn"]["finding"]}
+    assert (body["adds_used"], body["adds_budget"], body["adds_left"]) == (0, 7, 7)
     assert "r = -0.63" in body["churn"]["finding"]
     assert body["stashes"] == []
     swap = body["best_swap"]

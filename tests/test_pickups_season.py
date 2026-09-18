@@ -201,6 +201,24 @@ def test_the_cli_prints_both_horizons_and_the_projected_record(session: Session)
     assert "projected record" in text
     assert "season so far:" in text
     assert "a week; this move is" in text, "the hurdle is a week, the net is not"
+    assert "adds this period: used 0 of 7" in text
+
+
+def test_the_report_carries_the_periods_add_budget(session: Session) -> None:
+    """The same budget the streaming report reads, so a manager is told what
+    a move costs in adds as well as in FAAB."""
+    ls, home, first = build_season(session)
+    full_roster(session, ls, home, first)
+    free_agent(session, ls, "Star", scaled(1.4), pro_team=20)
+    games(session, 20, EVERY_DAY)
+    transaction(session, home, 2, "FREEAGENT", [("ADD", player(session, "Someone"), None, home)])
+
+    report = season_recommendations(session, ls, HOME, today=3, distributions=WEEK)
+
+    assert (report.adds_used, report.adds_budget, report.adds_left) == (1, 7, 6)
+    assert "adds this period: used 1 of 7" in render(
+        report, season=2026, team_name="Home", when=None
+    )
 
 
 def test_the_drop_candidates_are_the_men_who_cost_least_to_lose(session: Session) -> None:

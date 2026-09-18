@@ -128,6 +128,7 @@ Neither is fixed on this branch: both live in `app/`, and this run only measures
 - **44 decision points a team, 14 teams.** Small. One season, one league.
 - **A move is replayed against the roster the team really held**, so a man the manager dropped for other reasons later in the window leaves the counterfactual roster one place larger than thirteen for the rest of it.
 - **A move's week score is zero on a bye**, and on a decision day in a period with no recorded opponent, since there are no categories to win.
+- **The add budget never binds here.** The replay takes two decision points a matchup period (its first and fourth days) and scores the moves found at each, so no team ever approaches the one-add-a-day-of-the-period budget the reports now carry (`ADDS_PER_PERIOD_DAY`, docs/pickups.md section 4.3). Nothing below measures a plan's second move, or a day with no adds left; the hurdles were fitted on one move a decision.
 - **Ten 2026 days carry no box scores at all**, and `daily_lineup_slots` stops at day 160 while stats run to 174. Decision points falling on an empty day yield no pool and are counted separately as `pool_empty`.
 
 ## 7. Decisions taken in this script

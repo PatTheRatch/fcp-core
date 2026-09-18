@@ -131,7 +131,9 @@ def _espn_ids(session: Session, players: list[RosteredPlayer]) -> dict[int, int]
 
 def _stream_players(report: StreamReport) -> list[RosteredPlayer]:
     found: list[RosteredPlayer] = []
-    for move in report.moves:
+    # The plan's second move comes from a second search, so its men need not
+    # be among the listed ones.
+    for move in (*report.moves, *report.recommended):
         found.extend(player for player in (move.add, move.drop, move.to_ir) if player is not None)
     for day in report.empty_days:
         found.extend(day.fillers)
@@ -161,6 +163,8 @@ def _player_out(player: RosteredPlayer, espn: dict[int, int]) -> PickupPlayerOut
         expected_return_date=player.expected_return_date,
         games_remaining=player.games_remaining_this_period,
         on_ir=player.on_ir,
+        waiver_clears_at=player.waiver_clears_at,
+        waiver_clears_on=player.waiver_clears_on,
     )
 
 
@@ -228,7 +232,6 @@ def _move_out(move: Move, hurdle: float, espn: dict[int, int]) -> StreamMoveOut:
 
 
 def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
-    recommended = report.recommended
     return StreamReportOut(
         espn_team_id=report.team_id,
         matchup_period=report.matchup_period,
@@ -239,7 +242,7 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
         projected=dict(report.projected.counts),
         opponent_projected=dict(report.opponent_projected.counts),
         moves=[_move_out(move, report.hurdle, espn) for move in report.moves],
-        recommended=_move_out(recommended, report.hurdle, espn) if recommended else None,
+        recommended=[_move_out(move, report.hurdle, espn) for move in report.recommended],
         empty_days=[
             EmptyDayOut(
                 scoring_period=day.scoring_period,
@@ -254,6 +257,9 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
         faab_remaining=report.faab_remaining,
         open_slots=report.open_slots,
         ir_slot_free=report.ir_slot_free,
+        adds_used=report.adds_used,
+        adds_budget=report.adds_budget,
+        adds_left=report.adds_left,
     )
 
 
@@ -320,4 +326,7 @@ def _season_out(report: SeasonReport, espn: dict[int, int]) -> SeasonReportOut:
         faab_remaining=report.faab_remaining,
         open_slots=report.open_slots,
         ir_slot_free=report.ir_slot_free,
+        adds_used=report.adds_used,
+        adds_budget=report.adds_budget,
+        adds_left=report.adds_left,
     )

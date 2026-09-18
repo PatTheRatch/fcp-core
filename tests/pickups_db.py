@@ -227,17 +227,27 @@ def on_the_wire(
     *,
     observed_at: datetime = OBSERVED,
     scoring_period: int = 1,
+    status: str = "FREEAGENT",
+    clears_at: datetime | None = None,
 ) -> None:
+    """The pool saw him unrostered. `status` WAIVERS with `clears_at` is a
+    man on waivers, who cannot play for us until the day he clears."""
     session.add(
         FreeAgentSnapshot(
             league_season_id=league_season.id,
             observed_at=observed_at,
             scoring_period=scoring_period,
             player_id=who.id,
-            status="FREEAGENT",
+            status=status,
+            waiver_clears_at=clears_at,
         )
     )
     session.flush()
+
+
+def clears_waivers_on(day: int) -> datetime:
+    """Noon on the day scoring period `day` falls on, as ESPN times a claim."""
+    return datetime.combine(day_date(day), datetime.min.time(), tzinfo=UTC) + timedelta(hours=12)
 
 
 def winning_bid(session: Session, team: Team, day: int, amount: int, who: Player) -> None:
