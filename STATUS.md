@@ -125,6 +125,17 @@ Listener routes, over what the status passes wrote:
 | `GET /players/{pid}/status` | a player's snapshot history, one row per pass |
 | `GET /players/{pid}/news` | stored news, newest first |
 
+Recommender routes, built from those rows and never from ESPN; `?today=`
+names a scoring period and defaults to the calendar day turned into one:
+
+| Route | What it gives |
+|---|---|
+| `.../teams/{tid}/pickups/stream` | who to stream this week, the empty days, and whether anything clears the hurdle |
+| `.../teams/{tid}/pickups/season` | the best add, swap and two-swap for the rest of the year, the drops, the stashes, the churn guard and what to bid |
+
+Both are a 409, not an empty report, for a season the listener never ran
+for: with no schedule, roster or wire there is nothing to decide from.
+
 The derivation lives in `app/narratives.py`, not in the routers, because it
 is domain logic rather than HTTP. One idea carries most of it: a matchup is
 stored once from the home team's point of view, so `matchup_sides` produces
@@ -1655,7 +1666,7 @@ turning delivery on:
 Then `GET /ingest-runs/health?mode=status` says whether the listener is
 alive, and `.../events` what it has seen.
 
-### The streaming recommender
+### The pickup recommender, this week and the rest of the season
 
 Built 2026-09-18 from section 4.3 of `docs/pickups.md`, against the test
 database only: the local development database is at migration 0013 and has
@@ -1700,8 +1711,60 @@ marked **as built** in the note):
   clears the hurdle only with a positive change.
 - On a bye the report carries the empty-day check and no moves.
 
-Not built here, for the next brief: the rest-of-season recommender
-(section 4.4), the bids (4.5), the backtest (4.6) and the API routes (5.1).
+**The rest-of-season half**, built the same day from sections 4.4, 4.5 and
+5.1. `app/pickups/season.py` asks the draft optimizer the same question
+three ways -- lock the roster and open a place, lock it less one man, lock
+it less two -- with every candidate's weekly line his rest-of-season line
+over the weeks left and every price zero, since in season the constraint is
+roster places rather than money. Out come the best free add, the best swap
+and the best two-swap, each with its own hurdle and the categories it
+moves; the three men whose removal costs least, which is the same
+computation read from the other end; free agents ESPN has OUT with a return
+date inside six weeks whose healthy value would earn a place; and the
+team's adds over the last fortnight beside the league's own finding that
+the managers who churned most returned least per move.
+`app/pickups/bids.py` fits the median and 75th percentile winning FAAB bid
+by the claimed player's value rank on the day, over every season the league
+played with FAAB. `app/api/pickups.py` serves both reports, and
+`scripts/season.py --season 2027 --team "Through The Wire"` prints the long
+one.
+
+What is pinned by tests (20 more): the optimizer takes the better of a
+two-player pool; a marginal swap is found and refused and carries no bid; a
+two-swap beats the best single one when two places are weak; a free add
+into an open place clears the lower hurdle; the drop candidates are ordered
+by what losing each man costs; the volume guard counts the adds inside its
+window and not the one outside it; a stash appears only with a return date
+inside six weeks; a claim is bucketed by its rank and the buckets carry
+their range and sample; the 75th percentile is paid only for a move worth
+twice its hurdle; the pot and the weeks left each cap a bid; both routes
+serve a seeded league, an unknown team is a 404 and a season the listener
+never ran for is a 409.
+
+Decisions taken while building it, beyond the design note:
+
+- The horizon is the rest of the regular season, or the playoff periods
+  once it is over. Games and weeks are counted over the same window, so a
+  weekly line is games a week over the stretch actually planned for.
+- `minimum_bid=0` and `restarts=0` go with `budget=0`. A floor of a dollar
+  a place under a budget of nothing leaves a roster short, and a shuffled
+  start is wasted when all but one or two places are locked.
+- A move that drops a player is charged the paid hurdle and an add into an
+  open place the free one. That is the note's rule stated in terms of the
+  move rather than the waiver state, which the stored rows do not carry.
+- A bid's rank is the per-game weight, not the rest-of-season one. A rank
+  is ordinal and every NBA team plays the same 82 games, so the orderings
+  agree -- and the only FAAB season on record, 2026, predates the schedule
+  table entirely.
+- A day's wire is narrowed to the 120 men with the most production in the
+  last fortnight before it is priced. A rank past 41 changes no bucket, so
+  the pre-filter cannot move a claim between buckets.
+- A season the listener has never run for is a 409, not an empty report:
+  "no move is worth making" and "nothing to decide from" are different
+  answers and must not look alike.
+
+Not built here, for the next brief: the backtest (section 4.6), which is
+what sets the three hurdles, and the digest's sections 3 and 4.
 
 ### Why the API is tailnet-only, and why owners have opaque ids
 
