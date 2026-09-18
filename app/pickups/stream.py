@@ -92,13 +92,16 @@ from app.scoring.lines import CategoryLine
 if TYPE_CHECKING:  # A cycle at runtime: `bids` ranks the wire with `weight`.
     from app.pickups.bids import Bid
 
-#: Categories a move must add to be recommended (docs/pickups.md section
-#: 4.3, a starting value pending the backtest). A typical pickup measured
-#: 0.06-0.13 categories a week (STATUS.md), so this asks for a good one.
-#: Since 2026-09-18 it is read against the judgement's net over both
-#: horizons rather than this week alone: same unit, same number, a move now
-#: has to be worth making on the season and not only on Sunday.
-STREAM_HURDLE = 0.10
+#: Categories a move must add, over both horizons (`Judgement.delta_total`),
+#: to be recommended (docs/pickups.md section 4.3). Set by the 2026 backtest
+#: (docs/pickups_backtest.md, 14 teams, 616 decision points): the sweep over
+#: 0.05-0.20 delivered +0.17 categories a matchup at every setting, with the
+#: no-move rate rising from 4.7% to 10.6%, so the top of the sweep buys the
+#: least churn for no loss. Patrick chose it on 2026-09-18 because adds are
+#: budgeted per matchup period and FAAB is finite. The bar barely bites
+#: because an empty-day fill is recommended whenever it helps at all
+#: (`Move.clears`); that rule, not this number, is the churn lever.
+STREAM_HURDLE = 0.20
 
 #: How many free agents are evaluated, the best by this week's line. Beyond
 #: the top eighty the wire is players without a role, and the swap search

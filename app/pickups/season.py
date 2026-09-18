@@ -133,15 +133,22 @@ __all__ = [
     "weeks_between",
 ]
 
-#: Expected categories a week a swap that costs FAAB has to add
-#: (docs/pickups.md section 4.4, a starting value pending the backtest). A
-#: typical pickup measured 0.06-0.13 categories a week (STATUS.md), so this
-#: asks for an ordinary good one to be worth a claim.
-SEASON_HURDLE_PAID = 0.05
+#: Expected categories a week a swap that costs FAAB has to add, read
+#: against the judgement's net per week (docs/pickups.md section 4.4). Set by
+#: the 2026 backtest (docs/pickups_backtest.md): at 0.05 the report delivered
+#: +0.98 categories over 30 days saying "no move" 13% of the time; at 0.10 it
+#: delivered +1.06 saying no 25% of the time, the one setting that clears the
+#: design rule. Patrick chose the higher bar on 2026-09-18: fewer, better
+#: moves, with a finite add budget and finite FAAB. The sweep stopped here,
+#: so a higher bar is unmeasured.
+SEASON_HURDLE_PAID = 0.10
 
 #: The same for a free add into an open place: lower, because it costs
-#: neither a player nor money, only the place.
-SEASON_HURDLE_FREE = 0.02
+#: neither a player nor money, only the place. Half the paid bar, as before;
+#: the sweep could not measure it apart (adds into an open place are rare,
+#: and its pairs ran the free bar above the paid one, which the design
+#: rejects), so this follows the paid bar rather than a number of its own.
+SEASON_HURDLE_FREE = 0.05
 
 #: Free agents carried into the optimizer, the best by rest-of-season value
 #: (docs/pickups.md section 4.4, "N = 60"). Beyond this the wire is players

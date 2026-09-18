@@ -99,6 +99,8 @@ A setting qualifies when it still says *no move* on more than 20% of decisions -
 - Tilt off, streaming: **no setting qualifies**. The no-move rate never clears the bar, because a move that seats a man on a day a slot was going empty is recommended whenever it helps at all (`Move.clears`), whatever the hurdle; the hurdle only decides the rest. `STREAM_HURDLE` is left where the design note put it.
 - Tilt off, rest of season: best qualifying hurdles **0.10 paid / 0.20 free** (+1.06 categories over 30 days, 453 moves, 24.8% no-move).
 
+**Applied 2026-09-18, Patrick's decision:** `STREAM_HURDLE` 0.10 → 0.20 (the least churn for no loss, with a finite add budget and finite FAAB) and `SEASON_HURDLE_PAID` 0.05 → 0.10. The grid's pairs ran the free bar above the paid one, which the design rejects, and adds into an open place are rare enough that the cell measured the paid bar alone; `SEASON_HURDLE_FREE` follows it at half, 0.02 → 0.05, unmeasured on its own.
+
 **This script changes no constant.** The run covers 14 teams; the settings above are its recommendation, and the two hurdle constants are changed by hand with this table quoted beside them.
 
 **Tilt on and tilt off are the same run here.** The minutes tilt reads the listener's minutes events (`player_status_events`), and this season holds none: the listener began the season after. Every number above is therefore the untilted recommender, and the tilt is unmeasured, not measured as worthless.
