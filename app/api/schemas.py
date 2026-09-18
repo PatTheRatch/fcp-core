@@ -554,6 +554,13 @@ class PickupPlayerOut(BaseModel):
     expected_return_date: date | None
     games_remaining: int = Field(description="Games left in the window the report covers")
     on_ir: bool
+    waiver_clears_at: date | None = Field(
+        default=None, description="The day he clears waivers, when the league has him on waivers"
+    )
+    waiver_clears_on: int | None = Field(
+        default=None,
+        description="That day as a scoring period; he cannot play for us before it",
+    )
 
 
 class CategoryShiftOut(BaseModel):
@@ -623,7 +630,12 @@ class StreamReportOut(BaseModel):
     projected: dict[str, float] = Field(description="Raw counts, the week as projected")
     opponent_projected: dict[str, float]
     moves: list[StreamMoveOut]
-    recommended: StreamMoveOut | None = Field(description="Null when no move is worth making")
+    recommended: list[StreamMoveOut] = Field(
+        description=(
+            "The plan: independent moves to make today, in order, each over the hurdle "
+            "on its own. Empty when no move is worth making and when no adds are left"
+        )
+    )
     empty_days: list[EmptyDayOut]
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle: float
@@ -631,6 +643,9 @@ class StreamReportOut(BaseModel):
     faab_remaining: int
     open_slots: int
     ir_slot_free: bool
+    adds_used: int = Field(description="Executed adds this matchup period")
+    adds_budget: int = Field(description="Adds the period allows: one for each of its days")
+    adds_left: int
 
 
 class SeasonSwapOut(BaseModel):
@@ -696,6 +711,9 @@ class SeasonReportOut(BaseModel):
     faab_remaining: int
     open_slots: int
     ir_slot_free: bool
+    adds_used: int = Field(description="Executed adds in the matchup period `today` falls in")
+    adds_budget: int = Field(description="Adds the period allows: one for each of its days")
+    adds_left: int
 
 
 class ProjectionSetOut(BaseModel):

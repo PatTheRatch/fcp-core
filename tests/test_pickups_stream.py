@@ -33,12 +33,15 @@ from tests.pickups_db import (
     SMALL_LINEUP,
     WEEK,
     clear_schedule,
+    clears_waivers_on,
     configure,
+    day_date,
     eligible,
     games,
     on_the_wire,
     projected,
     snapshot,
+    winning_bid,
 )
 from tests.scoring_db import NINE, held, league_season, matchup, player
 
@@ -131,12 +134,20 @@ def free_agent(
     pro_team: int,
     per_game: Mapping[str, float],
     position: str = "PG",
+    clears_on: int | None = None,
 ) -> Player:
+    """A man on the wire. `clears_on` puts him on waivers until that day."""
     who = player(session, name)
     eligible(session, who, slots, position)
     snapshot(session, who, pro_team_id=pro_team, on_team_id=0)
     projected(session, who, 70, per_game)
-    on_the_wire(session, ls, who)
+    on_the_wire(
+        session,
+        ls,
+        who,
+        status="FREEAGENT" if clears_on is None else "WAIVERS",
+        clears_at=None if clears_on is None else clears_waivers_on(clears_on),
+    )
     return who
 
 
@@ -160,8 +171,8 @@ def test_a_coin_flip_category_is_flipped_by_a_free_agent_with_three_games_left(
     assert report.probabilities["BLK"] == pytest.approx(0.5), "level so far, nobody plays"
     assert report.expected_wins == pytest.approx(4.5)
 
-    move = report.recommended
-    assert move is not None
+    assert len(report.recommended) == 1, "one pickup is all the wire offers"
+    move = report.recommended[0]
     assert move.kind == ADD and move.add.name == "Blocker" and move.drop is None
     assert move.add_starts == 3, "one game a day into an empty slot"
     assert move.delta >= STREAM_HURDLE
@@ -220,7 +231,7 @@ def test_a_marginal_swap_is_listed_but_not_recommended(session: Session) -> None
     assert 0 < best.delta < STREAM_HURDLE
     assert best.fills_empty_day is False, "every day was already full"
     assert best.clears(STREAM_HURDLE) is False
-    assert report.recommended is None
+    assert report.recommended == ()
     assert {move.kind for move in report.moves} == {SWAP}
 
 
@@ -246,7 +257,7 @@ def test_a_free_agent_whose_games_fall_on_full_days_adds_nothing(session: Sessio
     assert add.add_starts == 0, "four games, none of them a start"
     assert add.delta == pytest.approx(0.0)
     assert add.fills_empty_day is False
-    assert report.recommended is None
+    assert report.recommended == ()
 
 
 def test_a_better_free_agent_displaces_the_worst_starter_on_a_full_day(session: Session) -> None:
@@ -280,7 +291,7 @@ def test_on_a_bye_there_is_no_head_to_head_and_no_move(session: Session) -> None
     assert report.on_bye is True
     assert report.moves == ()
     assert report.expected_wins == 0.0
-    assert report.recommended is None
+    assert report.recommended == ()
     assert [day.scoring_period for day in report.empty_days] == [5, 6, 7], "still worth knowing"
 
 
@@ -308,8 +319,8 @@ def test_an_out_player_can_go_to_injured_reserve_to_make_room(session: Session) 
     report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
 
     assert report.open_slots == 0 and report.ir_slot_free is True
-    move = report.recommended
-    assert move is not None
+    assert len(report.recommended) == 1
+    move = report.recommended[0]
     assert move.kind == IR_MOVE
     assert move.to_ir is not None and move.to_ir.name == "Hurt"
     assert move.drop is None
@@ -386,8 +397,8 @@ def test_the_seasons_own_results_serve_as_the_spread_when_none_is_given(
 
     assert report.matchup_period == 2
     assert set(report.probabilities) == set(NINE)
-    assert report.recommended is not None
-    assert report.recommended.add.name == "Scorer"
+    assert report.recommended
+    assert report.recommended[0].add.name == "Scorer"
 
 
 def test_head_to_head_is_settled_with_no_days_left_and_inverts_turnovers() -> None:
@@ -517,10 +528,175 @@ def test_a_recommended_move_is_priced_in_faab_unless_bids_are_off(session: Sessi
     priced = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
     quiet = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK, bids=False)
 
-    move = priced.recommended
-    assert move is not None and move.bid is not None
+    assert priced.recommended
+    move = priced.recommended[0]
+    assert move.bid is not None
     assert move.bid.amount == 0
     assert move.bid.rank == 1, "the only man on the wire"
     assert "no winning FAAB bids on record" in move.bid.note
     assert all(other.bid is None for other in priced.moves if not other.clears(priced.hurdle))
-    assert quiet.recommended is not None and quiet.recommended.bid is None
+    assert quiet.recommended and quiet.recommended[0].bid is None
+
+
+def test_two_independent_moves_are_planned_for_one_day(session: Session) -> None:
+    """Patrick's rule: two swaps in a day are right when each stands alone.
+
+    One man plays this week and three do not, so two of the three lineup
+    slots go empty every day. Two free agents each fill one of them, and the
+    second is found by re-running the week with the first already made.
+    """
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Playing", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    for name in ("Dead One", "Dead Two", "Dead Three"):
+        rostered(session, home, first, name, slots=ANY, pro_team=12, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer One", slots=ANY, pro_team=20, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer Two", slots=ANY, pro_team=21, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [5, 6, 7])
+    games(session, 12, [1, 2])
+    games(session, 20, [5, 6, 7])
+    games(session, 21, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    assert report.adds_budget == 7 and report.adds_used == 0
+    assert [len(day.empty_slots) for day in report.empty_days] == [2, 2, 2], "two a day"
+    plan = report.recommended
+    assert len(plan) == 2, "one add does not fill both empty slots"
+    assert {move.add.name for move in plan} == {"Streamer One", "Streamer Two"}
+    dropped = [move.drop.name for move in plan if move.drop is not None]
+    assert len(set(dropped)) == 2 and set(dropped) <= {"Dead One", "Dead Two", "Dead Three"}
+    assert all(move.clears(report.hurdle) for move in plan)
+    assert all(move.fills_empty_day for move in plan), "each fills a day of its own"
+    assert plan[1].add_starts == 3, "the second man plays, he does not sit behind the first"
+
+    text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
+    assert "recommended, in this order" in text
+    assert "adds this period: used 0 of 7" in text
+
+
+def test_a_second_move_that_only_refills_the_first_moves_empty_day_is_not_planned(
+    session: Session,
+) -> None:
+    """The honest half of the rule. Both free agents fill the same one empty
+    slot, so the list clears the hurdle twice and the plan is one move."""
+    ls, home, away, first = build_week(session, bench=1)
+    for name in ("Playing One", "Playing Two"):
+        rostered(session, home, first, name, slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    for name in ("Dead One", "Dead Two"):
+        rostered(session, home, first, name, slots=ANY, pro_team=12, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer One", slots=ANY, pro_team=20, per_game=TEN_POINTS)
+    free_agent(session, ls, "Streamer Two", slots=ANY, pro_team=21, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [5, 6, 7])
+    games(session, 12, [1, 2])
+    games(session, 20, [5, 6, 7])
+    games(session, 21, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    assert [len(day.empty_slots) for day in report.empty_days] == [1, 1, 1], "one a day"
+    listed = [move for move in report.moves if move.clears(report.hurdle)]
+    assert len(listed) == 2, "read off the list, both pickups look worth making"
+    assert {move.add.name for move in listed} == {"Streamer One", "Streamer Two"}
+    assert len(report.recommended) == 1, "the second only refills the first's empty day"
+    assert report.recommended[0].add.name in {"Streamer One", "Streamer Two"}
+
+
+def test_with_no_adds_left_the_report_still_lists_moves_and_recommends_none(
+    session: Session,
+) -> None:
+    """One add a day of the period, spent on any days: seven here, and the
+    seventh is the last. The wire is still worth reading, and nothing is
+    recommended until the next period."""
+    ls, home, away, first = build_week(session, bench=1)
+    idle = rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(
+        session, ls, "Blocker", slots=CENTRE, pro_team=20, per_game={"BLK": 3.0}, position="C"
+    )
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+    for day in range(1, 8):
+        winning_bid(session, home, day, 0, idle)
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    assert (report.adds_used, report.adds_budget, report.adds_left) == (7, 7, 0)
+    assert report.faab_remaining == 100, "the adds cost no FAAB here"
+    assert report.moves and report.moves[0].clears(report.hurdle), "the move is a good one"
+    assert report.recommended == (), "there is no add to make it with"
+
+    text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
+    assert "no adds left this period (adds this period: used 7 of 7)" in text
+    assert "recommended:" not in text
+
+
+def test_a_free_agent_on_waivers_cannot_play_before_he_clears(session: Session) -> None:
+    """The 48-hour rule, through the report: he is worth claiming, and worth
+    nothing on the days before the claim resolves."""
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(
+        session,
+        ls,
+        "Blocker",
+        slots=CENTRE,
+        pro_team=20,
+        per_game={"BLK": 3.0},
+        position="C",
+        clears_on=6,
+    )
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    assert len(report.recommended) == 1
+    move = report.recommended[0]
+    assert move.add.name == "Blocker"
+    assert move.add.games_remaining_this_period == 3, "the games are his; the first is not ours"
+    assert move.add.waiver_clears_on == 6
+    assert move.add.seatable_on(5) is False and move.add.seatable_on(6) is True
+    assert move.add_starts == 2, "days 6 and 7 only"
+    assert [day.scoring_period for day in report.empty_days] == [6, 7], (
+        "day 5 is short too, but nobody on the wire can be seated on it"
+    )
+
+    text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
+    assert f"on waivers, clears {day_date(6):%A}" in text
+
+
+def test_a_pool_named_by_id_is_taken_as_men_who_are_free_agents_now(session: Session) -> None:
+    """The backtest's path: a pool named by id carries no waiver state, so a
+    historical replay seats every man on every day he plays."""
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    blocker = free_agent(
+        session,
+        ls,
+        "Blocker",
+        slots=CENTRE,
+        pro_team=20,
+        per_game={"BLK": 3.0},
+        position="C",
+        clears_on=6,
+    )
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+
+    report = stream_recommendations(
+        session, ls, HOME, today=5, distributions=WEEK, pool=[blocker.id]
+    )
+
+    assert len(report.recommended) == 1
+    move = report.recommended[0]
+    assert move.add.waiver_clears_on is None
+    assert move.add_starts == 3

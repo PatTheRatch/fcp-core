@@ -48,6 +48,30 @@ league's own adds returned less the more of them a manager made, so a tool
 that always names a pickup makes its user worse. The hurdle is the note's
 starting value, to be set by the backtest.
 
+THE PLAN, AND THE BUDGET
+
+What is recommended is a short ordered plan rather than a single move,
+because more than one add in a day is often right: one man will not play
+again this week and another is a bum, and both places are worth changing.
+Every move in the plan has to stand on its own -- a distinct pickup, a
+distinct drop, each over the hurdle by itself -- and the second is found by
+re-running the week with the first already made, not by reading the next
+row of the list. That is what stops two moves being paid twice for filling
+the same empty day, and it is why the second move costs a second search.
+The plan is capped by `PLAN_MOVES` and by the period's own budget: this
+league allows one add per day of a matchup period (`ADDS_PER_PERIOD_DAY`),
+so with no adds left the report says so and names nothing, while still
+listing what it found.
+
+WAIVERS
+
+A dropped player sits on waivers for 48 hours, and a free agent the league
+has on waivers cannot play for us before the scoring period in which he
+clears. So he is left out of the seating on the days before that
+(`_Week.project`) -- he is still worth claiming, and a claim on him is a
+FAAB bid that resolves when he clears, but the games he plays before then
+are not ours.
+
 BOTH HORIZONS, ONE CURRENCY
 
 The change in this week's expected wins is no longer the whole answer, and
@@ -66,6 +90,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -107,6 +132,15 @@ POOL_SIZE = 80
 
 #: Moves reported, best first.
 REPORT_MOVES = 5
+
+#: Moves a day's plan may hold. Patrick's rule, verbatim in spirit: "you can
+#: add more than one player a day if it makes sense ... one player isn't
+#: going to play for the rest of the week and another is a bum, you might
+#: want two swaps that day. We don't want to just say don't do any moves."
+#: Two, because each extra move costs a full re-run of the week and a third
+#: swap in one day is churn rather than a plan; the period's remaining adds
+#: cap it as well.
+PLAN_MOVES = 2
 
 #: A category has "moved" when its win probability changes by this much.
 MOVED_THRESHOLD = 0.01
@@ -225,6 +259,10 @@ class StreamReport:
     opponent_projected: CategoryLine
     #: Best first, one per added player, at most `REPORT_MOVES`; empty on a bye.
     moves: tuple[Move, ...]
+    #: The plan: independent moves to make today, in order, each one over the
+    #: hurdle on its own and judged with the ones before it already made.
+    #: Empty when nothing is worth doing and when no adds are left.
+    recommended: tuple[Move, ...]
     empty_days: tuple[EmptyDay, ...]
     #: The season as it stands, with no move: the projected record and the
     #: weeks the judgements are charged over (`app.pickups.judge`).
@@ -235,6 +273,9 @@ class StreamReport:
     faab_remaining: int
     open_slots: int
     ir_slot_free: bool
+    #: Adds already made this matchup period, and what it allows.
+    adds_used: int
+    adds_budget: int
 
     @property
     def today(self) -> int:
@@ -249,12 +290,9 @@ class StreamReport:
         return self.opponent_team_id is None
 
     @property
-    def recommended(self) -> Move | None:
-        """The best move that clears the hurdle, or None: no move today."""
-        for move in self.moves:
-            if move.clears(self.hurdle):
-                return move
-        return None
+    def adds_left(self) -> int:
+        """Adds still to spend this period; zero means no plan at all."""
+        return max(0, self.adds_budget - self.adds_used)
 
 
 @dataclass(frozen=True)
@@ -265,12 +303,42 @@ class _Projection:
     empty_slot_days: int
 
 
+@dataclass(frozen=True)
+class _Board:
+    """The roster a search looks out from.
+
+    The first move of a plan is searched from the week as it stands; the
+    second from the board the first one leaves behind, which is the only way
+    the two can be judged without counting the same empty day twice.
+    """
+
+    #: The men who can be started, by id.
+    mine: Mapping[int, Contender]
+    #: The whole roster's positions, injured reserve included, for the limits.
+    positions: Mapping[int, str | None]
+    open_slots: int
+    ir_slot_free: bool
+
+
+@dataclass(frozen=True)
+class _Search:
+    """One sweep of the wire from one board: the moves, and what they are from."""
+
+    moves: tuple[Move, ...]
+    base: _Projection
+    before: Mapping[str, float]
+
+
 class _Week:
     """Projects a set of contenders over the remaining days.
 
     The seating on a day depends only on who is available that day, and most
     swaps do not touch most days, so each day's seating is cached by the ids
     available on it.
+
+    Available means a game that day and nothing in the way of playing it: a
+    free agent on waivers is not ours until the scoring period he clears in
+    (`RosteredPlayer.seatable_on`), so his games before then seat nobody.
     """
 
     def __init__(self, days: Sequence[int], lineup: Sequence[str], totals: CategoryLine) -> None:
@@ -284,7 +352,7 @@ class _Week:
         empty = 0
         for day in self._days:
             available = sorted(
-                (c for c in contenders.values() if day in c.days),
+                (c for c in contenders.values() if day in c.days and c.player.seatable_on(day)),
                 key=lambda c: (-c.weight, c.player_id),
             )
             key = (day, tuple(c.player_id for c in available))
@@ -414,6 +482,7 @@ def stream_recommendations(
         ],
         pool_size,
     )
+    by_id = {found.player_id: found for found in wire}
 
     spots = _spots(
         session, league_season, team_id, today, week, wire, tilt=tilt, distributions=distributions
@@ -421,84 +490,148 @@ def stream_recommendations(
     outlook = judge(spots, delta_week=0.0, delta_season_per_week=0.0)
 
     engine = _Week(days, lineup, week.my_totals)
-    base = engine.project(mine)
     empty_days = _empty_days(week, wire, lineup)
+    board = _Board(
+        mine=mine,
+        positions={player.player_id: player.position for player in week.roster},
+        open_slots=week.open_slots,
+        ir_slot_free=week.ir_slot_free,
+    )
 
     if week.opponent_team_id is None:
-        return _report(week, base, week.opp_totals, {}, (), empty_days, outlook, hurdle, len(wire))
+        base = engine.project(mine)
+        return _report(
+            week, base, week.opp_totals, {}, (), (), empty_days, outlook, hurdle, len(wire)
+        )
 
     opponent = load_team_week(session, league_season, week.opponent_team_id, today)
     theirs = {player.player_id: contender(player) for player in opponent.active}
     their_line = _Week(days, lineup, opponent.my_totals).project(theirs).line
 
-    before = head_to_head(base.line, their_line, distributions, len(days))
-    positions = {player.player_id: player.position for player in week.roster}
-    seats_now = max_matching({p.player_id: p.eligible for p in week.active}, lineup)
+    def search(board: _Board, available: Sequence[Contender], taken: frozenset[int]) -> _Search:
+        """Every legal move from `board`, ranked, the best one per pickup.
 
-    def legal(active: Mapping[int, Contender], roster_positions: Iterable[str | None]) -> bool:
-        if not within_position_limits(roster_positions, limits):
-            return False
-        return max_matching({c.player_id: c.player.eligible for c in active.values()}, lineup) >= (
-            seats_now
+        `taken` is the men a move earlier in the plan has just added. They
+        are no candidate to drop -- adding a man and dropping him again is
+        not two moves but none -- and they are off the wire for the
+        replacement charge, since nobody else can claim them now.
+        """
+        book = replace(spots, wire=spots.wire - taken)
+        base = engine.project(board.mine)
+        before = head_to_head(base.line, their_line, distributions, len(days))
+        seats_now = max_matching(
+            {c.player_id: c.player.eligible for c in board.mine.values()}, lineup
         )
 
-    def evaluate(
-        kind: str, add: Contender, drop: Contender | None, to_ir: Contender | None
-    ) -> Move:
-        active = {k: v for k, v in mine.items() if k not in (_id(drop), _id(to_ir))}
-        active[add.player_id] = add
-        after_projection = engine.project(active)
-        after = head_to_head(after_projection.line, their_line, distributions, len(days))
-        delta = sum(after.values()) - sum(before.values())
-        # A man moved to injured reserve keeps his place, so only a drop is
-        # charged against the rest of the season.
-        return Move(
-            kind=kind,
-            add=add.player,
-            drop=drop.player if drop is not None else None,
-            to_ir=to_ir.player if to_ir is not None else None,
-            delta=delta,
-            add_starts=after_projection.starts.get(add.player_id, 0),
-            drop_starts=base.starts.get(drop.player_id, 0) if drop is not None else 0,
-            shifts=tuple(CategoryShift(key, before[key], after[key]) for key in before),
-            fills_empty_day=after_projection.empty_slot_days < base.empty_slot_days,
-            judgement=judge(
-                spots,
-                delta_week=delta,
-                dropped=() if drop is None else (drop.player_id,),
-                added=(add.player_id,),
-            ),
-        )
+        def legal(active: Mapping[int, Contender], roster_positions: Iterable[str | None]) -> bool:
+            if not within_position_limits(roster_positions, limits):
+                return False
+            return max_matching(
+                {c.player_id: c.player.eligible for c in active.values()}, lineup
+            ) >= (seats_now)
 
-    moves: list[Move] = []
-    for add in wire:
-        for drop in mine.values():
-            active = {k: v for k, v in mine.items() if k != drop.player_id}
+        def evaluate(
+            kind: str, add: Contender, drop: Contender | None, to_ir: Contender | None
+        ) -> Move:
+            active = {k: v for k, v in board.mine.items() if k not in (_id(drop), _id(to_ir))}
             active[add.player_id] = add
-            roster_positions = [
-                *(position for pid, position in positions.items() if pid != drop.player_id),
-                add.player.position,
-            ]
-            if legal(active, roster_positions):
-                moves.append(evaluate(SWAP, add, drop, None))
-        if week.open_slots > 0:
-            active = {**mine, add.player_id: add}
-            if legal(active, [*positions.values(), add.player.position]):
-                moves.append(evaluate(ADD, add, None, None))
-        if week.ir_slot_free:
-            for hurt in mine.values():
-                if (hurt.player.injury_status or "").upper() != OUT:
-                    continue
-                active = {k: v for k, v in mine.items() if k != hurt.player_id}
-                active[add.player_id] = add
-                if legal(active, [*positions.values(), add.player.position]):
-                    moves.append(evaluate(IR_MOVE, add, None, hurt))
+            after_projection = engine.project(active)
+            after = head_to_head(after_projection.line, their_line, distributions, len(days))
+            delta = sum(after.values()) - sum(before.values())
+            # A man moved to injured reserve keeps his place, so only a drop
+            # is charged against the rest of the season.
+            return Move(
+                kind=kind,
+                add=add.player,
+                drop=drop.player if drop is not None else None,
+                to_ir=to_ir.player if to_ir is not None else None,
+                delta=delta,
+                add_starts=after_projection.starts.get(add.player_id, 0),
+                drop_starts=base.starts.get(drop.player_id, 0) if drop is not None else 0,
+                shifts=tuple(CategoryShift(key, before[key], after[key]) for key in before),
+                fills_empty_day=after_projection.empty_slot_days < base.empty_slot_days,
+                judgement=judge(
+                    book,
+                    delta_week=delta,
+                    dropped=() if drop is None else (drop.player_id,),
+                    added=(add.player_id,),
+                ),
+            )
 
-    moves.sort(key=lambda move: (-move.net, move.add.player_id, _id_of(move.drop)))
-    reported = _best_per_add(moves)
-    if bids:
-        reported = _priced(session, league_season, week, reported, wire, hurdle)
-    return _report(week, base, their_line, before, reported, empty_days, outlook, hurdle, len(wire))
+        moves: list[Move] = []
+        for add in available:
+            for drop in board.mine.values():
+                if drop.player_id in taken:
+                    continue
+                active = {k: v for k, v in board.mine.items() if k != drop.player_id}
+                active[add.player_id] = add
+                roster_positions = [
+                    *(
+                        position
+                        for pid, position in board.positions.items()
+                        if pid != drop.player_id
+                    ),
+                    add.player.position,
+                ]
+                if legal(active, roster_positions):
+                    moves.append(evaluate(SWAP, add, drop, None))
+            if board.open_slots > 0:
+                active = {**board.mine, add.player_id: add}
+                if legal(active, [*board.positions.values(), add.player.position]):
+                    moves.append(evaluate(ADD, add, None, None))
+            if board.ir_slot_free:
+                for hurt in board.mine.values():
+                    if hurt.player_id in taken:
+                        continue
+                    if (hurt.player.injury_status or "").upper() != OUT:
+                        continue
+                    active = {k: v for k, v in board.mine.items() if k != hurt.player_id}
+                    active[add.player_id] = add
+                    if legal(active, [*board.positions.values(), add.player.position]):
+                        moves.append(evaluate(IR_MOVE, add, None, hurt))
+
+        moves.sort(key=lambda move: (-move.net, move.add.player_id, _id_of(move.drop)))
+        reported = _best_per_add(moves)
+        if bids:
+            # Priced against the wire this report evaluated, so a pickup's
+            # value rank means the same thing in the second move as the first.
+            reported = _priced(session, league_season, week, reported, wire, hurdle)
+        return _Search(moves=reported, base=base, before=before)
+
+    # The plan. Each move after the first is found by searching again from
+    # the board the one before it leaves, so the two never claim the same
+    # empty day; the period's remaining adds and `PLAN_MOVES` cap the list,
+    # and no adds left is an empty plan beside a full list of moves.
+    first = search(board, wire, frozenset())
+    wanted = min(PLAN_MOVES, week.adds_left)
+    found = first
+    available = wire
+    taken: set[int] = set()
+    plan: list[Move] = []
+    while len(plan) < wanted:
+        chosen = next((move for move in found.moves if move.clears(hurdle)), None)
+        if chosen is None:
+            break
+        plan.append(chosen)
+        taken.add(chosen.add.player_id)
+        if len(plan) >= wanted:
+            break
+        board = _after(board, chosen, by_id[chosen.add.player_id])
+        available = tuple(c for c in available if c.player_id != chosen.add.player_id)
+        found = search(board, available, frozenset(taken))
+
+    return _report(
+        week,
+        first.base,
+        their_line,
+        first.before,
+        first.moves,
+        tuple(plan),
+        empty_days,
+        outlook,
+        hurdle,
+        len(wire),
+    )
 
 
 def _spots(
@@ -548,6 +681,7 @@ def week_deltas(
     *,
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
+    waivers: Mapping[int, tuple[date, int]] | None = None,
 ) -> list[float]:
     """This week's change in expected categories won, for each (added, dropped).
 
@@ -556,6 +690,10 @@ def week_deltas(
     report would give: the same seating, the same head-to-head, the same
     knowable lines. So it is computed here rather than approximated there.
     Zero for every move on a bye, where there is no head to head at all.
+
+    `waivers` is the caller's `app.pickups.state.waiver_state` for the men
+    arriving, so a claim that cannot play until Thursday is seated here on
+    the same days the streaming report would seat him.
     """
     week = load_team_week(session, league_season, team_id, today)
     if week.opponent_team_id is None:
@@ -580,7 +718,7 @@ def week_deltas(
     incoming = {player_id for added, _dropped in moves for player_id in added} - held
     arrivals = {
         player.player_id: contender(player)
-        for player in build_players(session, league_season, incoming, days)
+        for player in build_players(session, league_season, incoming, days, waivers=waivers)
     }
     mine = {player.player_id: contender(player) for player in week.active}
 
@@ -669,6 +807,30 @@ def _best_per_add(ranked: Sequence[Move]) -> tuple[Move, ...]:
     return tuple(kept)
 
 
+def _after(board: _Board, move: Move, add: Contender) -> _Board:
+    """The board `move` leaves behind, which the next move is searched from."""
+    gone = {player.player_id for player in (move.drop, move.to_ir) if player is not None}
+    mine = {player_id: c for player_id, c in board.mine.items() if player_id not in gone}
+    mine[add.player_id] = add
+    dropped = move.drop.player_id if move.drop is not None else None
+    positions = {
+        player_id: position
+        for player_id, position in board.positions.items()
+        if player_id != dropped
+    }
+    positions[add.player_id] = add.player.position
+    return _Board(
+        mine=mine,
+        positions=positions,
+        # A swap and an injured-reserve move both leave the roster the size
+        # it was; only an add into an open place spends one of them. The IR
+        # move spends the free slot, and the week carries that as a flag
+        # rather than a count, so a second one is not offered.
+        open_slots=board.open_slots - 1 if move.kind == ADD else board.open_slots,
+        ir_slot_free=board.ir_slot_free and move.kind != IR_MOVE,
+    )
+
+
 def _id(contender: Contender | None) -> int | None:
     return contender.player_id if contender is not None else None
 
@@ -705,7 +867,9 @@ def _empty_days(
         fillers = [
             contender.player
             for contender in wire
-            if day in contender.days and contender.player.eligible & open_slots
+            if day in contender.days
+            and contender.player.seatable_on(day)
+            and contender.player.eligible & open_slots
         ]
         if fillers:
             out.append(EmptyDay(day, slots.empty, tuple(fillers)))
@@ -718,6 +882,7 @@ def _report(
     their_line: CategoryLine,
     before: Mapping[str, float],
     moves: tuple[Move, ...],
+    recommended: tuple[Move, ...],
     empty_days: tuple[EmptyDay, ...],
     outlook: Judgement,
     hurdle: float,
@@ -733,6 +898,7 @@ def _report(
         projected=base.line,
         opponent_projected=their_line,
         moves=moves,
+        recommended=recommended,
         empty_days=empty_days,
         outlook=outlook,
         hurdle=hurdle,
@@ -740,4 +906,6 @@ def _report(
         faab_remaining=week.faab_remaining,
         open_slots=week.open_slots,
         ir_slot_free=week.ir_slot_free,
+        adds_used=week.adds_used,
+        adds_budget=week.adds_budget,
     )

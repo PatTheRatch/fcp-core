@@ -35,7 +35,15 @@ from app.pickups.state import season_calendar
 # The league id, the stored-season lookup and the schema guard are the
 # streaming CLI's, not copied: the two scripts must refuse the same database
 # for the same reason and name the same league.
-from scripts.stream import LEAGUE_ID, _judged, _league_season, _missing_tables, _record
+from scripts.stream import (
+    LEAGUE_ID,
+    _adds,
+    _judged,
+    _league_season,
+    _missing_tables,
+    _record,
+    _scarcity,
+)
 
 
 def describe_bid(bid: Bid | None) -> str:
@@ -79,6 +87,7 @@ def render(
     add(
         f"roster: {report.open_slots} open place(s), IR slot "
         f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
+        f"{_adds(report.adds_used, report.adds_budget)}, "
         f"{report.pool_size} free agents evaluated"
     )
     add(f"adds in the last {report.churn.days} days: {report.churn.adds}")
@@ -137,8 +146,20 @@ def render(
             f"claim, {report.hurdle_free:.2f} for a free add)."
         )
         add(f"projected record either way: {_record(outlook.record_without)}")
+    elif report.adds_left == 0:
+        # The move stands; the budget says when it can be made, not whether.
+        add(
+            f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net), but "
+            f"no adds are left this period ({_adds(report.adds_used, report.adds_budget)}), "
+            "so it is a move for the next one."
+        )
+        for line in _judged(chosen.judgement):
+            add(f"  {line}")
     else:
-        add(f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net)")
+        add(
+            f"recommended: {describe(chosen)} ({chosen.net:+.3f} categories net)"
+            f"{_scarcity(report.adds_left)}"
+        )
         for line in _judged(chosen.judgement):
             add(f"  {line}")
         priced = describe_bid(chosen.bid)

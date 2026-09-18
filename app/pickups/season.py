@@ -55,7 +55,10 @@ place, because it costs a player and money as well as a place. Both
 numbers are the note's starting values, to be set by the backtest. Beside
 them the report carries the team's adds over the last fortnight, and the
 league's own finding that the managers who churned most returned least per
-move: the recommender's most valuable answer is often no answer.
+move: the recommender's most valuable answer is often no answer. It carries
+what is left of this matchup period's add budget too (`adds_used`,
+`adds_budget`): a move it names still has to be affordable in adds, and with
+none left it is a move for the next period rather than for today.
 
 BOTH HORIZONS
 
@@ -106,6 +109,7 @@ from app.pickups.state import (
     schedule,
     season_calendar,
     team_row,
+    waiver_state,
 )
 from app.pickups.stream import CategoryShift, week_deltas, weight
 from app.scoring.lines import CategoryLine
@@ -294,6 +298,15 @@ class SeasonReport:
     faab_remaining: int
     open_slots: int
     ir_slot_free: bool
+    #: Adds already made in the matchup period `today` falls in, and what it
+    #: allows: one for each of its days (`app.pickups.state`). A move the
+    #: report names has to fit in what is left, or wait for the next period.
+    adds_used: int
+    adds_budget: int
+
+    @property
+    def adds_left(self) -> int:
+        return max(0, self.adds_budget - self.adds_used)
 
     @property
     def moves(self) -> tuple[Swap, ...]:
@@ -491,6 +504,9 @@ def season_recommendations(
         [(arrivals(out, found[1]), out) for _kind, out, found in candidates_found],
         tilt=tilt,
         distributions=distributions,
+        # The week half seats an arriving claim on the days he is actually
+        # ours, which for a man on waivers starts when he clears.
+        waivers=waiver_state(wire),
     )
     judged = {
         kind: swap_from(
@@ -575,6 +591,8 @@ def season_recommendations(
         faab_remaining=week.faab_remaining,
         open_slots=week.open_slots,
         ir_slot_free=week.ir_slot_free,
+        adds_used=week.adds_used,
+        adds_budget=week.adds_budget,
     )
 
 

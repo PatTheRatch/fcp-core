@@ -72,8 +72,28 @@ def _names(session: Session, league_season: LeagueSeason) -> dict[int, str]:
     }
 
 
-def _describe(move: Move) -> str:
+#: Adds left in the period at or below which the recommendation says so.
+#: Not a second hurdle: the move is the move, but a manager with one add
+#: left should know he is spending his last one.
+SCARCE_ADDS = 2
+
+
+def _adds(used: int, budget: int) -> str:
+    return f"adds this period: used {used} of {budget}"
+
+
+def _scarcity(left: int) -> str:
+    if left > SCARCE_ADDS:
+        return ""
+    return f" ({left} add{'' if left == 1 else 's'} left this period)"
+
+
+def _describe(move: Move, today: int) -> str:
     add = f"add {move.add.name} ({move.add_starts} of {move.add.games_remaining_this_period} games)"
+    if not move.add.seatable_on(today) and move.add.waiver_clears_at is not None:
+        # A claim on him is a FAAB bid that resolves when he clears, and he
+        # plays for us from that day, not from today.
+        add += f", on waivers, clears {move.add.waiver_clears_at:%A}"
     if move.kind == ADD:
         rest = "into the open place"
     elif move.kind == IR_MOVE and move.to_ir is not None:
@@ -130,6 +150,7 @@ def render(
     add(
         f"roster: {report.open_slots} open place(s), IR slot "
         f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
+        f"{_adds(report.adds_used, report.adds_budget)}, "
         f"{report.pool_size} free agents evaluated"
     )
     outlook = report.outlook
@@ -159,21 +180,39 @@ def render(
         for rank, move in enumerate(report.moves, start=1):
             moved = ", ".join(f"{s.abbreviation} {s.delta:+.2f}" for s in move.moved()[:4])
             flag = "  fills an empty day" if move.fills_empty_day else ""
-            add(f"  {rank}. {move.net:+.3f}  {_describe(move)}{flag}")
+            add(f"  {rank}. {move.net:+.3f}  {_describe(move, report.today)}{flag}")
             for line in _judged(move.judgement):
                 add(f"       {line}")
             if moved:
                 add(f"       this week: {moved}")
 
     add("")
-    chosen = report.recommended
-    if chosen is None:
+    plan = report.recommended
+    if report.adds_left == 0:
+        add(
+            f"no adds left this period ({_adds(report.adds_used, report.adds_budget)}), "
+            "so nothing is recommended today; the moves above are what the wire offers."
+        )
+        add(f"projected record either way: {_record(outlook.record_without)}")
+    elif not plan:
         add(f"no move clears the hurdle ({report.hurdle:.2f} categories, or an empty day filled).")
         add(f"projected record either way: {_record(outlook.record_without)}")
-    else:
-        add(f"recommended: {_describe(chosen)} ({chosen.net:+.3f} categories net)")
+    elif len(plan) == 1:
+        chosen = plan[0]
+        add(
+            f"recommended: {_describe(chosen, report.today)} "
+            f"({chosen.net:+.3f} categories net){_scarcity(report.adds_left)}"
+        )
         for line in _judged(chosen.judgement):
             add(f"  {line}")
+    else:
+        # Each move was found against the roster the one before it leaves, so
+        # they are independent and the order is the order to make them in.
+        add(f"recommended, in this order{_scarcity(report.adds_left)}:")
+        for rank, chosen in enumerate(plan, start=1):
+            add(f"  {rank}. {_describe(chosen, report.today)} ({chosen.net:+.3f} categories net)")
+            for line in _judged(chosen.judgement):
+                add(f"       {line}")
     return "\n".join(out)
 
 
