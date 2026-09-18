@@ -111,6 +111,24 @@ def _record(record: tuple[float, float]) -> str:
     return f"{record[0]:.1f}-{record[1]:.1f}"
 
 
+def _faab(remaining: int, overspent: int) -> str:
+    """The pot, and a word when our sum of the bid feed ran past the budget.
+
+    Never a negative: `app.pickups.state` explains why the feed and ESPN's
+    own ledger disagree by a few dollars on some teams.
+    """
+    if overspent:
+        return f"FAAB $0 (the bid feed reconstructs ${overspent} past the budget; read it as spent)"
+    return f"FAAB ${remaining}"
+
+
+def _wire(pool_size: int, historical: bool) -> str:
+    """How many free agents were looked at, and which wire they came from."""
+    if historical:
+        return f"{pool_size} free agents evaluated, historical wire (no snapshots)"
+    return f"{pool_size} free agents evaluated"
+
+
 def _judged(judgement: Judgement) -> list[str]:
     """The two horizons, the net, and the season record either way."""
     season = judgement.delta_season_per_week
@@ -149,9 +167,10 @@ def render(
         add("  " + "  ".join(f"{key} {p:.2f}" for key, p in report.probabilities.items()))
     add(
         f"roster: {report.open_slots} open place(s), IR slot "
-        f"{'free' if report.ir_slot_free else 'used or none'}, FAAB ${report.faab_remaining}, "
+        f"{'free' if report.ir_slot_free else 'used or none'}, "
+        f"{_faab(report.faab_remaining, report.faab_overspent)}, "
         f"{_adds(report.adds_used, report.adds_budget)}, "
-        f"{report.pool_size} free agents evaluated"
+        f"{_wire(report.pool_size, report.historical_wire)}"
     )
     outlook = report.outlook
     add(

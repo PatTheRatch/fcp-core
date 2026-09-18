@@ -1,0 +1,179 @@
+/* ---------------------------------------------------------------------------
+   The in-season pages: the week, the rest of the season, and the index.
+
+   The palette is the draft screen's token block (app/draft/static/draft.html)
+   with the two halves swapped round -- light is the default here, because
+   these pages are the season report's house style and that is the skin they
+   were approved in, and dark is the draft room's own palette behind the
+   switch. The names are the draft screen's exactly, so the two products
+   share one vocabulary and a value can be moved between them without
+   translation. No colour is written outside this block.
+
+   The rules of the house: rules, not boxes. No rounded corners, no chips, no
+   shadows, one burnt-orange accent, tabular numerals everywhere a number is.
+   --------------------------------------------------------------------------- */
+:root{
+  --ground:#E8E6DF; --surface:#F7F6F2; --sunk:#DEDBD2; --rule:#C6C2B6; --rule-strong:#16181A;
+  --ink:#16181A; --muted:#5E6167; --faint:#8E9096;
+  --accent:#C4551F; --accent-ink:#FFFFFF; --accent-soft:#F1DCCF;
+  --good:#2F6F4E; --warn:#9A6A00; --stop:#B23A30;
+  --good-soft:#DFEBE3; --warn-soft:#F3E7CA; --stop-soft:#F4DDDA;
+  --shade-0:transparent; --shade-1:#E2E0D8; --shade-2:#D2CFC4; --shade-3:#C0BCAE;
+  --shadow:none; --glow:none;
+  --display:"Oswald","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Serif 4",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+:root[data-theme="dark"]{
+  --ground:#121316; --surface:#191A1E; --sunk:#24262B; --rule:#33363D; --rule-strong:#E9E6DD;
+  --ink:#ECE9E1; --muted:#A4A7AE; --faint:#6C7078;
+  --accent:#F08A4B; --accent-ink:#121316; --accent-soft:#3B2A20;
+  --good:#63B58E; --warn:#D9A43B; --stop:#E56B60;
+  --good-soft:#1C3128; --warn-soft:#332714; --stop-soft:#37201E;
+  --shade-0:transparent; --shade-1:#23262B; --shade-2:#2F343B; --shade-3:#3E454E;
+}
+:root[data-theme="light"]{ color-scheme:light }
+:root[data-theme="dark"]{ color-scheme:dark }
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+  font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+a{color:var(--accent);text-underline-offset:3px}
+.page{max-width:1080px;margin:0 auto;padding:0 24px 96px}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance;
+  letter-spacing:.01em}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+[hidden]{display:none !important}
+.accent{color:var(--accent)}
+
+/* ---- the masthead: the season report's, a rule under it and nothing else -- */
+.mast{padding:44px 0 22px;border-bottom:3px solid var(--rule-strong)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);margin:0}
+.mast h1{font-size:clamp(34px,6.5vw,68px);line-height:.95;margin:12px 0 0;
+  text-transform:uppercase;letter-spacing:-.005em}
+.mast .sub{margin:12px 0 0;color:var(--muted);font-size:16px;max-width:66ch}
+.mast .sub b{color:var(--ink);font-weight:600}
+.mast .tools{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:11px;
+  padding:5px 11px;border:1px solid var(--rule);background:var(--surface);color:var(--muted);
+  cursor:pointer}
+.btn:hover{border-color:var(--rule-strong);color:var(--ink)}
+
+/* ---- the readout strip under the masthead ------------------------------- */
+.line{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+  border-bottom:1px solid var(--rule)}
+.line div{padding:16px 16px 14px;border-right:1px solid var(--rule)}
+.line div:last-child{border-right:0}
+.line dt{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--faint);margin:0}
+.line dd{font-family:var(--display);font-weight:600;font-size:27px;line-height:1.12;
+  margin:4px 0 0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.line dd small{font-size:13px;color:var(--muted);font-weight:400;white-space:normal}
+.line .hi dd{color:var(--accent)}
+/* A hard stop -- no adds left, a pot our arithmetic ran past -- against a
+   caveat worth the eye but not alarm, such as a wire rebuilt from box scores. */
+.line .warn dd{color:var(--stop)}
+.line .caution dd{color:var(--warn)}
+
+/* ---- sections ----------------------------------------------------------- */
+section{margin-top:56px}
+.shead{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--rule-strong);
+  padding-bottom:8px;margin-bottom:20px}
+.shead h2{font-size:24px;text-transform:uppercase;letter-spacing:.02em}
+.shead .tag{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.lede{margin:-8px 0 20px;color:var(--muted);font-size:15px;max-width:74ch}
+.empty{color:var(--faint);padding:10px 0;font-style:italic}
+
+/* ---- the tale of the tape: nine rows, both sides, the odds shaded ------- */
+.tape{width:100%;border-collapse:collapse}
+.tape th,.tape td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
+.tape th{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;border-bottom:1px solid var(--rule-strong)}
+.tape th:first-child,.tape td:first-child{text-align:left}
+.tape td{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
+.tape td.cat{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.04em}
+.tape tr.ahead td.odds{color:var(--good)}
+.tape tr.behind td.odds{color:var(--stop)}
+.tape td.bar{width:38%;padding:0 10px}
+.bar span{display:block;height:9px;background:var(--shade-2);position:relative}
+.bar span i{position:absolute;inset:0 auto 0 0;background:var(--accent);display:block}
+.bar span u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--ink);
+  opacity:.45;text-decoration:none}
+.tape tfoot td{font-family:var(--display);font-weight:600;border-bottom:0;padding-top:14px}
+
+/* ---- the nine-category strip: the draft screen's component, unchanged --- */
+.strip{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));
+  border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:10px 0 0}
+.strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
+.strip .lab{display:block;text-align:right;margin-bottom:2px;font-family:var(--display);
+  text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--muted)}
+.strip b{font-family:var(--mono);font-weight:500;font-size:15px;font-variant-numeric:tabular-nums}
+.strip .s1{background:var(--shade-1)} .strip .s2{background:var(--shade-2)}
+.strip .s3{background:var(--shade-3)}
+.strip .up b{color:var(--good)} .strip .down b{color:var(--stop)}
+
+/* ---- the schedule strip: the matchup period's days ---------------------- */
+.days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+  border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:0 0 6px}
+.days div{border-right:1px solid var(--rule);padding:7px 8px}
+.days .d{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);display:block}
+.days .n{font-family:var(--display);font-weight:600;font-size:16px}
+.days .past{color:var(--faint)} .days .past .n{font-weight:400}
+.days .now{background:var(--accent-soft)} .days .now .n{color:var(--accent)}
+.days .gap .n{color:var(--stop)}
+
+/* ---- a move: a rule above it, never a box ------------------------------- */
+.move{border-top:1px solid var(--rule);padding:16px 0 6px}
+.move:first-of-type{border-top:1px solid var(--rule-strong)}
+.move .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.move .rank{font-family:var(--display);font-weight:600;font-size:26px;color:var(--faint);
+  min-width:1.2em}
+.move .what{font-size:18px;font-weight:600;flex:1 1 20ch}
+.move .what b{font-weight:600}
+.move .net{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.move .net.up{color:var(--good)} .move .net.down{color:var(--stop)}
+.move .why{margin:6px 0 0;color:var(--muted);font-size:15px}
+.move .why b{color:var(--ink);font-weight:600}
+.move .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--faint);
+  letter-spacing:.02em}
+.move.over{border-left:2px solid var(--accent);padding-left:14px}
+.mark{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:10.5px;
+  padding:2px 8px;border:1px solid var(--rule);color:var(--muted)}
+.mark.clears{color:var(--accent);border-color:var(--accent)}
+
+/* ---- plain listing tables ----------------------------------------------- */
+.grid{width:100%;border-collapse:collapse}
+.grid th,.grid td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
+.grid th{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);font-weight:400;border-bottom:1px solid var(--rule-strong)}
+.grid th:first-child,.grid td:first-child{text-align:left}
+.grid td{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.grid td.name{font-family:var(--body);font-size:16px}
+.grid tr.ours td{background:var(--accent-soft)}
+.grid tr.ours td.name{font-weight:600}
+.grid td.links a{margin-left:14px;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.06em;font-size:11px}
+
+/* ---- the footnote ------------------------------------------------------- */
+.foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
+  font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.9}
+.foot b{color:var(--muted);font-weight:500}
+.warnline{border-left:2px solid var(--stop);padding:8px 0 8px 12px;margin:14px 0;
+  color:var(--stop);font-size:15px}
+
+@media (max-width:860px){
+  body{font-size:16px}
+  .page{padding:0 16px 72px}
+  .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px}
+  .strip div{border-bottom:1px solid var(--rule)}
+  .days{grid-auto-flow:row;grid-auto-columns:auto;border-width:1px 0 0 1px}
+  .days div{border-bottom:1px solid var(--rule)}
+  .tape td.bar{display:none}
+  .grid td.links a{display:block;margin:2px 0 0}
+}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

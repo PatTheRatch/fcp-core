@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Rest of the Season</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; the rest of the season</p>
+  <h1 id="title">&nbsp;</h1>
+  <p class="sub" id="sub"></p>
+  <div class="tools">
+    <button class="btn" id="theme" aria-pressed="false" title="light or dark">Lights down</button>
+    <a class="btn" id="to-week" href="#">This week</a>
+    <a class="btn" id="to-index" href="#">Every team</a>
+  </div>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<dl class="line" id="readout"></dl>
+
+<main id="body" hidden>
+
+  <section>
+    <div class="shead"><h2>The outlook</h2><span class="tag" id="outlook-tag"></span></div>
+    <p class="lede" id="outlook-lede"></p>
+    <div class="strip" id="odds-strip"></div>
+    <div id="outlook"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Worth a look</h2><span class="tag" id="pick-tag"></span></div>
+    <p class="lede" id="pick-lede"></p>
+    <div id="pick"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The best of each kind</h2><span class="tag" id="moves-tag"></span></div>
+    <p class="lede">The best free add, the best swap and the best two-for-two the search found,
+      each marked against its own bar: a claim costs FAAB and has to clear more than a free
+      add does.</p>
+    <div id="moves"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Drop candidates</h2><span class="tag">who costs least to lose</span></div>
+    <p class="lede">What each man's place would give back if the wire's best replacement took
+      it. A small number is a cheap place to change, not a verdict on the player.</p>
+    <table class="grid">
+      <thead><tr><th>Player</th><th>Replaced by</th><th>Categories a week</th></tr></thead>
+      <tbody id="drops"></tbody>
+    </table>
+    <p class="empty" id="drops-empty" hidden>Nobody: every place is holding its value.</p>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Stashes</h2><span class="tag">out now, back soon</span></div>
+    <p class="lede">Injured men whose healthy value would rank on the wire by the time they
+      return, and what a place for them would cost today.</p>
+    <table class="grid">
+      <thead><tr>
+        <th>Player</th><th>Back</th><th>Weeks away</th><th>Healthy rank</th><th>The place</th>
+      </tr></thead>
+      <tbody id="stashes"></tbody>
+    </table>
+    <p class="empty" id="stashes-empty" hidden>Nobody worth holding a place for.</p>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The churn guard</h2><span class="tag" id="churn-tag"></span></div>
+    <div id="churn"></div>
+  </section>
+
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script>
+"use strict";
+
+/* The rest-of-season report as a page: everything `scripts/season.py`
+   prints. Like the week page it is not reloaded on an interval -- the report
+   is slow to build -- so the footnote carries when it was made. */
+
+const WHERE = place();
+let CONTEXT = null;
+
+const nameOf = (id) => {
+  const found = (CONTEXT && CONTEXT.teams || []).find((t) => t.espn_team_id === id);
+  return found ? found.name : `team ${id}`;
+};
+
+const KINDS = { free_add: "free add", swap: "swap", two_swap: "two-for-two" };
+
+/** drop A, add B -- the words `scripts/season.py` uses. */
+function describe(swap) {
+  const into = (swap.into || []).map((p) => `<b>${escape(p.name)}</b>`).join(", ");
+  if (!swap.out || !swap.out.length) return `add ${into}, into the open place`;
+  const out = (swap.out || []).map((p) => `<b>${escape(p.name)}</b>`).join(", ");
+  return `drop ${out}, add ${into}`;
+}
+
+function swapHtml(swap, report, options) {
+  const opts = options || {};
+  const notes = [];
+  const priced = bidNote(swap.bid);
+  if (priced) notes.push(priced);
+  notes.push(swap.costs_faab ? "a claim, so it costs FAAB" : "a free add, so it costs nothing");
+  const mark = opts.mark
+    ? `<span class="mark ${swap.clears_hurdle ? "clears" : ""}">` +
+      `${swap.clears_hurdle ? "clears" : "below"} its bar of ${fixed(swap.hurdle, 2)} a week` +
+      `</span>`
+    : "";
+  return (
+    `<article class="move${opts.over ? " over" : ""}">` +
+    `<div class="head">` +
+    (opts.kind ? `<span class="rank mono" style="font-size:12px">` +
+      `${escape(KINDS[swap.kind] || swap.kind)}</span>` : "") +
+    `<span class="what">${describe(swap)}</span>` +
+    mark +
+    `<span class="net ${swap.net >= 0 ? "up" : "down"}">${signed(swap.net, 3)}</span>` +
+    `</div>` +
+    `<p class="why">This move is <b>${signed(swap.judgement.per_week, 3)}</b> categories a ` +
+    `week over the weeks it covers.</p>` +
+    judged(swap.judgement) +
+    (swap.moved && swap.moved.length
+      ? `<div class="strip">${shiftStrip(swap.moved)}</div>` : "") +
+    (notes.length ? `<p class="note">${notes.join(" &middot; ")}</p>` : "") +
+    `</article>`
+  );
+}
+
+function drawMasthead(report) {
+  const us = nameOf(report.espn_team_id);
+  document.title = `${us} — rest of season`;
+  $("title").textContent = us;
+  $("eyebrow").textContent = `Full Court Press · ${WHERE.season} · the rest of the season`;
+  $("sub").innerHTML =
+    `From day <b>${report.today}</b>` +
+    `${CONTEXT && CONTEXT.today_date ? ` (${dayName(CONTEXT.today_date)})` : ""} ` +
+    `through day <b>${report.last_scoring_period}</b> — ` +
+    `<b>${fixed(report.weeks_remaining, 1)}</b> of ${fixed(report.total_weeks, 1)} weeks left. ` +
+    `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
+}
+
+function drawReadout(report) {
+  const money = faab(report);
+  const cells = [
+    ["Ordinary week", `${fixed(report.expected_wins, 2)}<small> of 9 categories</small>`, "hi"],
+    ["Weeks left", `${fixed(report.weeks_remaining, 1)}<small> of ` +
+      `${fixed(report.total_weeks, 1)}</small>`, ""],
+    ["Adds left", `${report.adds_left}<small> of ${report.adds_budget} this period</small>`,
+      report.adds_left === 0 ? "warn" : ""],
+    ["FAAB", `${money.value}<small> ${escape(money.note)}</small>`,
+      report.faab_overspent ? "warn" : ""],
+    ["Open places", `${report.open_slots}<small> IR slot ` +
+      `${report.ir_slot_free ? "free" : "used or none"}</small>`, ""],
+    ["The wire", `${report.pool_size}<small> free agents evaluated, ` +
+      `${escape(wire(report))}</small>`, report.historical_wire ? "caution" : ""],
+  ];
+  $("readout").innerHTML = cells
+    .map(([label, value, cls]) =>
+      `<div class="${cls}"><dt>${escape(label)}</dt><dd>${value}</dd></div>`)
+    .join("");
+}
+
+function drawOutlook(report) {
+  const o = report.outlook;
+  $("outlook-tag").textContent = "no move made";
+  $("outlook-lede").textContent =
+    "What an ordinary week looks like from here: the chance of winning each category against " +
+    "the league's own measured spreads, not against one opponent.";
+  $("odds-strip").innerHTML = probabilityStrip(report.probabilities);
+  $("outlook").innerHTML =
+    `<article class="move"><div class="head"><span class="what">` +
+    `Projected to end <b>${record(o.record_without)}</b> in categories</span>` +
+    `<span class="net">${fixed(report.expected_wins, 2)} a week</span></div>` +
+    `<p class="why">Banked so far: <b>${record([o.banked_won, o.banked_lost])}</b> in settled ` +
+    `matchups, with ${fixed(o.weeks_remaining, 1)} weeks left after this one. A place on this ` +
+    `roster gives back <b>${fixed(o.replacement, 3)}</b> categories a week if it is vacated, ` +
+    `which is what every drop is charged.</p></article>`;
+}
+
+function drawPick(report) {
+  const chosen = report.recommended;
+  const bars =
+    `${fixed(report.hurdle_paid, 2)} categories a week for a claim, ` +
+    `${fixed(report.hurdle_free, 2)} for a free add`;
+  if (!chosen) {
+    $("pick-tag").textContent = "the bar stands";
+    $("pick-lede").innerHTML =
+      `<b>${NOTHING_CLEARS}</b> (${bars}). Projected record either way: ` +
+      `<b>${record(report.outlook.record_without)}</b>.`;
+    $("pick").innerHTML = "";
+    return;
+  }
+  $("pick-tag").textContent = escape(KINDS[chosen.kind] || chosen.kind);
+  if (report.adds_left === 0) {
+    $("pick-lede").innerHTML =
+      `<b>${WORTH_A_LOOK}</b>, but no adds are left this period ` +
+      `(${report.adds_used} of ${report.adds_budget} used), so it is a move for the next one. ` +
+      `The move stands; the budget says when it can be made, not whether.`;
+  } else {
+    const scarce = report.adds_left <= 2
+      ? ` ${count(report.adds_left, "add")} left this period.` : "";
+    $("pick-lede").innerHTML =
+      `<b>${WORTH_A_LOOK}</b>.${scarce} An idea, not an instruction — the bars are ${bars}.`;
+  }
+  $("pick").innerHTML = swapHtml(chosen, report, { over: true });
+}
+
+function drawMoves(report) {
+  const moves = [report.best_add, report.best_swap, report.best_two_swap].filter(Boolean);
+  $("moves-tag").textContent =
+    `bars: ${fixed(report.hurdle_paid, 2)} paid, ${fixed(report.hurdle_free, 2)} free`;
+  $("moves").innerHTML = moves.length
+    ? moves.map((swap) => swapHtml(swap, report, { mark: true, kind: true })).join("")
+    : `<p class="empty">No legal move of any kind: nobody on the wire can be added within the
+       roster's rules.</p>`;
+}
+
+function drawDrops(report) {
+  const drops = report.drops || [];
+  $("drops-empty").hidden = drops.length > 0;
+  $("drops").innerHTML = drops
+    .map((drop) =>
+      `<tr><td class="name">${escape(drop.player.name)}</td>` +
+      `<td class="name">${escape(drop.replacement ? drop.replacement.name : "nobody")}</td>` +
+      `<td>${signed(drop.delta, 3)}</td></tr>`)
+    .join("");
+}
+
+function drawStashes(report) {
+  const stashes = report.stashes || [];
+  $("stashes-empty").hidden = stashes.length > 0;
+  $("stashes").innerHTML = stashes
+    .map((stash) =>
+      `<tr><td class="name">${escape(stash.player.name)}</td>` +
+      `<td>${escape(dayName(stash.expected_return_date))}</td>` +
+      `<td>${fixed(stash.weeks_away, 1)}</td>` +
+      `<td>${stash.healthy_rank}</td>` +
+      `<td>${stash.needs_drop ? "needs a drop" : "free, the IR slot is open"}</td></tr>`)
+    .join("");
+}
+
+function drawChurn(report) {
+  const churn = report.churn || {};
+  $("churn-tag").textContent = `last ${churn.days} days`;
+  $("churn").innerHTML =
+    `<article class="move"><div class="head">` +
+    `<span class="what">${count(churn.adds, "add")} in the last ${churn.days} days</span>` +
+    `<span class="net">${churn.adds}</span></div>` +
+    `<p class="why">${escape(churn.finding || "")}</p></article>`;
+}
+
+function drawFoot(report) {
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
+    `Read-only: nothing here writes to the league or the database. ` +
+    `<br>The wire is ${escape(wire(report))}` +
+    (report.historical_wire
+      ? ", rebuilt from who played and who was held that day, because the listener never ran " +
+        "for this season: it cannot see a free agent who did not play, and knows nothing " +
+        "about waivers."
+      : ".") +
+    (report.faab_overspent
+      ? `<br><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} past the ` +
+        `budget, so the pot is shown as spent rather than as a negative. ESPN's own ledger ` +
+        `caps at the budget; the feed is a reconstruction (app/pickups/state.py).`
+      : "") +
+    `<br>The rest of the season: <span class="mono">scripts/season.py</span>, ` +
+    `<span class="mono">docs/pickups.md</span> section 4.4.`;
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  const query = params(WHERE);
+  $("to-week").href = `/pages/teams/${WHERE.league}/${WHERE.season}/${WHERE.team}/week${query}`;
+  $("to-index").href = `/pages/teams/${WHERE.league}/${WHERE.season}${query}`;
+  $("title").textContent = "Loading…";
+
+  const [context, report] = await Promise.all([
+    get(`${base}/pages/context${query}`),
+    get(`${base}/teams/${WHERE.team}/pickups/season${params(WHERE)}`),
+  ]);
+  if (context.ok) CONTEXT = context.body;
+  if (!report.ok) {
+    $("title").textContent = "No report";
+    fail(`The rest of this season cannot be reported on: ${report.detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const body = report.body;
+  drawMasthead(body);
+  drawReadout(body);
+  drawOutlook(body);
+  drawPick(body);
+  drawMoves(body);
+  drawDrops(body);
+  drawStashes(body);
+  drawChurn(body);
+  drawFoot(body);
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

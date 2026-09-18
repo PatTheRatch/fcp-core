@@ -43,7 +43,14 @@ from app.api.schemas import (
     StreamReportOut,
     VolumeGuardOut,
 )
-from app.db.models import LeagueSeason, Player, PlayerStatusSnapshot, ProTeamGame
+from app.db.models import (
+    DailyLineupSlot,
+    LeagueSeason,
+    Player,
+    PlayerStatusSnapshot,
+    ProTeamGame,
+    Team,
+)
 from app.pickups.bids import Bid
 from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
@@ -59,26 +66,49 @@ TodayQuery = Annotated[
     Query(ge=1, description="Scoring period to report on; defaults to today's"),
 ]
 
-#: What a caller is told when the listener has written nothing for the
-#: season. Its tables are the report's only source of a roster, a wire and
-#: a schedule, so there is nothing to build from and nothing to fetch.
-NOT_LISTENED = (
-    "the listener has stored nothing for season {season}: no NBA schedule or "
-    "status snapshots, so no pickup report can be built"
-)
+#: What a caller is told when the season has nothing to build a report from.
+#: Two things are needed and neither can be guessed: the NBA schedule, which
+#: dates every scoring period and says who plays when, and some record of who
+#: held whom -- the listener's status snapshots for the season in progress, or
+#: the stored lineup days for a season already played. A played season has no
+#: snapshots, because the listener only ever runs for the current year
+#: (`app.pickups.state.has_free_agent_snapshots`), and that is not a reason to
+#: refuse it: its lineup days are the roster and its box scores are the wire.
+NOT_LISTENED = "season {season} has nothing to build a pickup report from: {missing}"
+NO_SCHEDULE = "no NBA schedule is stored (scripts/backfill_pro_schedule.py)"
+NO_ROSTER = "no status snapshots and no lineup days, so no roster can be read"
 
 
 def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
-    """The season's calendar, or 409 when the listener has not run for it."""
+    """The season's calendar, or 409 when there is nothing to report on.
+
+    A schedule, and a roster from one of the two places one can come from.
+    The snapshot check used to be the only one, which refused every played
+    season although its lineup days say exactly who was held on every day of
+    it; a season with the schedule backfilled now reports.
+    """
     season = int(league_season.season)
     calendar = season_calendar(session, season)
-    seen = session.scalar(
-        select(ProTeamGame.id).where(ProTeamGame.season == season).limit(1)
-    ) and session.scalar(
+    scheduled = session.scalar(select(ProTeamGame.id).where(ProTeamGame.season == season).limit(1))
+    snapshots = session.scalar(
         select(PlayerStatusSnapshot.id).where(PlayerStatusSnapshot.season == season).limit(1)
     )
-    if calendar is None or not seen:
-        raise HTTPException(status_code=409, detail=NOT_LISTENED.format(season=season))
+    lineups = session.scalar(
+        select(DailyLineupSlot.id)
+        .join(Team, Team.id == DailyLineupSlot.team_id)
+        .where(Team.league_season_id == league_season.id)
+        .limit(1)
+    )
+    missing = []
+    if calendar is None or not scheduled:
+        missing.append(NO_SCHEDULE)
+    if not snapshots and not lineups:
+        missing.append(NO_ROSTER)
+    if missing or calendar is None:
+        raise HTTPException(
+            status_code=409,
+            detail=NOT_LISTENED.format(season=season, missing=" and ".join(missing)),
+        )
     return calendar
 
 
@@ -260,7 +290,9 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
         outlook=_judgement_out(report.outlook),
         hurdle=report.hurdle,
         pool_size=report.pool_size,
+        historical_wire=report.historical_wire,
         faab_remaining=report.faab_remaining,
+        faab_overspent=report.faab_overspent,
         open_slots=report.open_slots,
         ir_slot_free=report.ir_slot_free,
         adds_used=report.adds_used,
@@ -329,7 +361,9 @@ def _season_out(report: SeasonReport, espn: dict[int, int]) -> SeasonReportOut:
         hurdle_paid=report.hurdle_paid,
         hurdle_free=report.hurdle_free,
         pool_size=report.pool_size,
+        historical_wire=report.historical_wire,
         faab_remaining=report.faab_remaining,
+        faab_overspent=report.faab_overspent,
         open_slots=report.open_slots,
         ir_slot_free=report.ir_slot_free,
         adds_used=report.adds_used,

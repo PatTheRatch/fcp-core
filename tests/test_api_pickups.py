@@ -211,11 +211,20 @@ def test_an_unknown_team_is_404(client: TestClient) -> None:
         assert "team 99" in response.json()["detail"]
 
 
-def test_a_season_the_listener_never_saw_is_409(client: TestClient) -> None:
+def test_a_season_with_nothing_to_report_on_is_409(client: TestClient) -> None:
+    """Settings and teams and nothing else: no schedule, and no roster anywhere.
+
+    Not the same thing as a season the listener never ran for, which is
+    every played season and now reports perfectly well off its lineup days
+    (`tests/test_api_pages.py`). The refusal names both things it wanted.
+    """
     for which in ("stream", "season"):
         response = client.get(url(season=QUIET_SEASON, which=which), params={"today": 1})
         assert response.status_code == 409
-        assert "listener has stored nothing" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert f"season {QUIET_SEASON} has nothing to build a pickup report from" in detail
+        assert "no NBA schedule is stored" in detail
+        assert "no roster can be read" in detail
 
 
 def test_an_unknown_season_is_still_404(client: TestClient) -> None:

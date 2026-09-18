@@ -108,6 +108,7 @@ from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
     build_players,
+    has_free_agent_snapshots,
     load_free_agents,
     load_team_week,
     season_calendar,
@@ -273,7 +274,13 @@ class StreamReport:
     hurdle: float
     #: Free agents actually evaluated.
     pool_size: int
+    #: True when the wire was rebuilt from what was played rather than read
+    #: from the listener's snapshots, which is every played season
+    #: (`app.pickups.state.historical_free_agents`). A report says so.
+    historical_wire: bool
     faab_remaining: int
+    #: How far the bid feed's sum ran past the budget; see `app.pickups.state`.
+    faab_overspent: int
     open_slots: int
     ir_slot_free: bool
     #: Adds already made this matchup period, and what it allows.
@@ -477,6 +484,7 @@ def stream_recommendations(
 
     mine = {player.player_id: contender(player) for player in week.active}
     held = {player.player_id for player in week.roster}
+    historical_wire = pool is None and not has_free_agent_snapshots(session, league_season)
     wire = _ranked_wire(
         [
             contender(player)
@@ -504,7 +512,17 @@ def stream_recommendations(
     if week.opponent_team_id is None:
         base = engine.project(mine)
         return _report(
-            week, base, week.opp_totals, {}, (), (), empty_days, outlook, hurdle, len(wire)
+            week,
+            base,
+            week.opp_totals,
+            {},
+            (),
+            (),
+            empty_days,
+            outlook,
+            hurdle,
+            len(wire),
+            historical_wire,
         )
 
     opponent = load_team_week(session, league_season, week.opponent_team_id, today)
@@ -634,6 +652,7 @@ def stream_recommendations(
         outlook,
         hurdle,
         len(wire),
+        historical_wire,
     )
 
 
@@ -890,6 +909,7 @@ def _report(
     outlook: Judgement,
     hurdle: float,
     pool_size: int,
+    historical_wire: bool,
 ) -> StreamReport:
     return StreamReport(
         team_id=week.team_id,
@@ -906,7 +926,9 @@ def _report(
         outlook=outlook,
         hurdle=hurdle,
         pool_size=pool_size,
+        historical_wire=historical_wire,
         faab_remaining=week.faab_remaining,
+        faab_overspent=week.faab_overspent,
         open_slots=week.open_slots,
         ir_slot_free=week.ir_slot_free,
         adds_used=week.adds_used,

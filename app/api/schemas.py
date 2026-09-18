@@ -639,8 +639,21 @@ class StreamReportOut(BaseModel):
     empty_days: list[EmptyDayOut]
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle: float
-    pool_size: int
-    faab_remaining: int
+    pool_size: int = Field(description="Free agents evaluated")
+    historical_wire: bool = Field(
+        description=(
+            "True when the wire was rebuilt from what was played rather than read from the "
+            "listener's snapshots, which is every played season. A narrower wire: it cannot "
+            "see a free agent who did not play, and it knows nothing about waivers"
+        )
+    )
+    faab_remaining: int = Field(description="The pot left as of `today`, never below zero")
+    faab_overspent: int = Field(
+        description=(
+            "How far our sum of ESPN's bid feed ran past the budget, normally 0. Non-zero "
+            "means the feed and ESPN's own ledger disagree and the pot should be read as spent"
+        )
+    )
     open_slots: int
     ir_slot_free: bool
     adds_used: int = Field(description="Executed adds this matchup period")
@@ -707,8 +720,21 @@ class SeasonReportOut(BaseModel):
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle_paid: float
     hurdle_free: float
-    pool_size: int
-    faab_remaining: int
+    pool_size: int = Field(description="Free agents evaluated")
+    historical_wire: bool = Field(
+        description=(
+            "True when the wire was rebuilt from what was played rather than read from the "
+            "listener's snapshots, which is every played season. A narrower wire: it cannot "
+            "see a free agent who did not play, and it knows nothing about waivers"
+        )
+    )
+    faab_remaining: int = Field(description="The pot left as of `today`, never below zero")
+    faab_overspent: int = Field(
+        description=(
+            "How far our sum of ESPN's bid feed ran past the budget, normally 0. Non-zero "
+            "means the feed and ESPN's own ledger disagree and the pot should be read as spent"
+        )
+    )
     open_slots: int
     ir_slot_free: bool
     adds_used: int = Field(description="Executed adds in the matchup period `today` falls in")
@@ -785,3 +811,58 @@ class ProjectionLineOut(BaseModel):
     per_game: dict[str, float] = Field(
         description="PTS, REB, AST, STL, BLK, 3PM, TO, FGM, FGA, FTM and FTA"
     )
+
+
+class PageTeamOut(BaseModel):
+    """One team as the in-season pages name it."""
+
+    espn_team_id: int
+    name: str
+    abbreviation: str | None
+    ours: bool = Field(description="Whether this is the manager's own team")
+
+
+class PageDayOut(BaseModel):
+    """One day of a matchup period, for the schedule strip.
+
+    The calendar day is `calendar_date` and not `date`, because a field of
+    that name shadows the `date` type inside the class body and the
+    annotation on the next field then cannot be evaluated at all.
+    """
+
+    scoring_period: int
+    calendar_date: date | None = Field(description="Null when no NBA schedule is stored")
+    played: bool = Field(description="Whether the day is behind `today`")
+    today: bool
+
+
+class PagePeriodOut(BaseModel):
+    """The matchup period `today` falls in, and the days it covers."""
+
+    period: int
+    first_scoring_period: int
+    final_scoring_period: int
+    days: list[PageDayOut]
+
+
+class PageContextOut(BaseModel):
+    """What the in-season pages need besides the two pickup reports.
+
+    One route rather than four calls to existing ones: the pages need the
+    day the report is about as a date, the days of its matchup period for
+    the schedule strip, every team's name, and the line naming where the
+    numbers came from. Records for the index come from `/standings`, which
+    already derives them, so they are not repeated here.
+    """
+
+    league_id: int
+    season: int
+    today: int = Field(description="The scoring period the pages are reporting on")
+    today_date: date | None = Field(description="Null when no NBA schedule is stored")
+    first_scoring_period: int | None
+    last_scoring_period: int | None
+    period: PagePeriodOut | None = Field(description="Null when `today` is in no matchup period")
+    teams: list[PageTeamOut]
+    our_espn_team_id: int | None
+    source_note: str = Field(description="Where the numbers came from, in the page's words")
+    generated_at: datetime = Field(description="When this answer was built, for the refreshed line")
