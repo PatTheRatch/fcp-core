@@ -69,7 +69,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import LeagueSeason, Matchup, MatchupPeriod, MatchupTeamStat, Team
+from app.db.models import LeagueSeason, Matchup, MatchupPeriod, MatchupTeamStat
 from app.draft.targets import CategoryDistribution, category_distributions, modal_period_days
 from app.pickups.projection import rest_of_season_line
 from app.pickups.state import build_players, team_row
@@ -89,10 +89,10 @@ TYPICAL_PICKUP = 0.06
 #: over and so the unit a rest-of-season line is divided into.
 DAYS_A_WEEK = 7.0
 
-#: Categories contested in a matchup. Read from the season's own scored
-#: categories where one is at hand; this is the fallback for the record
-#: arithmetic when a report carries no distributions.
-NINE = 9
+#: Categories contested in a matchup, which is what a week's record adds up
+#: to: a team that wins six loses three. This league has played nine every
+#: season; a caller whose league scores a different number passes it.
+CONTESTED_CATEGORIES = 9
 
 #: A category result, as `matchup_team_stats.result` spells it.
 WIN = "WIN"
@@ -457,7 +457,6 @@ def banked_record(
         select(MatchupTeamStat.result, func.count())
         .join(Matchup, Matchup.id == MatchupTeamStat.matchup_id)
         .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
-        .join(Team, Team.id == MatchupTeamStat.team_id)
         .where(
             MatchupPeriod.league_season_id == league_season.id,
             MatchupPeriod.is_playoff.is_(False),
@@ -483,7 +482,7 @@ def judge(
     dropped: Sequence[int] = (),
     added: Sequence[int] = (),
     delta_season_per_week: float | None = None,
-    categories: int = NINE,
+    categories: int = CONTESTED_CATEGORIES,
 ) -> Judgement:
     """Judge one move: this week, the rest of the season, and the record.
 

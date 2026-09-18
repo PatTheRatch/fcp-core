@@ -26,6 +26,7 @@ from app.pickups.season import (
     season_recommendations,
     weeks_between,
 )
+from scripts.season import render
 from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
@@ -183,6 +184,23 @@ def test_every_swap_carries_a_judgement_over_both_horizons(session: Session) -> 
     )
     assert report.outlook.delta_total == 0.0
     assert report.outlook.record_with == report.outlook.record_without
+
+
+def test_the_cli_prints_both_horizons_and_the_projected_record(session: Session) -> None:
+    """As on the streaming side: the layout is the CLI's, but a field it
+    cannot read is a crash on a real day."""
+    ls, home, first = build_season(session)
+    full_roster(session, ls, home, first)
+    free_agent(session, ls, "Star", scaled(1.4), pro_team=20)
+    games(session, 20, EVERY_DAY)
+    report = season_recommendations(session, ls, HOME, today=1, distributions=WEEK)
+
+    text = render(report, season=2026, team_name="Home", when=None)
+
+    assert "moves, by net categories over both horizons:" in text
+    assert "projected record" in text
+    assert "season so far:" in text
+    assert "a week; this move is" in text, "the hurdle is a week, the net is not"
 
 
 def test_the_drop_candidates_are_the_men_who_cost_least_to_lose(session: Session) -> None:

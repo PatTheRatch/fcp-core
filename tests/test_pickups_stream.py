@@ -24,6 +24,7 @@ from app.pickups.stream import (
     stream_recommendations,
 )
 from app.scoring.lines import CategoryLine
+from scripts.stream import render
 from tests.pickups_db import (
     ANY,
     CENTRE,
@@ -432,6 +433,26 @@ def test_every_move_carries_a_judgement_over_both_horizons(session: Session) -> 
     outlook = report.outlook
     assert outlook.delta_total == 0.0 and outlook.record_with == outlook.record_without
     assert outlook.banked == (0.0, 0.0), "nothing has finished yet"
+
+
+def test_the_cli_prints_both_horizons_and_the_projected_record(session: Session) -> None:
+    """The layout is the CLI's own, but a field it cannot read is a crash on
+    a real week, so the render is exercised on a report the tests build."""
+    ls, home, away, first = build_week(session, bench=1)
+    rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    free_agent(session, ls, "Scorer", slots=ANY, pro_team=20, per_game={**TEN_POINTS, "PTS": 25.0})
+    games(session, 10, [1, 2])
+    games(session, 11, [1, 2])
+    games(session, 20, [5, 6, 7])
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    text = render(report, season=2026, team_name="Home", opponent_name="Away", when=None)
+
+    assert "moves, by net categories over both horizons:" in text
+    assert "projected record" in text
+    assert "season so far:" in text
+    assert "categories net" in text, "the recommendation is named in the net"
 
 
 def test_a_week_of_gain_is_refused_when_the_season_costs_more(session: Session) -> None:
