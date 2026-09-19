@@ -29,12 +29,16 @@ the default summary leads with all three:
    scoring, pickups and draft packages.
 2. **Which scoring.** Only head-to-head categories is currency the scoring
    package understands (docs/platforms.md, "Not covered: roto and points").
-   The probe prints the evidence rather than a verdict, because Sleeper's
-   settings say it obliquely and a wrong guess here would be expensive.
-3. **Can we join the players.** Sleeper's player dump carries each player's
-   `espn_id`, so the cross-platform match docs/platforms.md budgets for may
-   be an id join instead of name matching. `--players` measures how much of
-   this league's rostered pool that actually covers.
+   The probe prints the evidence and names the points-league tells (negative
+   weights, threshold bonuses) rather than printing a verdict, because
+   Sleeper carries no scoring-type flag and a wrong guess would be expensive.
+3. **Can we join the players.** The dump has an `espn_id` key that was null
+   on every NBA player when first run (2026-09-19), so the join is a name
+   match, not an id join. `--players` reports every id field's coverage over
+   the league's rostered players, or over the draftable pool before a draft.
+
+First run against league 1404516094114377728 on 2026-09-19; what it found is
+at the top of docs/sleeper.md.
 """
 
 import argparse
@@ -42,6 +46,7 @@ import json
 import os
 from collections import Counter
 from collections.abc import Callable
+from datetime import UTC, date, datetime
 from typing import Any
 
 from app import sleeper
@@ -49,6 +54,20 @@ from app import sleeper
 #: Stop looking for weeks after this many. An NBA fantasy season runs to
 #: about 25 scoring weeks; the loop also gives up early on a quiet stretch.
 MAX_WEEK = 30
+
+#: Where the player dump is kept for the day. Sleeper asks that it be pulled
+#: at most once a day, and the probe is run several times in a sitting, so
+#: the first pull is written here and later ones read it back. `data/` is
+#: gitignored; the file is a couple of MB.
+PLAYER_CACHE_DIR = os.path.join("data", "sleeper")
+
+#: The few enumerated settings whose integers are worth decoding in the
+#: summary. Sleeper documents only `type`; the waiver meanings are its
+#: long-standing convention and match what the app shows.
+_SETTING_MEANINGS: dict[str, dict[Any, str]] = {
+    "type": {0: "redraft", 1: "keeper", 2: "dynasty"},
+    "waiver_type": {0: "rolling waivers", 1: "reverse standings", 2: "FAAB"},
+}
 
 
 # --- helpers ----------------------------------------------------------------
@@ -92,6 +111,34 @@ def _team_names(users: list[dict[str, Any]]) -> dict[str, str]:
     return names
 
 
+def _players_for_today(sport: str) -> dict[str, dict[str, Any]]:
+    """The player dump, pulled at most once a day and kept under data/sleeper.
+
+    Sleeper asks for one pull a day and the probe gets run several times in a
+    sitting, so the first pull of the day is written to disk and every later
+    one reads it back. A cache that fails to write is not an error — the
+    dump is still in hand.
+    """
+    path = os.path.join(PLAYER_CACHE_DIR, f"players_{sport}_{date.today():%Y-%m-%d}.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            cached: dict[str, dict[str, Any]] = json.load(handle)
+        print(f"Using today's cached {sport} player dump ({path}).")
+        return cached
+    except (OSError, ValueError):
+        pass
+    print(f"Fetching the {sport} player dump (several MB; Sleeper asks for once a day at most)...")
+    players = sleeper.fetch_players(sport)
+    try:
+        os.makedirs(PLAYER_CACHE_DIR, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(players, handle)
+        print(f"  cached to {path}")
+    except OSError as exc:
+        print(f"  (could not cache it: {exc})")
+    return players
+
+
 def _print_json(label: str, value: Any) -> None:
     print(f"\n{label}:")
     print(json.dumps(value, indent=2, sort_keys=True, default=str))
@@ -116,9 +163,19 @@ def _scoring_evidence(league: dict[str, Any]) -> None:
         print("  scoring_settings is empty, which itself is worth explaining")
     else:
         weights = Counter(str(v) for v in scoring.values())
-        print(f"  scoring_settings has {len(scoring)} stat keys")
+        live = {k: v for k, v in scoring.items() if v}
+        print(f"  scoring_settings has {len(scoring)} stat keys, {len(live)} with a nonzero weight")
         print(f"  distinct weights: {', '.join(f'{w} x{n}' for w, n in weights.most_common())}")
-        print("  stats scored: " + ", ".join(sorted(scoring)))
+        print("  weighted: " + ", ".join(f"{k} {v:g}" for k, v in sorted(live.items())))
+        # A categories league has no use for a negative weight on a miss or a
+        # bonus for crossing 40 points; both are points-league devices.
+        negative = sorted(k for k, v in live.items() if v < 0)
+        bonuses = sorted(k for k in live if k.startswith("bonus_"))
+        if negative or bonuses:
+            print(
+                f"  points-league tells: negative weights {negative or 'none'}, "
+                f"threshold bonuses {bonuses or 'none'}"
+            )
 
     settings = league.get("settings") or {}
     telling = {
@@ -130,6 +187,10 @@ def _scoring_evidence(league: dict[str, Any]) -> None:
     metadata = league.get("metadata") or {}
     if metadata:
         print(f"  league metadata: {metadata}")
+    if league.get("draft_id"):
+        draft = sleeper.fetch_draft(str(league["draft_id"]))
+        draft_meta = draft.get("metadata") or {}
+        print(f"  draft metadata.scoring_type: {draft_meta.get('scoring_type')!r}")
     print("  -> confirm against the league's own settings page before mapping anything.")
 
 
@@ -158,7 +219,13 @@ def _summary(league_id: str) -> None:
     starters = [s for s in slots if s not in ("BN", "IR", "TAXI")]
     print("\nRoster:")
     print(f"  roster_positions ({len(slots)}): {', '.join(slots) if slots else 'none reported'}")
-    print(f"  starters {len(starters)}, bench {slots.count('BN')}, IR {slots.count('IR')}")
+    # IR is not a roster_positions entry: it is counted in settings.reserve_slots
+    # and held in each roster's `reserve` list (verified 2026-09-19). Taxi likewise.
+    print(
+        f"  starters {len(starters)}, bench {slots.count('BN')}, "
+        f"IR {settings.get('reserve_slots', 0)} (settings.reserve_slots), "
+        f"taxi {settings.get('taxi_slots', 0)}"
+    )
     for key in (
         "num_teams",
         "playoff_teams",
@@ -167,19 +234,26 @@ def _summary(league_id: str) -> None:
         "leg",
         "waiver_type",
         "waiver_budget",
+        "daily_waivers",
         "trade_deadline",
         "type",
         "max_keepers",
+        "pick_trading",
         "draft_rounds",
         "reserve_slots",
         "taxi_slots",
         "disable_trades",
+        "bench_lock",
+        "game_mode",
     ):
         if key in settings:
-            print(f"  {key:<20} {settings[key]}")
+            meaning = _SETTING_MEANINGS.get(key, {}).get(settings[key], "")
+            print(f"  {key:<20} {settings[key]}" + (f"  ({meaning})" if meaning else ""))
 
     _scoring_evidence(league)
 
+    # `is_owner` on a user is the commissioner flag, not team ownership.
+    commissioners = {str(u.get("user_id")) for u in users if u.get("is_owner")}
     print(f"\nTeams ({len(rosters)}) — roster_id is the key every other endpoint uses:")
     for roster in sorted(rosters, key=lambda r: r.get("roster_id") or 0):
         owner = str(roster.get("owner_id"))
@@ -191,17 +265,25 @@ def _summary(league_id: str) -> None:
         )
         players = roster.get("players") or []
         co_owners = roster.get("co_owners") or []
+        extras = [
+            f"+{len(co_owners)} co-owner(s)" if co_owners else "",
+            f"{len(roster.get('reserve') or [])} on IR" if roster.get("reserve") else "",
+            f"{len(roster.get('keepers') or [])} keeper(s)" if roster.get("keepers") else "",
+            "commissioner" if owner in commissioners else "",
+        ]
         print(
             f"  [{roster.get('roster_id'):>2}] {names.get(owner, '(unclaimed)'):<28} "
             f"{record:<10} {len(players):>3} players  "
             f"fpts {team_settings.get('fpts', 0)}  "
             f"faab spent {team_settings.get('waiver_budget_used', 0)}"
-            + (f"  +{len(co_owners)} co-owner(s)" if co_owners else "")
+            + "".join(f"  {e}" for e in extras if e)
         )
 
     unclaimed = [r for r in rosters if not r.get("owner_id")]
     if unclaimed:
-        print(f"  ({len(unclaimed)} roster(s) with no owner — orphan teams)")
+        # Before the draft these are open seats not yet filled; after it they
+        # are orphans. `metadata.is_open` on the league says which.
+        print(f"  ({len(unclaimed)} roster(s) with no owner — open seats or orphan teams)")
 
     print(
         "\nWhat is NOT in the summary and needs its own call: "
@@ -239,6 +321,10 @@ def _history(league_id: str) -> None:
         )
         if settings.get("type") is not None:
             print(f"          type={settings['type']} (0 redraft, 1 keeper, 2 dynasty)")
+        copied = (league.get("metadata") or {}).get("copy_from_league_id")
+        if copied:
+            # Where the settings were copied from, not the season before.
+            print(f"          settings copied from league {copied}")
     print(f"\n{count} season(s). A full history pull is this many times the per-season calls.")
 
 
@@ -304,8 +390,11 @@ def _season(league_id: str, max_week: int) -> None:
     bracket = sleeper.fetch_winners_bracket(league_id)
     losers = sleeper.fetch_losers_bracket(league_id)
     traded = sleeper.fetch_traded_picks(league_id)
+    # Brackets are laid out when the league is created; only `w` says a game was played.
     print(
-        f"\nwinners bracket: {len(bracket)} games, losers bracket: {len(losers)}, "
+        f"\nwinners bracket: {len(bracket)} games laid out, "
+        f"{sum(1 for g in bracket if g.get('w'))} played; "
+        f"losers bracket: {len(losers)} laid out, {sum(1 for g in losers if g.get('w'))} played; "
         f"traded picks: {len(traded)}"
     )
     if bracket:
@@ -323,6 +412,9 @@ def _draft(league_id: str) -> None:
             f"status={draft.get('status')!r} season={draft.get('season')}"
         )
         print(f"  metadata: {draft.get('metadata')}")
+        if draft.get("start_time"):
+            start = datetime.fromtimestamp(int(draft["start_time"]) / 1000, UTC)
+            print(f"  start_time               {start:%Y-%m-%d %H:%M} UTC")
         for key in (
             "teams",
             "rounds",
@@ -335,6 +427,10 @@ def _draft(league_id: str) -> None:
         ):
             if key in settings:
                 print(f"  {key:<24} {settings[key]}")
+        # The draft repeats the roster shape as slots_<position> counts.
+        slot_counts = {k[len("slots_") :]: v for k, v in settings.items() if k.startswith("slots_")}
+        if slot_counts:
+            print(f"  slots                    {slot_counts}")
         print(f"  slot_to_roster_id: {draft.get('slot_to_roster_id')}")
         picks = sleeper.fetch_draft_picks(str(draft.get("draft_id")))
         print(f"  {len(picks)} picks made")
@@ -349,38 +445,57 @@ def _players(league_id: str) -> None:
     """Measure the join to our `players` table. This is the interesting one.
 
     docs/platforms.md budgets a player-matching step for a second platform:
-    match by name, NBA team and position, refuse a tie. Sleeper may make that
-    unnecessary — every player it knows carries `espn_id` — but only if the
-    coverage is real. This counts it over the players this league actually
-    rosters, which is the population that matters, not the whole dump.
+    match by name, NBA team and position, refuse a tie. The hope was that
+    Sleeper's `espn_id` would make that an id join. It does not: on
+    2026-09-19 the NBA dump carried the `espn_id` key with a null value on
+    every one of its 2117 entries (docs/sleeper.md, finding 5). So this
+    reports every id field's real coverage rather than assuming any.
+
+    The population is the players this league rosters. Before the draft that
+    is nobody, and "all of nobody has an espn_id" is true and useless — so an
+    empty league is measured over the draftable pool instead: active players
+    on an NBA team, which is what the draft will pick from.
     """
     league = sleeper.fetch_league(league_id)
     sport = str(league.get("sport") or sleeper.NBA)
     rosters = sleeper.fetch_rosters(league_id)
-    print(f"Fetching the {sport} player dump (several MB; Sleeper asks for once a day at most)...")
-    players = sleeper.fetch_players(sport)
-    print(f"{len(players)} players in the dump\n")
+    players = _players_for_today(sport)
+    # Sleeper lists each NBA team as a pseudo-player keyed by its abbreviation
+    # ("BKN", position "DEF"). They are not people and nothing should join them.
+    people = {k: v for k, v in players.items() if k.isdigit()}
+    print(
+        f"{len(players)} entries in the dump, {len(players) - len(people)} of them "
+        "team pseudo-players (non-numeric id, position DEF)\n"
+    )
 
     rostered = {str(p) for r in rosters for p in (r.get("players") or [])}
-    print(f"{len(rostered)} distinct players rostered in this league")
+    if rostered:
+        population = sorted(rostered)
+        label = "rostered in this league"
+    else:
+        population = sorted(k for k, v in people.items() if v.get("active") and v.get("team"))
+        label = "in the draftable pool (active, on an NBA team) — nothing is rostered yet"
+    print(f"{len(population)} players {label}")
 
     id_fields = (
         "espn_id",
         "yahoo_id",
-        "rotowire_id",
-        "swish_id",
-        "stats_id",
-        "fantasy_data_id",
         "sportradar_id",
-        "gsis_id",
+        "fantasy_data_id",
+        "rotowire_id",
+        "kalshi_id",
+        "swish_id",
         "oddsjam_id",
+        "stats_id",
+        "rotoworld_id",
         "opta_id",
+        "pandascore_id",
     )
     coverage: Counter[str] = Counter()
     missing_espn: list[str] = []
     unknown: list[str] = []
-    for player_id in sorted(rostered):
-        entry = players.get(player_id)
+    for player_id in population:
+        entry = people.get(player_id)
         if entry is None:
             unknown.append(player_id)
             continue
@@ -390,20 +505,30 @@ def _players(league_id: str) -> None:
         if not entry.get("espn_id"):
             missing_espn.append(entry.get("full_name") or player_id)
 
-    print("\ncross-platform ids present on this league's rostered players:")
+    print("\ncross-platform ids with a value (the key is present on nearly every entry):")
     for field in id_fields:
-        count = coverage[field]
-        if count:
-            print(f"  {field:<20} {count:>4} of {len(rostered)}")
+        print(f"  {field:<20} {coverage[field]:>4} of {len(population)}")
     if unknown:
-        print(f"\n  {len(unknown)} rostered id(s) absent from the dump: {unknown[:10]}")
-    if missing_espn:
+        print(f"\n  {len(unknown)} id(s) absent from the dump: {unknown[:10]}")
+    if not population:
+        print("\n  nothing to measure.")
+    elif not missing_espn:
+        print("\n  every one carries an espn_id: the join can be an id join.")
+    elif len(missing_espn) == len(population):
+        print(
+            f"\n  NONE of the {len(population)} carries an espn_id. The join to our players is "
+            "a name match\n  (docs/platforms.md step 3), not an id join."
+        )
+    else:
         print(f"\n  no espn_id ({len(missing_espn)}): {', '.join(missing_espn[:20])}")
         print("  ^ these are the ones a name match would have to settle, or a person would.")
-    else:
-        print("\n  every rostered player carries an espn_id: the join can be an id join.")
 
-    sample = next((players[p] for p in sorted(rostered) if p in players), None)
+    # A name match refuses a tie, so how many ties there are is its cost.
+    names = Counter(people[p].get("search_full_name") for p in population if p in people)
+    ties = sorted(str(n) for n, count in names.items() if n and count > 1)
+    print(f"\n  names shared by two or more of them: {len(ties)} {ties[:10] if ties else ''}")
+
+    sample = next((people[p] for p in population if p in people), None)
     if sample:
         _print_json("one player entry, whole", sample)
 
@@ -419,6 +544,11 @@ def _raw(league_id: str, what: str, week: int) -> None:
         "winners_bracket": lambda: sleeper.fetch_winners_bracket(league_id),
         "losers_bracket": lambda: sleeper.fetch_losers_bracket(league_id),
         "drafts": lambda: sleeper.fetch_drafts(league_id),
+        "draft_picks": lambda: [
+            pick
+            for entry in sleeper.fetch_drafts(league_id)
+            for pick in sleeper.fetch_draft_picks(str(entry.get("draft_id")))
+        ],
         "state": lambda: sleeper.fetch_state(),
     }
     if what not in calls:

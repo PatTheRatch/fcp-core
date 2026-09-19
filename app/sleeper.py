@@ -97,7 +97,13 @@ def fetch_rosters(league_id: str) -> list[dict[str, Any]]:
     """One row per team: who owns it, who is on it, and its season record.
 
     `roster_id` (1..n, stable for the season) is the team key everywhere else
-    in the API. `owner_id` is a Sleeper user id, which is the person.
+    in the API. `owner_id` is a Sleeper user id, which is the person, and is
+    null on a seat nobody has taken yet.
+
+    Beyond `players` and `starters` a roster carries `reserve` (who is on IR —
+    IR is not a `roster_positions` entry), `taxi`, `keepers` and `player_map`.
+    `starters` has one entry per starting slot even when empty, and an empty
+    slot is the string `"0"`, not a missing entry: `"0"` is not a player.
     """
     return _require(f"league/{league_id}/rosters", f"rosters for league {league_id}") or []
 
@@ -108,6 +114,8 @@ def fetch_users(league_id: str) -> list[dict[str, Any]]:
     The team's *name* lives here (in `metadata.team_name`), not on the roster,
     and it is absent when a manager never set one — Sleeper then shows the
     display name instead, which is a presentation rule we have to repeat.
+    `is_owner` is true for the commissioner, not for team owners. A seat
+    nobody has joined has a roster but no user row.
     """
     return _require(f"league/{league_id}/users", f"users for league {league_id}") or []
 
@@ -136,12 +144,21 @@ def fetch_traded_picks(league_id: str) -> list[dict[str, Any]]:
 
 
 def fetch_winners_bracket(league_id: str) -> list[dict[str, Any]]:
-    """The playoff bracket. Empty until the league reaches the playoffs."""
+    """The playoff bracket, laid out from the day the league is created.
+
+    It is not empty before the playoffs: a pre-draft league already returns
+    every game, seeded provisionally. Each game is `r` (round), `m` (game
+    number), `t1`/`t2` (roster ids, null until known), `t1_from`/`t2_from`
+    (`{"w": m}` or `{"l": m}`: the winner or loser of game m), `w`/`l` (the
+    result, null until played) and, on placement games only, `p` (the place
+    it decides: 1 is the final, 3 third place). So the seeds are not real
+    until `playoff_week_start`, and only `w` says a game has happened.
+    """
     return _get(f"league/{league_id}/winners_bracket") or []
 
 
 def fetch_losers_bracket(league_id: str) -> list[dict[str, Any]]:
-    """The consolation bracket, same shape as the winners' one."""
+    """The consolation bracket, same shape as the winners' one and also present from the start."""
     return _get(f"league/{league_id}/losers_bracket") or []
 
 
@@ -181,13 +198,19 @@ def fetch_state(sport: str = NBA) -> dict[str, Any]:
 
 
 def fetch_players(sport: str = NBA) -> dict[str, dict[str, Any]]:
-    """Every player Sleeper knows, keyed by Sleeper player id. Several MB.
+    """Every player Sleeper knows, keyed by Sleeper player id. About 2.7 MB.
 
-    Sleeper asks that this be called at most once a day, and means it. It is
-    also the bridge to our `players` table: each entry carries `espn_id`
-    (and `yahoo_id`, `rotowire_id`, `swish_id`), so a Sleeper player maps to
-    a canonical player by id rather than by matching his name. Coverage is
-    not total, which is what `scripts/sleeper_probe.py --players` measures.
+    Sleeper asks that this be called at most once a day, and means it.
+
+    It is *not* an id bridge to our `players` table, whatever the field list
+    suggests. Every NBA entry has an `espn_id` key, and on 2026-09-19 it was
+    null on all 2117 of them (`yahoo_id` too). The ids that are filled are
+    `sportradar_id`, `fantasy_data_id`, `rotowire_id` and `kalshi_id`, none
+    of which we store — so the join is a name match, docs/sleeper.md
+    finding 5. `scripts/sleeper_probe.py --players` measures it.
+
+    Thirty entries are not players: each NBA team appears keyed by its
+    abbreviation (`"BKN"`), position `DEF`, with no `full_name`.
     """
     players: dict[str, dict[str, Any]] = _require(f"players/{sport}", f"the {sport} player dump")
     return players
@@ -211,5 +234,22 @@ def league_history(league_id: str, limit: int = 25) -> Iterator[dict[str, Any]]:
         if league is None:
             return
         yield league
-        previous = league.get("previous_league_id")
-        current = str(previous) if previous else None
+        current = previous_league_id(league)
+
+
+def previous_league_id(league: dict[str, Any]) -> str | None:
+    """The season before this one, or None when this is the first.
+
+    Sleeper says "no previous season" two ways: `null`, and the string
+    `"0"` (both seen in NBA leagues on 2026-09-19). The second is truthy, so
+    a bare `if previous` would go looking for league 0.
+
+    `metadata.copy_from_league_id` is not a substitute. It marks a league
+    created by copying another's settings, it is carried forward into later
+    seasons unchanged, and it can sit beside a null `previous_league_id` —
+    so it records where the settings came from, not which season came before.
+    """
+    previous = league.get("previous_league_id")
+    if previous is None or str(previous) in ("", "0"):
+        return None
+    return str(previous)
