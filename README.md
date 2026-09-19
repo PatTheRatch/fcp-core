@@ -87,6 +87,28 @@ run to a particular year.
 Note the per-team `W-L-T` is a count of *categories* won, not matchups won.
 ESPN does not return a matchup record for a category league.
 
+## Probe a Sleeper league (read-only)
+
+```bash
+python scripts/sleeper_probe.py 1404516094114377728       # the summary
+python scripts/sleeper_probe.py --settings                # every settings key, verbatim
+python scripts/sleeper_probe.py --history                 # this season and earlier ones
+python scripts/sleeper_probe.py --season                  # sweep every week and count
+python scripts/sleeper_probe.py --draft                   # the draft and its picks
+python scripts/sleeper_probe.py --players                 # can we join Sleeper to our players?
+```
+
+Sleeper needs no credentials at all: its API is anonymous, read-only and
+public, so a league id is the whole configuration. Pass it as an argument or
+set `SLEEPER_LEAGUE_ID`.
+
+Nothing is persisted and no table knows Sleeper yet. The summary leads with the
+three things that decide how much of this repo can serve such a league — the
+sport, whether the scoring is categories or points, and whether its players
+carry the `espn_id` that would let them join our `players` rows.
+[docs/sleeper.md](docs/sleeper.md) has what the API carries, how it collides
+with our schema, and the plan.
+
 ## Ingest a league season
 
 ```bash

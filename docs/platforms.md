@@ -53,6 +53,11 @@ platform id: a season is (league, year), and a pick is keyed by its round and
 slot. `ingest_runs.espn_league_id` is a log line and stays as it is.
 `league_connections` already has its `platform` column (step 2).
 
+That first sentence is true of ESPN and **not** of every platform. Sleeper
+mints a new league id every season and keeps its draft as a separate resource,
+so a Sleeper league has a platform id per season, and another for its draft,
+with nowhere to put either. See docs/sleeper.md.
+
 ## How the two ids cannot drift
 
 * **The ingest writes both**, on every insert and every update: the league
@@ -90,7 +95,9 @@ this size.
 
 ## What a second platform needs
 
-In order, and none of it is built:
+In order, and none of it is built. docs/sleeper.md works this list through
+for a real Sleeper league and is the worked example of it, including where
+the list turns out to be incomplete:
 
 1. **A migration that lets the rows exist.** Add the platform's name to the
    `ck_*_platform` CHECKs and to `PLATFORMS`, and relax each `espn_*` column
