@@ -47,6 +47,7 @@ from app.espn import (
     fetch_transactions,
     player_names,
 )
+from app.platforms import ESPN, espn_player_id_row
 
 
 def _epoch_ms_to_datetime(epoch_ms: Any) -> datetime | None:
@@ -81,9 +82,16 @@ def _raw_snapshot(settings: Any) -> dict[str, Any]:
 def _get_or_create_league(session: Session, espn_league_id: int) -> League:
     league = session.scalar(select(League).where(League.espn_league_id == espn_league_id))
     if league is None:
-        league = League(espn_league_id=espn_league_id)
+        league = League(
+            espn_league_id=espn_league_id,
+            platform=ESPN,
+            platform_league_id=str(espn_league_id),
+        )
         session.add(league)
         session.flush()  # assign league.id before the season row references it
+    # Written on every pass, like every platform id below (docs/platforms.md).
+    league.platform = ESPN
+    league.platform_league_id = str(espn_league_id)
     return league
 
 
@@ -262,6 +270,8 @@ def _sync_owners(session: Session, team: Team, raw_owners: list[dict[str, Any]])
         if owner is None:
             owner = Owner(espn_owner_id=key)
             session.add(owner)
+        owner.platform = ESPN
+        owner.platform_owner_id = key
         owner.display_name = raw_owner.get("displayName")
         owner.first_name = raw_owner.get("firstName")
         owner.last_name = raw_owner.get("lastName")
@@ -285,6 +295,7 @@ def ingest_teams(session: Session, league_season: LeagueSeason, espn_league: ESP
             team = Team(league_season_id=league_season.id, espn_team_id=espn_team_id)
             session.add(team)
 
+        team.platform_team_id = str(espn_team_id)
         team.name = str(espn_team.team_name)
         team.abbreviation = getattr(espn_team, "team_abbrev", None)
         team.logo_url = getattr(espn_team, "logo_url", None)
@@ -321,17 +332,32 @@ def _espn_team_id(side: Any) -> int | None:
     return team_id or None
 
 
+def new_espn_player(espn_player_id: int, name: str) -> Player:
+    """A player seen for the first time, with his ESPN id mapping row.
+
+    Every player the ingest creates is created here, so no player it writes
+    is ever without his `player_platform_ids` row. The mapping never changes
+    after: an ESPN id is his for good.
+    """
+    return Player(
+        espn_player_id=espn_player_id,
+        name=name,
+        platform_ids=[espn_player_id_row(espn_player_id)],
+    )
+
+
 def get_or_create_player(session: Session, espn_player_id: int, name: str | None) -> Player:
     """The global player row for an ESPN id, created if this is the first sight of him.
 
     The name is refreshed on every call: ESPN's spelling is the one the
     league sees, and a player renamed upstream should read that way here.
     """
+    display = str(name or f"player {espn_player_id}")
     player = session.scalar(select(Player).where(Player.espn_player_id == espn_player_id))
     if player is None:
-        player = Player(espn_player_id=espn_player_id)
+        player = new_espn_player(espn_player_id, display)
         session.add(player)
-    player.name = str(name or f"player {espn_player_id}")
+    player.name = display
     return player
 
 
@@ -1048,9 +1074,8 @@ def ingest_transactions(
                 if espn_player_id is None or int(espn_player_id) in players:
                     continue
                 espn_player_id = int(espn_player_id)
-                created = Player(
-                    espn_player_id=espn_player_id,
-                    name=names.get(espn_player_id, f"player {espn_player_id}"),
+                created = new_espn_player(
+                    espn_player_id, names.get(espn_player_id, f"player {espn_player_id}")
                 )
                 session.add(created)
                 players[espn_player_id] = created
@@ -1086,6 +1111,7 @@ def ingest_transactions(
                 )
                 session.add(transaction)
                 existing[str(espn_transaction_id)] = transaction
+            transaction.platform_transaction_id = str(espn_transaction_id)
             transaction.scoring_period = belongs_to
 
             team = _team_or_none(teams, payload.get("teamId"))
@@ -1162,9 +1188,9 @@ def ingest_draft(session: Session, league_season: LeagueSeason, espn_league: ESP
 
         player = players.get(espn_player_id)
         if player is None:
-            player = Player(
-                espn_player_id=espn_player_id,
-                name=str(getattr(pick, "playerName", "") or f"player {espn_player_id}")
+            player = new_espn_player(
+                espn_player_id,
+                str(getattr(pick, "playerName", "") or f"player {espn_player_id}")
                 or names.get(espn_player_id, f"player {espn_player_id}"),
             )
             session.add(player)

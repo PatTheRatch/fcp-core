@@ -55,8 +55,8 @@ from app.db.models import (
     UserEspnIdentity,
     team_owners,
 )
+from app.platforms import ESPN
 
-ESPN = "espn"
 PENDING = "pending"
 VERIFIED = accounts.VERIFIED
 REJECTED = "rejected"
@@ -147,7 +147,11 @@ def get_or_create_league(session: Session, espn_league_id: int) -> League:
     Only the row: its seasons and teams are the ingest's to write."""
     session.execute(
         insert(League)
-        .values(espn_league_id=espn_league_id)
+        .values(
+            espn_league_id=espn_league_id,
+            platform=ESPN,
+            platform_league_id=str(espn_league_id),
+        )
         .on_conflict_do_nothing(index_elements=["espn_league_id"])
     )
     league = league_by_espn_id(session, espn_league_id)
