@@ -16,6 +16,11 @@ when the API enforces accounts (docs/accounts.md).
 
 Never fails the pass: a missing setting, an unreachable API or a slow report
 is printed and the exit code is 0. The unit that matters is the digest.
+
+Unnecessary once the job queue runs (docs/jobs.md): the morning
+`precompute` job stores each claimed team's reports in `team_reports`, and
+the routes answer from those rows, in any process. Kept for today's timers,
+which still run it after the morning digest; the switched-over units do not.
 """
 
 from __future__ import annotations

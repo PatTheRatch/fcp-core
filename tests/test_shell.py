@@ -307,11 +307,11 @@ def test_the_alerts_are_the_owners_alone_and_never_a_url(app: FastAPI, sign_in: 
             {"kind": "email", "detail": "owner@example.com, second@example.com"},
             {"kind": "telegram", "detail": "a Telegram chat"},
         ],
-        "per_member": False,
+        "per_member": True,
     }
     assert "SECRET" not in mine.text and "42" not in mine.text
     theirs = alice.get("/me/alerts").json()
-    assert theirs == {"yours": False, "channels": [], "per_member": False}
+    assert theirs == {"yours": False, "channels": [], "per_member": True}
 
 
 # ---------------------------------------------------------------------------

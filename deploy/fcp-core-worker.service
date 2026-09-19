@@ -1,0 +1,44 @@
+# The job worker: takes due jobs from the queue one at a time (docs/jobs.md).
+# Long-running. NOT INSTALLED YET: it replaces the ingest and status timers'
+# work only when the VPS is switched over (docs/jobs.md, "Switching over").
+#
+# Install (from a checkout at /opt/fcp-core, migration 0020 applied):
+#     sudo cp deploy/fcp-core-worker.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now fcp-core-worker.service
+#
+# Status:   systemctl status fcp-core-worker
+# Logs:     journalctl -u fcp-core-worker -f
+# Queue:    /opt/fcp-core/.venv/bin/python scripts/worker.py --list
+# Remove:   sudo systemctl disable --now fcp-core-worker.service
+#
+# Like the API it keeps running the code it started with: restart it after
+# a deploy (sudo systemctl restart fcp-core-worker).
+
+[Unit]
+Description=fcp-core - job worker (ingests, listener passes, reports, digests)
+Documentation=https://github.com/PatTheRatch/fcp-core
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=aisha
+Group=aisha
+WorkingDirectory=/opt/fcp-core
+ExecStart=/opt/fcp-core/.venv/bin/python scripts/worker.py
+Restart=on-failure
+RestartSec=30
+# A stop lets the job in hand finish; a first backfill of a new league is
+# the longest, a few minutes.
+KillSignal=SIGTERM
+TimeoutStopSec=900
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/fcp-core
+
+[Install]
+WantedBy=multi-user.target

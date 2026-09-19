@@ -349,6 +349,9 @@ LeagueMember = Annotated[Viewer, Depends(require_league_member)]
 LeagueOwner = Annotated[Viewer, Depends(require_league_owner)]
 SIGNED_IN_PAGE = Depends(current_page_viewer)
 TEAM_PLAN = Depends(require_team_plan)
+#: The manager check alone, without the paid tier: the free glance at his
+#: own week (docs/product.md, "Free and paid").
+TEAM_MANAGER = Depends(require_team_manager)
 SIGNED_IN = Depends(current_user)
 LISTENED_LEAGUE_MEMBER = Depends(require_listened_league_member)
 LEAGUE_MEMBER_PAGE = Depends(require_league_member_page)

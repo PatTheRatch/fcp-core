@@ -1400,3 +1400,115 @@ class UserEspnIdentity(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Jobs, stored reports and members' channels (docs/jobs.md, docs/product.md step 4)
+# ---------------------------------------------------------------------------
+
+
+class Job(Base):
+    """One piece of scheduled work: a league's ingest or listener pass, a
+    team's precompute, a member's digest. Read by the worker (app/jobs.py).
+
+    `dedupe_key` is what stops a schedule enqueueing the same work twice: the
+    kind, the league, the team, the member, the UTC day of `run_after` and the
+    schedule's label, so tonight's ingest of league 7 is one row however many
+    times the enqueue fires. `state` is `queued`, `running`, `done` or
+    `failed`; a failed attempt goes back to `queued` with a later `run_after`
+    until `attempts` reaches the limit. `depends_on` holds a job back until
+    that one is `done`, and fails it when that one fails. `last_error` is a
+    fixed sentence of ours, never an exception's text, so it carries no
+    credential.
+    """
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('ingest', 'status_pass', 'precompute', 'digest')", name="ck_jobs_kind"
+        ),
+        CheckConstraint("state IN ('queued', 'running', 'done', 'failed')", name="ck_jobs_state"),
+        UniqueConstraint("dedupe_key", name="uq_jobs_dedupe_key"),
+        Index("ix_jobs_state_run_after", "state", "run_after"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    league_id: Mapped[int | None] = mapped_column(ForeignKey("leagues.id", ondelete="CASCADE"))
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    depends_on: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    dedupe_key: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False, server_default="queued")
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(200))
+    locked_by: Mapped[str | None] = mapped_column(String)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+
+class TeamReport(Base):
+    """A team's streaming or rest-of-season report for one scoring period,
+    built by the morning precompute and read by the pages and the routes.
+
+    `payload` is exactly what the route would answer (`StreamReportOut` or
+    `SeasonReportOut`, as JSON). One row per team, kind and scoring period;
+    a rebuild the same day replaces it.
+    """
+
+    __tablename__ = "team_reports"
+    __table_args__ = (
+        CheckConstraint("kind IN ('stream', 'season')", name="ck_team_reports_kind"),
+        UniqueConstraint(
+            "team_id", "kind", "scoring_period", name="uq_team_reports_team_kind_period"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class NotificationChannel(Base):
+    """Where one member's digest and alerts go: an email address, a Telegram
+    chat or an ntfy topic.
+
+    The target is sealed with `FCP_SECRETS_KEY` (app/secrets_box.py) and
+    never returned; `masked_target` is the form shown back ("p•••@example.com").
+    Nothing is sent to a channel until `verified_at` is set: an email by the
+    link mailed to it, a chat or a topic by the code in the test message sent
+    to it. `verify_hash` is the sha256 of that link's token or that code, and
+    is cleared once spent. Disabling wipes the sealed target.
+    """
+
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('email', 'telegram', 'ntfy')", name="ck_notification_channels_kind"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    sealed_target: Mapped[str | None] = mapped_column(Text)
+    masked_target: Mapped[str] = mapped_column(String, nullable=False)
+    verify_hash: Mapped[str | None] = mapped_column(String, unique=True)
+    verify_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

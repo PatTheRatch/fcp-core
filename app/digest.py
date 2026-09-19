@@ -30,6 +30,15 @@ Every event the digest reports on, including the ones it summarises as "and
 N more", is marked `notified_at` by the caller once delivery has actually
 succeeded. Kinds the digest never shows are never queried and never marked.
 The plan marks nothing: it reports state, not news.
+
+MORE THAN ONE READER (step 4, docs/jobs.md)
+
+`notified_at` is one column on the event, so it can only mean "the owner has
+been told". A member's digest, sent by the `digest` job, passes `since`
+instead: the events observed since his own last digest went out, and marks
+nothing. The owner's digest keeps marking, exactly as `scripts/digest.py`
+always has. `league_section` is the free part every member gets: the week's
+matchups as they stand and the wire's traffic, from the league's own rows.
 """
 
 from collections.abc import Sequence
@@ -53,7 +62,7 @@ from app.listener import events as kinds
 from app.listener.pool import UNROSTERED_STATUSES
 from app.listener.snapshots import latest_snapshots
 from app.pickups.judge import Judgement
-from app.pickups.state import RosteredPlayer, season_calendar
+from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
 from app.scoring.wire import WIRE_TYPES
 
@@ -278,14 +287,25 @@ def latest_listened_season(session: Session) -> int | None:
 
 
 def unnotified(
-    session: Session, season: int, kinds_wanted: Sequence[str]
+    session: Session,
+    season: int,
+    kinds_wanted: Sequence[str],
+    *,
+    since: datetime | None = None,
 ) -> list[PlayerStatusEvent]:
+    """The events still to tell: never notified, or, with `since`, observed
+    after it (a member's own window, whatever the owner has been told)."""
+    fresh = (
+        PlayerStatusEvent.notified_at.is_(None)
+        if since is None
+        else PlayerStatusEvent.observed_at > since
+    )
     return list(
         session.scalars(
             select(PlayerStatusEvent)
             .where(
                 PlayerStatusEvent.season == season,
-                PlayerStatusEvent.notified_at.is_(None),
+                fresh,
                 PlayerStatusEvent.kind.in_(kinds_wanted),
             )
             .order_by(PlayerStatusEvent.observed_at.desc(), PlayerStatusEvent.id.desc())
@@ -450,8 +470,12 @@ def build_digest(
     espn_team_id: int,
     *,
     now: datetime | None = None,
+    since: datetime | None = None,
 ) -> Digest:
     """The morning message for one team. Reads only; marking is the caller's.
+
+    `since` reads the events observed after it rather than the unnotified
+    ones: a member's digest (docs/jobs.md), which marks nothing.
 
     An event lands in the roster section when the player's latest snapshot
     puts him on the tracked team, whatever his status was when it fired, and
@@ -486,7 +510,9 @@ def build_digest(
     roster_events: list[Line] = []
     wire_events: list[Line] = []
     reported: list[int] = []
-    for event in unnotified(session, league_season.season, sorted({*ROSTER_KINDS, *WIRE_KINDS})):
+    for event in unnotified(
+        session, league_season.season, sorted({*ROSTER_KINDS, *WIRE_KINDS}), since=since
+    ):
         line = Line(event.kind, event.player.name, describe(event, team_names))
         if event.player_id in mine and event.kind in ROSTER_KINDS:
             roster_events.append(line)
@@ -523,6 +549,8 @@ def build_alert(
     session: Session,
     league_season: LeagueSeason,
     espn_team_id: int,
+    *,
+    since: datetime | None = None,
 ) -> tuple[str, list[int]] | None:
     """A one-liner for an urgent change to the tracked roster, or None.
 
@@ -539,7 +567,7 @@ def build_alert(
     team_names = _team_names(session, league_season)
     found = [
         event
-        for event in unnotified(session, league_season.season, URGENT_KINDS)
+        for event in unnotified(session, league_season.season, URGENT_KINDS, since=since)
         if event.player_id in mine
     ]
     if not found:
@@ -558,3 +586,99 @@ def mark_notified(session: Session, event_ids: Sequence[int], at: datetime) -> i
     for event in found:
         event.notified_at = at
     return len(found)
+
+
+# ---------------------------------------------------------------------------
+# the league section: free, for every member (step 4)
+# ---------------------------------------------------------------------------
+
+#: Matchups listed before the rest are counted; a sixteen-team league has eight.
+LEAGUE_MATCHUP_LIMIT = 8
+#: The window the wire's traffic is counted over.
+LEAGUE_MOVES_HOURS = 24
+
+
+def league_section(session: Session, league_season: LeagueSeason, *, now: datetime) -> list[str]:
+    """THE LEAGUE: this period's matchups as they stand, and the wire's
+    traffic in the last day. From the league's own rows, so it is right for
+    any league the ingest reads. Never raises: a missing schedule or a day
+    in no period is one line."""
+    out = ["THE LEAGUE"]
+    season = int(league_season.season)
+    try:
+        calendar = season_calendar(session, season)
+        period = (
+            period_for_day(session, league_season, calendar.scoring_period_on(now.date()))
+            if calendar is not None
+            else None
+        )
+    except Exception as error:  # The digest goes out regardless.
+        return [*out, f"  the week could not be read ({type(error).__name__})"]
+    if period is None:
+        out.append("  no matchup period in play today")
+    else:
+        out.append(
+            f"  period {period.period}, days {period.first_scoring_period}"
+            f"-{period.final_scoring_period}"
+        )
+        names = {team.id: team.name for team in league_season.teams}
+        rows = sorted(period.matchups, key=lambda m: m.id)
+        for matchup in rows[:LEAGUE_MATCHUP_LIMIT]:
+            home = names.get(matchup.home_team_id, "?")
+            if matchup.away_team_id is None:
+                out.append(f"  {home} on a bye")
+                continue
+            away = names.get(matchup.away_team_id, "?")
+            tied = f", {matchup.categories_tied} level" if matchup.categories_tied else ""
+            out.append(
+                f"  {home} {matchup.home_categories_won}-{matchup.home_categories_lost}"
+                f" {away}{tied}"
+            )
+        if len(rows) > LEAGUE_MATCHUP_LIMIT:
+            out.append(f"  and {len(rows) - LEAGUE_MATCHUP_LIMIT} more")
+    since = now - timedelta(hours=LEAGUE_MOVES_HOURS)
+    moves = (
+        session.scalar(
+            select(func.count())
+            .select_from(Transaction)
+            .where(
+                Transaction.league_season_id == league_season.id,
+                Transaction.type.in_(WIRE_TYPES),
+                Transaction.status == "EXECUTED",
+                Transaction.processed_at >= since,
+            )
+        )
+        or 0
+    )
+    out.append(f"  {_plural(moves, 'move')} on the wire in the last day")
+    return out
+
+
+def team_section_without_listener(
+    session: Session, league_season: LeagueSeason, espn_team_id: int, *, now: datetime
+) -> list[str]:
+    """A team's part of the digest in a league the listener does not follow.
+
+    The roster and wire news come from the listener's status snapshots, which
+    record one league's view of who holds whom (docs/jobs.md, "One listener
+    league"), so a team in any other league gets the parts that read its own
+    league's rows: this week's plan and its churn.
+    """
+    team = session.scalar(
+        select(Team).where(
+            Team.league_season_id == league_season.id, Team.espn_team_id == espn_team_id
+        )
+    )
+    name = team.name if team is not None else f"team {espn_team_id}"
+    adds = adds_in_window(
+        session, league_season, team.id if team is not None else 0, now=now, days=CHURN_DAYS
+    )
+    return [
+        f"{name} - {now:%a %d %b}, {now:%H:%M} UTC - season {league_season.season}",
+        "",
+        "THIS WEEK",
+        *week_plan(session, league_season, espn_team_id, on=now.date()),
+        "",
+        "CHURN",
+        f"  {_plural(adds, 'add')} in the last {CHURN_DAYS} days.",
+    ]

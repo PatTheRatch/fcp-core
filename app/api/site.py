@@ -206,7 +206,8 @@ def projections_page() -> HTMLResponse:
     dependencies=[SIGNED_IN_PAGE],
 )
 def alerts_page() -> HTMLResponse:
-    """Where the digest and its alerts go, read-only until step 4."""
+    """Where the digest and its alerts go: the server's own channels (the
+    owner's), and the member's own, which he adds, verifies and disables here."""
     return _page("alerts.html")
 
 
@@ -221,23 +222,24 @@ class AlertsOut(BaseModel):
     yours: bool = Field(description="Whether the digest's channels are this viewer's")
     channels: list[AlertChannelOut]
     per_member: bool = Field(
-        description="False until step 4, when each member sets his own channels"
+        description="True since step 4: each member also sets his own channels, /me/channels"
     )
 
 
 @router.get("/me/alerts", summary="Where the digest and its alerts are delivered, read-only")
 def my_alerts(viewer: CurrentUser, settings: SettingsDep) -> AlertsOut:
-    """The server's one digest channel set, shown only to the owner it is for.
+    """The server's own digest channels, shown only to the owner they are for.
 
-    Today there is one digest, the owner's, configured in the server's
-    environment (`app/notify.py`). The owner sees which channels it goes to
-    and the addresses it is mailed to, which are his own; the URL channel is
-    named by its kind only, because its URL (an ntfy topic, a Telegram bot
-    token) is the credential. Anyone else hears that nothing is sent to him
-    yet: per-member channels arrive with step 4's per-team digests.
+    The owner's digest goes to the channels configured in the server's
+    environment (`app/notify.py`), as it always has. The owner sees which
+    channels those are and the addresses it is mailed to, which are his own;
+    the URL channel is named by its kind only, because its URL (an ntfy
+    topic, a Telegram bot token) is the credential. Anyone else has none of
+    these. Every member, the owner too, also has his own channels
+    (`/me/channels`, step 4), which the Alerts page lists beside these.
     """
     if not viewer.is_owner:
-        return AlertsOut(yours=False, channels=[], per_member=False)
+        return AlertsOut(yours=False, channels=[], per_member=True)
     channels: list[AlertChannelOut] = []
     if settings.email_configured:
         channels.append(AlertChannelOut(kind="email", detail=", ".join(settings.email_recipients)))
@@ -246,7 +248,7 @@ def my_alerts(viewer: CurrentUser, settings: SettingsDep) -> AlertsOut:
             channels.append(AlertChannelOut(kind="telegram", detail="a Telegram chat"))
         else:
             channels.append(AlertChannelOut(kind="ntfy", detail="an ntfy topic"))
-    return AlertsOut(yours=True, channels=channels, per_member=False)
+    return AlertsOut(yours=True, channels=channels, per_member=True)
 
 
 # ---------------------------------------------------------------------------

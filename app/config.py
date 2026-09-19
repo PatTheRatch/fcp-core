@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     fcp_digest_url: str | None = None
     #: Set as well for Telegram's shape; unset posts ntfy's.
     fcp_digest_chat_id: str | None = None
+    #: The Telegram bot's `sendMessage` URL that members' own chats are
+    #: reached through (app/channels.py). Optional: unset, the digest's own
+    #: URL is used when it is Telegram's (a chat id is set beside it), and
+    #: with neither a member cannot add a Telegram channel. The URL carries
+    #: the bot's token, so it is never logged, printed or returned.
+    fcp_telegram_bot_url: str | None = None
 
     #: The email channel (app/notify.py). Plain SMTP, so any transactional
     #: provider's endpoint will do. Configured when the host, the sender and
@@ -96,6 +102,7 @@ class Settings(BaseSettings):
     @field_validator(
         "fcp_digest_url",
         "fcp_digest_chat_id",
+        "fcp_telegram_bot_url",
         "fcp_email_to",
         "fcp_email_from",
         "fcp_smtp_host",

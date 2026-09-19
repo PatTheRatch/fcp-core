@@ -3,7 +3,9 @@
 **Written:** 2026-09-19. **Status:** built, steps 1 and 2 of docs/product.md
 (accounts; then league connections, memberships, invites and verified team
 claims); step 3's pages and their checks are in the table below, and
-docs/site.md is their map. The VPS runs in single mode, which behaves
+docs/site.md is their map; step 4's routes (each member's alert channels,
+`/me/channels`, and the free glance at his own week, `/pickups/glance`) are
+in it too, and docs/jobs.md is their story. The VPS runs in single mode, which behaves
 exactly as the API always has; accounts mode is switched on at the cutover
 (step 5), not before.
 
@@ -135,7 +137,11 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /me/alerts` | signed in | where the digest goes: its channels to the server's owner only, a URL channel by kind, never its URL |
 | `GET /account/connections` | signed in (page) | connect, your connections, your leagues' invites and claims |
 | `GET /account/projections` | signed in (page) | your own projection sets |
-| `GET /account/alerts` | signed in (page) | reads `/me/alerts` |
+| `GET /account/alerts` | signed in (page) | reads `/me/alerts` and `/me/channels`; spends an emailed link's `?token=` |
+| `GET /me/channels` | signed in, own only | his alert channels, each masked; never a target in full |
+| `POST /me/channels` | signed in, rate-limited | add a channel (sealed); a link or a code is sent to it, never shown |
+| `POST /me/channels/verify` | signed in, own only, rate-limited | spend the link's token or the code, on one of his own channels |
+| `DELETE /me/channels/{channel_id}` | signed in, own only (404 otherwise) | disable, and wipe the sealed target |
 | `GET /leagues` | signed in, filtered | lists only the leagues the caller is a member of (single mode: all) |
 | `GET /ingest-runs` | signed in | ingest history, no league member's data |
 | `GET /ingest-runs/health` | signed in | whether the data is current |
@@ -180,6 +186,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /pages/teams/{league_id}/{season}` | league member (page) | the old index: a 308 to `/l/.../standings`, keeping its check |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream` | team manager + entitled | the week plan |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season` | team manager + entitled | the season plan, drops and bids |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance` | team manager | the free This week page's look at his own week: expected categories and the projected record, not the plan (step 4) |
 | `GET /l/{league_id}/{season}/team/{team_id}/week` | team manager + entitled (page) | the week page |
 | `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |
 | `GET /l/{league_id}/{season}/team/{team_id}/moves` | team manager + entitled (page) | the scorecard of the team's own moves, in the paid layer (its data route is league scope) |
@@ -458,6 +465,18 @@ so nothing has to be rewritten.
   turned on) needs the same: it logs the URI unless told not to. Connecting
   logs the league id and the user id, and a failed ESPN check logs the
   error's class only; no cookie, SWID or owner GUID is ever logged.
+- **Alert channels (step 4).** A member's email address, Telegram chat id or
+  ntfy topic is sealed with `FCP_SECRETS_KEY` like a connection's cookies,
+  shown only masked, and wiped when he disables it. Verifying one spends a
+  one-time secret of which only the sha256 is kept: an emailed link's token
+  (a day, once) or a test message's code (a day, ten tries a minute per
+  user). The link is `/account/alerts?token=…`, which the access-log filter
+  blanks like a sign-in link; clicked while signed out, it goes through
+  sign-in and its `next` keeps the token in `sign_in_tokens.next_path` until
+  it expires, as an invite link's does. An ntfy topic must be on ntfy.sh, so
+  no member can make the server post to an address of his choosing. A send
+  that fails is logged and answered by the exception's class only: a
+  Telegram refusal quotes the bot's URL, and with it the bot's token.
 - **Single mode is not a security mode.** It is the tailnet API: nothing is
   enforced, and it is only safe because the API binds the tailnet address
   (STATUS.md, "Why the API is tailnet-only").

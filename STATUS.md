@@ -1542,6 +1542,14 @@ picking a winner silently.
    Step 3 (the shell: league switcher, This week, Standings, Draft, History,
    My team, the account pages and the landing page, at `/l/...` addresses
    with the old ones redirecting) is built, 2026-09-19 (docs/site.md).
+   Step 4 (the job queue and its worker, per-league ingests and passes with
+   each league's own login, the morning precompute into `team_reports`, the
+   routes and pages reading the stored rows, per-member digests to each
+   member's own verified channels, the watchdog telling a connector to
+   reconnect) is built, 2026-09-19 (docs/jobs.md), and not switched on: the
+   VPS runs today's timers unchanged until the switch-over there. Before a
+   second league's managers get roster news, key the listener's snapshots
+   by league (docs/jobs.md, "One listener league").
 
 ### Prior seasons
 
@@ -2010,6 +2018,13 @@ a good sign the two are genuinely the same pipeline.
 | `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days |
 | `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet |
 | `fcp-core-status.timer` | 15:00, 22:30, 00:30 | listener passes, then the digest (15:00, with the day's plan, then warming the pages) or an alert |
+| `fcp-core-enqueue.timer` | 09:00, 15:00, 22:30, 00:30 | **not yet installed.** Puts the schedule's jobs on the queue: each league's ingest (spread 09:00-09:30), passes, each claimed team's reports, each member's digest or alert (docs/jobs.md). Replaces the ingest and status timers at the switch-over |
+| `fcp-core-worker.service` | always | **not yet installed.** Runs the queued jobs one at a time (docs/jobs.md) |
+
+The last two are step 4's job queue, built 2026-09-19 and waiting for the
+switch-over in docs/jobs.md ("Switching over"), which disables the ingest
+and status timers and installs these two; "Rolling back" there undoes it.
+Until then the first five run as they always have.
 
 The watchdog exists because silence is the failure mode that matters: a
 failed run shows up in `systemctl --failed` and in its own row, while a timer

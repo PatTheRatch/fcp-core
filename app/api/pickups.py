@@ -19,22 +19,39 @@ the bar" and "no rows to decide on" is the whole value of the answer.
 `today` is a scoring period. Left out, it is the calendar day turned into
 one through the stored NBA schedule, which before opening night is the
 season's first day (`app.pickups.state.SeasonCalendar`).
+
+STORED REPORTS
+
+The morning precompute (app/job_kinds.py) builds each claimed team's two
+reports and stores them (`team_reports`, app/reports.py). When the report
+asked for is today's and a row built today is there, it is answered from the
+row, at once; otherwise it is built live, as it always was. Nothing here
+writes a row: a report built on demand is served and forgotten, so a route
+never races the precompute and the API stays a reader of its own jobs.
+
+`/pickups/glance` is the free This week page's look at the reader's own
+week: the expected categories and the projected record, and nothing of the
+plan. It needs the team's manager but not the paid tier (docs/product.md,
+"Free and paid"), which is what lets the free page stop reading the paid
+route (docs/site.md).
 """
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.access import TEAM_PLAN
+from app import reports
+from app.api.access import TEAM_MANAGER, TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
     BidOut,
     CategoryShiftOut,
     DropCandidateOut,
     EmptyDayOut,
+    GlanceOut,
     JudgementOut,
     PickupPlayerOut,
     SeasonReportOut,
@@ -80,8 +97,11 @@ NO_SCHEDULE = "no NBA schedule is stored (scripts/backfill_pro_schedule.py)"
 NO_ROSTER = "no status snapshots and no lineup days, so no roster can be read"
 
 
-def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
-    """The season's calendar, or 409 when there is nothing to report on.
+def readiness(
+    session: Session, league_season: LeagueSeason
+) -> tuple[SeasonCalendar | None, list[str]]:
+    """The season's calendar, and what is missing to report on it (nothing
+    when a report can be built).
 
     A schedule, and a roster from one of the two places one can come from.
     The snapshot check used to be the only one, which refused every played
@@ -105,16 +125,77 @@ def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
         missing.append(NO_SCHEDULE)
     if not snapshots and not lineups:
         missing.append(NO_ROSTER)
+    return calendar, missing
+
+
+def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
+    """The season's calendar, or 409 when there is nothing to report on."""
+    calendar, missing = readiness(session, league_season)
     if missing or calendar is None:
         raise HTTPException(
             status_code=409,
-            detail=NOT_LISTENED.format(season=season, missing=" and ".join(missing)),
+            detail=NOT_LISTENED.format(
+                season=int(league_season.season), missing=" and ".join(missing)
+            ),
         )
     return calendar
 
 
 def _day(calendar: SeasonCalendar, today: int | None) -> int:
     return today if today is not None else calendar.scoring_period_on(date.today())
+
+
+def build_payload(
+    session: Session, league_season: LeagueSeason, team: Team, kind: str, day: int
+) -> dict[str, Any]:
+    """One report, built live, as the JSON its route answers. Raises
+    `ValueError` when there is no week to report on (`day` in no period).
+
+    The precompute job stores exactly this, so a stored answer and a live
+    one cannot drift apart.
+    """
+    espn_team_id = int(team.espn_team_id)
+    out: StreamReportOut | SeasonReportOut
+    if kind == reports.STREAM:
+        stream = build_stream(session, league_season, espn_team_id, day)
+        out = _stream_out(stream, _espn_ids(session, _stream_players(stream)))
+    elif kind == reports.SEASON:
+        season = build_season(session, league_season, espn_team_id, day)
+        out = _season_out(season, _espn_ids(session, _season_players(season)))
+    else:
+        raise ValueError(f"unknown report kind {kind!r}")
+    return out.model_dump(mode="json")
+
+
+def stored_report(
+    session: Session, calendar: SeasonCalendar, team: Team, kind: str, day: int
+) -> dict[str, Any] | None:
+    """Today's stored report, when `day` is today and a row built today is there."""
+    on = date.today()
+    if day != calendar.scoring_period_on(on):
+        return None
+    row = reports.fresh(session, team.id, kind, day, on=on)
+    return dict(row.payload) if row is not None else None
+
+
+def _report(
+    session: Session,
+    league_season: LeagueSeason,
+    team: Team,
+    kind: str,
+    today: int | None,
+) -> tuple[dict[str, Any], bool]:
+    """The report asked for, and whether it was the stored one: stored when
+    fresh, else built now."""
+    calendar = _ready(session, league_season)
+    day = _day(calendar, today)
+    stored = stored_report(session, calendar, team, kind, day)
+    if stored is not None:
+        return stored, True
+    try:
+        return build_payload(session, league_season, team, kind, day), False
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.get(
@@ -128,12 +209,8 @@ def stream_report(
     session: SessionDep,
     today: TodayQuery = None,
 ) -> StreamReportOut:
-    calendar = _ready(session, league_season)
-    try:
-        report = build_stream(session, league_season, int(team.espn_team_id), _day(calendar, today))
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return _stream_out(report, _espn_ids(session, _stream_players(report)))
+    body, _ = _report(session, league_season, team, reports.STREAM, today)
+    return StreamReportOut.model_validate(body)
 
 
 @router.get(
@@ -147,12 +224,35 @@ def season_report(
     session: SessionDep,
     today: TodayQuery = None,
 ) -> SeasonReportOut:
-    calendar = _ready(session, league_season)
-    try:
-        report = build_season(session, league_season, int(team.espn_team_id), _day(calendar, today))
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return _season_out(report, _espn_ids(session, _season_players(report)))
+    body, _ = _report(session, league_season, team, reports.SEASON, today)
+    return SeasonReportOut.model_validate(body)
+
+
+@router.get(
+    "/leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance",
+    summary="This week at a glance, for the team's manager: categories and the record",
+    dependencies=[TEAM_MANAGER],
+)
+def glance(
+    league_season: LeagueSeasonDep,
+    team: TeamDep,
+    session: SessionDep,
+    today: TodayQuery = None,
+) -> GlanceOut:
+    """The free tier's look at the reader's own week, from the stored week
+    report when there is one (built live otherwise): the expected categories
+    against this week's opponent, their chances one by one, and the season's
+    projected record with no move made. Not the moves: those are the plan."""
+    body, stored = _report(session, league_season, team, reports.STREAM, today)
+    return GlanceOut(
+        espn_team_id=int(body["espn_team_id"]),
+        matchup_period=int(body["matchup_period"]),
+        opponent_espn_team_id=body["opponent_espn_team_id"],
+        expected_wins=float(body["expected_wins"]),
+        probabilities=dict(body["probabilities"]),
+        record_without=[float(x) for x in body["outlook"]["record_without"]],
+        stored=stored,
+    )
 
 
 def _espn_ids(session: Session, players: list[RosteredPlayer]) -> dict[int, int]:
