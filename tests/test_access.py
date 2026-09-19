@@ -234,7 +234,7 @@ def pickups(team: int, league: int = LEAGUE_A) -> str:
 
 
 def week_page(team: int) -> str:
-    return f"/pages/teams/{LEAGUE_A}/{SEASON}/{team}/week"
+    return f"/l/{LEAGUE_A}/{SEASON}/team/{team}/week"
 
 
 #: A pickups route that passed its checks and then found nothing to report
@@ -259,7 +259,7 @@ def test_signed_out_is_401_on_a_league_route(anon: TestClient) -> None:
 
 
 def test_signed_out_is_sent_to_sign_in_from_a_page(anon: TestClient) -> None:
-    for path in (week_page(3), f"/pages/teams/{LEAGUE_A}/{SEASON}", "/"):
+    for path in (week_page(3), f"/l/{LEAGUE_A}/{SEASON}/standings", "/account/alerts"):
         sent = anon.get(path + "?today=5", follow_redirects=False)
         assert sent.status_code == 303
         assert sent.headers["location"].startswith("/sign-in?next=")
@@ -271,6 +271,8 @@ def test_the_open_routes_stay_open(anon: TestClient) -> None:
     assert anon.get("/sign-in").status_code == 200
     assert anon.get("/pages/static/pages.css").status_code == 200
     assert anon.get("/pages/static/pages.js").status_code == 200
+    assert anon.get("/pages/static/shell.js").status_code == 200
+    assert anon.get("/").status_code == 200, "the landing page"
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +286,7 @@ def test_a_member_of_league_a_is_refused_league_b(sign_in: SignIn) -> None:
     assert alice.get(f"/leagues/{LEAGUE_A}/owners").status_code == 200
     assert alice.get(standings(LEAGUE_B)).status_code == 403
     assert alice.get(f"/leagues/{LEAGUE_B}/owners").status_code == 403
-    assert alice.get(f"/pages/teams/{LEAGUE_B}/{SEASON}").status_code == 403
+    assert alice.get(f"/l/{LEAGUE_B}/{SEASON}/week").status_code == 403
     # Any season of a league he is in: his claim is on 2026, 2025 opens too.
     assert alice.get(f"/leagues/{LEAGUE_A}/seasons/{SEASON - 1}").status_code == 200
     # The list is his leagues only.
@@ -611,6 +613,8 @@ OPEN = {
     ("GET", "/auth/callback"),
     ("POST", "/auth/sign-out"),
     ("GET", "/pages/static/{name}"),
+    # The landing page signed out; signed in, a page that goes to his league.
+    ("GET", "/"),
 }
 
 

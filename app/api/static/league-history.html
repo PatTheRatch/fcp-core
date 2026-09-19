@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; history</p>
+  <h1 id="title">History</h1>
+  <p class="sub" id="sub"></p>
+  <ul class="years" id="years"></ul>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<main id="body" hidden>
+  <section>
+    <div class="shead"><h2>Where each team was strong</h2><span class="tag" id="profiles-tag"></span></div>
+    <p class="lede">Each team's share of the matchups it won in each category, over the regular
+      season, strongest team first. Shaded by how far from a coin toss it is.</p>
+    <div id="profiles"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The results people remember</h2><span class="tag" id="notable-tag"></span></div>
+    <h3 class="eyebrow">Sweeps and near sweeps</h3>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Period</th><th class="l">Winner</th><th class="l">Loser</th><th>Score</th></tr></thead>
+      <tbody id="sweeps"></tbody>
+    </table></div>
+    <h3 class="eyebrow" style="margin-top:28px">Nail-biters</h3>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Period</th><th class="l">Winner</th><th class="l">Loser</th><th>Score</th></tr></thead>
+      <tbody id="biters"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Every owner, every season</h2><span class="tag" id="owners-tag"></span></div>
+    <p class="lede">Owners last longer than teams: a team is renamed, its owner is the same
+      person. Regular-season matchups, all seasons stored.</p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Owner</th><th>Seasons</th><th>Matchups</th><th>Share</th><th>Titles</th>
+        <th>Best finish</th></tr></thead>
+      <tbody id="owners"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Head to head</h2><span class="tag">all seasons</span></div>
+    <p class="lede"><label for="h2h-owner">One owner against everyone he has met:</label>
+      <select id="h2h-owner"></select></p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Against</th><th>Record</th><th>Meetings</th><th>Seasons</th></tr></thead>
+      <tbody id="h2h"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* History, the league's page: the narratives. Two of this season (the
+   category profiles, the notable matchups) and two of every season (the
+   owners' records, head to head). Four existing routes, drawn as they come:
+   nothing here is computed but an average to order the profiles by, and a
+   share of wins. */
+
+const WHERE = place();
+
+/** An owner's latest team name and his ESPN name, as plain text. */
+function ownerNames(owner) {
+  const latest = (owner.seasons || []).reduce((a, b) => (!a || b.season > a.season ? b : a), null);
+  return {
+    team: latest ? latest.team_name : null,
+    handle: owner.display_name || `owner ${owner.owner_id}`,
+  };
+}
+
+/** An owner as a person reads him: his latest team, then his ESPN name. */
+function ownerLabel(owner) {
+  const { team, handle } = ownerNames(owner);
+  return team ? `${escape(team)} <span class="faint">${escape(handle)}</span>` : escape(handle);
+}
+
+function drawProfiles(profiles, ours) {
+  const rated = profiles.map((p) => {
+    const rates = Object.fromEntries((p.categories || []).map((c) => [c.abbreviation, c.win_rate]));
+    const known = CATS.map((cat) => rates[cat]).filter(isNum);
+    const mean = known.length ? known.reduce((a, b) => a + b, 0) / known.length : -1;
+    return { profile: p, rates, mean };
+  });
+  rated.sort((a, b) => b.mean - a.mean);
+  $("profiles").innerHTML = rated.length
+    ? rated
+        .map(
+          ({ profile, rates }) =>
+            `<div class="profile${profile.espn_team_id === ours ? " ours" : ""}">` +
+            `<span class="who">${escape(profile.name)}</span>` +
+            `<div class="strip">${probabilityStrip(rates)}</div></div>`,
+        )
+        .join("")
+    : `<p class="empty">No matchups decided this season, so no category has a record yet.</p>`;
+}
+
+function notableRows(rows) {
+  return rows.length
+    ? rows
+        .map(
+          (m) =>
+            `<tr><td>${m.period}${m.is_playoff ? " <span class=\"faint\">playoffs</span>" : ""}</td>` +
+            `<td class="name">${escape(m.winner_name)}</td>` +
+            `<td class="name">${escape(m.loser_name)}</td>` +
+            `<td>${wlt(m.categories_won, m.categories_lost, m.categories_tied)}</td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="4" class="empty">None this season.</td></tr>`;
+}
+
+function drawOwners(owners) {
+  $("owners").innerHTML = owners
+    .map((o) => {
+      const games = o.matchups_won + o.matchups_lost + o.matchups_tied;
+      const finishes = (o.seasons || []).map((s) => s.final_standing).filter((f) => isNum(f) && f > 0);
+      const best = finishes.length ? Math.min(...finishes) : null;
+      return (
+        `<tr><td class="name">${ownerLabel(o)}</td>` +
+        `<td>${(o.seasons || []).length}</td>` +
+        `<td>${wlt(o.matchups_won, o.matchups_lost, o.matchups_tied)}</td>` +
+        `<td>${games ? (o.matchups_won / games).toFixed(3).replace(/^0/, "") : dash}</td>` +
+        `<td>${o.titles || dash}</td>` +
+        `<td>${best === null ? dash : `#${best}`}</td></tr>`
+      );
+    })
+    .join("");
+}
+
+function drawHeadToHead(owners, pairs, chosen) {
+  const byId = new Map(owners.map((o) => [o.owner_id, o]));
+  const rows = [];
+  pairs.forEach((pair) => {
+    if (pair.owner_a === chosen) {
+      rows.push({ other: pair.owner_b, name: pair.owner_b_name, won: pair.a_wins, lost: pair.b_wins, pair });
+    } else if (pair.owner_b === chosen) {
+      rows.push({ other: pair.owner_a, name: pair.owner_a_name, won: pair.b_wins, lost: pair.a_wins, pair });
+    }
+  });
+  rows.sort((a, b) => b.pair.meetings - a.pair.meetings || b.won - a.won);
+  $("h2h").innerHTML = rows.length
+    ? rows
+        .map((row) => {
+          const other = byId.get(row.other);
+          const label = other ? ownerLabel(other) : escape(row.name || `owner ${row.other}`);
+          return (
+            `<tr><td class="name">${label}</td>` +
+            `<td>${wlt(row.won, row.lost, row.pair.ties)}</td>` +
+            `<td>${row.pair.meetings}</td>` +
+            `<td class="small">${(row.pair.seasons || []).join(", ")}</td></tr>`
+          );
+        })
+        .join("")
+    : `<tr><td colspan="4" class="empty">He has met nobody yet.</td></tr>`;
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  const league = `/leagues/${WHERE.league}`;
+  const [profiles, notable, owners, pairs, ctx] = await Promise.all([
+    get(`${base}/category-profiles`),
+    get(`${base}/notable-matchups?limit=8`),
+    get(`${league}/owners`),
+    get(`${league}/head-to-head`),
+    SHELL,
+  ]);
+  document.title = `History · ${leagueName(ctx, WHERE.league)}`;
+  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("years").innerHTML = seasonLinks(ctx, WHERE);
+  const ours = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season
+    ? ctx.myTeam.espn_team_id : null;
+
+  const failed = [profiles, notable, owners, pairs].filter((r) => !r.ok);
+  if (failed.length === 4) {
+    fail(`The history cannot be read: ${failed[0].detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  $("profiles-tag").textContent = `${WHERE.season}`;
+  $("notable-tag").textContent = `${WHERE.season}, playoffs included`;
+  drawProfiles(profiles.ok ? profiles.body : [], ours);
+  $("sweeps").innerHTML = notableRows(notable.ok ? notable.body.sweeps : []);
+  $("biters").innerHTML = notableRows(notable.ok ? notable.body.nail_biters : []);
+
+  const everyone = owners.ok ? owners.body : [];
+  const seasons = new Set(everyone.flatMap((o) => (o.seasons || []).map((s) => s.season)));
+  $("owners-tag").textContent = `${everyone.length} owners, ${seasons.size} seasons`;
+  $("sub").innerHTML =
+    `The league as the stored seasons tell it: ${count(everyone.length, "owner")} over ` +
+    `${count(seasons.size, "season")}. This season's part is ${WHERE.season}'s; pick another above.`;
+  drawOwners(everyone);
+
+  const pairList = pairs.ok ? pairs.body : [];
+  const select = $("h2h-owner");
+  select.innerHTML = everyone
+    .map((o) => {
+      const { team, handle } = ownerNames(o);
+      return `<option value="${o.owner_id}">${escape(team ? `${team} (${handle})` : handle)}</option>`;
+    })
+    .join("");
+  // The reader's own owner first, when his team this season names one.
+  const mine = ctx && ctx.myTeam
+    ? everyone.find((o) => (o.seasons || []).some(
+        (s) => s.season === ctx.myTeam.season && s.team_name === ctx.myTeam.name))
+    : null;
+  const chosen = mine ? mine.owner_id : everyone.length ? everyone[0].owner_id : null;
+  if (chosen !== null) select.value = String(chosen);
+  select.onchange = () => drawHeadToHead(everyone, pairList, Number(select.value));
+  if (chosen !== null) drawHeadToHead(everyone, pairList, chosen);
+
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Read-only. Byes are left out of every record, and a ` +
+    `tie counts as neither.` +
+    failed.map((r) => `<br>Not shown: ${escape(r.detail)}.`).join("");
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

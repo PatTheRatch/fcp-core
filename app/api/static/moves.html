@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moves</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; moves</p>
+  <h1 id="title">&nbsp;</h1>
+  <p class="sub" id="sub"></p>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<dl class="line" id="readout"></dl>
+
+<main id="body" hidden>
+  <section>
+    <div class="shead"><h2>The categories</h2><span class="tag">share of matchups won</span></div>
+    <p class="lede" id="cats-lede"></p>
+    <div class="strip" id="cats"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The wire</h2><span class="tag" id="wire-tag"></span></div>
+    <p class="lede">Every add and drop, graded twice in categories a week: <b>expected</b> is
+      what the move was worth on what was known the day it was made, <b>delivered</b> is what
+      it gave. The label reads the two together, so a good call that went wrong is told apart
+      from a poor one that came off.</p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Day</th><th class="l">Added</th><th class="l">Dropped</th><th>Expected</th><th>Delivered</th>
+        <th class="l">Reading</th></tr></thead>
+      <tbody id="wire"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>Trades</h2><span class="tag" id="trades-tag"></span></div>
+    <div id="trades"></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The draft</h2><span class="tag" id="draft-tag"></span></div>
+    <p class="lede">Each pick's price against the market's price for him and what he
+      delivered, with the same two lenses.</p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Player</th><th>Paid</th><th>Market</th><th class="l">Outcome</th><th>Expected</th>
+        <th>Delivered</th><th class="l">Reading</th></tr></thead>
+      <tbody id="draft"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* Moves, a team page: the scorecard route's view of this team's own moves
+   (the wire, trades, the draft), each graded in categories a week on both
+   lenses (docs/scoring/SPEC.md). The scorecard is a league route -- every
+   team's scorecard is the league's to read -- and this page is the team's
+   slice of it, in the team layer beside its week and season plans. One
+   fetch, a few seconds: the scorecard is computed on request. */
+
+const WHERE = place();
+
+/** A move's grade: the regular season's, else the playoffs'. */
+const gradeOf = (move) => move.regular || move.playoffs;
+
+const perWeek = (v) => (!isNum(v) ? dash : Math.abs(v) < 0.005 ? "0.00" : signed(v, 2));
+const tone = (v) => (!isNum(v) ? "" : v > 0.005 ? "up" : v < -0.005 ? "down" : "");
+
+function wireRows(wire) {
+  return wire
+    .map((move) => {
+      const grade = gradeOf(move);
+      const when = grade && !move.regular ? " <span class=\"faint\">playoffs</span>" : "";
+      return (
+        `<tr><td>${move.day}${when}</td>` +
+        `<td class="name">${escape(move.added.join(", ") || dash)}</td>` +
+        `<td class="name">${escape(move.dropped.join(", ") || dash)}</td>` +
+        `<td>${grade ? perWeek(grade.decision) : dash}</td>` +
+        `<td>${grade ? perWeek(grade.result) : dash}</td>` +
+        `<td class="name small">${grade ? escape(grade.verdict.label) : "not graded"}</td></tr>`
+      );
+    })
+    .join("");
+}
+
+function tradeHtml(trade) {
+  const lines = [];
+  if (trade.regular) lines.push(`<p class="why">Regular season: ${escape(trade.regular.verdict.text)}</p>`);
+  if (trade.playoffs) lines.push(`<p class="why">Playoffs: ${escape(trade.playoffs.verdict.text)}</p>`);
+  if (trade.part_missing) {
+    lines.push(`<p class="note">part of this trade is missing from ESPN's record, so its grade is partial</p>`);
+  }
+  const net = trade.regular ? trade.regular.result : trade.playoffs ? trade.playoffs.result : null;
+  return (
+    `<article class="move"><div class="head">` +
+    `<span class="rank mono" style="font-size:13px">day ${trade.day}</span>` +
+    `<span class="what">With <b>${escape(trade.counterparties.join(", "))}</b>: in ` +
+    `<b>${escape(trade.players_in.join(", ") || dash)}</b>, out ` +
+    `<b>${escape(trade.players_out.join(", ") || dash)}</b></span>` +
+    (isNum(net) ? `<span class="net ${tone(net)}">${perWeek(net)}</span>` : "") +
+    `</div>${lines.join("") || '<p class="why">Not graded.</p>'}</article>`
+  );
+}
+
+function draftRows(draft) {
+  return draft
+    .map(
+      (pick) =>
+        `<tr><td class="name">${escape(pick.name)}</td>` +
+        `<td>$${pick.price}</td>` +
+        `<td>${isNum(pick.market) ? `$${pick.market}` : dash}</td>` +
+        `<td class="name small">${escape(pick.outcome)}</td>` +
+        `<td>${perWeek(pick.decision)}</td>` +
+        `<td>${perWeek(pick.result)}</td>` +
+        `<td class="name small">${pick.verdict ? escape(pick.verdict.label) : "not graded"}</td></tr>`,
+    )
+    .join("");
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  $("title").textContent = "Loading…";
+  const [card, ctx] = await Promise.all([
+    get(`${base}/teams/${WHERE.team}/scorecard`),
+    SHELL,
+  ]);
+  if (!card.ok) {
+    $("title").textContent = "No scorecard";
+    fail(`This team's moves cannot be graded: ${card.detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const c = card.body;
+  document.title = `${c.team_name} — moves`;
+  $("title").textContent = c.team_name;
+  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season} · moves`;
+  $("sub").innerHTML =
+    `The season's moves, graded in categories a week. The league's median pickup was worth ` +
+    `<b>${fixed(c.replacement, 3)}</b> categories a week: what the wire gave anyone for ` +
+    `nothing but a move.`;
+  const wire = c.wire.slice().sort((a, b) => a.day - b.day);
+  const cells = [
+    ["The wire", `${wire.length}<small> moves</small>`, "hi"],
+    ["Trades", `${c.trades.length}`, ""],
+    ["Draft", `${c.draft.length}<small> picks</small>`, ""],
+    ["Median pickup", `${fixed(c.replacement, 3)}<small> categories a week</small>`, ""],
+  ];
+  $("readout").innerHTML = cells
+    .map(([label, value, cls]) => `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd></div>`)
+    .join("");
+  $("cats-lede").textContent = c.looks_like_punts.length
+    ? `Looks like a punt of ${c.looks_like_punts.join(" and ")}: the season's share of ` +
+      "matchups won in each category, shaded by how far from a coin toss it is."
+    : "The season's share of matchups won in each category, shaded by how far from a coin " +
+      "toss it is.";
+  $("cats").innerHTML = probabilityStrip(c.category_record);
+  $("wire-tag").textContent = count(wire.length, "move");
+  $("wire").innerHTML = wire.length
+    ? wireRows(wire)
+    : `<tr><td colspan="6" class="empty">No adds or drops this season.</td></tr>`;
+  $("trades-tag").textContent = count(c.trades.length, "trade");
+  $("trades").innerHTML = c.trades.length
+    ? c.trades.map(tradeHtml).join("")
+    : `<p class="empty">No trades this season.</p>`;
+  $("draft-tag").textContent = count(c.draft.length, "pick");
+  $("draft").innerHTML = c.draft.length
+    ? draftRows(c.draft)
+    : `<tr><td colspan="7" class="empty">No draft picks stored.</td></tr>`;
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Read-only. The grades are the scorecard's ` +
+    `(<span class="mono">app/scoring/scorecard.py</span>, ` +
+    `<span class="mono">docs/scoring/SPEC.md</span>); days are scoring periods.`;
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

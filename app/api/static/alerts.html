@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alerts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow">Your account</p>
+  <h1>Alerts</h1>
+  <p class="sub">Where the morning digest and its alerts go: what changed on your roster,
+    the wire's movers worth a look, this week's matchup and plan, and your recent churn.</p>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<section>
+  <div class="shead"><h2>Your channels</h2><span class="tag">read-only for now</span></div>
+  <div id="channels"><p class="empty">Loading…</p></div>
+  <p class="lede">Per-member channels arrive in step 4: then each manager sets his own email
+    or Telegram here and gets his own team's digest. Until then this page only shows what the
+    server is set up with.</p>
+</section>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* Alerts, an account page: GET /me/alerts, read-only. The digest is one
+   today, the server owner's, configured in the server's environment; only
+   he is shown its channels, and a URL channel by its kind alone. */
+
+const KIND = { email: "Email", telegram: "Telegram", ntfy: "Phone push (ntfy)" };
+
+async function start() {
+  startTheme();
+  const alerts = await get("/me/alerts");
+  if (!alerts.ok) {
+    fail(`Your alerts cannot be read: ${alerts.detail}`);
+    $("channels").innerHTML = "";
+    return;
+  }
+  const a = alerts.body;
+  if (!a.yours) {
+    $("channels").innerHTML =
+      `<p class="lede">Nothing is sent to you yet. The one digest this server sends is its ` +
+      `owner's.</p>`;
+    return;
+  }
+  $("channels").innerHTML = a.channels.length
+    ? `<div class="scroll"><table class="grid"><thead><tr><th>Channel</th><th>Goes to</th></tr>` +
+      `</thead><tbody>` +
+      a.channels
+        .map(
+          (c) =>
+            `<tr><td class="name">${escape(KIND[c.kind] || c.kind)}</td>` +
+            `<td class="name">${escape(c.detail)}</td></tr>`,
+        )
+        .join("") +
+      `</tbody></table></div>`
+    : `<p class="lede">No channel is set up, so the digest is printed and sent nowhere. ` +
+      `The server's <span class="mono">.env</span> names them (<span class="mono">app/notify.py</span>).</p>`;
+}
+
+start();
+</script>
+</body>
+</html>

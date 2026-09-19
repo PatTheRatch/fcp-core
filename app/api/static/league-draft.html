@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; the draft</p>
+  <h1 id="title">The draft</h1>
+  <p class="sub" id="sub"></p>
+  <ul class="years" id="years"></ul>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<dl class="line" id="readout"></dl>
+
+<main id="body" hidden>
+  <section id="value-section">
+    <div class="shead"><h2>Value for money</h2><span class="tag">points per dollar</span></div>
+    <p class="lede">What each pick went on to score this season against what it cost. A blunt
+      measure, and deliberately so: it says nothing about which categories a team needed, and
+      a player who missed the year scores little for reasons no draft could see. It answers who
+      was expensive and quiet.</p>
+    <h3 class="eyebrow">The best</h3>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
+        <th>Per $</th></tr></thead>
+      <tbody id="best"></tbody>
+    </table></div>
+    <h3 class="eyebrow" style="margin-top:28px">The worst</h3>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
+        <th>Per $</th></tr></thead>
+      <tbody id="worst"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="shead"><h2>The board</h2><span class="tag" id="board-tag"></span></div>
+    <p class="lede">Every pick in the order it was made. An auction, so each carries its price
+      and who put the player up, which is often not who bought him.</p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Pick</th><th class="l">Player</th><th class="l">Bought by</th><th>Paid</th>
+        <th class="l">Nominated by</th></tr></thead>
+      <tbody id="board"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* The draft, the league's page: the board in pick order with prices (the
+   draft route) and the draft-value route's best and worst value for money,
+   ten of each. The reader's own team's picks are shaded. */
+
+const WHERE = place();
+const VALUE_ROWS = 10;
+
+function valueRows(rows, mine) {
+  return rows
+    .map(
+      (row) =>
+        `<tr class="${mine(row.team) ? "ours" : ""}">` +
+        `<td class="name">${escape(row.player_name)}</td>` +
+        `<td class="name">${escape(row.team || dash)}</td>` +
+        `<td>$${row.paid}</td><td>${fixed(row.season_points, 0)}</td>` +
+        `<td>${row.games_played}</td><td>${fixed(row.points_per_dollar, 1)}</td></tr>`,
+    )
+    .join("");
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  const [board, best, worst, ctx] = await Promise.all([
+    get(`${base}/draft`),
+    get(`${base}/draft-value?order=best&limit=${VALUE_ROWS}`),
+    get(`${base}/draft-value?order=worst&limit=${VALUE_ROWS}`),
+    SHELL,
+  ]);
+  document.title = `Draft · ${leagueName(ctx, WHERE.league)}`;
+  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("years").innerHTML = seasonLinks(ctx, WHERE);
+  if (!board.ok) {
+    fail(`The draft cannot be read: ${board.detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const picks = board.body;
+  const ourName = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season ? ctx.myTeam.name : null;
+  const mine = (team) => ourName !== null && team === ourName;
+  if (!picks.length) {
+    $("sub").textContent = `No picks are stored for ${WHERE.season} yet: the draft has not been ` +
+      `held, or not ingested since.`;
+    $("value-section").hidden = true;
+    $("board").innerHTML = "";
+    $("board-tag").textContent = "empty";
+  } else {
+    const paid = picks.map((p) => p.paid).filter(isNum);
+    const spent = paid.reduce((a, b) => a + b, 0);
+    const top = picks.reduce((a, b) => ((b.paid || 0) > (a.paid || 0) ? b : a), picks[0]);
+    const keepers = picks.filter((p) => p.keeper).length;
+    $("sub").innerHTML =
+      `${count(picks.length, "pick")}, <b>$${spent}</b> spent. ` +
+      `The dearest: <b>${escape(top.player_name)}</b> at $${top.paid}` +
+      `${top.team ? `, to ${escape(top.team)}` : ""}.`;
+    const ourPicks = ourName === null ? [] : picks.filter((p) => p.team === ourName);
+    const cells = [
+      ["Picks", `${picks.length}`, ""],
+      ["Spent", `$${spent}`, ""],
+      ["Dearest", `$${top.paid || 0}`, "hi"],
+      ["Keepers", `${keepers}`, ""],
+    ];
+    if (ourName !== null) {
+      const ours = ourPicks.map((p) => p.paid || 0).reduce((a, b) => a + b, 0);
+      cells.push(["Yours", `$${ours}<small> on ${count(ourPicks.length, "player")}</small>`, ""]);
+    }
+    $("readout").innerHTML = cells
+      .map(([label, value, cls]) => `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd></div>`)
+      .join("");
+    $("board-tag").textContent = `${picks.length} in order`;
+    $("board").innerHTML = picks
+      .map(
+        (p, i) =>
+          `<tr class="${mine(p.team) ? "ours" : ""}">` +
+          `<td class="rank">${i + 1}</td>` +
+          `<td class="name">${escape(p.player_name)}${p.keeper ? " <span class=\"faint\">(keeper)</span>" : ""}</td>` +
+          `<td class="name">${escape(p.team || dash)}</td>` +
+          `<td>${isNum(p.paid) ? `$${p.paid}` : dash}</td>` +
+          `<td class="name">${escape(p.nominated_by || dash)}</td></tr>`,
+      )
+      .join("");
+    $("best").innerHTML = best.ok ? valueRows(best.body, mine) : "";
+    $("worst").innerHTML = worst.ok ? valueRows(worst.body, mine) : "";
+    if (best.ok && !best.body.length) $("value-section").hidden = true;
+  }
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Read-only. Points are the points he scored in NBA games ` +
+    `this season, one of the nine and nothing else: the value tables are the argument at the ` +
+    `bar, not a grade in categories, which each team's Moves page carries for its own picks.` +
+    (best.ok ? "" : `<br>No value: ${escape(best.detail)}.`);
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

@@ -56,6 +56,8 @@ def list_leagues(session: SessionDep, viewer: CurrentUser) -> list[LeagueOut]:
     return [
         LeagueOut(
             espn_league_id=league.espn_league_id,
+            # The newest season's name, for the site's league switcher.
+            name=max(league.seasons, key=lambda s: s.season).name if league.seasons else None,
             seasons=sorted(season.season for season in league.seasons),
         )
         for league in leagues

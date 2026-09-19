@@ -1,8 +1,9 @@
-/* The in-season pages' shared parts: where we are, what we fetch, how a
-   number is written, the nine-category strip, and the theme switch.
+/* Every page's shared parts: where we are, what we fetch, how a number is
+   written, the nine-category strip, and the theme switch. The shell over
+   every page (the navigation) is `shell.js`, loaded after this file.
 
-   The three pages differ only in what they draw; the vocabulary below is
-   the same on all of them, so a phrase is written once. The language rule
+   The pages differ only in what they draw; the vocabulary below is the same
+   on all of them, so a phrase is written once. The language rule
    lives here too (`WORTH_A_LOOK`, `NOTHING_CLEARS`): the tool generates
    ideas and the manager decides, so nothing on a page says "recommended"
    or tells anyone to do anything.
@@ -24,21 +25,54 @@ const NOTHING_CLEARS = "Nothing clears the bar";
 
 const $ = (id) => document.getElementById(id);
 
-/** Where this page is, read from its own URL rather than written into it:
- *  /pages/teams/{league}/{season}[/{team}]/{which}, plus ?today= and ?me=. */
+/** Where this page is, read from its own URL rather than written into it
+ *  (docs/site.md has the map):
+ *
+ *    /l/{league}/{season}/{week|standings|draft|history}
+ *    /l/{league}/{season}/team/{team}/{week|season|moves}
+ *    /account/{connections|projections|alerts}
+ *    /pages/claim/{league}/{season}
+ *
+ *  plus ?today= (a scoring period), ?period= (a matchup period, This week
+ *  only) and ?me= (whose team is ours, by name, for the context route). */
 function place() {
   const parts = window.location.pathname.split("/").filter(Boolean);
-  const at = parts.indexOf("teams");
   const query = new URLSearchParams(window.location.search);
-  const today = query.get("today");
-  return {
-    league: Number(parts[at + 1]),
-    season: Number(parts[at + 2]),
-    team: parts.length > at + 4 ? Number(parts[at + 3]) : null,
-    today: today === null || today === "" ? null : Number(today),
+  const number = (text) =>
+    text === null || text === undefined || text === "" || Number.isNaN(Number(text))
+      ? null
+      : Number(text);
+  const where = {
+    league: null,
+    season: null,
+    team: null,
+    section: null,
+    today: number(query.get("today")),
+    period: number(query.get("period")),
     me: query.get("me"),
   };
+  if (parts[0] === "l") {
+    where.league = number(parts[1]);
+    where.season = number(parts[2]);
+    if (parts[3] === "team") {
+      where.team = number(parts[4]);
+      where.section = `team-${parts[5]}`;
+    } else {
+      where.section = parts[3] || null;
+    }
+  } else if (parts[0] === "pages" && parts[1] === "claim") {
+    where.league = number(parts[2]);
+    where.season = number(parts[3]);
+    where.section = "claim";
+  } else if (parts[0] === "account") {
+    where.section = parts[1] || null;
+  }
+  return where;
 }
+
+/** The address of a page on the map, from its parts. */
+const leagueUrl = (league, season, section) => `/l/${league}/${season}/${section}`;
+const teamUrl = (league, season, team, which) => `/l/${league}/${season}/team/${team}/${which}`;
 
 /** A query string from the parts that are set, and nothing when none are. */
 function params(where, extra) {
@@ -67,18 +101,23 @@ function toSignIn() {
  *  because every one of them is something the page should say out loud: a
  *  season the listener never ran for is an answer. Two are handled here for
  *  every page: a 401 (signed out) goes to the sign-in page, and a 403 (not
- *  this reader's team) is one plain line and nothing else (docs/accounts.md). */
-async function get(url) {
+ *  this reader's team) is one plain line and nothing else (docs/accounts.md).
+ *
+ *  `quiet` is for a fetch that is one part of a page and not the page itself
+ *  (the free pages' look at the reader's own week): its 403 comes back with
+ *  its status for the caller to word, and the rest of the page stands. */
+async function get(url, options) {
+  const quiet = Boolean(options && options.quiet);
   const response = await fetch(url, { headers: { accept: "application/json" } });
-  if (response.ok) return { ok: true, body: await response.json() };
+  if (response.ok) return { ok: true, status: response.status, body: await response.json() };
   if (response.status === 401) {
     toSignIn();
-    return { ok: false, detail: "Signing in…" };
+    return { ok: false, status: 401, detail: "Signing in…" };
   }
-  if (response.status === 403) {
+  if (response.status === 403 && !quiet) {
     fail(NOT_YOURS);
     REFUSED = true;
-    return { ok: false, detail: NOT_YOURS };
+    return { ok: false, status: 403, detail: NOT_YOURS };
   }
   let detail = `${response.status} ${response.statusText}`;
   try {
@@ -87,7 +126,7 @@ async function get(url) {
   } catch (error) {
     /* a response that is not JSON; the status line is the message */
   }
-  return { ok: false, detail };
+  return { ok: false, status: response.status, detail };
 }
 
 /* ---- writing numbers ----------------------------------------------------
@@ -126,6 +165,14 @@ const record = (pair) =>
   Array.isArray(pair) && pair.length === 2 && isNum(pair[0]) && isNum(pair[1])
     ? `${pair[0].toFixed(1)}-${pair[1].toFixed(1)}`
     : dash;
+
+/** A won-lost record, and the ties only when there are some. */
+const wlt = (won, lost, tied) =>
+  isNum(won) && isNum(lost) ? `${won}–${lost}${tied ? `–${tied}` : ""}` : dash;
+
+/** A category total as ESPN stored it: a rate as .457, a count whole. */
+const storedCat = (cat, v) =>
+  !isNum(v) ? dash : cat.endsWith("%") ? v.toFixed(3).replace(/^0/, "") : String(Math.round(v));
 
 /** A count with its noun, pluralised. */
 const count = (n, one, many) => `${isNum(n) ? n : dash} ${n === 1 ? one : many || `${one}s`}`;

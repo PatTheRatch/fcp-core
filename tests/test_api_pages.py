@@ -2,8 +2,10 @@
 
 Four things are checked here, over one seeded league:
 
-* the three pages are served, and so is the stylesheet and the script they
-  both load, while anything else under `/pages/static/` is a 404;
+* the week and season pages are served at their addresses under the shell
+  (docs/site.md), and so are the stylesheet and the two scripts they load,
+  while anything else under `/pages/static/` is a 404 (tests/test_shell.py
+  has the rest of the site);
 * `pages/context` carries what a page cannot get from the two reports -- the
   day as a date, the days of its matchup period, every name, and which team
   is ours;
@@ -207,9 +209,9 @@ def stored(session: Session, season: int) -> LeagueSeason:
 @pytest.mark.parametrize(
     ("path", "wanted"),
     [
-        (f"/pages/teams/{LEAGUE_ID}/{SEASON}/{OURS}/week", "The tale of the tape"),
-        (f"/pages/teams/{LEAGUE_ID}/{SEASON}/{OURS}/season", "Drop candidates"),
-        (f"/pages/teams/{LEAGUE_ID}/{SEASON}", "Every team"),
+        (f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week", "The tale of the tape"),
+        (f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/season", "Drop candidates"),
+        (f"/l/{LEAGUE_ID}/{SEASON}/standings", "The table"),
     ],
 )
 def test_each_page_is_served(client: TestClient, path: str, wanted: str) -> None:
@@ -220,6 +222,7 @@ def test_each_page_is_served(client: TestClient, path: str, wanted: str) -> None
     assert wanted in response.text
     assert "/pages/static/pages.css" in response.text
     assert "/pages/static/pages.js" in response.text
+    assert "/pages/static/shell.js" in response.text
 
 
 def test_a_page_never_tells_anyone_what_to_do(client: TestClient) -> None:
@@ -235,7 +238,7 @@ def test_a_page_never_tells_anyone_what_to_do(client: TestClient) -> None:
     assert '"Nothing clears the bar"' in script
 
     for which in ("week", "season"):
-        page = client.get(f"/pages/teams/{LEAGUE_ID}/{SEASON}/{OURS}/{which}").text
+        page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/{which}").text
         visible = re.sub(r"<script.*?</script>", "", page, flags=re.S).lower()
         assert "recommend" not in visible
         assert "you should" not in visible
@@ -257,6 +260,7 @@ def test_only_the_named_assets_are_served(client: TestClient) -> None:
     """A fixed set, so no request can ask for a file outside the folder."""
     assert client.get("/pages/static/week.html").status_code == 404
     assert client.get("/pages/static/nothing.css").status_code == 404
+    assert client.get("/pages/static/league-week.html").status_code == 404
 
 
 # --------------------------------------------------------------------------

@@ -190,7 +190,8 @@ def test_health_still_works(client: TestClient) -> None:
 
 def test_leagues_lists_stored_seasons(client: TestClient) -> None:
     body = client.get("/leagues").json()
-    assert body == [{"espn_league_id": LEAGUE_ID, "seasons": [SEASON]}]
+    # `name` is the newest season's, for the site's league switcher.
+    assert body == [{"espn_league_id": LEAGUE_ID, "name": "Patriot Games", "seasons": [SEASON]}]
 
 
 def test_season_detail_includes_categories(client: TestClient) -> None:

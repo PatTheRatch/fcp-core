@@ -193,13 +193,17 @@ Projection uploads, the one write this API accepts (docs/projection_sources.md):
 | `POST /projections/sets` | the same, stored as a set; 422 with the reasons when the columns cannot be used |
 | `GET /projections/sets`, `.../{id}`, `.../{id}/rows` | stored sets and their per-game lines |
 
-In-season pages, plain HTML over the routes above (docs/in_season_pages.md):
+The site, plain HTML over the routes above under one shell (docs/site.md;
+the week and season pages are docs/in_season_pages.md). The old
+`/pages/teams/...` addresses redirect to these:
 
 | Route | What it gives |
 |---|---|
-| `GET /pages/teams/{lid}/{yr}` | every team, ours first, linking to both pages |
-| `GET /pages/teams/{lid}/{yr}/{tid}/week` | the streaming report as a page; `?today=` for a past day |
-| `GET /pages/teams/{lid}/{yr}/{tid}/season` | the rest-of-season report as a page |
+| `GET /l/{lid}/{yr}/week`, `/standings`, `/draft`, `/history` | the league's pages, free to every member |
+| `GET /l/{lid}/{yr}/team/{tid}/week` | the streaming report as a page; `?today=` for a past day |
+| `GET /l/{lid}/{yr}/team/{tid}/season` | the rest-of-season report as a page |
+| `GET /l/{lid}/{yr}/team/{tid}/moves` | the scorecard of the team's own moves |
+| `GET /account/connections`, `/projections`, `/alerts` | the viewer's own account |
 | `.../pages/context` | the day, the period's days and the team names the pages need |
 
 The derivation lives in `app/narratives.py`, not in the routers, because it
@@ -1535,6 +1539,9 @@ picking a winner silently.
    2026-09-19 (docs/accounts.md, "Leagues, members and claims"); before a
    second league is let in, settle "A known weakness: a bare SWID is not
    proof" there.
+   Step 3 (the shell: league switcher, This week, Standings, Draft, History,
+   My team, the account pages and the landing page, at `/l/...` addresses
+   with the old ones redirecting) is built, 2026-09-19 (docs/site.md).
 
 ### Prior seasons
 

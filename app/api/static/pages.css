@@ -1,5 +1,6 @@
 /* ---------------------------------------------------------------------------
-   The in-season pages: the week, the rest of the season, and the index.
+   Every page of the site: the shell over them, the league's pages, a team's
+   pages, the account pages and the landing page (docs/site.md).
 
    The palette is the draft screen's token block (app/draft/static/draft.html)
    with the two halves swapped round -- light is the default here, because
@@ -48,8 +49,62 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
 [hidden]{display:none !important}
 .accent{color:var(--accent)}
 
+/* ---- the shell: one bar over every page, a rule under it (shell.js) ------
+   Links and menu buttons in the display face, the current one in the accent
+   with a rule under it. A menu opens as a list on the surface with a rule
+   round it: no radius, no shadow. At phone width the sections take a row of
+   their own and wrap; nothing scrolls the page sideways. */
+.shell{border-bottom:1px solid var(--rule-strong);background:var(--ground)}
+.nav{max-width:1080px;margin:0 auto;padding:10px 24px 8px;display:flex;flex-wrap:wrap;
+  align-items:center;gap:6px 22px}
+.nav-main{display:contents}
+.brand{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand:hover{color:var(--accent)}
+.brand .short{display:none}
+/* At phone width the bar is two rows: the brand, the league and the account
+   with the switch on one, the sections on the next. The switch keeps its
+   words for a screen reader and shows a glyph. */
+@media (max-width:560px){
+  .brand .long{display:none} .brand .short{display:inline}
+  .nav{gap:4px 12px}
+  .nav .end{gap:10px}
+  .league-name{max-width:22vw !important}
+  .btn.theme{font-size:0;padding:4px 8px;line-height:1}
+  .btn.theme::before{content:"◐";font-size:15px}
+}
+.sections{display:flex;flex-wrap:wrap;align-items:center;gap:2px 20px;list-style:none;
+  margin:0;padding:0}
+.navlink,.menu-btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+  font-size:13px;font-weight:500;color:var(--muted);text-decoration:none;background:none;
+  border:0;border-bottom:2px solid transparent;padding:6px 0 4px;cursor:pointer;
+  white-space:nowrap;border-radius:0}
+.navlink:hover,.menu-btn:hover{color:var(--ink)}
+.navlink[aria-current="page"],.menu-btn.on{color:var(--accent);border-bottom-color:var(--accent)}
+.menu-btn .caret{margin-left:5px;font-size:10px}
+.menu-btn[aria-expanded="true"]{color:var(--ink)}
+.league-name{display:inline-block;max-width:30ch;overflow:hidden;text-overflow:ellipsis;
+  vertical-align:bottom;text-transform:none;letter-spacing:.02em;font-size:14px;color:var(--ink)}
+.menu-btn .season{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--muted)}
+.menu{position:relative}
+.menu-list{position:absolute;z-index:20;top:100%;left:0;min-width:230px;
+  max-width:calc(100vw - 32px);margin:6px 0 0;padding:6px 0;list-style:none;
+  background:var(--surface);border:1px solid var(--rule);border-top:2px solid var(--rule-strong)}
+.menu.right .menu-list{left:auto;right:0}
+.menu-list a,.menu-list button{display:block;width:100%;text-align:left;padding:7px 14px;
+  font-family:var(--body);font-size:15px;color:var(--ink);text-decoration:none;
+  background:none;border:0;cursor:pointer;overflow-wrap:anywhere}
+.menu-list a:hover,.menu-list a:focus-visible,.menu-list button:hover,
+.menu-list button:focus-visible{background:var(--sunk);outline:none}
+.menu-list a[aria-current]{color:var(--accent);font-weight:600}
+.menu-list .group{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);padding:10px 14px 3px;overflow-wrap:anywhere}
+.menu-list form{margin:0;border-top:1px solid var(--rule);margin-top:6px;padding-top:4px}
+.nav .end{margin-left:auto;display:flex;align-items:center;gap:16px}
+.btn.theme{white-space:nowrap}
+
 /* ---- the masthead: the season report's, a rule under it and nothing else -- */
-.mast{padding:44px 0 22px;border-bottom:3px solid var(--rule-strong)}
+.mast{padding:36px 0 22px;border-bottom:3px solid var(--rule-strong)}
 .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;
   text-transform:uppercase;color:var(--muted);margin:0}
 .mast h1{font-size:clamp(34px,6.5vw,68px);line-height:.95;margin:12px 0 0;
@@ -167,6 +222,72 @@ section{margin-top:56px}
 .grid td.links a{margin-left:14px;font-family:var(--display);text-transform:uppercase;
   letter-spacing:.06em;font-size:11px}
 
+/* A wide table scrolls in its own frame, never the page. */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.scroll .grid{min-width:560px}
+.scroll .grid td.name,.scroll .grid th.l{text-align:left}
+.grid td.name a{color:var(--ink);text-decoration-color:var(--rule)}
+.grid td.name a:hover{color:var(--accent)}
+.grid td.rank{color:var(--faint);width:2.5em}
+.grid td.small,.grid th.small{font-size:12px}
+.grid tr.sub td{border-bottom-style:dotted}
+
+.lede select{font:inherit;color:var(--ink);background:transparent;border:0;
+  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
+
+/* ---- the seasons row under a league page's masthead --------------------- */
+.years{display:flex;flex-wrap:wrap;gap:4px 14px;margin:14px 0 0;padding:0;list-style:none;
+  font-family:var(--mono);font-size:12px}
+.years a{color:var(--muted);text-decoration:none;border-bottom:1px solid transparent}
+.years a:hover{color:var(--ink)}
+.years a[aria-current="page"]{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---- a matchup: two sides and their nine, a rule above it -------------- */
+.matchup{border-top:1px solid var(--rule);padding:18px 0 10px}
+.matchup:first-of-type{border-top:1px solid var(--rule-strong)}
+.matchup.ours{border-left:2px solid var(--accent);padding-left:14px}
+.matchup .score{display:flex;align-items:baseline;gap:10px 14px;flex-wrap:wrap}
+.matchup .side{font-size:18px;font-weight:600;flex:1 1 14ch;min-width:0;overflow-wrap:anywhere}
+.matchup .side.right{text-align:right}
+.matchup .side.lead{color:var(--ink)} .matchup .side.trail{color:var(--muted);font-weight:400}
+.matchup .tally{font-family:var(--display);font-weight:600;font-size:26px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.matchup .state{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted);
+  letter-spacing:.02em}
+.matchup .who{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+  font-size:10.5px;color:var(--faint);margin:12px 0 0}
+.matchup .strip{margin-top:4px}
+.pager{display:flex;gap:18px;margin:14px 0 0;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.07em;font-size:12px;flex-wrap:wrap}
+.pager a{text-decoration:none}
+
+/* ---- a team's strip with its name, one per line ------------------------ */
+.profile{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);gap:0 18px;
+  align-items:end;border-bottom:1px solid var(--rule);padding:10px 0}
+.profile .who{font-weight:600;overflow-wrap:anywhere;padding-bottom:6px}
+.profile.ours .who{color:var(--accent)}
+.profile .strip{margin:0}
+
+/* ---- the free pages' look at the reader's own team --------------------- */
+.yours{border-left:2px solid var(--accent);padding:4px 0 4px 14px;margin-top:28px}
+.yours h2{font-size:18px;text-transform:uppercase;letter-spacing:.04em}
+.yours p{margin:6px 0 0;color:var(--muted);max-width:74ch}
+.yours p b{color:var(--ink)}
+.yours .strip{margin-top:12px}
+.more{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:12px}
+
+/* ---- the landing page --------------------------------------------------- */
+.landing .mast h1{font-size:clamp(40px,8vw,88px)}
+.landing .tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:0 32px;margin-top:40px}
+.landing .tiers div{border-top:1px solid var(--rule-strong);padding-top:12px}
+.landing .tiers h2{font-size:18px;text-transform:uppercase;letter-spacing:.04em}
+.landing .tiers p{color:var(--muted);font-size:16px;margin:8px 0 0}
+.cta{display:inline-block;margin-top:22px;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:14px;padding:10px 18px;background:var(--accent);
+  color:var(--accent-ink);text-decoration:none;border:0}
+.cta:hover{background:var(--ink);color:var(--ground)}
+
 /* ---- the footnote ------------------------------------------------------- */
 .foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
   font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.9}
@@ -177,6 +298,14 @@ section{margin-top:56px}
 @media (max-width:860px){
   body{font-size:16px}
   .page{padding:0 16px 72px}
+  .nav{padding:8px 16px 6px;gap:4px 16px}
+  .brand{order:1} .nav-main > .menu{order:2} .nav .end{order:3;gap:12px}
+  .sections{order:4;flex-basis:100%;gap:0 16px}
+  .league-name{max-width:40vw}
+  .profile{grid-template-columns:1fr}
+  .profile .who{padding-bottom:4px}
+  .matchup .side{font-size:16px}
+  .mast{padding-top:26px}
   .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px}
   .strip div{border-bottom:1px solid var(--rule)}
   .days{grid-auto-flow:row;grid-auto-columns:auto;border-width:1px 0 0 1px}

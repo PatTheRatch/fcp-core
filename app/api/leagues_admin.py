@@ -17,7 +17,7 @@ route's scope. The database half is `app.memberships`.
     POST   /leagues/{league_id}/claims/{id}/approve | /reject   (owner)
     POST   /me/espn-identity  {swid}           your own SWID, to verify your claims
     DELETE /me/espn-identity
-    GET    /pages/connections, /join/{token}, /pages/claim/{league_id}/{season}
+    GET    /join/{token}, /pages/claim/{league_id}/{season}  (the pages; see app/api/site.py)
 
 SECRETS
 
@@ -662,17 +662,6 @@ def forget_identity(viewer: CurrentUser, session: SessionDep) -> dict[str, bool]
 def _page(name: str) -> HTMLResponse:
     """One page, read from disk per request, like the others."""
     return HTMLResponse((STATIC / name).read_text())
-
-
-@router.get(
-    "/pages/connections",
-    include_in_schema=False,
-    response_class=HTMLResponse,
-    dependencies=[SIGNED_IN_PAGE],
-)
-def connections_page() -> HTMLResponse:
-    """Connect a league; your connections; your leagues' invites and claims."""
-    return _page("connections.html")
 
 
 @router.get(
