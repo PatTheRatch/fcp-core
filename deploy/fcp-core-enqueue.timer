@@ -1,0 +1,29 @@
+# The schedule, at the same UTC times as the timers it replaces:
+#
+#   09:00 UTC  nightly   each league's ingest (spread over 30 minutes), then its pass
+#              (fcp-core-ingest.timer today)
+#   15:00 UTC  morning   passes, then each claimed team's reports and each member's digest
+#   22:30 UTC  report    passes, then alerts
+#   00:30 UTC  late      passes, then alerts
+#              (fcp-core-status.timer today)
+#
+# The label is named from the clock (scripts/enqueue.py --schedule auto), so
+# one timer carries all four. NOT INSTALLED YET (docs/jobs.md).
+
+[Unit]
+Description=fcp-core - enqueue the schedule's jobs
+Requires=fcp-core-enqueue.service
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+OnCalendar=*-*-* 15:00:00 UTC
+OnCalendar=*-*-* 22:30:00 UTC
+OnCalendar=*-*-* 00:30:00 UTC
+# A host down at the slot enqueues when it comes back, if within the hour
+# the label allows; later than that, the slot is skipped and said so.
+Persistent=true
+# Keep it clear of the other jobs on the host, and inside the label window.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

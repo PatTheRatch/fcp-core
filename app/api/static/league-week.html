@@ -60,8 +60,10 @@
    For the reader's own team only, and only for the period in play, a look
    at his week from the team layer: expected categories and the projected
    record, with a link to the moves worth a look (docs/product.md, "Free
-   and paid"). It is drawn last and on its own: the report behind it is the
-   slow one. */
+   and paid"). It reads /pickups/glance, which asks for the team's manager
+   and not the paid tier, and answers from the morning's stored week report
+   when there is one (docs/jobs.md); without one it is built live, the slow
+   way, which is why it is drawn last and on its own. */
 
 const WHERE = place();
 const SETTLED = new Set(["HOME", "AWAY", "TIE"]);
@@ -219,7 +221,7 @@ async function drawYours(ctx, context, report) {
       : `Expected to take <b>${fixed(r.expected_wins, 2)}</b> of 9 categories against ` +
         `<b>${escape(them ? them.name : `team ${r.opponent_espn_team_id}`)}</b>, as things stand. `;
   $("yours-body").innerHTML =
-    `<p>${against}Projected to end the season <b>${record(r.outlook.record_without)}</b> ` +
+    `<p>${against}Projected to end the season <b>${record(r.record_without)}</b> ` +
     `in categories with no move made.</p>` +
     (r.opponent_espn_team_id === null
       ? ""
@@ -257,7 +259,7 @@ async function start() {
     ? ctx.myTeam.espn_team_id : null;
   // The slow one, started now so it runs while the matchups draw.
   const report = inPlay && ours !== null
-    ? get(`${base}/teams/${ours}/pickups/stream${params(WHERE)}`, { quiet: true })
+    ? get(`${base}/teams/${ours}/pickups/glance${params(WHERE)}`, { quiet: true })
     : null;
 
   const matchups = await get(`${base}/matchups?period=${period.period}`);

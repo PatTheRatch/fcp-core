@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api import access
 from app.api.auth import router as auth_router
+from app.api.channels import router as channels_router
 from app.api.draft import router as draft_router
 from app.api.health import router as health_router
 from app.api.ingest_runs import router as ingest_runs_router
@@ -23,12 +24,13 @@ from app.api.transactions import router as transactions_router
 
 DESCRIPTION = """Read-only access to stored ESPN fantasy basketball seasons.
 
-Writes belong to the ingest, not to this API, with three exceptions: a
+Writes belong to the ingest, not to this API, with four exceptions: a
 manager's own projections are uploaded through `/projections/sets`, because
 no ingest can fetch a file that only he has (docs/projection_sources.md);
-signing in writes the account tables (`/auth`); and connecting a league,
+signing in writes the account tables (`/auth`); connecting a league,
 inviting its members and claiming teams write the league's membership
-(`/connections`, `/invites`, `/claims`, docs/accounts.md).
+(`/connections`, `/invites`, `/claims`, docs/accounts.md); and a member's
+own alert channels (`/me/channels`, docs/jobs.md).
 
 Every route declares who may call it: anyone signed in, a member of the
 league in its path, an owner of that league, or the manager of the team in
@@ -118,4 +120,5 @@ def create_app() -> FastAPI:
     app.include_router(projections_router)
     app.include_router(pages_router)
     app.include_router(site_router)
+    app.include_router(channels_router)
     return app

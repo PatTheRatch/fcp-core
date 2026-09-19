@@ -32,7 +32,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
-| `/account/alerts` | Alerts: where the digest goes, read-only | anyone signed in | `alerts.html` |
+| `/account/alerts` | Alerts: your own channels (add, confirm, disable), and the server's for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
 | `/join/{token}` | where an invite link lands (step 2's, under the shell) | anyone signed in | `join.html` |
 
@@ -134,7 +134,9 @@ shaded where that side is winning the category. The reader's matchup is
 first with the accent rule. A bye says so.
 
 It reads `pages/context` (the day, the teams), `/periods` and
-`/matchups?period=N`. `?today=` picks the day and so the period; `?period=`
+`/matchups?period=N`, and for the reader's own block `/pickups/glance`
+(step 4: the team's manager, not the paid tier, from the morning's stored
+week report; docs/jobs.md). `?today=` picks the day and so the period; `?period=`
 picks a period outright (the arrows). The scores are ESPN's as the ingest
 last stored them, so a past day shows its period's **final** score, and the
 line says so ("The scores stored are the period's final ones, played out
@@ -200,11 +202,18 @@ one": the file it wants, preview first, the API's own form at
 `/docs#/projections`, and `scripts/upload_projections.py` from a terminal.
 Reads `/projections/sets`, which answers with his own sets only.
 
-**Alerts.** "Your channels", read-only: for the server's owner, the digest's
-channels (email to the addresses in `FCP_EMAIL_TO`; a Telegram chat or an
-ntfy topic by kind, never its URL); for anyone else, "Nothing is sent to you
-yet." Then the line that per-member channels arrive in step 4. Reads
-`GET /me/alerts`.
+**Alerts.** Step 4 (docs/jobs.md). "Your channels": each of the reader's own,
+masked ("p•••@example.com", "chat •••4321"), confirmed or waiting, with
+Disable; or "None yet: nothing is sent to you until you add one." "Add a
+channel": a kind (email, Telegram, ntfy, whichever the server can send) and
+the address, chat id or topic; an email gets a link, the others a test
+message with a code, typed into the form below it. An emailed link lands
+here with `?token=`, which the page spends and takes out of the address bar.
+Then, for the server's owner only, "The server's channels": the digest's
+`.env` channels (email to the addresses in `FCP_EMAIL_TO`; a Telegram chat
+or an ntfy topic by kind, never its URL). Reads `GET /me/channels` and
+`GET /me/alerts`; writes through `POST /me/channels`,
+`POST /me/channels/verify` and `DELETE /me/channels/{id}`.
 
 **Home** (`/`, signed in). Goes to the default league's This week at once
 (`location.replace`, so Back does not return to it); with no league yet,
@@ -231,14 +240,13 @@ yet." Then the line that per-member channels arrive in step 4. Reads
   which open only where the reader may open them (every team in single
   mode).
 - **The free look at the reader's own week** (This week only, and only for
-  the period in play) reads the paid stream route, quietly: while
-  `BILLING_ENABLED` is off it always answers. When billing goes on, a free
-  member would hear 402 and the block says the week is the team layer; the
-  numbers themselves then need a manager-only route without the entitlement,
-  or step 4's stored reports. Not built now: nothing needs it until step 7,
-  and step 4 changes where the numbers come from. It is on This week and not
-  on Standings, because the report behind it is the slow one (up to a
-  minute, cold).
+  the period in play) read the paid stream route until step 4, which would
+  have answered a free member 402 once billing went on. Since step 4 it
+  reads `/pickups/glance`, which needs the team's manager and not the paid
+  tier and answers from the morning's stored week report (built live when
+  there is none), so billing changes nothing on this page. It is on This
+  week and not on Standings, because without a stored report it is the slow
+  one (up to a minute, cold).
 - **This week shows stored scores, not a replay.** A past day picks the
   period; the score is the period's final one, and the page says so.
 - **Moves is in the paid layer, its data in the free one.** "The scorecard
@@ -255,7 +263,5 @@ yet." Then the line that per-member channels arrive in step 4. Reads
 ## Not done here
 
 - The upgrade page and a real 402 path (step 7).
-- Per-member alert channels (step 4); the alerts page is read-only until
-  then.
 - A season picker for the team pages beyond the switcher.
 - The draft room stays its own dark screen, outside the shell.

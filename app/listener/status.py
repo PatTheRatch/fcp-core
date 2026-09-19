@@ -432,3 +432,83 @@ def _record(
     )
     result.events += 1
     result.events_by_kind[event.kind] = result.events_by_kind.get(event.kind, 0) + 1
+
+
+def _wire_recorded_on(session: Session, league_season_id: int, day: datetime) -> bool:
+    """Whether this league's wire has already been recorded on `day` (UTC)."""
+    start = datetime.combine(day.date(), time(0, 0), tzinfo=UTC)
+    found = session.scalar(
+        select(FreeAgentSnapshot.id)
+        .where(
+            FreeAgentSnapshot.league_season_id == league_season_id,
+            FreeAgentSnapshot.observed_at >= start,
+            FreeAgentSnapshot.observed_at < start + timedelta(days=1),
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
+def run_wire_pass(
+    session: Session,
+    league: ESPNLeague,
+    *,
+    label: str,
+    now: datetime | None = None,
+    force: bool = False,
+    fetch_pool: PoolFetch = fetch_player_pool,
+) -> PassResult:
+    """The league's own half of a pass, for a league the listener does not
+    follow: its free agents and waivers, as `free_agent_snapshots` rows.
+    Does not commit.
+
+    Status snapshots and events are one league's view of who holds whom
+    (`on_team_id`), and they belong to the listener's league
+    (`ESPN_LEAGUE_ID`); a second league writing them would turn every player
+    held in both into a stream of drops and claims. A player's injury status
+    is the same in every league, so the listener's league's pass already has
+    it. What is this league's alone is its wire, which is what the pickup
+    reports read (`app.pickups.state`), so that is what is written.
+    Unrostered players only: fewer pages than the whole pool.
+    """
+    observed_at = now or datetime.now(UTC)
+    season = int(league.year)
+    result = PassResult(label=label, season=season, observed_at=observed_at, in_season=False)
+    league_season = _league_season(session, league)
+    result.in_season = is_in_season(session, season, observed_at)
+    if (
+        not result.in_season
+        and not force
+        and _wire_recorded_on(session, league_season.id, observed_at)
+    ):
+        result.skipped = "off-season and the wire already recorded today"
+        return result
+
+    scoring_period = int(
+        getattr(league, "scoringPeriodId", None) or getattr(league, "current_week", None) or 0
+    )
+    raw_entries = fetch_pool(
+        league, statuses=["FREEAGENT", "WAIVERS"], scoring_period=scoring_period or None
+    )
+    result.requests += len(raw_entries) // POOL_PAGE_SIZE + 1
+    entries = [
+        parsed
+        for parsed in map(parse_pool_entry, raw_entries)
+        if parsed is not None and not parsed.rostered
+    ]
+    players = _players_for(session, entries)
+    result.players = len(entries)
+    for entry in entries:
+        session.add(
+            FreeAgentSnapshot(
+                league_season_id=league_season.id,
+                observed_at=observed_at,
+                scoring_period=scoring_period,
+                player_id=players[entry.espn_player_id].id,
+                status=entry.status or "FREEAGENT",
+                waiver_clears_at=entry.waiver_clears_at,
+            )
+        )
+        result.free_agents += 1
+    session.flush()
+    return result

@@ -621,6 +621,21 @@ class EmptyDayOut(BaseModel):
     fillers: list[PickupPlayerOut]
 
 
+class GlanceOut(BaseModel):
+    """A team's week at a glance: what the free This week page shows its
+    manager, from the week report, without the plan."""
+
+    espn_team_id: int
+    matchup_period: int
+    opponent_espn_team_id: int | None = Field(description="Null on a bye")
+    expected_wins: float = Field(description="Categories expected to be won this week, of 9")
+    probabilities: dict[str, float] = Field(description="Each category's chance this week")
+    record_without: list[float] = Field(
+        description="The season's projected record in categories, won and lost, with no move"
+    )
+    stored: bool = Field(description="Read from the morning's stored report, not built now")
+
+
 class StreamReportOut(BaseModel):
     """Who to stream this week, and whether anyone is worth a look."""
 

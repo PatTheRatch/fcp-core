@@ -177,3 +177,136 @@ def message(results: list[Check], *, today: date | None = None) -> str | None:
     if running:
         lines += ["", "still running:"] + [f"  {c.detail}" for c in running]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# per league, and the worker (step 4, docs/jobs.md)
+# ---------------------------------------------------------------------------
+
+#: A queued job this far past due means no worker is taking jobs.
+WORKER_QUIET_HOURS = 2
+
+RECONNECT = (
+    "ESPN has stopped accepting the login this league was connected with, or has "
+    "not answered for it. Nothing is lost: reconnect the league with fresh espn_s2 "
+    "and SWID cookies at {where} and the next night's ingest catches it up."
+)
+
+
+@dataclass(frozen=True)
+class StaleLeague:
+    """A connected league whose ingest has not succeeded inside its window."""
+
+    connection_id: int
+    espn_league_id: int
+    name: str
+    #: Whoever connected it: the one who can reconnect it.
+    owner_user_id: int
+    last_ok: datetime | None
+
+
+def stale_connections(session: Session, *, now: datetime | None = None) -> list[StaleLeague]:
+    """Every live connection whose league has had no good ingest for
+    `INGEST_QUIET_HOURS` (or ever, once it is that old). Reads only
+    `league_connections` and `ingest_runs`."""
+    from app.db.models import League, LeagueConnection
+    from app.memberships import league_name
+
+    now = now or datetime.now(UTC)
+    window = timedelta(hours=INGEST_QUIET_HOURS)
+    out: list[StaleLeague] = []
+    rows = session.execute(
+        select(LeagueConnection, League)
+        .join(League, League.id == LeagueConnection.league_id)
+        .where(
+            LeagueConnection.revoked_at.is_(None),
+            LeagueConnection.sealed_credentials.is_not(None),
+        )
+        .order_by(League.espn_league_id)
+    ).all()
+    for connection, league in rows:
+        last_ok = session.scalar(
+            select(func.max(IngestRun.started_at)).where(
+                IngestRun.espn_league_id == league.espn_league_id,
+                IngestRun.mode.in_(INGEST_MODES),
+                IngestRun.status == SUCCEEDED,
+            )
+        )
+        since = last_ok or connection.created_at
+        if now - since <= window:
+            continue
+        out.append(
+            StaleLeague(
+                connection_id=int(connection.id),
+                espn_league_id=int(league.espn_league_id),
+                name=league_name(session, league),
+                owner_user_id=int(connection.user_id),
+                last_ok=last_ok,
+            )
+        )
+    return out
+
+
+def stale_lines(stale: list[StaleLeague], now: datetime) -> list[str]:
+    """One line per stale league for the owner's message: when it last
+    refreshed, never why it failed (ESPN's words can quote a login)."""
+    lines = []
+    for league in stale:
+        if league.last_ok is None:
+            lines.append(f"  league {league.espn_league_id} ({league.name}): never ingested")
+        else:
+            hours = (now - league.last_ok).total_seconds() / 3600
+            lines.append(
+                f"  league {league.espn_league_id} ({league.name}): "
+                f"last ingest {hours:.0f}h ago ({league.last_ok:%Y-%m-%d %H:%M} UTC)"
+            )
+    return lines
+
+
+def reconnect_message(league: StaleLeague, public_url: str | None) -> str:
+    """What the connection's owner is sent: a plain line to reconnect."""
+    where = (
+        f"{public_url.rstrip('/')}/account/connections"
+        if public_url
+        else "Account, Connections on the site"
+    )
+    since = (
+        "has never been read"
+        if league.last_ok is None
+        else f"has not refreshed since {league.last_ok:%a %d %b %H:%M} UTC"
+    )
+    return f"Your league {league.name} {since}.\n\n{RECONNECT.format(where=where)}\n"
+
+
+def worker_check(session: Session, *, now: datetime | None = None) -> Check | None:
+    """Whether a worker is taking jobs: quiet when a queued job is more than
+    `WORKER_QUIET_HOURS` past due. None before the job table exists or has
+    ever held a job, so the message is unchanged until the queue is in use."""
+    from sqlalchemy.exc import ProgrammingError
+
+    from app.db.models import Job
+
+    now = now or datetime.now(UTC)
+    try:
+        latest = session.scalar(select(func.max(Job.created_at)))
+    except ProgrammingError:
+        session.rollback()
+        return None
+    if latest is None:
+        return None
+    overdue = session.scalar(
+        select(func.min(Job.run_after)).where(
+            Job.state == "queued", Job.run_after < now - timedelta(hours=WORKER_QUIET_HOURS)
+        )
+    )
+    failed = session.scalar(
+        select(func.count())
+        .select_from(Job)
+        .where(Job.state == "failed", Job.finished_at >= now - timedelta(hours=24))
+    )
+    tail = f", {failed} failed in the last day" if failed else ""
+    if overdue is not None:
+        return Check(
+            "worker", True, f"worker: a job has waited since {overdue:%Y-%m-%d %H:%M} UTC{tail}"
+        )
+    return Check("worker", False, f"worker: taking jobs{tail}")
