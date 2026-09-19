@@ -71,7 +71,12 @@ BY_APPROVAL = "approved"
 #: makes every member's claim wait for the league owner. Read at call time,
 #: so a test can flip it. A connector's own verification is not governed by
 #: this: ESPN has accepted his espn_s2 for the league.
-TRUST_BARE_SWID = True
+#:
+#: False from the start (2026-09-19): until a member's SWID is checked
+#: against his own espn_s2 at an endpoint that only answers for that
+#: account, a claim waits for the league owner. Turning it on is a choice to
+#: make only with that check in place.
+TRUST_BARE_SWID = False
 
 #: A SWID once its braces are off and it is upper-cased: ESPN's GUID shape.
 _SWID = re.compile(r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}")

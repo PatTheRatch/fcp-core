@@ -347,7 +347,7 @@ the SWID he sent is the one his `espn_s2` belongs to.
 Before accounts mode is opened to a league that is not Patrick's own, one
 of these should be decided: verify a member's SWID against his `espn_s2`
 at an ESPN endpoint that answers only for the account's own SWID, keeping
-neither; or set `app.memberships.TRUST_BARE_SWID = False`, so every
+neither; or keep `app.memberships.TRUST_BARE_SWID = False`, as it ships (since 2026-09-19), so every
 member's claim waits for the league owner (a connector's own verification
 is not affected). Until then the owner-GUID match is a
 convenience among people who trust each other, which is what one league of

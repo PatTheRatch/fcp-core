@@ -620,8 +620,12 @@ def test_an_invite_needs_a_signed_in_viewer(
 
 
 def test_a_claim_is_verified_by_a_matching_swid(
-    person: People, session: Session, espn: list[tuple[int, str, str, int]]
+    person: People,
+    session: Session,
+    espn: list[tuple[int, str, str, int]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(memberships, "TRUST_BARE_SWID", True)
     alice = owner_of_stored(person)
     bob = member(person, "bob@example.com", alice)
     # Braces and case forgiven: ESPN stores {B0B...}, he pastes it bare, lower-case.
@@ -651,8 +655,11 @@ def test_a_claim_is_verified_by_a_matching_swid(
 
 
 def test_a_swid_added_later_verifies_a_pending_claim(
-    person: People, espn: list[tuple[int, str, str, int]]
+    person: People,
+    espn: list[tuple[int, str, str, int]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(memberships, "TRUST_BARE_SWID", True)
     alice = owner_of_stored(person)
     carol = member(person, "carol@example.com", alice)
     assert carol.post(claim_path(7)).json()["state"] == "pending"
