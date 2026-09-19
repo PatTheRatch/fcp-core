@@ -2018,18 +2018,16 @@ a good sign the two are genuinely the same pipeline.
 
 | unit | UTC | what it does |
 |---|---|---|
-| `fcp-core-ingest.timer` | 09:00 | the season's trailing days, next season's settings, then a listener pass |
+| `fcp-core-enqueue.timer` | 09:00, 15:00, 22:30, 00:30 | puts the schedule's jobs on the queue: each league's ingest (spread 09:00-09:30) and pass, then at 15:00 each claimed team's reports and each member's digest, later an alert (docs/jobs.md) |
+| `fcp-core-worker.service` | always | runs the queued jobs one at a time; restart it after a deploy, like the API |
 | `fcp-core-bbm.timer` | 09:30 | BBM's two exports, into `data/bbm/` and the database |
 | `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days |
-| `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet |
-| `fcp-core-status.timer` | 15:00, 22:30, 00:30 | listener passes, then the digest (15:00, with the day's plan, then warming the pages) or an alert |
-| `fcp-core-enqueue.timer` | 09:00, 15:00, 22:30, 00:30 | **not yet installed.** Puts the schedule's jobs on the queue: each league's ingest (spread 09:00-09:30), passes, each claimed team's reports, each member's digest or alert (docs/jobs.md). Replaces the ingest and status timers at the switch-over |
-| `fcp-core-worker.service` | always | **not yet installed.** Runs the queued jobs one at a time (docs/jobs.md) |
+| `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet, and emails the connector of a stale league |
+| `fcp-core-ingest.timer`, `fcp-core-status.timer` | off | **disabled 2026-09-19 at the switch-over**, still installed for the rollback in docs/jobs.md |
 
-The last two are step 4's job queue, built 2026-09-19 and waiting for the
-switch-over in docs/jobs.md ("Switching over"), which disables the ingest
-and status timers and installs these two; "Rolling back" there undoes it.
-Until then the first five run as they always have.
+Switched over on 2026-09-19 at 02:39 UTC: the queue and the worker replaced
+the ingest and status timers. A manual precompute job ran first to prove the
+path (stored both reports, and the week route then answered in 0.1 s).
 
 The watchdog exists because silence is the failure mode that matters: a
 failed run shows up in `systemctl --failed` and in its own row, while a timer
