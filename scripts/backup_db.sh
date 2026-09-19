@@ -64,4 +64,16 @@ log "ok: $(basename "$TARGET") $SIZE, $TABLES tables"
 find "$BACKUP_DIR" -name 'fcp-*.dump' -type f -mtime "+$KEEP_DAYS" -print -delete \
     2>/dev/null | while read -r old; do log "pruned $(basename "$old")"; done
 
+# Then a copy off this disk, when the bucket is configured
+# (docs/offsite_backups.md). The local dump above is already good; a failed
+# copy fails the unit so it shows, and the watchdog notices a stale copy.
+if grep -q '^FCP_S3_BUCKET=.' .env 2>/dev/null; then
+    if "$REPO_DIR/.venv/bin/python" scripts/offsite_backup.py --file "$TARGET" >> "$LOG_FILE" 2>&1; then
+        log "ok: off-site copy of $(basename "$TARGET")"
+    else
+        log "FAILED: off-site copy of $(basename "$TARGET"); the local dump is fine"
+        exit 1
+    fi
+fi
+
 exit 0

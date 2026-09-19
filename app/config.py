@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     #: waits for the report to be built.
     fcp_api_url: str | None = None
 
+    #: Off-site copies of the nightly backup (`scripts/offsite_backup.py`,
+    #: docs/offsite_backups.md). Configured when the bucket and both keys are
+    #: set; unset means the dumps stay on this disk only, as before. The keys
+    #: belong to an IAM user that can only write and read this bucket's
+    #: prefix. Lives only in `.env` on the VPS; never logged or printed.
+    fcp_s3_bucket: str | None = None
+    fcp_s3_prefix: str = "fcp-core/backups/"
+    fcp_s3_region: str = "us-east-1"
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+
     #: Who may see what (docs/accounts.md). "single" is the tailnet API as it
     #: has always been: every request is the owner, no cookie, nothing
     #: enforced. "accounts" enforces sign-in and the scope checks on every
@@ -109,6 +120,9 @@ class Settings(BaseSettings):
         "fcp_smtp_user",
         "fcp_smtp_password",
         "fcp_api_url",
+        "fcp_s3_bucket",
+        "aws_access_key_id",
+        "aws_secret_access_key",
         "fcp_owner_email",
         "fcp_service_token",
         "fcp_public_url",

@@ -2021,7 +2021,7 @@ a good sign the two are genuinely the same pipeline.
 | `fcp-core-enqueue.timer` | 09:00, 15:00, 22:30, 00:30 | puts the schedule's jobs on the queue: each league's ingest (spread 09:00-09:30) and pass, then at 15:00 each claimed team's reports and each member's digest, later an alert (docs/jobs.md) |
 | `fcp-core-worker.service` | always | runs the queued jobs one at a time; restart it after a deploy, like the API |
 | `fcp-core-bbm.timer` | 09:30 | BBM's two exports, into `data/bbm/` and the database |
-| `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days |
+| `fcp-core-backup.timer` | 10:00 | a verified dump, kept 14 days, then copied to S3 once the bucket is set (docs/offsite_backups.md) |
 | `fcp-core-watchdog.timer` | 11:00 | reports any of the others that has gone quiet, and emails the connector of a stale league |
 | `fcp-core-ingest.timer`, `fcp-core-status.timer` | off | **disabled 2026-09-19 at the switch-over**, still installed for the rollback in docs/jobs.md |
 

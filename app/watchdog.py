@@ -21,6 +21,7 @@ runs at, so one missed run is not an alarm and two are:
 | listener | 4 passes a day | 12 hours |
 | BBM | 09:30 daily | 36 hours |
 | backup | 10:00 daily | 36 hours |
+| off-site copy | after each backup, once a bucket is set | 36 hours |
 
 The listener's window is the tightest because it is the one job whose missed
 hours cannot be recovered: ESPN serves a player's status as of the request,
@@ -111,7 +112,11 @@ def _said(name: str, when: datetime | None, status: str | None, now: datetime) -
 
 
 def checks(
-    session: Session, *, now: datetime | None = None, backups: Path | None = None
+    session: Session,
+    *,
+    now: datetime | None = None,
+    backups: Path | None = None,
+    offsite_marker: Path | None = None,
 ) -> list[Check]:
     """One `Check` per scheduled job, quiet ones included."""
     now = now or datetime.now(UTC)
@@ -162,7 +167,28 @@ def checks(
                 else f"backup: newest {newest.name}, {age:.0f}h old",
             )
         )
+    if offsite_marker is not None:
+        out.append(offsite_check(offsite_marker, now))
     return out
+
+
+def offsite_check(marker: Path, now: datetime) -> Check:
+    """The off-site copy: `logs/offsite-last-ok`, written by each good copy.
+
+    Only asked for once a bucket is configured, so a VPS that has not set
+    one up is not nagged about it.
+    """
+    if not marker.exists():
+        return Check("offsite", True, "off-site copy: never made")
+    age = _age_hours(datetime.fromtimestamp(marker.stat().st_mtime, UTC), now)
+    name = marker.read_text().split(" ", 1)[0].strip() or "?"
+    return Check(
+        "offsite",
+        age is None or age > BACKUP_QUIET_HOURS,
+        f"off-site copy: {name}, {age:.0f}h old"
+        if age is not None
+        else "off-site copy: unreadable",
+    )
 
 
 def message(results: list[Check], *, today: date | None = None) -> str | None:

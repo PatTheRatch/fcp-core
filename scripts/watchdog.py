@@ -49,6 +49,8 @@ from app.watchdog import (
 
 #: Where scripts/backup_db.sh keeps its dumps, relative to the checkout.
 BACKUPS = Path(__file__).resolve().parent.parent / "backups"
+#: Written by scripts/offsite_backup.py after each good copy to S3.
+OFFSITE_MARKER = BACKUPS.parent / "logs" / "offsite-last-ok"
 
 QUIET_EXIT = 2
 
@@ -116,7 +118,11 @@ def main() -> int:
     try:
         factory = make_session_factory(engine)
         with factory() as session:
-            results = checks(session, backups=BACKUPS if BACKUPS.exists() else None)
+            results = checks(
+                session,
+                backups=BACKUPS if BACKUPS.exists() else None,
+                offsite_marker=OFFSITE_MARKER if settings.fcp_s3_bucket else None,
+            )
             worker = worker_check(session)
             if worker is not None:
                 results.append(worker)

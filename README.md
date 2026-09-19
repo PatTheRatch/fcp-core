@@ -347,6 +347,7 @@ notes and measurements live in `docs/`:
 | Doc | What it covers |
 |---|---|
 | docs/product.md | what the site becomes for other people: scopes, navigation, sign-in, invites, and the build order |
+| docs/offsite_backups.md | copying the nightly backup to S3: the AWS setup, the settings, and restoring |
 | docs/draft_night.md | the draft-night runbook: what to run, and what to do when something dies |
 | docs/draft_room.md | the auction-board draft screen and its `/api/pool` |
 | docs/in_season_pages.md | the week, season and index pages the API serves |
