@@ -1550,6 +1550,11 @@ picking a winner silently.
    VPS runs today's timers unchanged until the switch-over there. Before a
    second league's managers get roster news, key the listener's snapshots
    by league (docs/jobs.md, "One listener league").
+   Step 6 (platform ids beside every ESPN id on leagues, owners, teams and
+   transactions, and `player_platform_ids` for the canonical player, written
+   by the ingest and held equal by CHECKs; migration 0021) is built,
+   2026-09-19 (docs/platforms.md); no second platform is, and roto and points
+   scoring are not covered.
 
 ### Prior seasons
 

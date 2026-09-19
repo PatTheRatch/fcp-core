@@ -16,6 +16,7 @@ of the shape:
   without re-fetching a season that may no longer be available.
 """
 
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
@@ -38,18 +39,58 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
+def _espn_id_as_text(espn_column: str) -> Callable[[DefaultExecutionContext], str | None]:
+    """A column default: the row's ESPN id, as text.
+
+    The platform-neutral id of an ESPN row is its ESPN id (docs/platforms.md),
+    and a CHECK on each table holds them equal. This default is what lets
+    every writer that only names the ESPN id, a test's `League(espn_league_id=...)`
+    or a Core insert, go on working unchanged; the ingest writes both itself.
+    """
+
+    def default(context: DefaultExecutionContext) -> str | None:
+        # SQLAlchemy's documented hook for this; it ships untyped.
+        value = context.get_current_parameters().get(espn_column)  # type: ignore[no-untyped-call]
+        return None if value is None else str(value)
+
+    return default
+
+
 class League(Base):
-    """One ESPN league, independent of any season."""
+    """One league, independent of any season.
+
+    `platform` and `platform_league_id` are the league's platform-neutral
+    identity; for an ESPN league the latter is `espn_league_id` as text, and
+    `ck_leagues_espn_id` holds them equal. `espn_league_id` stays NOT NULL and
+    stays the key of every URL: a league from another platform needs it
+    relaxed first (docs/platforms.md).
+    """
 
     __tablename__ = "leagues"
+    __table_args__ = (
+        UniqueConstraint("platform", "platform_league_id", name="uq_leagues_platform_league_id"),
+        CheckConstraint("platform IN ('espn')", name="ck_leagues_platform"),
+        CheckConstraint(
+            "espn_league_id IS NULL OR "
+            "(platform = 'espn' AND platform_league_id = espn_league_id::text)",
+            name="ck_leagues_espn_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     espn_league_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    platform: Mapped[str] = mapped_column(
+        String, nullable=False, default="espn", server_default="espn"
+    )
+    platform_league_id: Mapped[str] = mapped_column(
+        String, nullable=False, default=_espn_id_as_text("espn_league_id")
+    )
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -208,10 +249,27 @@ class Owner(Base):
     """
 
     __tablename__ = "owners"
+    __table_args__ = (
+        UniqueConstraint("platform", "platform_owner_id", name="uq_owners_platform_owner_id"),
+        CheckConstraint("platform IN ('espn')", name="ck_owners_platform"),
+        CheckConstraint(
+            "espn_owner_id IS NULL OR "
+            "(platform = 'espn' AND platform_owner_id = espn_owner_id::text)",
+            name="ck_owners_espn_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     #: ESPN's owner GUID, e.g. "{238280FE-...}". Stable across seasons.
     espn_owner_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    #: The person's platform. Owners are global, so it is theirs, not a league's.
+    platform: Mapped[str] = mapped_column(
+        String, nullable=False, default="espn", server_default="espn"
+    )
+    #: The platform's own id for the person; for ESPN, the GUID.
+    platform_owner_id: Mapped[str] = mapped_column(
+        String, nullable=False, default=_espn_id_as_text("espn_owner_id")
+    )
     display_name: Mapped[str | None] = mapped_column(String)
     first_name: Mapped[str | None] = mapped_column(String)
     last_name: Mapped[str | None] = mapped_column(String)
@@ -230,6 +288,8 @@ class Team(Base):
     __tablename__ = "teams"
     __table_args__ = (
         UniqueConstraint("league_season_id", "espn_team_id", name="uq_teams_season_espn_team"),
+        UniqueConstraint("league_season_id", "platform_team_id", name="uq_teams_platform_team_id"),
+        CheckConstraint("platform_team_id = espn_team_id::text", name="ck_teams_espn_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -238,6 +298,11 @@ class Team(Base):
     )
     #: ESPN's team id. Sparse and non-contiguous, so it is a key, not an index.
     espn_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: The platform's own id for the team, as text; the platform is the
+    #: league's. For ESPN, `espn_team_id`.
+    platform_team_id: Mapped[str] = mapped_column(
+        String, nullable=False, default=_espn_id_as_text("espn_team_id")
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     abbreviation: Mapped[str | None] = mapped_column(String)
@@ -338,11 +403,14 @@ class Matchup(Base):
 
 
 class Player(Base):
-    """An NBA player, identified by ESPN's global player id.
+    """An NBA player: the canonical row every platform's id maps to.
 
     Global, like `owners`: a player is not owned by a league or a season.
     Anything about them that changes (team, position, health) is recorded on
     the roster row instead, because that row is pinned to a point in time.
+
+    His id on each platform is a `player_platform_ids` row; the ESPN one
+    repeats `espn_player_id`, which stays because everything reads it today.
     """
 
     __tablename__ = "players"
@@ -350,6 +418,38 @@ class Player(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     espn_player_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+
+    platform_ids: Mapped[list["PlayerPlatformId"]] = relationship(
+        back_populates="player", cascade="all, delete-orphan"
+    )
+
+
+class PlayerPlatformId(Base):
+    """One player's id on one platform.
+
+    One row per (player, platform), and one player per id on a platform. A
+    player from a second platform is matched to an existing `players` row
+    before a row is written here, and a name that matches no one, or more
+    than one, is refused rather than guessed (docs/platforms.md).
+    """
+
+    __tablename__ = "player_platform_ids"
+    __table_args__ = (
+        UniqueConstraint(
+            "platform", "platform_player_id", name="uq_player_platform_ids_platform_id"
+        ),
+        UniqueConstraint("player_id", "platform", name="uq_player_platform_ids_player"),
+        CheckConstraint("platform IN ('espn')", name="ck_player_platform_ids_platform"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    platform: Mapped[str] = mapped_column(String, nullable=False)
+    platform_player_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    player: Mapped[Player] = relationship(back_populates="platform_ids")
 
 
 class RosterSlot(Base):
@@ -603,6 +703,15 @@ class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
         UniqueConstraint("espn_transaction_id", name="uq_transactions_espn_id"),
+        UniqueConstraint(
+            "league_season_id",
+            "platform_transaction_id",
+            name="uq_transactions_platform_transaction_id",
+        ),
+        CheckConstraint(
+            "platform_transaction_id = espn_transaction_id::text",
+            name="ck_transactions_espn_id",
+        ),
         Index("ix_transactions_season_period", "league_season_id", "scoring_period"),
     )
 
@@ -612,6 +721,11 @@ class Transaction(Base):
     )
     #: ESPN's own UUID for the move. Stable, so re-ingesting cannot duplicate.
     espn_transaction_id: Mapped[str] = mapped_column(String, nullable=False)
+    #: The platform's own id for the move; the platform is the league's.
+    #: For ESPN, `espn_transaction_id`.
+    platform_transaction_id: Mapped[str] = mapped_column(
+        String, nullable=False, default=_espn_id_as_text("espn_transaction_id")
+    )
 
     #: The team that initiated it. Null when ESPN reports team 0, meaning
     #: the move came from outside any roster.
