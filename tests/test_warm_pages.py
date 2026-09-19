@@ -43,3 +43,22 @@ def test_each_url_is_asked_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(requests, "get", ok)
     out = WARM["warm"](["http://h/a", "http://h/b"])
     assert asked == ["http://h/a", "http://h/b"] and [s for _, s, _ in out] == [200, 200]
+
+
+def test_the_service_token_goes_in_a_header_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """So the warm-up keeps working when the API enforces accounts."""
+    seen: list[dict[str, Any]] = []
+
+    class Answer:
+        status_code = 200
+
+    def ok(url: str, timeout: Any, **kwargs: Any) -> Any:
+        seen.append({"url": url, **kwargs})
+        return Answer()
+
+    monkeypatch.setattr(requests, "get", ok)
+    WARM["warm"](["http://h/a"], "sekret")
+    WARM["warm"](["http://h/b"])
+    assert seen[0]["headers"] == {"Authorization": "Bearer sekret"}
+    assert "sekret" not in seen[0]["url"]
+    assert "headers" not in seen[1], "no token, no header: single mode as before"

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
+from app.api.access import SIGNED_IN
 from app.api.deps import SessionDep
 from app.api.schemas import IngestHealthOut, IngestRunOut, Page
 from app.db.models import IngestRun
@@ -32,7 +33,7 @@ MODE_HELP = "Count only runs of this mode: 'full', 'recent', 'settings' or 'stat
 LISTENER_MODE = "status"
 
 
-@router.get("/ingest-runs", summary="Ingest history, newest first")
+@router.get("/ingest-runs", summary="Ingest history, newest first", dependencies=[SIGNED_IN])
 def list_ingest_runs(
     session: SessionDep,
     season: int | None = Query(default=None, description="Restrict to one season"),
@@ -74,6 +75,7 @@ def list_ingest_runs(
 @router.get(
     "/ingest-runs/health",
     summary="Whether the season now running is being kept current",
+    dependencies=[SIGNED_IN],
 )
 def get_current_ingest_health(
     session: SessionDep,
@@ -101,6 +103,7 @@ def get_current_ingest_health(
 @router.get(
     "/ingest-runs/health/{season}",
     summary="Whether a given season's data is still being kept current",
+    dependencies=[SIGNED_IN],
 )
 def get_ingest_health(
     season: int,

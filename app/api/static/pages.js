@@ -50,12 +50,36 @@ function params(where, extra) {
   return text ? `?${text}` : "";
 }
 
+/** The one line a page says when its team is not the reader's (a 403). */
+const NOT_YOURS = "This team's plan is its manager's.";
+
+/** Set once a route has refused the reader, so the page's own complaint
+ *  about the failed fetch does not replace the plain line. */
+let REFUSED = false;
+
+/** Signed out: go and sign in, and come back here afterwards. */
+function toSignIn() {
+  const here = window.location.pathname + window.location.search;
+  window.location.assign(`/sign-in?next=${encodeURIComponent(here)}`);
+}
+
 /** One JSON route. A refusal comes back as a message, not as an exception,
  *  because every one of them is something the page should say out loud: a
- *  season the listener never ran for is an answer. */
+ *  season the listener never ran for is an answer. Two are handled here for
+ *  every page: a 401 (signed out) goes to the sign-in page, and a 403 (not
+ *  this reader's team) is one plain line and nothing else (docs/accounts.md). */
 async function get(url) {
   const response = await fetch(url, { headers: { accept: "application/json" } });
   if (response.ok) return { ok: true, body: await response.json() };
+  if (response.status === 401) {
+    toSignIn();
+    return { ok: false, detail: "Signing in…" };
+  }
+  if (response.status === 403) {
+    fail(NOT_YOURS);
+    REFUSED = true;
+    return { ok: false, detail: NOT_YOURS };
+  }
   let detail = `${response.status} ${response.statusText}`;
   try {
     const body = await response.json();
@@ -302,7 +326,7 @@ function startTheme() {
 /** The page could not be drawn: say what happened, in the page, not the console. */
 function fail(message) {
   const where = $("failed");
-  if (!where) return;
+  if (!where || REFUSED) return;
   where.hidden = false;
   where.textContent = message;
 }

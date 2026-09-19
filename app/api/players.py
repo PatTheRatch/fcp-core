@@ -7,6 +7,7 @@ rather than under a league. The same is true of the stat lines they return.
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
+from app.api.access import SIGNED_IN
 from app.api.deps import SessionDep
 from app.api.schemas import Page, PlayerGameOut, PlayerOut
 from app.db.models import Player, PlayerGameStat
@@ -16,7 +17,7 @@ router = APIRouter(tags=["players"])
 PLAYER_PAGE_LIMIT = 200
 
 
-@router.get("/players", summary="Search stored players by name")
+@router.get("/players", summary="Search stored players by name", dependencies=[SIGNED_IN])
 def list_players(
     session: SessionDep,
     name: str | None = Query(default=None, description="Case-insensitive substring match"),
@@ -37,7 +38,7 @@ def list_players(
     )
 
 
-@router.get("/players/{player_id}", summary="One player")
+@router.get("/players/{player_id}", summary="One player", dependencies=[SIGNED_IN])
 def get_player(player_id: int, session: SessionDep) -> PlayerOut:
     player = session.scalar(select(Player).where(Player.espn_player_id == player_id))
     if player is None:
@@ -45,7 +46,7 @@ def get_player(player_id: int, session: SessionDep) -> PlayerOut:
     return PlayerOut(espn_player_id=player.espn_player_id, name=player.name)
 
 
-@router.get("/players/{player_id}/games", summary="A player's game log")
+@router.get("/players/{player_id}/games", summary="A player's game log", dependencies=[SIGNED_IN])
 def list_player_games(
     player_id: int,
     session: SessionDep,

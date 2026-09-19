@@ -17,10 +17,16 @@ Nothing served here is gated. Only BBM's numbers are
 manager who uploaded it, so `may_show` can only answer yes. The question is
 still asked, on every response that carries a set's numbers, because the
 constraint document wants one check in the API layer rather than a rule people
-remember. `ProjectionSet.owner` is the field that becomes that gate when
-accounts land: today it is a label defaulting to "patrick", and the moment a
-second person can sign in it is what `_readable` compares the caller against.
-This module is the only place in the API that has to learn the answer.
+remember.
+
+A set is readable only by its owner (docs/accounts.md). In accounts mode
+`ProjectionSet.owner` is the uploader's user id, as a string (the column
+stays a string), whatever the `owner` form field says; `_readable` compares
+it with the caller's, and a set that is not the caller's is a 404, the same
+answer as a set nobody stored. The owner also reads the sets stored under
+the old label, "patrick", so nothing uploaded before accounts has to be
+rewritten. In single mode every caller is the owner and the label is kept as
+the form gives it, exactly as before.
 """
 
 import shutil
@@ -34,6 +40,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.access import CurrentUser, Viewer
 from app.api.deps import SessionDep
 from app.api.schemas import (
     ProjectionImportOut,
@@ -53,14 +60,15 @@ from app.projections.upload import (
 
 router = APIRouter(prefix="/projections", tags=["projections"])
 
-#: Whose set it is, until accounts exist. The CLI defaults to the same name.
+#: Whose set it is in single mode, and the label the owner's sets were stored
+#: under before accounts. The CLI defaults to the same name.
 DEFAULT_OWNER = "patrick"
 
 MAP_HELP = "Force one column, as 'Header=FIELD'. Repeat the field per column."
 FILE_HELP = "The projections file: .csv, .xlsx or .xls, one row per player"
 NAME_HELP = "What to call this set, e.g. 'Hashtag preseason'"
 NOTE_HELP = "Where the numbers came from, in your own words"
-OWNER_HELP = "Whose set it is; a label until accounts exist"
+OWNER_HELP = "Whose set it is: a label in single mode; ignored with accounts, where it is you"
 
 FileUpload = Annotated[UploadFile, File(description=FILE_HELP)]
 SeasonForm = Annotated[int, Form(description="The season these project, e.g. 2027")]
@@ -75,6 +83,7 @@ MapForm = Annotated[list[str] | None, Form(alias="map", description=MAP_HELP)]
 )
 def preview_set(
     session: SessionDep,
+    viewer: CurrentUser,
     file: FileUpload,
     season: SeasonForm,
     name: Annotated[str, Form(description=NAME_HELP)] = "preview",
@@ -94,7 +103,7 @@ def preview_set(
         season=season,
         name=name,
         note=note,
-        owner=owner,
+        owner=_owner_of(viewer, owner),
         column_map=column_map,
         dry_run=True,
     )
@@ -104,6 +113,7 @@ def preview_set(
 @router.post("/sets", summary="Store a projections file as a set the room can draft on")
 def create_set(
     session: SessionDep,
+    viewer: CurrentUser,
     file: FileUpload,
     season: SeasonForm,
     name: Annotated[str, Form(description=NAME_HELP)],
@@ -122,7 +132,7 @@ def create_set(
         season=season,
         name=name,
         note=note,
-        owner=owner,
+        owner=_owner_of(viewer, owner),
         column_map=column_map,
         dry_run=False,
     )
@@ -141,21 +151,24 @@ def create_set(
 @router.get("/sets", summary="Stored projection sets, newest first")
 def list_sets(
     session: SessionDep,
+    viewer: CurrentUser,
     season: int | None = Query(default=None, description="Restrict to one season"),
 ) -> list[ProjectionSetOut]:
-    """Bounded by how many files have been uploaded, so a plain list."""
-    return [_set_out(stored) for stored in stored_sets(session, season) if _readable(stored)]
+    """The caller's own sets. Bounded by how many he has uploaded, so a plain list."""
+    return [
+        _set_out(stored) for stored in stored_sets(session, season) if _readable(stored, viewer)
+    ]
 
 
 @router.get("/sets/{set_id}", summary="One stored set")
-def get_set(set_id: int, session: SessionDep) -> ProjectionSetOut:
-    return _set_out(_stored_set(session, set_id))
+def get_set(set_id: int, session: SessionDep, viewer: CurrentUser) -> ProjectionSetOut:
+    return _set_out(_stored_set(session, set_id, viewer))
 
 
 @router.get("/sets/{set_id}/rows", summary="A stored set's players, as per-game lines")
-def list_set_rows(set_id: int, session: SessionDep) -> list[ProjectionLineOut]:
+def list_set_rows(set_id: int, session: SessionDep, viewer: CurrentUser) -> list[ProjectionLineOut]:
     """Every row in the set. Bounded by the upload, whose size `/sets/{id}` gives."""
-    _stored_set(session, set_id)
+    _stored_set(session, set_id, viewer)
     rows = session.execute(
         select(ProjectionRow, Player.espn_player_id)
         .outerjoin(Player, Player.id == ProjectionRow.player_id)
@@ -235,23 +248,39 @@ def _as_path(file: UploadFile) -> Iterator[Path]:
 # ---------------------------------------------------------------------------
 
 
-def _readable(projection_set: ProjectionSet) -> bool:
+def _owner_of(viewer: Viewer, asked: str) -> str:
+    """Whose a new set is: the uploader's user id, or in single mode the label."""
+    if viewer.all_access or viewer.user_id is None:
+        return asked
+    return str(viewer.user_id)
+
+
+def _owns(projection_set: ProjectionSet, viewer: Viewer) -> bool:
+    """Whether this set is the caller's (see WHO MAY READ A SET)."""
+    if viewer.all_access:
+        return True
+    if viewer.user_id is not None and projection_set.owner == str(viewer.user_id):
+        return True
+    return viewer.is_owner and projection_set.owner == DEFAULT_OWNER
+
+
+def _readable(projection_set: ProjectionSet, viewer: Viewer) -> bool:
     """Whether this caller may be shown a set's numbers.
 
-    Always true today, and asked anyway: this is the API's half of the one
-    check the constraint asks for (docs/projection_sources.md). An uploaded
-    set is not gated, so the answer only moves if a gated source is ever
-    served from here; `viewer_owns_source` is what accounts will answer, from
-    `projection_set.owner`.
+    His own set only, and then the API's half of the one check the
+    constraint asks for (docs/projection_sources.md): `may_show`, with
+    `viewer_owns_source` answered from `projection_set.owner`. An uploaded
+    set is not gated, so for an owner that answer is yes.
     """
-    return may_show(upload_source(projection_set.id), viewer_owns_source=True)
+    owns = _owns(projection_set, viewer)
+    return owns and may_show(upload_source(projection_set.id), viewer_owns_source=owns)
 
 
-def _stored_set(session: Session, set_id: int) -> ProjectionSet:
+def _stored_set(session: Session, set_id: int, viewer: Viewer) -> ProjectionSet:
     projection_set = session.get(ProjectionSet, set_id)
-    if projection_set is None:
+    if projection_set is None or not _owns(projection_set, viewer):
         raise HTTPException(status_code=404, detail=f"no projection set {set_id}")
-    if not _readable(projection_set):
+    if not _readable(projection_set, viewer):
         raise HTTPException(
             status_code=403,
             detail=f"{describe(upload_source(set_id))}: not this reader's to see",

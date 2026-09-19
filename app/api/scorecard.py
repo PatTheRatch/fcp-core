@@ -6,6 +6,7 @@ cached. A season's scorecard takes a few seconds, most of it the wire grades.
 
 from fastapi import APIRouter
 
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
     DraftGradeOut,
@@ -57,6 +58,7 @@ def _move(grade: MoveGrade | None) -> MoveGradeOut | None:
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/scorecard",
     summary="A team's season graded: players, draft, trades and the wire",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_scorecard(
     team: TeamDep, league_season: LeagueSeasonDep, session: SessionDep

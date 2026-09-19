@@ -8,10 +8,25 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.db.session import make_engine, make_session_factory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session", autouse=True)
+def single_mode() -> Iterator[None]:
+    """Every test starts in single mode, whatever a local `.env` says.
+
+    The API tests were written for the tailnet API, where every request is
+    the owner; tests/test_access.py switches to accounts mode itself, by
+    overriding the settings dependency on its own app.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("FCP_AUTH_MODE", "single")
+        get_settings.cache_clear()
+        yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")

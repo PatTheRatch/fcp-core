@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueSeasonDep, SessionDep
 from app.api.schemas import ContestedClaimOut, Page, TransactionItemOut, TransactionOut
 from app.db.models import Player, Team, Transaction, TransactionItem
@@ -21,6 +22,7 @@ EXECUTED = "EXECUTED"
 @router.get(
     "/leagues/{league_id}/seasons/{season}/transactions",
     summary="Waiver claims, pickups and trades",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_transactions(
     league_season: LeagueSeasonDep,
@@ -89,6 +91,7 @@ def list_transactions(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/contested-claims",
     summary="Players more than one team bid on, most fought over first",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_contested_claims(
     league_season: LeagueSeasonDep,

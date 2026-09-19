@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -33,6 +34,7 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -1129,3 +1131,145 @@ class ProjectionRow(Base):
     team: Mapped[str | None] = mapped_column(String)
     #: The row exactly as uploaded, so a column we do not model yet is not lost.
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+# ---------------------------------------------------------------------------
+# Accounts (docs/accounts.md, docs/product.md step 1)
+# ---------------------------------------------------------------------------
+
+
+class User(Base):
+    """A person who can sign in, known by an email address and nothing else.
+
+    No password is ever stored: a user signs in by a one-time link mailed to
+    this address. The address is stored lower-cased, so "Pat@X" and "pat@x"
+    are one account; the check constraint says so to the database as well.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (CheckConstraint("email = lower(email)", name="ck_users_email_lower"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_sign_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SignInToken(Base):
+    """One magic link: good once, for fifteen minutes.
+
+    Only the sha256 of the token is stored. The token itself exists in the
+    email and nowhere else, so a copy of this table signs nobody in.
+    """
+
+    __tablename__ = "sign_in_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Where to land after signing in: a path on this site, checked before it
+    #: is stored (`app.accounts.safe_next`), never a whole URL.
+    next_path: Mapped[str | None] = mapped_column(String)
+
+
+class UserSession(Base):
+    """A signed-in browser: the cookie's hash, and when it stops working.
+
+    Named `UserSession` because SQLAlchemy's `Session` is everywhere here;
+    the table is `sessions`. Revoked by sign-out, and dead after thirty days
+    whatever happens.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Entitlement(Base):
+    """A user's right to the paid tier: which tier, where it came from, until when.
+
+    `source` is `owner` (Patrick's own, always), `subscription` (written by
+    the payment provider's webhook, step 7), `trial` or `comp`. An open
+    `valid_until` never lapses. One `owner` row per user at most, which is
+    what lets the owner's row be written idempotently on every first use.
+    """
+
+    __tablename__ = "entitlements"
+    __table_args__ = (
+        CheckConstraint("tier IN ('team')", name="ck_entitlements_tier"),
+        CheckConstraint(
+            "source IN ('owner', 'subscription', 'trial', 'comp')", name="ck_entitlements_source"
+        ),
+        Index(
+            "uq_entitlements_one_owner",
+            "user_id",
+            unique=True,
+            postgresql_where=text("source = 'owner'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tier: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TeamManager(Base):
+    """A user's claim on one team in one season, and whether it is verified.
+
+    The minimal form of step 2's team claims (docs/product.md): the team
+    check reads verified rows, and nothing else opens a team's private
+    pages. `state` is `pending`, `verified` or `rejected`; `how` says what
+    verified it (`owner` for the owner's own team today, the ESPN owner-GUID
+    match or a manual approval in step 2). Season-scoped because `teams` is:
+    a claim on this year's team says nothing about whoever held that ESPN id
+    before. Several verified managers of one team are allowed, as ESPN's
+    co-owners are.
+    """
+
+    __tablename__ = "team_managers"
+    __table_args__ = (
+        UniqueConstraint("user_id", "team_id", name="uq_team_managers_user_team"),
+        CheckConstraint(
+            "state IN ('pending', 'verified', 'rejected')", name="ck_team_managers_state"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    state: Mapped[str] = mapped_column(String, nullable=False, server_default="pending")
+    how: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

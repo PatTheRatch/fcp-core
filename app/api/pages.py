@@ -22,6 +22,15 @@ schedule strip, every team's name, which team is ours, and the line naming
 where the numbers came from. The index also reads `/standings`, which
 already derives a record from the stored matchups; it is not repeated here.
 
+WHO MAY OPEN THEM
+
+The week and season pages are the team layer: their manager's, and paid
+once billing exists (`app.api.access.require_team_plan_page`). The index is
+the league's (`require_league_member_page`). Signed out, a page redirects to
+/sign-in and comes back; the script does the same on a 401 from a fetch and
+says one plain line on a 403 (docs/accounts.md). In single mode, the
+default, nothing is refused. The stylesheet and script are open: no data.
+
 THE LANGUAGE
 
 The tool generates ideas and the manager decides, so the pages say "worth a
@@ -50,6 +59,7 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.access import LEAGUE_MEMBER, LEAGUE_MEMBER_PAGE, TEAM_PLAN_PAGE
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
 from app.api.schemas import PageContextOut, PageDayOut, PagePeriodOut, PageTeamOut
 from app.db.models import LeagueSeason, MatchupPeriod, Team
@@ -94,6 +104,7 @@ def _page(name: str) -> HTMLResponse:
     "/pages/teams/{league_id}/{season}/{team_id}/week",
     include_in_schema=False,
     response_class=HTMLResponse,
+    dependencies=[TEAM_PLAN_PAGE],
 )
 def week_page() -> HTMLResponse:
     """The streaming report for one team, as a page."""
@@ -104,6 +115,7 @@ def week_page() -> HTMLResponse:
     "/pages/teams/{league_id}/{season}/{team_id}/season",
     include_in_schema=False,
     response_class=HTMLResponse,
+    dependencies=[TEAM_PLAN_PAGE],
 )
 def season_page() -> HTMLResponse:
     """The rest-of-season report for one team, as a page."""
@@ -114,6 +126,7 @@ def season_page() -> HTMLResponse:
     "/pages/teams/{league_id}/{season}",
     include_in_schema=False,
     response_class=HTMLResponse,
+    dependencies=[LEAGUE_MEMBER_PAGE],
 )
 def index_page() -> HTMLResponse:
     """Every team in the league, with its record and both of its pages."""
@@ -132,6 +145,7 @@ def asset(name: str) -> Response:
 @router.get(
     "/leagues/{league_id}/seasons/{season}/pages/context",
     summary="Names, the day, its matchup period and the source line, for the pages",
+    dependencies=[LEAGUE_MEMBER],
 )
 def page_context(
     league_id: LeagueIdPath,

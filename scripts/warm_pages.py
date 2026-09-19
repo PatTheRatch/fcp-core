@@ -10,7 +10,9 @@ seconds the first time a day is asked for, and is cached in the API process
 after that (app/pickups/projection.py keys its cache on the day). The
 morning pass runs this after the digest so that by the time the manager
 opens the week page the answer is already there. It reaches the API over
-HTTP because the cache lives in the API's own process, not in this one.
+HTTP because the cache lives in the API's own process, not in this one, and
+sends `FCP_SERVICE_TOKEN` as a bearer when it is set, so it keeps working
+when the API enforces accounts (docs/accounts.md).
 
 Never fails the pass: a missing setting, an unreachable API or a slow report
 is printed and the exit code is 0. The unit that matters is the digest.
@@ -22,6 +24,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -44,13 +47,22 @@ def urls_for(base: str, league_id: int, season: int, team_id: int, today: int | 
     return [f"{root}/stream{suffix}", f"{root}/season{suffix}"]
 
 
-def warm(urls: list[str]) -> list[tuple[str, int | None, float]]:
-    """GET each url once; (url, status or None on a connection failure, seconds)."""
+def warm(urls: list[str], token: str | None = None) -> list[tuple[str, int | None, float]]:
+    """GET each url once; (url, status or None on a connection failure, seconds).
+
+    `token` is `FCP_SERVICE_TOKEN`, sent as a bearer so the warm-up still
+    works once the API enforces accounts (docs/accounts.md); in single mode
+    the API ignores it. It goes in a header, never in the URL, and is never
+    printed.
+    """
+    extra: dict[str, Any] = {}
+    if token:
+        extra["headers"] = {"Authorization": f"Bearer {token}"}
     out: list[tuple[str, int | None, float]] = []
     for url in urls:
         started = time.monotonic()
         try:
-            status: int | None = requests.get(url, timeout=TIMEOUT_SECONDS).status_code
+            status: int | None = requests.get(url, timeout=TIMEOUT_SECONDS, **extra).status_code
         except requests.RequestException:
             status = None
         out.append((url, status, time.monotonic() - started))
@@ -82,7 +94,8 @@ def main() -> int:
         return 0
 
     for url, status, seconds in warm(
-        urls_for(settings.fcp_api_url, espn.espn_league_id, season, int(team_id), args.today)
+        urls_for(settings.fcp_api_url, espn.espn_league_id, season, int(team_id), args.today),
+        settings.fcp_service_token,
     ):
         verdict = "unreachable" if status is None else f"HTTP {status}"
         print(f"warm: {verdict} in {seconds:.1f}s  {url}")
