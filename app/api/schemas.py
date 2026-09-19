@@ -29,6 +29,9 @@ class CategoryOut(BaseModel):
 
 class LeagueOut(BaseModel):
     espn_league_id: int
+    name: str | None = Field(
+        default=None, description="The newest stored season's name; null before the first ingest"
+    )
     seasons: list[int] = Field(description="Every season stored for this league, ascending")
 
 

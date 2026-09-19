@@ -10,10 +10,11 @@
 <link rel="stylesheet" href="/pages/static/pages.css">
 </head>
 <body>
+<div id="shell"></div>
 <div class="page">
 
 <header class="mast">
-  <p class="eyebrow"><a href="/">Full Court Press</a></p>
+  <p class="eyebrow">Your account</p>
   <h1>Connections</h1>
   <p class="sub">Connect a league with your own ESPN login, invite its members, and decide
     their claims on teams. The login is checked with ESPN once, kept sealed, and never
@@ -21,8 +22,8 @@
 </header>
 
 <section>
-  <h2 class="shead">Connect a league</h2>
-  <p class="sub muted">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
+  <div class="shead"><h2>Connect a league</h2></div>
+  <p class="lede">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
     <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
   <form class="signin" id="connect" autocomplete="off">
     <label class="eyebrow" for="league">League id</label>
@@ -33,41 +34,44 @@
     <input id="swid" type="password" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Connect</button>
   </form>
-  <p class="sub" id="connected" hidden></p>
+  <p class="lede" id="connected" hidden></p>
 </section>
 
 <section>
-  <h2 class="shead">Your connections</h2>
-  <div id="connections"><p class="sub muted">Loading…</p></div>
+  <div class="shead"><h2>Your connections</h2></div>
+  <div id="connections"><p class="empty">Loading…</p></div>
 </section>
 
 <section>
-  <h2 class="shead">Leagues you own</h2>
-  <div id="owned"><p class="sub muted">Loading…</p></div>
+  <div class="shead"><h2>Leagues you own</h2><span class="tag">invites and claims</span></div>
+  <div id="owned"><p class="empty">Loading…</p></div>
 </section>
 
 <section>
-  <h2 class="shead">Your ESPN account, to verify your claims</h2>
-  <p class="sub muted">Optional. Your SWID alone (never espn_s2): when it is an owner of the
+  <div class="shead"><h2>Your ESPN account</h2><span class="tag">to verify your claims</span></div>
+  <p class="lede">Optional. Your SWID alone (never espn_s2): when it is an owner of the
     team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
   <form class="signin" id="identity" autocomplete="off">
     <label class="eyebrow" for="myswid">SWID</label>
     <input id="myswid" type="password" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Keep it</button>
   </form>
-  <p class="sub" id="identified" hidden></p>
+  <p class="lede" id="identified" hidden></p>
 </section>
 
+<p class="foot">Nothing on this page is ever shown back: not the cookies, not the SWID.
+  <span class="mono">docs/accounts.md</span> says where each is kept and who can open it.</p>
+
 </div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
 <script>
 "use strict";
 
 /* Everything a page writes is text (textContent), never markup: league and
    team names come from ESPN and emails from whoever signed up. The cookies
    typed here are posted once and the fields are cleared; nothing about them
-   ever comes back from the server. */
-
-const $ = (id) => document.getElementById(id);
+   ever comes back from the server. `$` is pages.js's. */
 
 async function call(method, url, body) {
   const response = await fetch(url, {
@@ -75,9 +79,7 @@ async function call(method, url, body) {
     headers: { "content-type": "application/json", accept: "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (response.status === 401) {
-    window.location.assign(`/sign-in?next=${encodeURIComponent(window.location.pathname)}`);
-  }
+  if (response.status === 401) toSignIn();
   const data = await response.json().catch(() => ({}));
   const detail = typeof data.detail === "string" ? data.detail : `${response.status}`;
   return { ok: response.ok, data, detail };
@@ -108,10 +110,10 @@ async function loadConnections() {
   const box = $("connections");
   const got = await call("GET", "/connections");
   box.replaceChildren();
-  if (!got.ok) return box.append(el("p", got.detail, "sub"));
-  if (!got.data.length) return box.append(el("p", "None yet.", "sub muted"));
+  if (!got.ok) return box.append(el("p", got.detail, "lede"));
+  if (!got.data.length) return box.append(el("p", "None yet.", "empty"));
   for (const c of got.data) {
-    const line = el("p", "", "sub");
+    const line = el("p", "", "lede");
     const state = c.revoked_at
       ? `revoked ${day(c.revoked_at)}`
       : c.last_error
@@ -134,7 +136,7 @@ async function loadOwned() {
   const me = await call("GET", "/auth/me");
   box.replaceChildren();
   const owned = (me.data.leagues || []).filter((l) => l.role === "owner");
-  if (!owned.length) return box.append(el("p", "None: connect one above.", "sub muted"));
+  if (!owned.length) return box.append(el("p", "None: connect one above.", "empty"));
   for (const league of owned) box.append(await ownedLeague(league.espn_league_id));
 }
 
@@ -142,7 +144,7 @@ async function ownedLeague(id) {
   const part = el("div");
   part.append(el("h3", `League ${id}`, "eyebrow"));
 
-  const link = el("p", "", "sub");
+  const link = el("p", "", "lede");
   link.append(button("New invite link", async () => {
     const made = await call("POST", `/leagues/${id}/invites`, {});
     link.replaceChildren(made.ok
@@ -154,7 +156,7 @@ async function ownedLeague(id) {
 
   const invites = await call("GET", `/leagues/${id}/invites`);
   for (const inv of invites.ok ? invites.data : []) {
-    const line = el("p", "", "sub muted");
+    const line = el("p", "", "lede");
     const expiry = inv.expires_at ? `expires ${day(inv.expires_at)}` : "no expiry";
     const status = inv.revoked_at ? `revoked ${day(inv.revoked_at)}` : expiry;
     line.append(`Invite of ${day(inv.created_at)} · ${inv.uses} joined · ${status} `);
@@ -169,9 +171,9 @@ async function ownedLeague(id) {
 
   const claims = await call("GET", `/leagues/${id}/claims`);
   const pending = claims.ok ? claims.data : [];
-  part.append(el("p", pending.length ? "Claims waiting on you:" : "No claims waiting.", "sub"));
+  part.append(el("p", pending.length ? "Claims waiting on you:" : "No claims waiting.", "lede"));
   for (const c of pending) {
-    const line = el("p", "", "sub");
+    const line = el("p", "", "lede");
     line.append(el("b", c.email), ` claims ${c.team_name} (${c.season}) `);
     line.append(button("Approve", async () => {
       await call("POST", `/leagues/${id}/claims/${c.id}/approve`);
@@ -218,6 +220,7 @@ $("identity").onsubmit = async (event) => {
   say("identified", names.length ? `Kept. Now verified: ${names.join(", ")}.` : "Kept.");
 };
 
+startTheme();
 loadConnections();
 loadOwned();
 </script>

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>This Week</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; this week</p>
+  <h1 id="title">This week</h1>
+  <p class="sub" id="sub"></p>
+  <ul class="years" id="years"></ul>
+  <nav class="pager" id="pager" aria-label="Matchup periods"></nav>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<dl class="line" id="readout"></dl>
+
+<section class="yours" id="yours" hidden>
+  <h2 id="yours-title">Your week</h2>
+  <div id="yours-body"></div>
+</section>
+
+<main id="body" hidden>
+  <section>
+    <div class="shead"><h2>The matchups</h2><span class="tag" id="tag"></span></div>
+    <p class="lede" id="lede"></p>
+    <div id="matchups"></div>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* This week, the league's page: every matchup of one matchup period with
+   its nine categories so far, who leads each, and the days left. Three
+   small fetches, all existing routes: the context (the day, the teams),
+   the periods (which days each covers) and the period's matchups.
+
+   The scores are ESPN's as the ingest last stored them. `?today=` picks the
+   day, and so the period, the way it does on the team pages; a period that
+   is over shows its final score, not the score as it stood on that day,
+   because no route keeps a matchup's score day by day. `?period=` picks a
+   period outright, for the arrows.
+
+   For the reader's own team only, and only for the period in play, a look
+   at his week from the team layer: expected categories and the projected
+   record, with a link to the moves worth a look (docs/product.md, "Free
+   and paid"). It is drawn last and on its own: the report behind it is the
+   slow one. */
+
+const WHERE = place();
+const SETTLED = new Set(["HOME", "AWAY", "TIE"]);
+
+/** The period to show: the one asked for, else the one today is in, else
+    the nearest one that has begun (after the season, its last one). */
+function pickPeriod(today, periods, asked) {
+  if (asked !== null) return periods.find((p) => p.period === asked) || null;
+  const dated = periods.filter((p) => isNum(p.first_scoring_period) && isNum(p.final_scoring_period));
+  const inside = dated.find(
+    (p) => p.first_scoring_period <= today && today <= p.final_scoring_period,
+  );
+  if (inside) return inside;
+  if (!dated.length) return periods[0] || null;
+  if (today < dated[0].first_scoring_period) return dated[0];
+  const begun = dated.filter((p) => p.first_scoring_period <= today);
+  return begun.length ? begun[begun.length - 1] : dated[dated.length - 1];
+}
+
+/** Days left in the period from `today`, today included; null undated. */
+function daysLeft(period, today) {
+  if (!isNum(period.first_scoring_period) || !isNum(period.final_scoring_period)) return null;
+  if (today > period.final_scoring_period) return 0;
+  return period.final_scoring_period - Math.max(today, period.first_scoring_period) + 1;
+}
+
+/** One side's nine, shaded where it is winning the category. */
+function sideStrip(side, other) {
+  const mine = new Map((side.statistics || []).map((s) => [s.abbreviation, s]));
+  const theirs = new Map(((other && other.statistics) || []).map((s) => [s.abbreviation, s]));
+  return stripHtml(
+    Object.fromEntries(
+      CATS.map((cat) => {
+        const stat = mine.get(cat);
+        let result = stat ? stat.result : null;
+        const them = theirs.get(cat);
+        if (!result && stat && them && isNum(stat.value) && isNum(them.value)) {
+          // No result stored yet (a period in play): the better number leads.
+          const diff = INVERTED.has(cat) ? them.value - stat.value : stat.value - them.value;
+          result = diff > 0 ? "WIN" : diff < 0 ? "LOSS" : "TIE";
+        }
+        return [
+          cat,
+          {
+            text: storedCat(cat, stat ? stat.value : undefined),
+            shade: result === "WIN" ? "s2" : result === "TIE" ? "s1" : "",
+            tone: result === "WIN" ? "up" : "",
+          },
+        ];
+      }),
+    ),
+  );
+}
+
+function matchupHtml(matchup, ours) {
+  const home = matchup.home;
+  const away = matchup.away;
+  const mine = ours !== null && (home.espn_team_id === ours || (away && away.espn_team_id === ours));
+  if (!away) {
+    return (
+      `<article class="matchup${mine ? " ours" : ""}"><div class="score">` +
+      `<span class="side">${escape(home.name)}</span></div>` +
+      `<p class="state">On a bye this period: no opponent, and no record either way.</p>` +
+      `</article>`
+    );
+  }
+  const h = home.categories_won;
+  const a = away.categories_won;
+  const t = matchup.categories_tied;
+  const started = (home.statistics || []).length > 0;
+  const lead = h === a ? null : h > a ? home : away;
+  const score = `${Math.max(h, a)}–${Math.min(h, a)}${t ? `–${t}` : ""}`;
+  let state;
+  if (SETTLED.has(matchup.winner)) {
+    state =
+      matchup.winner === "TIE"
+        ? `Final: level ${h}–${a}${t ? `–${t}` : ""}`
+        : `Final: ${escape((matchup.winner === "HOME" ? home : away).name)} won ${score}`;
+  } else if (!started) {
+    state = "No score yet: the period has not begun.";
+  } else if (lead === null) {
+    state = `Level at ${h}–${a}${t ? `, ${t} tied` : ""}`;
+  } else {
+    state = `${escape(lead.name)} leads ${score}`;
+  }
+  const cls = (side) => (lead === null ? "" : lead === side ? " lead" : " trail");
+  return (
+    `<article class="matchup${mine ? " ours" : ""}">` +
+    `<div class="score"><span class="side${cls(home)}">${escape(home.name)}</span>` +
+    `<span class="tally">${h}–${a}</span>` +
+    `<span class="side right${cls(away)}">${escape(away.name)}</span></div>` +
+    `<p class="state">${state}</p>` +
+    (started
+      ? `<p class="who">${escape(home.name)}</p><div class="strip">${sideStrip(home, away)}</div>` +
+        `<p class="who">${escape(away.name)}</p><div class="strip">${sideStrip(away, home)}</div>`
+      : "") +
+    `</article>`
+  );
+}
+
+function drawPager(period, periods) {
+  const at = periods.findIndex((p) => p.period === period.period);
+  const link = (p, text) =>
+    `<a href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE, { period: p.period })}">` +
+    `${text}</a>`;
+  const parts = [];
+  if (at > 0) parts.push(link(periods[at - 1], `‹ Period ${periods[at - 1].period}`));
+  if (WHERE.period !== null) {
+    parts.push(
+      `<a href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE)}">` +
+        `The period in play</a>`,
+    );
+  }
+  if (at >= 0 && at < periods.length - 1) {
+    parts.push(link(periods[at + 1], `Period ${periods[at + 1].period} ›`));
+  }
+  $("pager").innerHTML = parts.join("");
+}
+
+function dayRange(period, context) {
+  const days = context.period && context.period.period === period.period ? context.period.days : [];
+  const first = days.length ? days[0].calendar_date : null;
+  const last = days.length ? days[days.length - 1].calendar_date : null;
+  return first && last ? ` (${dayName(first)} – ${dayName(last)})` : "";
+}
+
+async function drawYours(ctx, context, report) {
+  const team = ctx.myTeam;
+  const link =
+    `<p><a class="more" href="${teamUrl(WHERE.league, WHERE.season, team.espn_team_id, "week")}` +
+    `${params(WHERE)}">See the moves worth a look</a></p>`;
+  $("yours-title").textContent = `Your week: ${team.name}`;
+  $("yours").hidden = false;
+  $("yours-body").innerHTML =
+    "<p>Working out your week. The first report of the day can take a minute.</p>";
+  const got = await report;
+  if (!got.ok) {
+    // 409: the season has nothing to build a week from yet (no schedule, no
+    // roster), which is a fact about the season, not a failure to report.
+    $("yours-body").innerHTML =
+      got.status === 402
+        ? "<p>Your week, your projected record and the moves behind them are the team " +
+          `layer.</p>${link}`
+        : got.status === 409
+          ? "<p>Your week is worked out once this season's NBA schedule and rosters are " +
+            "stored.</p>"
+          : `<p>Your week could not be worked out: ${escape(got.detail)}.</p>${link}`;
+    return;
+  }
+  const r = got.body;
+  const them = (context.teams || []).find((t) => t.espn_team_id === r.opponent_espn_team_id);
+  const against =
+    r.opponent_espn_team_id === null
+      ? "You are on a bye this period, so there is no head-to-head to play for. "
+      : `Expected to take <b>${fixed(r.expected_wins, 2)}</b> of 9 categories against ` +
+        `<b>${escape(them ? them.name : `team ${r.opponent_espn_team_id}`)}</b>, as things stand. `;
+  $("yours-body").innerHTML =
+    `<p>${against}Projected to end the season <b>${record(r.outlook.record_without)}</b> ` +
+    `in categories with no move made.</p>` +
+    (r.opponent_espn_team_id === null
+      ? ""
+      : `<div class="strip">${probabilityStrip(r.probabilities)}</div>`) +
+    link;
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  const [context, periods] = await Promise.all([
+    get(`${base}/pages/context${params(WHERE)}`),
+    get(`${base}/periods`),
+  ]);
+  const ctx = await SHELL;
+  document.title = `This week · ${leagueName(ctx, WHERE.league)}`;
+  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("years").innerHTML = seasonLinks(ctx, WHERE);
+  if (!context.ok || !periods.ok) {
+    fail(`This week cannot be shown: ${(context.ok ? periods : context).detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const today = context.body.today;
+  const period = pickPeriod(today, periods.body, WHERE.period);
+  if (!period) {
+    fail(`No matchup periods are stored for ${WHERE.season}.`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const inPlay =
+    isNum(period.first_scoring_period) &&
+    period.first_scoring_period <= today && today <= period.final_scoring_period;
+  const ours = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season
+    ? ctx.myTeam.espn_team_id : null;
+  // The slow one, started now so it runs while the matchups draw.
+  const report = inPlay && ours !== null
+    ? get(`${base}/teams/${ours}/pickups/stream${params(WHERE)}`, { quiet: true })
+    : null;
+
+  const matchups = await get(`${base}/matchups?period=${period.period}`);
+  if (!matchups.ok) {
+    fail(`The matchups of period ${period.period} cannot be read: ${matchups.detail}`);
+    return;
+  }
+  const left = daysLeft(period, today);
+  const over = left === 0;
+  // A past day of a played season: the period is in play on that day, but
+  // what is stored is its final score.
+  const settled = matchups.body.items.length > 0 &&
+    matchups.body.items.every((m) => !m.away || SETTLED.has(m.winner));
+  // Nothing stored for any side yet: before opening night, or a season with
+  // no schedule, whose "today" is only its first day by default.
+  const begun = matchups.body.items.some((m) => (m.home.statistics || []).length > 0);
+  const range = isNum(period.first_scoring_period)
+    ? `days ${period.first_scoring_period}–${period.final_scoring_period}` : "days not stored";
+  $("title").textContent = period.is_playoff ? "The playoffs" : "This week";
+  $("sub").innerHTML =
+    `Matchup period <b>${period.period}</b>${period.is_playoff ? " (playoffs)" : ""}, ` +
+    `${range}${dayRange(period, context.body)}. ` +
+    (!begun && !over
+      ? "The period has not begun: no score is stored for it yet."
+      : inPlay
+      ? `Day <b>${today}</b>${context.body.today_date ? ` (${dayName(context.body.today_date)})` : ""}: ` +
+        `<b>${count(left, "day")}</b> left, today included.` +
+        (settled ? " The scores stored are the period's final ones, played out since." : "")
+      : over
+        ? "The period is over; these are its final scores."
+        : "The period has not begun.");
+  drawPager(period, periods.body);
+
+  const items = matchups.body.items.slice().sort((x, y) => {
+    const mine = (m) =>
+      ours !== null && (m.home.espn_team_id === ours || (m.away && m.away.espn_team_id === ours));
+    return Number(mine(y)) - Number(mine(x));
+  });
+  const pairs = items.filter((m) => m.away).length;
+  const cells = [
+    ["Period", `${period.period}<small> of ${periods.body.length}</small>`, ""],
+    ["Days", isNum(period.first_scoring_period)
+      ? `${period.first_scoring_period}–${period.final_scoring_period}` : dash, ""],
+    ["Days left", left === null ? dash : `${left}`, inPlay ? "hi" : ""],
+    ["Matchups", `${pairs}<small>${items.length > pairs ? `, ${items.length - pairs} on a bye` : ""}</small>`, ""],
+  ];
+  $("readout").innerHTML = cells
+    .map(([label, value, cls]) => `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd></div>`)
+    .join("");
+  $("tag").textContent = over || settled ? "final" : inPlay && begun ? "so far" : "not begun";
+  $("lede").innerHTML =
+    "Each matchup's nine categories, a side's cell shaded where it is winning that category. " +
+    "The count is categories won, not points.";
+  $("matchups").innerHTML = items.length
+    ? items.map((m) => matchupHtml(m, ours)).join("")
+    : `<p class="empty">No matchups are stored for period ${period.period}.</p>`;
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Scores are ESPN's, as the ingest last stored them. ` +
+    `<span class="mono">?today=</span> picks a day and so its period; a period that is over ` +
+    `shows its final score, not the score as it stood on that day. Read-only.`;
+  $("body").hidden = false;
+  if (report) drawYours(ctx, context.body, report);
+}
+
+start();
+</script>
+</body>
+</html>

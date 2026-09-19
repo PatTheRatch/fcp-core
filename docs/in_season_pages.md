@@ -18,9 +18,13 @@ browser that the API has not already decided, with one exception noted under
 
 | Page | What it is |
 | --- | --- |
-| `/pages/teams/{league_id}/{season}/{team_id}/week` | The streaming report |
-| `/pages/teams/{league_id}/{season}/{team_id}/season` | The rest-of-season report |
-| `/pages/teams/{league_id}/{season}` | The index: every team, ours first |
+| `/l/{league_id}/{season}/team/{team_id}/week` | The streaming report |
+| `/l/{league_id}/{season}/team/{team_id}/season` | The rest-of-season report |
+| `/l/{league_id}/{season}/standings` | What the index became: every team and its record |
+
+Since step 3 (2026-09-19) the pages sit under the site's shell and at these
+addresses; the old `/pages/teams/...` ones redirect here. docs/site.md is
+the whole map.
 
 `?today=N` is a scoring period and is exactly the CLI's `--today`: it is
 passed straight through to both the report route and the context route, so
@@ -77,17 +81,16 @@ stashes, and the churn guard's line.
 
 ## The index
 
-Every team of the season with both of its records, linking to both of its
-pages. Ours first, then the rest by matchups won. Ours is `MANAGER_TEAM` in
-`app/api/pages.py`, matched on the name without regard to case, because
-there is no account system and no setting for it yet; a season in which no
-team is called that simply has no team of ours, and the table is in plain
-order.
+Retired in step 3: the league's Standings page (docs/site.md) is every team
+with its records now, and the old index address redirects there. Which team
+is ours comes from the viewer's verified claim; `MANAGER_TEAM` in
+`app/api/pages.py` is left only for the context route's `ours`, and for
+single mode's fallback when the owner has no claim.
 
 ## The theme
 
 **Light is the default** and the skin these pages were approved in: the
-season report's house style. The switch in the masthead flips to the draft
+season report's house style. The switch in the site's bar flips to the draft
 room's own palette and back, and the choice is kept in `localStorage`
 (wrapped in `try`/`catch`, so a private window merely forgets it).
 
@@ -122,8 +125,8 @@ One route rather than four calls to existing ones. It never refuses a season
 it holds: a season with no stored schedule still has teams and names, and
 the page says what is missing rather than failing to draw.
 
-The index also reads `/standings`, which already derives a matchup record
-from the stored matchups, so records are not repeated in the context.
+Records come from `/standings`, which already derives a matchup record from
+the stored matchups, so they are not repeated in the context.
 
 ## No auto-reload
 
@@ -181,6 +184,6 @@ schedule backfilled reports.
 
     .venv/bin/python -m uvicorn app.main:create_app --factory --port 8000
 
-then `http://localhost:8000/pages/teams/3853870/2026` — or the **fcp-api**
+then `http://localhost:8000/l/3853870/2026/standings` — or the **fcp-api**
 entry in `.claude/launch.json`. Read-only, like the rest of the API: the
 pages write nothing, to the league or to the database.

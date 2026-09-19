@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/pages/static/pages.css">
 </head>
 <body>
+<div id="shell"></div>
 <div class="page">
 
 <header class="mast">
@@ -21,6 +22,8 @@
 </header>
 
 </div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
 <script>
 "use strict";
 
@@ -29,7 +32,6 @@
    one to join it; the page has no other use for it. `no-referrer` above keeps
    it out of the Referer header of the font requests. */
 
-const $ = (id) => document.getElementById(id);
 const token = window.location.pathname.split("/").filter(Boolean)[1] || "";
 
 async function call(method, url) {
@@ -64,6 +66,7 @@ $("join").onclick = async () => {
   window.location.assign(season ? `/pages/claim/${joined.data.espn_league_id}/${season}` : "/");
 };
 
+startTheme();
 start();
 </script>
 </body>

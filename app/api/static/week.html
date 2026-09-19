@@ -10,17 +10,13 @@
 <link rel="stylesheet" href="/pages/static/pages.css">
 </head>
 <body>
+<div id="shell"></div>
 <div class="page">
 
 <header class="mast">
   <p class="eyebrow" id="eyebrow">Full Court Press &middot; the week</p>
   <h1 id="title">&nbsp;</h1>
   <p class="sub" id="sub"></p>
-  <div class="tools">
-    <button class="btn" id="theme" aria-pressed="false" title="light or dark">Lights down</button>
-    <a class="btn" id="to-season" href="#">Rest of season</a>
-    <a class="btn" id="to-index" href="#">Every team</a>
-  </div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
@@ -77,6 +73,7 @@
 
 </div>
 <script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
 <script>
 "use strict";
 
@@ -330,9 +327,6 @@ async function start() {
   startTheme();
   const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
   const query = params(WHERE);
-  $("to-season").href =
-    `/pages/teams/${WHERE.league}/${WHERE.season}/${WHERE.team}/season${query}`;
-  $("to-index").href = `/pages/teams/${WHERE.league}/${WHERE.season}${query}`;
   $("title").textContent = "Loading…";
 
   const [context, report] = await Promise.all([

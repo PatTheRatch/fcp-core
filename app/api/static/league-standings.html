@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Standings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; standings</p>
+  <h1 id="title">Standings</h1>
+  <p class="sub" id="sub"></p>
+  <ul class="years" id="years"></ul>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<main id="body" hidden>
+  <section>
+    <div class="shead"><h2>The table</h2><span class="tag" id="tag">regular season</span></div>
+    <p class="lede">By matchups won, then fewest lost, then categories won. ESPN reports no
+      matchup record, so that one is counted from the stored matchups; the category record is
+      ESPN's own, and counts categories rather than matchups. Byes count neither way.</p>
+    <div class="scroll">
+      <table class="grid">
+        <thead><tr>
+          <th></th><th class="l">Team</th><th>Matchups</th><th>Categories</th><th>Cat. share</th>
+          <th>Best run</th><th>Worst run</th><th>Ended on</th><th>Finish</th>
+        </tr></thead>
+        <tbody id="table"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* Standings, the league's page: the standings route (the derived matchup
+   record beside ESPN's category record) and the streaks route (each team's
+   longest runs and the one the season ended on), joined on the team id. The
+   reader's own team is shaded; a team's name opens its plan only where the
+   reader may open it: his own, or every team in single mode, where the one
+   user is an operator. */
+
+const WHERE = place();
+
+const run = (n, word) => (isNum(n) && n > 0 ? `${n} ${word}` : dash);
+
+function draw(ctx, standings, streaks) {
+  const runs = new Map((streaks || []).map((s) => [s.espn_team_id, s]));
+  const ours = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season
+    ? ctx.myTeam.espn_team_id : null;
+  const opens = (id) => (ctx && ctx.mode === "single") || id === ours;
+  $("table").innerHTML = standings
+    .map((row, i) => {
+      const streak = runs.get(row.espn_team_id);
+      const decided = row.categories_won + row.categories_lost + row.categories_tied;
+      const share = decided ? row.categories_won / decided : undefined;
+      const ended = streak && streak.final_streak_result
+        ? `${streak.final_streak_result === "WIN" ? "W" : "L"}${streak.final_streak}` : dash;
+      const name = opens(row.espn_team_id)
+        ? `<a href="${teamUrl(WHERE.league, WHERE.season, row.espn_team_id, "week")}">` +
+          `${escape(row.name)}</a>`
+        : escape(row.name);
+      return (
+        `<tr class="${row.espn_team_id === ours ? "ours" : ""}">` +
+        `<td class="rank">${i + 1}</td>` +
+        `<td class="name">${name}</td>` +
+        `<td>${wlt(row.matchups_won, row.matchups_lost, row.matchups_tied)}</td>` +
+        `<td>${wlt(row.categories_won, row.categories_lost, row.categories_tied)}</td>` +
+        `<td>${isNum(share) ? share.toFixed(3).replace(/^0/, "") : dash}</td>` +
+        `<td>${streak ? run(streak.longest_win_streak, "won") : dash}</td>` +
+        `<td>${streak ? run(streak.longest_loss_streak, "lost") : dash}</td>` +
+        `<td>${ended}</td>` +
+        `<td>${row.final_standing ? `#${row.final_standing}` : dash}</td></tr>`
+      );
+    })
+    .join("");
+}
+
+async function start() {
+  startTheme();
+  const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+  const [standings, streaks, ctx] = await Promise.all([
+    get(`${base}/standings`),
+    get(`${base}/streaks`),
+    SHELL,
+  ]);
+  document.title = `Standings · ${leagueName(ctx, WHERE.league)}`;
+  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("years").innerHTML = seasonLinks(ctx, WHERE);
+  if (!standings.ok) {
+    fail(`The standings cannot be read: ${standings.detail}`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
+  const rows = standings.body;
+  const played = rows.some((r) => r.matchups_won + r.matchups_lost + r.matchups_tied > 0);
+  $("sub").innerHTML = played
+    ? `${count(rows.length, "team")}. The regular season's matchups, byes left out.`
+    : `${count(rows.length, "team")}, and no matchup decided yet this season.`;
+  draw(ctx, rows, streaks.ok ? streaks.body : []);
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. Read-only. A tie breaks a run rather than extending it, ` +
+    `so "5 won" is five wins in a row.` +
+    (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`);
+  $("body").hidden = false;
+}
+
+start();
+</script>
+</body>
+</html>

@@ -10,6 +10,9 @@
 <link rel="stylesheet" href="/pages/static/pages.css">
 </head>
 <body>
+<header class="shell"><nav class="nav" aria-label="Site">
+  <a class="brand" href="/">Full Court Press</a>
+</nav></header>
 <div class="page">
 
 <header class="mast">
@@ -27,8 +30,11 @@
 </header>
 
 </div>
+<script src="/pages/static/pages.js"></script>
 <script>
 "use strict";
+
+startTheme();
 
 /* The sign-in form. It posts the address and, when a page sent us here, the
    path to come back to; the server keeps that path with the link, so the

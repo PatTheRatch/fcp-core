@@ -17,6 +17,7 @@ from app.api.pickups import router as pickups_router
 from app.api.players import router as players_router
 from app.api.projections import router as projections_router
 from app.api.scorecard import router as scorecard_router
+from app.api.site import router as site_router
 from app.api.teams import router as teams_router
 from app.api.transactions import router as transactions_router
 
@@ -116,4 +117,5 @@ def create_app() -> FastAPI:
     app.include_router(pickups_router)
     app.include_router(projections_router)
     app.include_router(pages_router)
+    app.include_router(site_router)
     return app

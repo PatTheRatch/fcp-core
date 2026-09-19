@@ -2,16 +2,20 @@
 
 **Written:** 2026-09-19. **Status:** built, steps 1 and 2 of docs/product.md
 (accounts; then league connections, memberships, invites and verified team
-claims). The VPS runs in single mode, which behaves exactly as the API always
-has; accounts mode is switched on at the cutover (step 5), not before.
+claims); step 3's pages and their checks are in the table below, and
+docs/site.md is their map. The VPS runs in single mode, which behaves
+exactly as the API always has; accounts mode is switched on at the cutover
+(step 5), not before.
 
 Code: `app/accounts.py` (the database half), `app/api/access.py` (the checks
 every route declares), `app/api/auth.py` (the sign-in routes and the two
 small pages), migration `0018_accounts`. Step 2: `app/memberships.py` (its
 database half), `app/api/leagues_admin.py` (its routes and three pages),
 `app/secrets_box.py` (sealing), migration `0019_leagues_members_claims`.
-Tests: `tests/test_access.py` and `tests/test_leagues_admin.py`, which run
-accounts mode; every other API test runs single mode.
+Step 3: `app/api/site.py` (the pages on the map, and `/me/alerts`).
+Tests: `tests/test_access.py`, `tests/test_leagues_admin.py` and
+`tests/test_shell.py`, which run accounts mode; every other API test runs
+single mode.
 
 ## The flow
 
@@ -35,9 +39,10 @@ accounts mode; every other API test runs single mode.
 `GET /auth/me` says who is signed in, how (`single`, `session` or
 `service`), whether they are the owner, their leagues with their role in
 each (from `memberships`) and their claims in them (from `team_managers`, of
-any state), and their entitlement. `GET /` is a placeholder home until step
-3's shell: your leagues, your own team's pages or a link to claim it, the
-connections page, sign out.
+any state), and their entitlement. `GET /` is the landing page for someone
+signed out, and for someone signed in a page whose shell goes to his default
+league's This week (step 3, docs/site.md); it is open, and carries no data
+either way.
 
 **Where the link goes.** When SMTP is configured (`FCP_SMTP_HOST` and
 `FCP_EMAIL_FROM`) *and* `FCP_PUBLIC_URL` is set, the link is mailed by
@@ -52,6 +57,9 @@ request's `Host` header, which the caller writes.
 `/sign-in?next=<the page>`, so the link lands back on it. The pages' script
 (`app/api/static/pages.js`, `get()`) does the same on a 401 from any fetch,
 and on a 403 shows one plain line: "This team's plan is its manager's."
+The one fetch that is a part of a page rather than the page itself, a free
+league page's look at the reader's own week, asks quietly and words its own
+answer (docs/site.md).
 
 ## The two modes
 
@@ -122,8 +130,12 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /auth/callback` | open | the link itself is the credential |
 | `POST /auth/sign-out` | open | acts only on the caller's own cookie |
 | `GET /pages/static/{name}` | open | the shared CSS and JS, no data |
+| `GET /` | open | the landing page signed out; signed in, the shell's home, which finds his league in the browser; no data either way |
 | `GET /auth/me` | signed in | the caller's own account |
-| `GET /` | signed in (page) | the caller's own leagues |
+| `GET /me/alerts` | signed in | where the digest goes: its channels to the server's owner only, a URL channel by kind, never its URL |
+| `GET /account/connections` | signed in (page) | connect, your connections, your leagues' invites and claims |
+| `GET /account/projections` | signed in (page) | your own projection sets |
+| `GET /account/alerts` | signed in (page) | reads `/me/alerts` |
 | `GET /leagues` | signed in, filtered | lists only the leagues the caller is a member of (single mode: all) |
 | `GET /ingest-runs` | signed in | ingest history, no league member's data |
 | `GET /ingest-runs/health` | signed in | whether the data is current |
@@ -161,11 +173,18 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/bench` | league member | a narrative about one team |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/scorecard` | league member | "every team's scorecard" is league scope (docs/product.md) |
 | `GET /leagues/{league_id}/seasons/{season}/pages/context` | league member | names and the day, for the pages |
-| `GET /pages/teams/{league_id}/{season}` | league member (page) | the league index |
+| `GET /l/{league_id}/{season}/week` | league member (page) | This week, the free tier (docs/site.md) |
+| `GET /l/{league_id}/{season}/standings` | league member (page) | Standings |
+| `GET /l/{league_id}/{season}/draft` | league member (page) | Draft |
+| `GET /l/{league_id}/{season}/history` | league member (page) | History |
+| `GET /pages/teams/{league_id}/{season}` | league member (page) | the old index: a 308 to `/l/.../standings`, keeping its check |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream` | team manager + entitled | the week plan |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season` | team manager + entitled | the season plan, drops and bids |
-| `GET /pages/teams/{league_id}/{season}/{team_id}/week` | team manager + entitled (page) | the week page |
-| `GET /pages/teams/{league_id}/{season}/{team_id}/season` | team manager + entitled (page) | the season page |
+| `GET /l/{league_id}/{season}/team/{team_id}/week` | team manager + entitled (page) | the week page |
+| `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |
+| `GET /l/{league_id}/{season}/team/{team_id}/moves` | team manager + entitled (page) | the scorecard of the team's own moves, in the paid layer (its data route is league scope) |
+| `GET /pages/teams/{league_id}/{season}/{team_id}/week` | team manager + entitled (page) | old address: a 308 to `/l/.../team/{team_id}/week` |
+| `GET /pages/teams/{league_id}/{season}/{team_id}/season` | team manager + entitled (page) | old address: a 308 to `/l/.../team/{team_id}/season` |
 | `POST /connections` | signed in, rate-limited | connect a league with your own ESPN login |
 | `GET /connections` | signed in, own only | your connections, never their cookies |
 | `DELETE /connections/{connection_id}` | signed in, own only (404 otherwise) | revoke, and wipe the sealed login |
@@ -173,7 +192,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `DELETE /me/espn-identity` | signed in | forget it |
 | `GET /invites/{token}` | signed in | the league an invite is for; the token is the rest of the credential |
 | `POST /invites/{token}/accept` | signed in | join that league as a member |
-| `GET /pages/connections` | signed in (page) | connect, your connections, your leagues' invites and claims |
+| `GET /pages/connections` | signed in (page) | old address: a 308 to `/account/connections` |
 | `GET /join/{token}` | signed in (page) | where an invite link lands; signed out, it goes to sign in and back |
 | `GET /leagues/{league_id}/seasons/{season}/teams/claimable` | league member | the season's teams, claimed or not; no owner is named |
 | `POST /leagues/{league_id}/seasons/{season}/teams/{team_id}/claim` | league member | claim a team: verified by SWID, or pending |
@@ -213,7 +232,7 @@ league's `owner`.
 ### Connecting a league
 
 `POST /connections {league_id, espn_s2, swid}`, or the form at
-`/pages/connections`.
+`/account/connections`.
 
 1. Refused with a 503 before anything else if `FCP_SECRETS_KEY` is not set:
    nothing is ever stored unsealed.

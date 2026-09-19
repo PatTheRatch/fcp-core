@@ -544,7 +544,7 @@ def test_an_invite_makes_a_member(
     erin = person("erin@example.com")
     assert erin.get(standings()).status_code == 403, "not a member yet"
     assert "Join" in erin.get(f"/join/{token}").text
-    assert "Connect a league" in erin.get("/pages/connections").text
+    assert "Connect a league" in erin.get("/account/connections").text
     shown = erin.get(f"/invites/{token}")
     assert shown.status_code == 200
     assert shown.json() == {
@@ -681,7 +681,7 @@ def test_a_claim_without_a_match_waits_for_the_owner(
 
     # A member with no verified claim is refused that team's plan and its pages.
     assert erin.get(plan(7)).status_code == 403
-    assert erin.get(f"/pages/teams/{STORED}/{SEASON}/7/week").status_code == 403
+    assert erin.get(f"/l/{STORED}/{SEASON}/team/7/week").status_code == 403
     # ...and cannot decide claims, his own or anyone's.
     pending = alice.get(f"/leagues/{STORED}/claims").json()
     assert [(c["email"], c["espn_team_id"], c["state"]) for c in pending] == [

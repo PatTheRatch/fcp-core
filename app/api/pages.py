@@ -1,13 +1,15 @@
-"""The in-season pages: the week, the rest of the season, and an index.
+"""The pages' shared files and the one route they need besides the reports.
 
-Three pages, served as files from `app/api/static/` by the read-only API, in
-the light skin the season report is written in. They are the CLI reports
-(`scripts/stream.py`, `scripts/season.py`) as a page: everything those two
-print, the page shows, in the same words. Plain HTML, CSS and JavaScript,
-no framework and no build step, for the reason the draft screen has none --
-a page that has to come up on a tailnet from a file on disk should not need
-a toolchain -- and the files are read per request, so an edit shows on a
-refresh (`docs/in_season_pages.md`).
+The pages themselves -- the league's four, a team's three, the account pages
+-- are routed in `app/api/site.py` (the URL map, docs/site.md) and served as
+files from `app/api/static/`, in the light skin the season report is written
+in. The week and season pages are the CLI reports (`scripts/stream.py`,
+`scripts/season.py`) as a page: everything those two print, the page shows,
+in the same words. Plain HTML, CSS and JavaScript, no framework and no build
+step, for the reason the draft screen has none -- a page that has to come up
+on a tailnet from a file on disk should not need a toolchain -- and the files
+are read per request, so an edit shows on a refresh
+(`docs/in_season_pages.md`).
 
 WHAT THE PAGES FETCH
 
@@ -19,17 +21,15 @@ The two reports come from the routes that already exist, unchanged:
 and everything else from one small route added here, `pages/context`: the
 day being reported on as a date, the days of its matchup period for the
 schedule strip, every team's name, which team is ours, and the line naming
-where the numbers came from. The index also reads `/standings`, which
-already derives a record from the stored matchups; it is not repeated here.
+where the numbers came from. Records come from `/standings`, which already
+derives them from the stored matchups; they are not repeated here.
 
 WHO MAY OPEN THEM
 
-The week and season pages are the team layer: their manager's, and paid
-once billing exists (`app.api.access.require_team_plan_page`). The index is
-the league's (`require_league_member_page`). Signed out, a page redirects to
-/sign-in and comes back; the script does the same on a 401 from a fetch and
-says one plain line on a 403 (docs/accounts.md). In single mode, the
-default, nothing is refused. The stylesheet and script are open: no data.
+Who may open each page is in `app/api/site.py`. Here: the stylesheet and the
+two scripts are open (no data), and the context route is the league's. The
+pages' script sends a signed-out reader to /sign-in and back on a 401 from a
+fetch, and says one plain line on a 403 (docs/accounts.md).
 
 THE LANGUAGE
 
@@ -55,11 +55,11 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.access import LEAGUE_MEMBER, LEAGUE_MEMBER_PAGE, TEAM_PLAN_PAGE
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
 from app.api.schemas import PageContextOut, PageDayOut, PagePeriodOut, PageTeamOut
 from app.db.models import LeagueSeason, MatchupPeriod, Team
@@ -68,7 +68,7 @@ from app.projections.sources import ESPN, describe
 
 router = APIRouter(tags=["pages"])
 
-#: Where the three pages and their shared stylesheet and script live.
+#: Where the pages and their shared stylesheet and scripts live.
 STATIC = Path(__file__).parent / "static"
 
 #: The manager's own team, so the index can put it first and the masthead can
@@ -83,6 +83,7 @@ MANAGER_TEAM = "Through The Wire"
 ASSETS = {
     "pages.css": "text/css; charset=utf-8",
     "pages.js": "text/javascript; charset=utf-8",
+    "shell.js": "text/javascript; charset=utf-8",
 }
 
 TodayQuery = Annotated[
@@ -95,47 +96,9 @@ MeQuery = Annotated[
 ]
 
 
-def _page(name: str) -> HTMLResponse:
-    """One page, read from disk per request so an edit shows on a refresh."""
-    return HTMLResponse((STATIC / name).read_text())
-
-
-@router.get(
-    "/pages/teams/{league_id}/{season}/{team_id}/week",
-    include_in_schema=False,
-    response_class=HTMLResponse,
-    dependencies=[TEAM_PLAN_PAGE],
-)
-def week_page() -> HTMLResponse:
-    """The streaming report for one team, as a page."""
-    return _page("week.html")
-
-
-@router.get(
-    "/pages/teams/{league_id}/{season}/{team_id}/season",
-    include_in_schema=False,
-    response_class=HTMLResponse,
-    dependencies=[TEAM_PLAN_PAGE],
-)
-def season_page() -> HTMLResponse:
-    """The rest-of-season report for one team, as a page."""
-    return _page("season.html")
-
-
-@router.get(
-    "/pages/teams/{league_id}/{season}",
-    include_in_schema=False,
-    response_class=HTMLResponse,
-    dependencies=[LEAGUE_MEMBER_PAGE],
-)
-def index_page() -> HTMLResponse:
-    """Every team in the league, with its record and both of its pages."""
-    return _page("index.html")
-
-
 @router.get("/pages/static/{name}", include_in_schema=False)
 def asset(name: str) -> Response:
-    """The pages' shared stylesheet and script."""
+    """The pages' shared stylesheet and scripts."""
     media_type = ASSETS.get(name)
     if media_type is None:
         raise HTTPException(status_code=404, detail=f"no page asset {name!r}")
