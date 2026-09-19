@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from app import narratives
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
 from app.api.schemas import (
     BenchTotalOut,
@@ -36,6 +37,7 @@ NOTABLE_LIMIT = 25
 @router.get(
     "/leagues/{league_id}/seasons/{season}/streaks",
     summary="Longest winning and losing runs per team",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_streaks(
     league_season: LeagueSeasonDep,
@@ -59,6 +61,7 @@ def get_streaks(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/category-profiles",
     summary="Where each team was strong, category by category",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_category_profiles(
     league_season: LeagueSeasonDep,
@@ -91,6 +94,7 @@ def get_category_profiles(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/bench-leaderboard",
     summary="Which teams left the most on their bench",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_bench_leaderboard(
     league_season: LeagueSeasonDep,
@@ -114,6 +118,7 @@ def get_bench_leaderboard(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/worst-bench-calls",
     summary="Days a benched player beat every starter, league-wide",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_worst_bench_calls(
     league_season: LeagueSeasonDep,
@@ -136,6 +141,7 @@ def get_worst_bench_calls(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/notable-matchups",
     summary="The season's biggest sweeps and closest calls",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_notable_matchups(
     league_season: LeagueSeasonDep,
@@ -174,6 +180,7 @@ def _require_league(session: SessionDep, league_id: int) -> None:
 @router.get(
     "/leagues/{league_id}/owners",
     summary="Every owner's record across all stored seasons",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_owner_records(
     league_id: LeagueIdPath,
@@ -209,6 +216,7 @@ def get_owner_records(
 @router.get(
     "/leagues/{league_id}/head-to-head",
     summary="Every pair of owners who have met, all seasons combined",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_head_to_head(
     league_id: LeagueIdPath,
@@ -238,6 +246,7 @@ def get_head_to_head(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/projection-gaps",
     summary="Who beat their preseason projection and who did not",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_projection_gaps(
     league_season: LeagueSeasonDep,

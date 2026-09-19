@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from app.accounts import member_league_ids
+from app.api.access import LEAGUE_MEMBER, CurrentUser
 from app.api.deps import LeagueSeasonDep, SessionDep
 from app.api.schemas import (
     CategoryOut,
@@ -39,11 +41,18 @@ router = APIRouter(tags=["leagues"])
 MATCHUP_PAGE_LIMIT = 200
 
 
-@router.get("/leagues", summary="Every league stored, with the seasons held for each")
-def list_leagues(session: SessionDep) -> list[LeagueOut]:
-    leagues = session.scalars(
-        select(League).options(selectinload(League.seasons)).order_by(League.espn_league_id)
-    ).all()
+@router.get("/leagues", summary="The viewer's leagues, with the seasons held for each")
+def list_leagues(session: SessionDep, viewer: CurrentUser) -> list[LeagueOut]:
+    """Every league the viewer is a member of; in single mode, every league stored.
+
+    The one league route with no league in its path, so its check is a
+    filter rather than a refusal: signed in, and only his own leagues listed.
+    """
+    query = select(League).options(selectinload(League.seasons)).order_by(League.espn_league_id)
+    if not viewer.all_access:
+        mine = member_league_ids(session, viewer.user_id) if viewer.user_id is not None else set()
+        query = query.where(League.espn_league_id.in_(mine))
+    leagues = session.scalars(query).all()
     return [
         LeagueOut(
             espn_league_id=league.espn_league_id,
@@ -53,7 +62,11 @@ def list_leagues(session: SessionDep) -> list[LeagueOut]:
     ]
 
 
-@router.get("/leagues/{league_id}/seasons", summary="Seasons stored for one league")
+@router.get(
+    "/leagues/{league_id}/seasons",
+    summary="Seasons stored for one league",
+    dependencies=[LEAGUE_MEMBER],
+)
 def list_seasons(league_id: int, session: SessionDep) -> list[SeasonSummaryOut]:
     league = session.scalar(select(League).where(League.espn_league_id == league_id))
     if league is None:
@@ -75,6 +88,7 @@ def list_seasons(league_id: int, session: SessionDep) -> list[SeasonSummaryOut]:
 @router.get(
     "/leagues/{league_id}/seasons/{season}",
     summary="One season's settings as they were that year",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_season(league_season: LeagueSeasonDep) -> SeasonOut:
     return SeasonOut(
@@ -93,7 +107,11 @@ def get_season(league_season: LeagueSeasonDep) -> SeasonOut:
     )
 
 
-@router.get("/leagues/{league_id}/seasons/{season}/teams", summary="Teams and their owners")
+@router.get(
+    "/leagues/{league_id}/seasons/{season}/teams",
+    summary="Teams and their owners",
+    dependencies=[LEAGUE_MEMBER],
+)
 def list_teams(league_season: LeagueSeasonDep, session: SessionDep) -> list[TeamOut]:
     teams = session.scalars(
         select(Team)
@@ -124,6 +142,7 @@ def list_teams(league_season: LeagueSeasonDep, session: SessionDep) -> list[Team
 @router.get(
     "/leagues/{league_id}/seasons/{season}/standings",
     summary="Matchup records, derived, alongside ESPN's category tallies",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_standings(
     league_season: LeagueSeasonDep,
@@ -187,6 +206,7 @@ def get_standings(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/periods",
     summary="Matchup periods and the days each covers",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_periods(league_season: LeagueSeasonDep, session: SessionDep) -> list[MatchupPeriodOut]:
     rows = session.execute(
@@ -249,6 +269,7 @@ def _matchup_out(session: SessionDep, matchup: Matchup, teams: dict[int, Team]) 
 @router.get(
     "/leagues/{league_id}/seasons/{season}/matchups",
     summary="Matchups with per-category detail for both sides",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_matchups(
     league_season: LeagueSeasonDep,

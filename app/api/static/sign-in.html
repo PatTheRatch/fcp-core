@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow">Full Court Press</p>
+  <h1>Sign in</h1>
+  <p class="sub">Your email address, and we send you a link. No password: the link is the
+    sign-in, and it works once, for fifteen minutes.</p>
+  <form class="signin" id="form">
+    <label class="eyebrow" for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required
+      spellcheck="false" autocapitalize="off">
+    <button class="btn" type="submit" id="send">Send the link</button>
+  </form>
+  <p class="sub" id="said" hidden></p>
+</header>
+
+</div>
+<script>
+"use strict";
+
+/* The sign-in form. It posts the address and, when a page sent us here, the
+   path to come back to; the server keeps that path with the link, so the
+   click in the email lands where the reader was. Nothing about whether the
+   address has an account comes back: every answer is the same line. */
+
+const form = document.getElementById("form");
+const said = document.getElementById("said");
+const next = new URLSearchParams(window.location.search).get("next");
+
+form.onsubmit = async (event) => {
+  event.preventDefault();
+  const email = document.getElementById("email").value.trim();
+  const button = document.getElementById("send");
+  button.disabled = true;
+  let line;
+  try {
+    const response = await fetch("/auth/sign-in", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(next ? { email, next } : { email }),
+    });
+    const body = await response.json().catch(() => ({}));
+    line = typeof body.detail === "string" ? body.detail : `${response.status} ${response.statusText}`;
+    if (response.ok) form.hidden = true;
+  } catch (error) {
+    line = "The server could not be reached. Try again in a moment.";
+  }
+  button.disabled = false;
+  said.textContent = line;
+  said.hidden = false;
+};
+</script>
+</body>
+</html>

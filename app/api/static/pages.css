@@ -62,6 +62,14 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   cursor:pointer}
 .btn:hover{border-color:var(--rule-strong);color:var(--ink)}
 
+/* ---- the sign-in form: one rule under the field, no box ------------------ */
+.signin{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end;margin-top:22px}
+.signin label{flex-basis:100%}
+.signin input{flex:1 1 260px;max-width:420px;font:inherit;color:var(--ink);
+  background:transparent;border:0;border-bottom:1px solid var(--rule-strong);
+  padding:6px 0;border-radius:0}
+.signin input:focus{outline:none;border-bottom-color:var(--accent)}
+
 /* ---- the readout strip under the masthead ------------------------------- */
 .line{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
   border-bottom:1px solid var(--rule)}

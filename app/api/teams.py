@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from sqlalchemy import case, func, select
 
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
     BenchCallOut,
@@ -31,6 +32,7 @@ WORST_CALL_LIMIT = 10
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/lineups",
     summary="Where every player sat, day by day, with what they scored",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_lineups(
     team: TeamDep,
@@ -99,6 +101,7 @@ def list_lineups(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/bench",
     summary="What a team left on its bench, and its worst individual calls",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_bench_report(
     team: TeamDep,

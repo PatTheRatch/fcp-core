@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from app.api.access import LEAGUE_MEMBER, LISTENED_LEAGUE_MEMBER, SIGNED_IN
 from app.api.deps import LeagueSeasonDep, SessionDep
 from app.api.schemas import Page, PlayerNewsOut, StatusEventOut, StatusSnapshotOut
 from app.db.models import Player, PlayerNews, PlayerStatusEvent, PlayerStatusSnapshot
@@ -39,6 +40,7 @@ def _players_on(season: int, team: int) -> Select[tuple[int]]:
 @router.get(
     "/leagues/{league_id}/seasons/{season}/events",
     summary="Status changes the listener saw this season, newest first",
+    dependencies=[LEAGUE_MEMBER],
 )
 def list_events(
     league_season: LeagueSeasonDep,
@@ -100,7 +102,11 @@ def _player(session: Session, espn_player_id: int) -> Player:
     return player
 
 
-@router.get("/players/{player_id}/status", summary="A player's status history, newest first")
+@router.get(
+    "/players/{player_id}/status",
+    summary="A player's status history, newest first",
+    dependencies=[LISTENED_LEAGUE_MEMBER],
+)
 def list_player_status(
     player_id: int,
     session: SessionDep,
@@ -142,7 +148,11 @@ def list_player_status(
     )
 
 
-@router.get("/players/{player_id}/news", summary="Stored news about a player, newest first")
+@router.get(
+    "/players/{player_id}/news",
+    summary="Stored news about a player, newest first",
+    dependencies=[SIGNED_IN],
+)
 def list_player_news(
     player_id: int,
     session: SessionDep,

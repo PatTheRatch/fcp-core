@@ -28,6 +28,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.access import TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
     BidOut,
@@ -119,6 +120,7 @@ def _day(calendar: SeasonCalendar, today: int | None) -> int:
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream",
     summary="Who to stream this week, and whether anyone is worth a look",
+    dependencies=[TEAM_PLAN],
 )
 def stream_report(
     league_season: LeagueSeasonDep,
@@ -137,6 +139,7 @@ def stream_report(
 @router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season",
     summary="Who to hold for the rest of the year, who should go, and what to bid",
+    dependencies=[TEAM_PLAN],
 )
 def season_report(
     league_season: LeagueSeasonDep,

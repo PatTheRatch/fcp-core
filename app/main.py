@@ -1,5 +1,10 @@
+import logging
+import re
+
 from fastapi import FastAPI
 
+from app.api import access
+from app.api.auth import router as auth_router
 from app.api.draft import router as draft_router
 from app.api.health import router as health_router
 from app.api.ingest_runs import router as ingest_runs_router
@@ -16,9 +21,15 @@ from app.api.transactions import router as transactions_router
 
 DESCRIPTION = """Read-only access to stored ESPN fantasy basketball seasons.
 
-Writes belong to the ingest, not to this API, with one exception: a manager's
-own projections are uploaded through `/projections/sets`, because no ingest
-can fetch a file that only he has (docs/projection_sources.md).
+Writes belong to the ingest, not to this API, with two exceptions: a
+manager's own projections are uploaded through `/projections/sets`, because
+no ingest can fetch a file that only he has (docs/projection_sources.md), and
+signing in writes the account tables (`/auth`, docs/accounts.md).
+
+Every route declares who may call it: anyone signed in, a member of the
+league in its path, or the manager of the team in its path (docs/accounts.md
+has the table). With `FCP_AUTH_MODE=single`, the default, every request is
+the owner and nothing is refused.
 
 Paths are keyed on ESPN's own identifiers, so a URL can be built from a
 league id and a year. Two details are worth knowing before reading results:
@@ -29,9 +40,60 @@ league id and a year. Two details are worth knowing before reading results:
 """
 
 
+def _log_accounts() -> None:
+    """Let the `fcp.*` loggers speak at INFO under uvicorn.
+
+    Uvicorn configures only its own loggers, so without this the dev sign-in
+    link (logged when SMTP is not configured) would go nowhere. Idempotent:
+    one handler, however many apps a test process builds.
+    """
+    logger = logging.getLogger("fcp")
+    logger.setLevel(logging.INFO)
+    if not any(getattr(h, "fcp", False) for h in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s %(message)s"))
+        handler.fcp = True  # type: ignore[attr-defined]
+        logger.addHandler(handler)
+
+
+_TOKEN_IN_URL = re.compile(r"(token=)[^&\s]+")
+
+
+class _RedactTokens(logging.Filter):
+    """Blank the token in a logged request line: `/auth/callback?token=…`.
+
+    Uvicorn's access log writes every request's path and query. A sign-in
+    token is spent by the time its click is logged, but no secret belongs in
+    a log line all the same (docs/accounts.md, "Security notes").
+    """
+
+    fcp = True
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and any(
+            isinstance(arg, str) and "token=" in arg for arg in record.args
+        ):
+            record.args = tuple(
+                _TOKEN_IN_URL.sub(r"\1[redacted]", arg) if isinstance(arg, str) else arg
+                for arg in record.args
+            )
+        return True
+
+
+def _redact_access_log() -> None:
+    """Attach the filter to uvicorn's access logger, once per process."""
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(getattr(f, "fcp", False) for f in access_log.filters):
+        access_log.addFilter(_RedactTokens())
+
+
 def create_app() -> FastAPI:
+    _log_accounts()
+    _redact_access_log()
     app = FastAPI(title="FCP Core", description=DESCRIPTION, version="0.1.0")
+    access.install(app)
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(leagues_router)
     app.include_router(draft_router)
     app.include_router(teams_router)

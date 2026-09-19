@@ -1527,6 +1527,9 @@ picking a winner silently.
    jobs with stored reports, and the domain moved to fcp-core once sign-in
    works. Until then everything assumes one manager (`viewer_owns_source`
    is a constant).
+   Step 1 (accounts, magic-link sign-in, sessions, and a scope check on every
+   route) is built, 2026-09-19 (docs/accounts.md); the VPS stays in single
+   mode, unchanged, until the cutover.
 
 ### Prior seasons
 

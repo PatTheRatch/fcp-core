@@ -8,6 +8,7 @@ question a draft board cannot answer on its own.
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
+from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueSeasonDep, SessionDep
 from app.api.schemas import DraftPickOut, DraftValueOut
 from app.db.models import DraftPick, Player, PlayerGameStat, Team
@@ -18,6 +19,7 @@ router = APIRouter(tags=["draft"])
 @router.get(
     "/leagues/{league_id}/seasons/{season}/draft",
     summary="The draft board, in pick order",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_draft(league_season: LeagueSeasonDep, session: SessionDep) -> list[DraftPickOut]:
     teams = {
@@ -51,6 +53,7 @@ def get_draft(league_season: LeagueSeasonDep, session: SessionDep) -> list[Draft
 @router.get(
     "/leagues/{league_id}/seasons/{season}/draft-value",
     summary="What each pick cost against what the player returned",
+    dependencies=[LEAGUE_MEMBER],
 )
 def get_draft_value(
     league_season: LeagueSeasonDep,
