@@ -7,9 +7,12 @@ route is added without one):
 * `current_user` (`CurrentUser`): signed in. The account routes, the
   projection sets (each readable only by its owner), ingest health, and the
   NBA-wide player routes.
-* `require_league_member`: a verified manager of a team in this league, in
-  any season. The league pages: standings, matchups, narratives, the draft,
-  transactions, every team's scorecard, the listener's events.
+* `require_league_member`: a member of this league (`memberships`: whoever
+  connected it, or accepted an invite into it). The league pages:
+  standings, matchups, narratives, the draft, transactions, every team's
+  scorecard, the listener's events; and making a claim on a team.
+* `require_league_owner`: an `owner` member of this league. Its invites and
+  the approval of its members' team claims (docs/accounts.md).
 * `require_team_plan`: `require_team_manager` (a verified manager of this
   very team) and then `require_entitlement` (the paid tier). The team layer:
   the pickup reports and the week and season pages.
@@ -67,6 +70,7 @@ COOKIE = "fcp_session"
 
 SIGN_IN_FIRST = "sign in first"
 NOT_A_MEMBER = "not a member of this league"
+NOT_LEAGUE_OWNER = "only the league's owner may do that"
 TEAM_REFUSED = "This team's plan is its manager's."
 NOT_ENTITLED = "The team layer is part of the paid plan."
 
@@ -193,11 +197,24 @@ PageViewer = Annotated[Viewer, Depends(current_page_viewer)]
 
 
 def is_league_member(session: Session, viewer: Viewer, league_id: int) -> bool:
+    """A member of this league (`memberships`, either role). A verified team
+    claim alone is not membership: that comes from connecting the league or
+    from an accepted invite."""
     if viewer.all_access:
         return True
     if viewer.user_id is None:
         return False
-    return accounts.manages_in_league(session, viewer.user_id, league_id)
+    return accounts.is_member(session, viewer.user_id, league_id)
+
+
+def is_league_owner(session: Session, viewer: Viewer, league_id: int) -> bool:
+    """An `owner` of this league: whoever connected it, or the configured
+    owner in the tracked league."""
+    if viewer.all_access:
+        return True
+    if viewer.user_id is None:
+        return False
+    return accounts.is_league_owner(session, viewer.user_id, league_id)
 
 
 def is_team_manager(
@@ -224,9 +241,19 @@ def is_entitled(session: Session, viewer: Viewer) -> bool:
 def require_league_member(
     league_id: LeagueIdPath, viewer: CurrentUser, session: SessionDep
 ) -> Viewer:
-    """A verified manager of a team in this league, in any season; else 403."""
+    """A member of this league; else 403."""
     if not is_league_member(session, viewer, league_id):
         raise HTTPException(status_code=403, detail=NOT_A_MEMBER)
+    return viewer
+
+
+def require_league_owner(
+    league_id: LeagueIdPath, viewer: CurrentUser, session: SessionDep
+) -> Viewer:
+    """An owner of this league (its invites, its claims); else 403. A member
+    who is not an owner hears the same 403 as a stranger."""
+    if not is_league_owner(session, viewer, league_id):
+        raise HTTPException(status_code=403, detail=NOT_LEAGUE_OWNER)
     return viewer
 
 
@@ -305,6 +332,7 @@ CHECKS = (
     current_user,
     current_page_viewer,
     require_league_member,
+    require_league_owner,
     require_team_manager,
     require_entitlement,
     require_team_plan,
@@ -314,6 +342,12 @@ CHECKS = (
 )
 
 LEAGUE_MEMBER = Depends(require_league_member)
+LEAGUE_OWNER = Depends(require_league_owner)
+#: The same two checks as a parameter, for a route that wants the viewer
+#: they let through: declaring `CurrentUser` beside them would be two checks.
+LeagueMember = Annotated[Viewer, Depends(require_league_member)]
+LeagueOwner = Annotated[Viewer, Depends(require_league_owner)]
+SIGNED_IN_PAGE = Depends(current_page_viewer)
 TEAM_PLAN = Depends(require_team_plan)
 SIGNED_IN = Depends(current_user)
 LISTENED_LEAGUE_MEMBER = Depends(require_listened_league_member)

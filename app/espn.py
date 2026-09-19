@@ -119,6 +119,31 @@ def fetch_league(settings: ESPNSettings, season: int | None = None) -> League:
     )
 
 
+def fetch_league_settings_with(
+    league_id: int, swid: str, espn_s2: str, season: int
+) -> dict[str, Any]:
+    """One league's settings and teams, read with someone's own cookies.
+
+    For checking a login before it is kept (app/api/leagues_admin.py): one
+    request (`mSettings` and `mTeam`), not the several a `League` makes on
+    construction. Raises espn-api's own errors: `ESPNAccessDenied` when ESPN
+    refuses the cookies, `ESPNInvalidLeague` when there is no such league or
+    season, `ESPNUnknownError` for any other status, and `requests`' errors
+    when ESPN cannot be reached. None of their messages carries a cookie.
+    """
+    from espn_api.requests.espn_requests import EspnFantasyRequests
+
+    _install_timeout_patch()
+    reader = EspnFantasyRequests(
+        sport="nba",
+        year=season,
+        league_id=league_id,
+        cookies={"espn_s2": espn_s2, "SWID": swid},
+    )
+    data = reader.league_get(params={"view": ["mSettings", "mTeam"]})
+    return data if isinstance(data, dict) else {}
+
+
 def fetch_current_league(settings: ESPNSettings, today: date | None = None) -> League:
     """The league for the season now in progress.
 

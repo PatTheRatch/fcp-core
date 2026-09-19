@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Join a League</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow"><a href="/">Full Court Press</a></p>
+  <h1 id="title">Join</h1>
+  <p class="sub" id="said">Reading the invite…</p>
+  <div class="tools"><button class="btn" type="button" id="join" hidden>Join the league</button></div>
+</header>
+
+</div>
+<script>
+"use strict";
+
+/* An invite link lands here: /join/{token}. The token is read from this
+   page's own address and sent back to two routes, one to name the league and
+   one to join it; the page has no other use for it. `no-referrer` above keeps
+   it out of the Referer header of the font requests. */
+
+const $ = (id) => document.getElementById(id);
+const token = window.location.pathname.split("/").filter(Boolean)[1] || "";
+
+async function call(method, url) {
+  const response = await fetch(url, { method, headers: { accept: "application/json" } });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, data, detail: typeof data.detail === "string" ? data.detail : "" };
+}
+
+async function start() {
+  const invite = await call("GET", `/invites/${encodeURIComponent(token)}`);
+  if (!invite.ok) {
+    $("said").textContent = invite.detail || "That invite link does not work.";
+    return;
+  }
+  $("title").textContent = invite.data.league_name;
+  if (invite.data.member) {
+    $("said").textContent = "You are already in this league.";
+    return;
+  }
+  $("said").textContent = "You have been invited to this league's pages.";
+  $("join").hidden = false;
+}
+
+$("join").onclick = async () => {
+  $("join").disabled = true;
+  const joined = await call("POST", `/invites/${encodeURIComponent(token)}/accept`);
+  if (!joined.ok) {
+    $("said").textContent = joined.detail || "Joining did not work.";
+    return;
+  }
+  const season = joined.data.latest_season;
+  window.location.assign(season ? `/pages/claim/${joined.data.espn_league_id}/${season}` : "/");
+};
+
+start();
+</script>
+</body>
+</html>

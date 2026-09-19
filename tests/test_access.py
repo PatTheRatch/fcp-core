@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import accounts
+from app import accounts, memberships
 from app.api import access
 from app.api.deps import get_session
 from app.config import Settings, get_settings
@@ -81,8 +81,11 @@ def _season(league: League, season: int, team_ids: list[int]) -> LeagueSeason:
 
 
 def _claim(session: Session, email: str, league: int, season: int, team: int) -> None:
-    """A verified claim, as step 2 will write one."""
+    """A member of the league with a verified claim, as an accepted invite and
+    an approved claim write them (tests/test_leagues_admin.py drives those)."""
     user = accounts.get_or_create_user(session, email)
+    league_row = session.scalars(select(League).where(League.espn_league_id == league)).one()
+    memberships.join_league(session, user.id, league_row.id, accounts.MEMBER_ROLE)
     team_row = session.scalars(
         select(Team.id)
         .join(LeagueSeason, LeagueSeason.id == Team.league_season_id)
@@ -98,7 +101,7 @@ def _claim(session: Session, email: str, league: int, season: int, team: int) ->
             user_id=user.id,
             team_id=team_row,
             state="verified",
-            how="test",
+            how="approved",
             verified_at=datetime.now(UTC),
         )
     )
@@ -485,6 +488,7 @@ def test_me_says_who_and_where(sign_in: SignIn) -> None:
     assert me["leagues"] == [
         {
             "espn_league_id": LEAGUE_A,
+            "role": "member",
             "teams": [{"season": SEASON, "espn_team_id": 3, "name": "Team 3", "state": "verified"}],
         }
     ]
@@ -519,11 +523,14 @@ def test_the_owner_is_written_once(anon: TestClient, session: Session) -> None:
     counts = session.execute(
         text(
             "SELECT (SELECT count(*) FROM entitlements WHERE user_id = :u),"
-            " (SELECT count(*) FROM team_managers WHERE user_id = :u)"
+            " (SELECT count(*) FROM team_managers WHERE user_id = :u),"
+            " (SELECT count(*) FROM memberships WHERE user_id = :u AND role = 'owner')"
         ),
         {"u": owner.id},
     ).one()
-    assert tuple(counts) == (1, 2)
+    assert tuple(counts) == (1, 2, 1)
+    assert accounts.is_league_owner(session, owner.id, LEAGUE_A)
+    assert not accounts.is_member(session, owner.id, LEAGUE_B)
 
 
 def test_no_service_token_configured_means_no_bearer(app: FastAPI) -> None:

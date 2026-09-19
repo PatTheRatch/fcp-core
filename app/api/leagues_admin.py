@@ -1,0 +1,697 @@
+"""Connecting a league, inviting its members, and their claims on teams.
+
+Step 2 of docs/product.md; docs/accounts.md is the whole story and has every
+route's scope. The database half is `app.memberships`.
+
+    POST   /connections                        connect a league with your ESPN cookies
+    GET    /connections                        your connections, never their cookies
+    DELETE /connections/{connection_id}        revoke one, and wipe its sealed login
+    POST   /leagues/{league_id}/invites        (owner) a new invite link, shown once
+    GET    /leagues/{league_id}/invites        (owner) its invites, without links
+    DELETE /leagues/{league_id}/invites/{id}   (owner) revoke one
+    GET    /invites/{token}                    the league an invite is for
+    POST   /invites/{token}/accept             join it
+    GET    /leagues/{league_id}/seasons/{season}/teams/claimable
+    POST   /leagues/{league_id}/seasons/{season}/teams/{team_id}/claim
+    GET    /leagues/{league_id}/claims         (owner) claims waiting on a decision
+    POST   /leagues/{league_id}/claims/{id}/approve | /reject   (owner)
+    POST   /me/espn-identity  {swid}           your own SWID, to verify your claims
+    DELETE /me/espn-identity
+    GET    /pages/connections, /join/{token}, /pages/claim/{league_id}/{season}
+
+SECRETS
+
+The cookies arrive in one request body, are checked against ESPN once, are
+sealed (app/secrets_box.py) and are never returned, logged or echoed in an
+error. The body is validated by hand rather than by pydantic's field
+constraints, because FastAPI's 422 for a failed constraint repeats the value
+it refused. ESPN's own errors are reported by their kind only.
+Owner GUIDs never leave `app.memberships`.
+"""
+
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Annotated
+
+import requests
+from espn_api.requests.espn_requests import (
+    ESPNAccessDenied,
+    ESPNInvalidLeague,
+    ESPNUnknownError,
+)
+from fastapi import APIRouter, HTTPException, Request
+from fastapi import Path as PathParam
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app import accounts, memberships, secrets_box
+from app.accounts import now
+from app.api.access import (
+    LEAGUE_MEMBER_PAGE,
+    LEAGUE_OWNER,
+    SIGNED_IN_PAGE,
+    CurrentUser,
+    LeagueMember,
+    LeagueOwner,
+    SettingsDep,
+    Viewer,
+)
+from app.api.auth import TokenBucket
+from app.api.deps import LeagueSeasonDep, SessionDep
+from app.config import Settings
+from app.db.models import Invite, League, LeagueConnection, Team
+from app.espn import current_season, fetch_league_settings_with
+
+log = logging.getLogger("fcp.leagues")
+
+router = APIRouter(tags=["leagues admin"])
+
+STATIC = Path(__file__).parent / "static"
+
+#: The longest cookie value accepted. ESPN's espn_s2 is a few hundred
+#: characters; anything past this is not one.
+MAX_COOKIE = 2048
+
+NO_KEY = "Connecting a league is not set up on this server yet (no secrets key)."
+NO_ACCOUNT = "accounts are not set up on this server yet"
+BAD_SWID = "That SWID is not one: it looks like {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}."
+BAD_S2 = "That espn_s2 is not one: copy the whole value of the espn_s2 cookie."
+BAD_INVITE = "That invite link has expired, was revoked, or was never issued."
+TAKEN = "That ESPN account is already linked to another account here."
+CONNECTED_ELSEWHERE = (
+    "This league is already connected by another member. Ask its owner for an invite."
+)
+
+TokenPath = Annotated[str, PathParam(max_length=200)]
+
+
+# ---------------------------------------------------------------------------
+# rate limits
+# ---------------------------------------------------------------------------
+
+
+class AdminLimits:
+    """Per user: five connection attempts, then one a minute (each one asks
+    ESPN); ten SWIDs, then one a minute. In memory, like sign-in's."""
+
+    def __init__(self) -> None:
+        self.connect = TokenBucket(capacity=5, per_second=1 / 60)
+        self.identity = TokenBucket(capacity=10, per_second=1 / 60)
+
+
+def _limits(request: Request) -> AdminLimits:
+    state = request.app.state
+    if not hasattr(state, "admin_limits"):
+        state.admin_limits = AdminLimits()
+    found: AdminLimits = state.admin_limits
+    return found
+
+
+def _user_id(viewer: Viewer) -> int:
+    """The viewer's account id. Only single mode on a database the accounts
+    migrations have not reached has none, and nothing here can be written then."""
+    if viewer.user_id is None:
+        raise HTTPException(status_code=503, detail=NO_ACCOUNT)
+    return viewer.user_id
+
+
+def _league(session: Session, league_id: int) -> League:
+    """The league row. The caller has passed a member or owner check, so the
+    league is his to know about; a 404 here says nothing new."""
+    league = memberships.league_by_espn_id(session, league_id)
+    if league is None:
+        raise HTTPException(status_code=404, detail=f"league {league_id} not found")
+    return league
+
+
+# ---------------------------------------------------------------------------
+# the ESPN check
+# ---------------------------------------------------------------------------
+
+
+class EspnCheckError(Exception):
+    def __init__(self, status_code: int, reason: str) -> None:
+        super().__init__(reason)
+        self.status_code = status_code
+        self.reason = reason
+
+
+def _team_name(raw: dict[str, object], team_id: int) -> str:
+    name = raw.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    parts = [raw.get("location"), raw.get("nickname")]
+    joined = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+    return joined or f"Team {team_id}"
+
+
+def _owner_hashes(raw: dict[str, object]) -> frozenset[str]:
+    """A team's owners from ESPN's response, hashed as they are read."""
+    owners = raw.get("owners")
+    found: set[str] = set()
+    for owner in owners if isinstance(owners, list) else []:
+        guid = owner.get("id") if isinstance(owner, dict) else owner
+        digest = memberships.guid_hash(guid) if isinstance(guid, str) else None
+        if digest is not None:
+            found.add(digest)
+    return frozenset(found)
+
+
+def _parse(league_id: int, season: int, data: dict[str, object]) -> memberships.CheckedLeague:
+    settings = data.get("settings")
+    name = settings.get("name") if isinstance(settings, dict) else None
+    teams: list[memberships.CheckedTeam] = []
+    raw_teams = data.get("teams")
+    for raw in raw_teams if isinstance(raw_teams, list) else []:
+        if not isinstance(raw, dict) or not isinstance(raw.get("id"), int):
+            continue
+        team_id = int(raw["id"])
+        teams.append(memberships.CheckedTeam(team_id, _team_name(raw, team_id), _owner_hashes(raw)))
+    season_id = data.get("seasonId")
+    return memberships.CheckedLeague(
+        espn_league_id=league_id,
+        season=season_id if isinstance(season_id, int) else season,
+        name=name.strip() if isinstance(name, str) and name.strip() else f"League {league_id}",
+        teams=tuple(teams),
+    )
+
+
+def check_espn(league_id: int, swid: str, espn_s2: str) -> memberships.CheckedLeague:
+    """Read the league's settings with these cookies, or say plainly why not.
+
+    The newest season ESPN may hold first (the one being prepared, through
+    September), then the current one, then the last. Raises `EspnCheckError`
+    with a fixed sentence: the cookies are never in it, and neither is
+    ESPN's own text.
+    """
+    newest = current_season() + 1
+    refused = unreachable = False
+    for season in (newest, newest - 1, newest - 2):
+        try:
+            data = fetch_league_settings_with(
+                league_id, memberships.swid_cookie(swid), espn_s2, season
+            )
+        except ESPNAccessDenied:
+            refused = True
+            continue
+        except ESPNInvalidLeague:
+            continue
+        except (ESPNUnknownError, requests.RequestException, ValueError) as error:
+            log.warning("ESPN check for league %s: %s", league_id, type(error).__name__)
+            unreachable = True
+            continue
+        return _parse(league_id, season, data)
+    if refused:
+        raise EspnCheckError(
+            422,
+            f"ESPN refused these cookies for league {league_id}. Copy espn_s2 and SWID "
+            "again from a browser signed in to ESPN, from an account in that league.",
+        )
+    if unreachable:
+        raise EspnCheckError(502, "ESPN did not answer properly. Try again in a few minutes.")
+    raise EspnCheckError(422, f"ESPN has no league {league_id} this season or last.")
+
+
+# ---------------------------------------------------------------------------
+# connections
+# ---------------------------------------------------------------------------
+
+
+class ConnectIn(BaseModel):
+    #: Plain `str`, no constraints: see the module's note on SECRETS.
+    espn_s2: str
+    swid: str
+    league_id: int
+
+
+class TeamRefOut(BaseModel):
+    season: int
+    espn_team_id: int
+    name: str
+
+
+class ConnectionOut(BaseModel):
+    id: int
+    espn_league_id: int
+    league_name: str
+    platform: str
+    created_at: datetime
+    last_ok_at: datetime | None
+    last_error_at: datetime | None
+    last_error: str | None
+    ingest_requested_at: datetime | None
+    revoked_at: datetime | None
+
+
+class ConnectOut(ConnectionOut):
+    #: The same user connected again, and his new cookies replaced the old.
+    replaced: bool
+    #: Stored teams of this league now verified as his, by his SWID.
+    claimed: list[TeamRefOut]
+    #: The team ESPN says his SWID owns in the season checked, stored or not.
+    espn_team: TeamRefOut | None
+    #: False when another account already holds this SWID as its identity.
+    identity_kept: bool
+
+
+def _connection_out(
+    session: Session, connection: LeagueConnection, league: League
+) -> ConnectionOut:
+    return ConnectionOut(
+        id=connection.id,
+        espn_league_id=int(league.espn_league_id),
+        league_name=memberships.league_name(session, league),
+        platform=connection.platform,
+        created_at=connection.created_at,
+        last_ok_at=connection.last_ok_at,
+        last_error_at=connection.last_error_at,
+        last_error=connection.last_error,
+        ingest_requested_at=connection.ingest_requested_at,
+        revoked_at=connection.revoked_at,
+    )
+
+
+def _cookies(body: ConnectIn) -> tuple[str, str]:
+    """The SWID normalised, and espn_s2 as given, or a 422 that repeats neither."""
+    swid = memberships.normalise_swid(body.swid) if len(body.swid) <= 100 else None
+    if swid is None:
+        raise HTTPException(status_code=422, detail=BAD_SWID)
+    espn_s2 = body.espn_s2.strip()
+    if not espn_s2 or len(espn_s2) > MAX_COOKIE or any(c.isspace() or c == ";" for c in espn_s2):
+        raise HTTPException(status_code=422, detail=BAD_S2)
+    return swid, espn_s2
+
+
+@router.post("/connections", status_code=201, summary="Connect a league with your ESPN login")
+def connect(
+    body: ConnectIn,
+    request: Request,
+    viewer: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> ConnectOut:
+    user_id = _user_id(viewer)
+    if not secrets_box.configured(settings):
+        raise HTTPException(status_code=503, detail=NO_KEY)
+    if body.league_id <= 0:
+        raise HTTPException(status_code=422, detail="that is not an ESPN league id")
+    swid, espn_s2 = _cookies(body)
+    if not _limits(request).connect.allow(str(user_id)):
+        raise HTTPException(status_code=429, detail="too many attempts; wait a minute")
+    try:
+        checked = check_espn(body.league_id, swid, espn_s2)
+    except EspnCheckError as refused:
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason) from None
+    try:
+        done = memberships.connect_league(session, user_id, checked, swid, espn_s2, settings)
+        session.commit()
+    except (memberships.AlreadyConnectedError, IntegrityError):
+        session.rollback()
+        raise HTTPException(status_code=409, detail=CONNECTED_ELSEWHERE) from None
+    log.info("league %s connected by user %s", body.league_id, user_id)
+    own = checked.team_of(memberships.swid_hash(swid))
+    listed = _connection_out(session, done.connection, done.league)
+    return ConnectOut(
+        **listed.model_dump(),
+        replaced=done.replaced,
+        claimed=[TeamRefOut(**vars(team)) for team in done.claimed],
+        espn_team=TeamRefOut(season=checked.season, espn_team_id=own.espn_team_id, name=own.name)
+        if own is not None
+        else None,
+        identity_kept=done.identity_kept,
+    )
+
+
+@router.get("/connections", summary="Your league connections, without their cookies")
+def list_connections(viewer: CurrentUser, session: SessionDep) -> list[ConnectionOut]:
+    if viewer.user_id is None:
+        return []
+    return [
+        _connection_out(session, connection, league)
+        for connection, league in memberships.user_connections(session, viewer.user_id)
+    ]
+
+
+@router.delete(
+    "/connections/{connection_id}", summary="Revoke a connection and wipe its sealed login"
+)
+def revoke_connection(
+    connection_id: int, viewer: CurrentUser, session: SessionDep
+) -> ConnectionOut:
+    """Your own connection only; anyone else's is a 404 like one never made."""
+    found = memberships.revoke_connection(session, _user_id(viewer), connection_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such connection of yours")
+    session.commit()
+    log.info("connection %s revoked by user %s", connection_id, viewer.user_id)
+    return _connection_out(session, *found)
+
+
+# ---------------------------------------------------------------------------
+# invites
+# ---------------------------------------------------------------------------
+
+
+class InviteIn(BaseModel):
+    #: Days until the link stops working; omitted or null, it works until revoked.
+    expires_in_days: int | None = None
+
+
+class InviteOut(BaseModel):
+    id: int
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    uses: int
+
+
+class NewInviteOut(InviteOut):
+    #: The link, shown this once: only its hash is kept.
+    url: str
+    path: str
+
+
+class InviteLeagueOut(BaseModel):
+    espn_league_id: int
+    league_name: str
+    #: Whether the viewer is in the league already.
+    member: bool
+
+
+class JoinedOut(BaseModel):
+    espn_league_id: int
+    league_name: str
+    #: False when the viewer was already a member.
+    joined: bool
+    #: The newest season stored, where the claim page opens; None before an ingest.
+    latest_season: int | None
+
+
+def _invite_out(invite: Invite) -> InviteOut:
+    return InviteOut(
+        id=invite.id,
+        created_at=invite.created_at,
+        expires_at=invite.expires_at,
+        revoked_at=invite.revoked_at,
+        uses=invite.uses,
+    )
+
+
+def _join_url(settings: Settings, request: Request, path: str) -> str:
+    base = settings.fcp_public_url or str(request.base_url)
+    return f"{base.rstrip('/')}{path}"
+
+
+@router.post(
+    "/leagues/{league_id}/invites",
+    status_code=201,
+    summary="A new invite link into the league, shown once",
+)
+def create_invite(
+    league_id: int,
+    request: Request,
+    viewer: LeagueOwner,
+    session: SessionDep,
+    settings: SettingsDep,
+    body: InviteIn | None = None,
+) -> NewInviteOut:
+    days = body.expires_in_days if body is not None else None
+    if days is not None and not 1 <= days <= 365:
+        raise HTTPException(status_code=422, detail="an invite lasts from 1 to 365 days")
+    league = _league(session, league_id)
+    expires = now() + timedelta(days=days) if days is not None else None
+    invite, token = memberships.create_invite(session, league.id, viewer.user_id, expires)
+    session.commit()
+    path = f"/join/{token}"
+    return NewInviteOut(
+        **_invite_out(invite).model_dump(), url=_join_url(settings, request, path), path=path
+    )
+
+
+@router.get(
+    "/leagues/{league_id}/invites",
+    summary="The league's invites, without their links",
+    dependencies=[LEAGUE_OWNER],
+)
+def list_invites(league_id: int, session: SessionDep) -> list[InviteOut]:
+    league = _league(session, league_id)
+    return [_invite_out(invite) for invite in memberships.league_invites(session, league.id)]
+
+
+@router.delete(
+    "/leagues/{league_id}/invites/{invite_id}",
+    summary="Revoke an invite",
+    dependencies=[LEAGUE_OWNER],
+)
+def revoke_invite(league_id: int, invite_id: int, session: SessionDep) -> InviteOut:
+    league = _league(session, league_id)
+    invite = memberships.revoke_invite(session, league.id, invite_id)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="no such invite in this league")
+    session.commit()
+    return _invite_out(invite)
+
+
+@router.get("/invites/{token}", summary="The league an invite link is for")
+def show_invite(token: TokenPath, viewer: CurrentUser, session: SessionDep) -> InviteLeagueOut:
+    """Signed in, because a league's name is a member's to see; the token
+    itself is the rest of the credential."""
+    invite = memberships.live_invite(session, token)
+    if invite is None:
+        raise HTTPException(status_code=404, detail=BAD_INVITE)
+    league = session.get(League, invite.league_id)
+    if league is None:  # pragma: no cover - the foreign key guarantees it
+        raise HTTPException(status_code=404, detail=BAD_INVITE)
+    member = viewer.user_id is not None and accounts.is_member(
+        session, viewer.user_id, int(league.espn_league_id)
+    )
+    return InviteLeagueOut(
+        espn_league_id=int(league.espn_league_id),
+        league_name=memberships.league_name(session, league),
+        member=member,
+    )
+
+
+@router.post("/invites/{token}/accept", summary="Join the league an invite is for")
+def accept_invite(token: TokenPath, viewer: CurrentUser, session: SessionDep) -> JoinedOut:
+    accepted = memberships.accept_invite(session, token, _user_id(viewer))
+    if accepted is None:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=BAD_INVITE)
+    session.commit()
+    league, joined = accepted
+    if joined:
+        log.info("user %s joined league %s by invite", viewer.user_id, league.espn_league_id)
+    return JoinedOut(
+        espn_league_id=int(league.espn_league_id),
+        league_name=memberships.league_name(session, league),
+        joined=joined,
+        latest_season=memberships.latest_season(session, league),
+    )
+
+
+# ---------------------------------------------------------------------------
+# claims
+# ---------------------------------------------------------------------------
+
+
+class ClaimableOut(BaseModel):
+    espn_team_id: int
+    name: str
+    #: A member is a verified manager of this team.
+    claimed: bool
+    #: Your own claim on it: pending, verified, rejected, or null.
+    mine: str | None
+
+
+class ClaimOut(BaseModel):
+    season: int
+    espn_team_id: int
+    name: str
+    state: str
+
+
+class LeagueClaimOut(BaseModel):
+    id: int
+    season: int
+    espn_team_id: int
+    team_name: str
+    email: str
+    state: str
+    how: str | None
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class IdentityIn(BaseModel):
+    #: Plain `str`, no constraints: see the module's note on SECRETS.
+    swid: str
+
+
+class IdentityOut(BaseModel):
+    #: Pending claims this identity has now verified.
+    verified: list[TeamRefOut]
+
+
+@router.get(
+    "/leagues/{league_id}/seasons/{season}/teams/claimable",
+    summary="The season's teams, and which are claimed",
+)
+def claimable(
+    viewer: LeagueMember, league_season: LeagueSeasonDep, session: SessionDep
+) -> list[ClaimableOut]:
+    return [
+        ClaimableOut(**vars(team))
+        for team in memberships.claimable_teams(session, league_season.id, viewer.user_id)
+    ]
+
+
+@router.post(
+    "/leagues/{league_id}/seasons/{season}/teams/{team_id}/claim",
+    summary="Claim a team: verified by your SWID, or pending for the league's owner",
+)
+def claim(
+    team_id: int, viewer: LeagueMember, league_season: LeagueSeasonDep, session: SessionDep
+) -> ClaimOut:
+    team = session.scalar(
+        select(Team).where(Team.league_season_id == league_season.id, Team.espn_team_id == team_id)
+    )
+    if team is None:
+        raise HTTPException(status_code=404, detail=f"team {team_id} not found in this season")
+    state = memberships.claim_team(session, _user_id(viewer), team.id)
+    session.commit()
+    return ClaimOut(season=league_season.season, espn_team_id=team_id, name=team.name, state=state)
+
+
+def _decided(claim: memberships.LeagueClaim) -> LeagueClaimOut:
+    return LeagueClaimOut(**vars(claim))
+
+
+@router.get(
+    "/leagues/{league_id}/claims",
+    summary="Claims on the league's teams waiting for a decision",
+    dependencies=[LEAGUE_OWNER],
+)
+def list_claims(league_id: int, session: SessionDep) -> list[LeagueClaimOut]:
+    league = _league(session, league_id)
+    return [_decided(c) for c in memberships.league_claims(session, league.id)]
+
+
+def _decide(
+    session: Session, viewer: Viewer, league_id: int, claim_id: int, approve: bool
+) -> LeagueClaimOut:
+    league = _league(session, league_id)
+    decided = memberships.decide_claim(
+        session, league.id, claim_id, approve=approve, decided_by=viewer.user_id
+    )
+    if decided is None:
+        session.rollback()
+        raise HTTPException(status_code=404, detail="no such claim in this league")
+    session.commit()
+    log.info(
+        "claim %s %s by user %s", claim_id, "approved" if approve else "rejected", viewer.user_id
+    )
+    return _decided(decided)
+
+
+@router.post(
+    "/leagues/{league_id}/claims/{claim_id}/approve",
+    summary="Approve a claim: its member manages the team",
+)
+def approve_claim(
+    league_id: int, claim_id: int, viewer: LeagueOwner, session: SessionDep
+) -> LeagueClaimOut:
+    return _decide(session, viewer, league_id, claim_id, approve=True)
+
+
+@router.post(
+    "/leagues/{league_id}/claims/{claim_id}/reject",
+    summary="Reject a claim, or take a verified manager off the team",
+)
+def reject_claim(
+    league_id: int, claim_id: int, viewer: LeagueOwner, session: SessionDep
+) -> LeagueClaimOut:
+    return _decide(session, viewer, league_id, claim_id, approve=False)
+
+
+@router.post("/me/espn-identity", summary="Your own SWID, kept sealed, to verify your claims")
+def set_identity(
+    body: IdentityIn,
+    request: Request,
+    viewer: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> IdentityOut:
+    """Only the SWID: a member's espn_s2 is never asked for or kept."""
+    user_id = _user_id(viewer)
+    if not secrets_box.configured(settings):
+        raise HTTPException(status_code=503, detail=NO_KEY)
+    swid = memberships.normalise_swid(body.swid) if len(body.swid) <= 100 else None
+    if swid is None:
+        raise HTTPException(status_code=422, detail=BAD_SWID)
+    if not _limits(request).identity.allow(str(user_id)):
+        raise HTTPException(status_code=429, detail="too many attempts; wait a minute")
+    try:
+        kept = memberships.set_identity(session, user_id, swid, settings)
+        if not kept:
+            raise memberships.IdentityTakenError()
+        verified = memberships.recheck_pending(session, user_id)
+        session.commit()
+    except (memberships.IdentityTakenError, IntegrityError):
+        session.rollback()
+        raise HTTPException(status_code=409, detail=TAKEN) from None
+    return IdentityOut(verified=[TeamRefOut(**vars(team)) for team in verified])
+
+
+@router.delete("/me/espn-identity", summary="Forget your SWID; verified claims stay verified")
+def forget_identity(viewer: CurrentUser, session: SessionDep) -> dict[str, bool]:
+    forgot = memberships.forget_identity(session, _user_id(viewer))
+    session.commit()
+    return {"forgotten": forgot}
+
+
+# ---------------------------------------------------------------------------
+# the pages
+# ---------------------------------------------------------------------------
+
+
+def _page(name: str) -> HTMLResponse:
+    """One page, read from disk per request, like the others."""
+    return HTMLResponse((STATIC / name).read_text())
+
+
+@router.get(
+    "/pages/connections",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[SIGNED_IN_PAGE],
+)
+def connections_page() -> HTMLResponse:
+    """Connect a league; your connections; your leagues' invites and claims."""
+    return _page("connections.html")
+
+
+@router.get(
+    "/join/{token}",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[SIGNED_IN_PAGE],
+)
+def join_page(token: TokenPath) -> HTMLResponse:
+    """Where an invite link lands. Signed out, it goes to sign in and comes back."""
+    return _page("join.html")
+
+
+@router.get(
+    "/pages/claim/{league_id}/{season}",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[LEAGUE_MEMBER_PAGE],
+)
+def claim_page() -> HTMLResponse:
+    """The season's teams, to claim yours."""
+    return _page("claim.html")

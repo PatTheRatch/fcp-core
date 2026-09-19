@@ -32,6 +32,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -1244,14 +1245,17 @@ class Entitlement(Base):
 class TeamManager(Base):
     """A user's claim on one team in one season, and whether it is verified.
 
-    The minimal form of step 2's team claims (docs/product.md): the team
+    The team claims of docs/product.md, in the table step 1 began: the team
     check reads verified rows, and nothing else opens a team's private
-    pages. `state` is `pending`, `verified` or `rejected`; `how` says what
-    verified it (`owner` for the owner's own team today, the ESPN owner-GUID
-    match or a manual approval in step 2). Season-scoped because `teams` is:
-    a claim on this year's team says nothing about whoever held that ESPN id
-    before. Several verified managers of one team are allowed, as ESPN's
-    co-owners are.
+    pages. `state` is `pending`, `verified` or `rejected`. `how` says what
+    verified it: `owner_guid` (his SWID is an owner GUID of the team),
+    `approved` (the league's owner approved it by hand) or `owner` (the
+    configured owner's own team, `app.accounts.ensure_owner`).
+    `decided_by` and `decided_at` are the league owner's hand, for an
+    approval or a rejection. Season-scoped because `teams` is: a claim on
+    this year's team says nothing about whoever held that ESPN id before.
+    Several verified managers of one team are allowed, as ESPN's co-owners
+    are.
     """
 
     __tablename__ = "team_managers"
@@ -1259,6 +1263,10 @@ class TeamManager(Base):
         UniqueConstraint("user_id", "team_id", name="uq_team_managers_user_team"),
         CheckConstraint(
             "state IN ('pending', 'verified', 'rejected')", name="ck_team_managers_state"
+        ),
+        CheckConstraint(
+            "how IS NULL OR how IN ('owner_guid', 'approved', 'owner')",
+            name="ck_team_managers_how",
         ),
     )
 
@@ -1273,3 +1281,122 @@ class TeamManager(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Leagues and their members (docs/accounts.md, docs/product.md step 2)
+# ---------------------------------------------------------------------------
+
+
+class Membership(Base):
+    """A user in a league: what opens the league's shared pages.
+
+    `owner` is whoever connected the league (and the configured owner in his
+    own league); `member` came in by an invite. A team claim does not make
+    anyone a member: membership comes first, and a claim is made from it.
+    """
+
+    __tablename__ = "memberships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "league_id", name="uq_memberships_user_league"),
+        CheckConstraint("role IN ('owner', 'member')", name="ck_memberships_role"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    league_id: Mapped[int] = mapped_column(
+        ForeignKey("leagues.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class LeagueConnection(Base):
+    """The platform login that reads a league, sealed, and whose it is.
+
+    One active (unrevoked) connection per league. `sealed_credentials` is the
+    JSON of `espn_s2` and `SWID`, sealed with `FCP_SECRETS_KEY`
+    (app/secrets_box.py), and is wiped when the connection is revoked.
+    `last_error` is a fixed sentence written by this code, never ESPN's text
+    or anything from the request. `ingest_requested_at` says the league wants
+    an ingest; step 4's worker is what acts on it.
+    """
+
+    __tablename__ = "league_connections"
+    __table_args__ = (
+        CheckConstraint("platform IN ('espn')", name="ck_league_connections_platform"),
+        Index(
+            "uq_league_connections_one_active",
+            "league_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_id: Mapped[int] = mapped_column(
+        ForeignKey("leagues.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String, nullable=False, server_default="espn")
+    sealed_credentials: Mapped[str | None] = mapped_column(Text)
+    #: The league's name as ESPN gave it when the login was checked, so an
+    #: invite can name a league that has not been ingested yet.
+    league_name: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String)
+    ingest_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Invite(Base):
+    """A link into a league. Only the token's sha256 is stored; the link is
+    shown once, to the league owner who made it. Good until `expires_at`
+    (never, when null) or until revoked; `uses` counts the members it let in.
+    """
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_id: Mapped[int] = mapped_column(
+        ForeignKey("leagues.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    uses: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+
+class UserEspnIdentity(Base):
+    """A member's own ESPN account, as its SWID: used only to verify his claims.
+
+    The SWID is sealed; `swid_hash` is the sha256 of its normalised form
+    (`app.memberships.normalise_swid`), so a claim is checked against a
+    team's owner GUIDs without opening anything. One per user, and one user
+    per SWID. Never an `espn_s2`: a member's login is not kept.
+    """
+
+    __tablename__ = "user_espn_identities"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    sealed_swid: Mapped[str] = mapped_column(Text, nullable=False)
+    swid_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
