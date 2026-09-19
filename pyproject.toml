@@ -16,6 +16,9 @@ dependencies = [
     "alembic>=1.13",
     "pydantic-settings>=2.4",
     "espn-api>=0.30",
+    # Fernet, for the secrets kept at rest: a league connection's ESPN
+    # cookies and a member's SWID (app/secrets_box.py, docs/accounts.md).
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]

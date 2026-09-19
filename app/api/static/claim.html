@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim a Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow"><a href="/">Full Court Press</a></p>
+  <h1>Claim your team</h1>
+  <p class="sub">Your team's plan opens once your claim is verified: at once if you have
+    added your ESPN SWID on <a href="/pages/connections">Connections</a> and it owns the
+    team, otherwise when the league's owner approves it.</p>
+  <p class="sub" id="said" hidden></p>
+</header>
+
+<section><div id="teams"><p class="sub muted">Loading…</p></div></section>
+
+</div>
+<script>
+"use strict";
+
+/* /pages/claim/{league}/{season}: the season's teams, and a claim button on
+   each one that is not already yours. Names are written as text. */
+
+const $ = (id) => document.getElementById(id);
+const [, , league, season] = window.location.pathname.split("/").filter(Boolean);
+const base = `/leagues/${league}/seasons/${season}/teams`;
+
+const WORDS = { pending: "claimed, waiting for the league's owner", verified: "yours",
+  rejected: "your claim was turned down" };
+
+async function call(method, url) {
+  const response = await fetch(url, { method, headers: { accept: "application/json" } });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, data, detail: typeof data.detail === "string" ? data.detail : "" };
+}
+
+async function load() {
+  const got = await call("GET", `${base}/claimable`);
+  const box = $("teams");
+  box.replaceChildren();
+  if (!got.ok) {
+    box.append(Object.assign(document.createElement("p"), { className: "sub", textContent: got.detail }));
+    return;
+  }
+  for (const team of got.data) {
+    const line = Object.assign(document.createElement("p"), { className: "sub" });
+    const name = Object.assign(document.createElement("b"), { textContent: team.name });
+    const state = team.mine ? WORDS[team.mine] : team.claimed ? "has a verified manager" : "";
+    line.append(name, state ? ` · ${state} ` : " ");
+    if (team.mine === "verified") {
+      const week = `/pages/teams/${league}/${season}/${team.espn_team_id}/week`;
+      line.append(Object.assign(document.createElement("a"), { href: week, textContent: "this week" }));
+    } else if (team.mine !== "pending") {
+      const claim = Object.assign(document.createElement("button"), {
+        className: "btn", type: "button", textContent: "Claim",
+      });
+      claim.onclick = async () => {
+        const done = await call("POST", `${base}/${team.espn_team_id}/claim`);
+        $("said").textContent = done.ok ? `${team.name}: ${WORDS[done.data.state]}.` : done.detail;
+        $("said").hidden = false;
+        load();
+      };
+      line.append(claim);
+    }
+    box.append(line);
+  }
+}
+
+load();
+</script>
+</body>
+</html>

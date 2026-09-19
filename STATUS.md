@@ -1530,6 +1530,11 @@ picking a winner silently.
    Step 1 (accounts, magic-link sign-in, sessions, and a scope check on every
    route) is built, 2026-09-19 (docs/accounts.md); the VPS stays in single
    mode, unchanged, until the cutover.
+   Step 2 (league connections sealed with `FCP_SECRETS_KEY`, memberships,
+   invites, team claims verified by owner GUID or the league owner) is built,
+   2026-09-19 (docs/accounts.md, "Leagues, members and claims"); before a
+   second league is let in, settle "A known weakness: a bare SWID is not
+   proof" there.
 
 ### Prior seasons
 

@@ -5,6 +5,8 @@ file). There are no defaults for database URLs: a missing value raises at
 startup rather than silently pointing at the wrong database.
 """
 
+import base64
+import binascii
 from functools import lru_cache
 from typing import Literal
 
@@ -15,6 +17,8 @@ POSTGRES_SCHEME = "postgresql+psycopg://"
 
 #: The shortest `FCP_SERVICE_TOKEN` accepted: `secrets.token_urlsafe(32)` is 43.
 MIN_SERVICE_TOKEN = 32
+#: A Fernet key is 32 bytes, urlsafe base64 (44 characters).
+SECRETS_KEY_BYTES = 32
 
 
 class Settings(BaseSettings):
@@ -75,6 +79,14 @@ class Settings(BaseSettings):
     #: and no link is ever emailed.
     fcp_public_url: str | None = None
 
+    #: The key that seals secrets kept at rest (app/secrets_box.py): a league
+    #: connection's ESPN cookies and a member's SWID. A Fernet key, urlsafe
+    #: base64 of 32 bytes, made by `scripts/new_secrets_key.py`. Lives only in
+    #: `.env` on the VPS; never logged, never printed, never in an error.
+    #: Unset, nothing can be sealed: connecting a league is refused rather
+    #: than stored in plaintext. Lose it and every sealed value is unreadable.
+    fcp_secrets_key: str | None = None
+
     #: The league and the team the owner manages, read from the same names
     #: the ingest and the listener use (app/espn.py), optional here because
     #: the API needs no ESPN cookies to know them.
@@ -93,6 +105,7 @@ class Settings(BaseSettings):
         "fcp_owner_email",
         "fcp_service_token",
         "fcp_public_url",
+        "fcp_secrets_key",
         mode="before",
     )
     @classmethod
@@ -140,6 +153,25 @@ class Settings(BaseSettings):
                 'make one with python -c "import secrets; print(secrets.token_urlsafe(32))"'
             )
         return value.strip() if value is not None else None
+
+    @field_validator("fcp_secrets_key")
+    @classmethod
+    def _secrets_key_is_a_fernet_key(cls, value: str | None) -> str | None:
+        """A key that cannot seal is refused at startup, not at the first
+        connection. The message never includes the value."""
+        if value is None:
+            return None
+        value = value.strip()
+        try:
+            decoded = base64.urlsafe_b64decode(value.encode())
+        except (binascii.Error, ValueError):
+            decoded = b""
+        if len(decoded) != SECRETS_KEY_BYTES:
+            raise ValueError(
+                f"must be urlsafe base64 of {SECRETS_KEY_BYTES} bytes; "
+                "make one with python scripts/new_secrets_key.py"
+            )
+        return value
 
     @property
     def smtp_configured(self) -> bool:

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connections</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow"><a href="/">Full Court Press</a></p>
+  <h1>Connections</h1>
+  <p class="sub">Connect a league with your own ESPN login, invite its members, and decide
+    their claims on teams. The login is checked with ESPN once, kept sealed, and never
+    shown again, here or anywhere.</p>
+</header>
+
+<section>
+  <h2 class="shead">Connect a league</h2>
+  <p class="sub muted">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
+    <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
+  <form class="signin" id="connect" autocomplete="off">
+    <label class="eyebrow" for="league">League id</label>
+    <input id="league" inputmode="numeric" required>
+    <label class="eyebrow" for="s2">espn_s2</label>
+    <input id="s2" type="password" required spellcheck="false" autocapitalize="off">
+    <label class="eyebrow" for="swid">SWID</label>
+    <input id="swid" type="password" required spellcheck="false" autocapitalize="off">
+    <button class="btn" type="submit">Connect</button>
+  </form>
+  <p class="sub" id="connected" hidden></p>
+</section>
+
+<section>
+  <h2 class="shead">Your connections</h2>
+  <div id="connections"><p class="sub muted">Loading…</p></div>
+</section>
+
+<section>
+  <h2 class="shead">Leagues you own</h2>
+  <div id="owned"><p class="sub muted">Loading…</p></div>
+</section>
+
+<section>
+  <h2 class="shead">Your ESPN account, to verify your claims</h2>
+  <p class="sub muted">Optional. Your SWID alone (never espn_s2): when it is an owner of the
+    team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
+  <form class="signin" id="identity" autocomplete="off">
+    <label class="eyebrow" for="myswid">SWID</label>
+    <input id="myswid" type="password" required spellcheck="false" autocapitalize="off">
+    <button class="btn" type="submit">Keep it</button>
+  </form>
+  <p class="sub" id="identified" hidden></p>
+</section>
+
+</div>
+<script>
+"use strict";
+
+/* Everything a page writes is text (textContent), never markup: league and
+   team names come from ESPN and emails from whoever signed up. The cookies
+   typed here are posted once and the fields are cleared; nothing about them
+   ever comes back from the server. */
+
+const $ = (id) => document.getElementById(id);
+
+async function call(method, url, body) {
+  const response = await fetch(url, {
+    method,
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (response.status === 401) {
+    window.location.assign(`/sign-in?next=${encodeURIComponent(window.location.pathname)}`);
+  }
+  const data = await response.json().catch(() => ({}));
+  const detail = typeof data.detail === "string" ? data.detail : `${response.status}`;
+  return { ok: response.ok, data, detail };
+}
+
+function el(tag, text, cls) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (cls) node.className = cls;
+  return node;
+}
+
+function button(text, onclick) {
+  const node = el("button", text, "btn");
+  node.type = "button";
+  node.onclick = onclick;
+  return node;
+}
+
+function say(id, text) {
+  $(id).textContent = text;
+  $(id).hidden = false;
+}
+
+const day = (iso) => (iso ? iso.slice(0, 10) : "");
+
+async function loadConnections() {
+  const box = $("connections");
+  const got = await call("GET", "/connections");
+  box.replaceChildren();
+  if (!got.ok) return box.append(el("p", got.detail, "sub"));
+  if (!got.data.length) return box.append(el("p", "None yet.", "sub muted"));
+  for (const c of got.data) {
+    const line = el("p", "", "sub");
+    const state = c.revoked_at
+      ? `revoked ${day(c.revoked_at)}`
+      : c.last_error
+        ? `last error ${day(c.last_error_at)}: ${c.last_error}`
+        : `checked ${day(c.last_ok_at)}`;
+    line.append(el("b", c.league_name), ` (${c.espn_league_id}) · ${state} `);
+    if (!c.revoked_at) {
+      line.append(button("Revoke", async () => {
+        if (!window.confirm("Revoke this connection? Its login is wiped.")) return;
+        await call("DELETE", `/connections/${c.id}`);
+        loadConnections();
+      }));
+    }
+    box.append(line);
+  }
+}
+
+async function loadOwned() {
+  const box = $("owned");
+  const me = await call("GET", "/auth/me");
+  box.replaceChildren();
+  const owned = (me.data.leagues || []).filter((l) => l.role === "owner");
+  if (!owned.length) return box.append(el("p", "None: connect one above.", "sub muted"));
+  for (const league of owned) box.append(await ownedLeague(league.espn_league_id));
+}
+
+async function ownedLeague(id) {
+  const part = el("div");
+  part.append(el("h3", `League ${id}`, "eyebrow"));
+
+  const link = el("p", "", "sub");
+  link.append(button("New invite link", async () => {
+    const made = await call("POST", `/leagues/${id}/invites`, {});
+    link.replaceChildren(made.ok
+      ? el("span", `Send this link to the league; it is shown once: ${made.data.url}`)
+      : el("span", made.detail));
+    loadOwned();
+  }));
+  part.append(link);
+
+  const invites = await call("GET", `/leagues/${id}/invites`);
+  for (const inv of invites.ok ? invites.data : []) {
+    const line = el("p", "", "sub muted");
+    const expiry = inv.expires_at ? `expires ${day(inv.expires_at)}` : "no expiry";
+    const status = inv.revoked_at ? `revoked ${day(inv.revoked_at)}` : expiry;
+    line.append(`Invite of ${day(inv.created_at)} · ${inv.uses} joined · ${status} `);
+    if (!inv.revoked_at) {
+      line.append(button("Revoke", async () => {
+        await call("DELETE", `/leagues/${id}/invites/${inv.id}`);
+        loadOwned();
+      }));
+    }
+    part.append(line);
+  }
+
+  const claims = await call("GET", `/leagues/${id}/claims`);
+  const pending = claims.ok ? claims.data : [];
+  part.append(el("p", pending.length ? "Claims waiting on you:" : "No claims waiting.", "sub"));
+  for (const c of pending) {
+    const line = el("p", "", "sub");
+    line.append(el("b", c.email), ` claims ${c.team_name} (${c.season}) `);
+    line.append(button("Approve", async () => {
+      await call("POST", `/leagues/${id}/claims/${c.id}/approve`);
+      loadOwned();
+    }), " ", button("Reject", async () => {
+      await call("POST", `/leagues/${id}/claims/${c.id}/reject`);
+      loadOwned();
+    }));
+    part.append(line);
+  }
+  return part;
+}
+
+$("connect").onsubmit = async (event) => {
+  event.preventDefault();
+  const body = {
+    league_id: Number($("league").value.trim()),
+    espn_s2: $("s2").value,
+    swid: $("swid").value,
+  };
+  $("s2").value = "";
+  $("swid").value = "";
+  say("connected", "Checking with ESPN…");
+  const done = await call("POST", "/connections", body);
+  if (!done.ok) return say("connected", done.detail);
+  const c = done.data;
+  const team = c.claimed.length
+    ? `You are verified on ${c.claimed[0].name}.`
+    : c.espn_team
+      ? `ESPN says ${c.espn_team.name} is yours; it is verified once the league is ingested.`
+      : "ESPN does not list you as an owner of a team in it.";
+  say("connected", `Connected ${c.league_name}. ${team}`);
+  loadConnections();
+  loadOwned();
+};
+
+$("identity").onsubmit = async (event) => {
+  event.preventDefault();
+  const swid = $("myswid").value;
+  $("myswid").value = "";
+  const done = await call("POST", "/me/espn-identity", { swid });
+  if (!done.ok) return say("identified", done.detail);
+  const names = done.data.verified.map((t) => `${t.name} (${t.season})`);
+  say("identified", names.length ? `Kept. Now verified: ${names.join(", ")}.` : "Kept.");
+};
+
+loadConnections();
+loadOwned();
+</script>
+</body>
+</html>

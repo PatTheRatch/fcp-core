@@ -35,7 +35,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import accounts
@@ -50,7 +50,7 @@ from app.api.access import (
 )
 from app.api.deps import SessionDep
 from app.config import Settings
-from app.db.models import League, User
+from app.db.models import League, LeagueSeason, User
 from app.notify import send_email
 
 log = logging.getLogger("fcp.auth")
@@ -281,6 +281,9 @@ class ManagedTeamOut(BaseModel):
 
 class MemberLeagueOut(BaseModel):
     espn_league_id: int
+    #: `owner` or `member`; null for a league he has a claim in and is no
+    #: longer a member of.
+    role: str | None
     teams: list[ManagedTeamOut]
 
 
@@ -302,9 +305,12 @@ class MeOut(BaseModel):
 
 
 def _leagues(session: Session, viewer: Viewer) -> list[MemberLeagueOut]:
+    """His memberships, each with his claims in it, then any league he has a
+    claim in without being a member."""
     if viewer.user_id is None:
         return []
-    out: dict[int, list[ManagedTeamOut]] = {}
+    roles = dict(accounts.member_leagues(session, viewer.user_id))
+    out: dict[int, list[ManagedTeamOut]] = {league: [] for league in roles}
     for team in accounts.managed_teams(session, viewer.user_id):
         out.setdefault(team.espn_league_id, []).append(
             ManagedTeamOut(
@@ -314,7 +320,10 @@ def _leagues(session: Session, viewer: Viewer) -> list[MemberLeagueOut]:
                 state=team.state,
             )
         )
-    return [MemberLeagueOut(espn_league_id=lid, teams=teams) for lid, teams in out.items()]
+    return [
+        MemberLeagueOut(espn_league_id=lid, role=roles.get(lid), teams=teams)
+        for lid, teams in out.items()
+    ]
 
 
 @router.get("/auth/me", summary="Who is signed in, their leagues and their entitlement")
@@ -379,27 +388,51 @@ def home(viewer: PageViewer, session: SessionDep) -> HTMLResponse:
                 latest = max(s.season for s in league.seasons)
                 rows.append(_league_line(int(league.espn_league_id), latest, None))
     elif viewer.user_id is not None:
-        seen: set[int] = set()
-        for team in accounts.managed_teams(session, viewer.user_id):
-            if team.state == accounts.VERIFIED and team.espn_league_id not in seen:
-                seen.add(team.espn_league_id)
-                rows.append(_league_line(team.espn_league_id, team.season, team))
+        teams = [
+            t
+            for t in accounts.managed_teams(session, viewer.user_id)
+            if t.state == accounts.VERIFIED
+        ]
+        newest: dict[int, int] = {
+            int(league_id): int(season)
+            for league_id, season in session.execute(
+                select(League.espn_league_id, func.max(LeagueSeason.season))
+                .join(LeagueSeason, LeagueSeason.league_id == League.id)
+                .group_by(League.espn_league_id)
+            ).all()
+        }
+        for league_id, role in accounts.member_leagues(session, viewer.user_id):
+            season = newest.get(league_id)
+            if season is None:
+                rows.append(
+                    f"<p class='sub'>League {league_id}: connected, waiting for its first "
+                    "ingest.</p>"
+                )
+                continue
+            mine = next(
+                (t for t in teams if t.espn_league_id == league_id and t.season == season), None
+            )
+            rows.append(_league_line(league_id, int(season), mine, role))
     listing = (
         "".join(rows)
         if rows
-        else "<p class='sub'>No league yet. A league's pages open once your team in it "
-        "is verified.</p>"
+        else "<p class='sub'>No league yet. Connect one, or open the invite link a "
+        "league's owner sent you.</p>"
     )
     return HTMLResponse(
         _shell(
             f"<p class='sub'>Signed in as <b>{escape(viewer.email)}</b>.</p>{listing}"
+            "<p class='sub'><a href='/pages/connections'>Connect a league, invites and "
+            "claims</a></p>"
             "<form method='post' action='/auth/sign-out' class='tools'>"
             "<button class='btn' type='submit'>Sign out</button></form>"
         )
     )
 
 
-def _league_line(league_id: int, season: int, team: accounts.ManagedTeam | None) -> str:
+def _league_line(
+    league_id: int, season: int, team: accounts.ManagedTeam | None, role: str | None = None
+) -> str:
     base = f"/pages/teams/{league_id}/{season}"
     line = f"<p class='sub'><a href='{base}'>League {league_id}, {season}</a>"
     if team is not None:
@@ -408,4 +441,6 @@ def _league_line(league_id: int, season: int, team: accounts.ManagedTeam | None)
             f" · {escape(team.name)}: <a href='{mine}/week'>this week</a>, "
             f"<a href='{mine}/season'>the season</a>"
         )
+    elif role is not None:
+        line += f" · <a href='/pages/claim/{league_id}/{season}'>claim your team</a>"
     return line + "</p>"

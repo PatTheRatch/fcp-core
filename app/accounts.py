@@ -15,12 +15,21 @@ so there is nothing to guess.
 
 THE OWNER
 
-Patrick is a user like any other, with three things written for him on
-first use (`ensure_owner`): the user row, an `owner` entitlement, and a
-verified claim on the tracked team (`FCP_TRACKED_TEAM_ID`) in every season
-the tracked league (`ESPN_LEAGUE_ID`) has stored. "Every season" takes the
-ESPN team id at its word across years; step 2's owner-GUID check is the
-place that learns better, if a season's team 3 was ever someone else's.
+Patrick is a user like any other, with four things written for him on
+first use (`ensure_owner`): the user row, an `owner` entitlement, an `owner`
+membership of the tracked league (`ESPN_LEAGUE_ID`), and a verified claim on
+the tracked team (`FCP_TRACKED_TEAM_ID`) in every season that league has
+stored. "Every season" takes the ESPN team id at its word across years; the
+owner-GUID check (`app.memberships`) is the place that learns better, if a
+season's team 3 was ever someone else's. No sealed connection is needed for
+the tracked league: its ingest reads the `.env` cookies until step 4.
+
+MEMBERS AND MANAGERS
+
+A league's pages open to its members (`memberships`: whoever connected the
+league, and whoever accepted an invite). A team's plan opens to its verified
+managers (`team_managers`). The two are separate on purpose: a verified
+claim does not make anyone a member, and a membership claims no team.
 """
 
 from __future__ import annotations
@@ -31,7 +40,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, exists, or_, select, update
+from sqlalchemy import Select, exists, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -39,6 +48,7 @@ from app.db.models import (
     Entitlement,
     League,
     LeagueSeason,
+    Membership,
     SignInToken,
     Team,
     TeamManager,
@@ -58,6 +68,10 @@ TEAM_TIER = "team"
 #: How the owner's own claims are marked verified.
 VERIFIED_AS_OWNER = "owner"
 VERIFIED = "verified"
+#: The two roles a member of a league has: `owner` connected it (or is the
+#: configured owner of the tracked league), `member` came in by an invite.
+OWNER_ROLE = "owner"
+MEMBER_ROLE = "member"
 
 #: Single mode's owner when `FCP_OWNER_EMAIL` is unset. Not an address that
 #: can receive mail, which is the point: nobody can sign in as it.
@@ -255,12 +269,12 @@ def revoke_session(session: Session, token: str) -> bool:
 
 
 def ensure_owner(session: Session, email: str, league_id: int | None, team_id: int | None) -> User:
-    """The owner's user, entitlement and team claims, written if missing.
+    """The owner's user, entitlement, membership and team claims, written if missing.
 
-    Idempotent and cheap once done: three statements, each of which inserts
-    nothing when the row is already there, so it can run on every request
-    in single mode. New seasons of the tracked league are claimed the first
-    time the owner is resolved after they are ingested. Commits.
+    Idempotent and cheap once done: a handful of statements, each of which
+    writes nothing when the row is already there, so it can run on every
+    request in single mode. New seasons of the tracked league are claimed
+    the first time the owner is resolved after they are ingested. Commits.
     """
     user = get_or_create_user(session, email)
     session.execute(
@@ -270,6 +284,22 @@ def ensure_owner(session: Session, email: str, league_id: int | None, team_id: i
             index_elements=["user_id"], index_where=Entitlement.source == "owner"
         )
     )
+    if league_id is not None:
+        # The tracked league's owner, whether or not it was ever connected:
+        # its ingest reads the .env cookies, so no sealed connection is asked
+        # for. Upgraded to owner if he had joined it as a member; nothing is
+        # written when he already is one.
+        tracked = select(literal(user.id), League.id, literal(OWNER_ROLE)).where(
+            League.espn_league_id == league_id
+        )
+        joined = insert(Membership).from_select(["user_id", "league_id", "role"], tracked)
+        session.execute(
+            joined.on_conflict_do_update(
+                constraint="uq_memberships_user_league",
+                set_={"role": OWNER_ROLE},
+                where=Membership.role != OWNER_ROLE,
+            )
+        )
     if league_id is not None and team_id is not None:
         unclaimed = (
             select(Team.id)
@@ -313,10 +343,31 @@ def _claims(user_id: int) -> Select[tuple[int]]:
     )
 
 
-def manages_in_league(session: Session, user_id: int, espn_league_id: int) -> bool:
-    """Whether this user is a verified manager of a team in this league, any season."""
-    claims = _claims(user_id).where(League.espn_league_id == espn_league_id)
-    return bool(session.scalar(select(claims.exists())))
+def _memberships(user_id: int) -> Select[tuple[int, str]]:
+    """This user's memberships, as (ESPN league id, role)."""
+    return (
+        select(League.espn_league_id, Membership.role)
+        .join(League, League.id == Membership.league_id)
+        .where(Membership.user_id == user_id)
+    )
+
+
+def role_in_league(session: Session, user_id: int, espn_league_id: int) -> str | None:
+    """`owner`, `member`, or None when this user is not in the league."""
+    row = session.execute(
+        _memberships(user_id).where(League.espn_league_id == espn_league_id)
+    ).first()
+    return str(row.role) if row is not None else None
+
+
+def is_member(session: Session, user_id: int, espn_league_id: int) -> bool:
+    """Whether this user is a member of this league, in either role."""
+    return role_in_league(session, user_id, espn_league_id) is not None
+
+
+def is_league_owner(session: Session, user_id: int, espn_league_id: int) -> bool:
+    """Whether this user is an owner of this league: its invites and claims are his."""
+    return role_in_league(session, user_id, espn_league_id) == OWNER_ROLE
 
 
 def manages_team(
@@ -332,17 +383,14 @@ def manages_team(
 
 
 def member_league_ids(session: Session, user_id: int) -> set[int]:
-    """The ESPN ids of every league this user manages a team in."""
-    rows = session.scalars(
-        select(League.espn_league_id)
-        .select_from(TeamManager)
-        .join(Team, Team.id == TeamManager.team_id)
-        .join(LeagueSeason, LeagueSeason.id == Team.league_season_id)
-        .join(League, League.id == LeagueSeason.league_id)
-        .where(TeamManager.user_id == user_id, TeamManager.state == VERIFIED)
-        .distinct()
-    ).all()
-    return {int(league) for league in rows}
+    """The ESPN ids of every league this user is a member of."""
+    return {league for league, _ in member_leagues(session, user_id)}
+
+
+def member_leagues(session: Session, user_id: int) -> list[tuple[int, str]]:
+    """Every league this user is a member of, as (ESPN league id, role), in id order."""
+    rows = session.execute(_memberships(user_id).order_by(League.espn_league_id)).all()
+    return [(int(league), str(role)) for league, role in rows]
 
 
 @dataclass(frozen=True)
