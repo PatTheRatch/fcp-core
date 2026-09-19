@@ -29,7 +29,18 @@ from app.listener.pool import parse_pool_entry
 
 
 def _print_league(league: Any) -> None:
-    print(f"League: {league.settings.name!r} ({league.year})")
+    """Print the league's shape, and nothing that could identify a member.
+
+    **No names.** This is the probe most likely to be run against a league
+    that is not ours — a survey of public leagues, a stranger's league someone
+    linked — and a league's name, a team's name and an owner's name are
+    personal data about people who never agreed to be printed. The shape is
+    what this probe is for; the ids are what a second look needs. So the
+    league is named by its id and its season, teams by their team id, and an
+    owner by nothing at all: `unclaimed` or `claim-1`, `claim-2`, ... in team
+    order, which is enough to see that two teams share an owner.
+    """
+    print(f"League: id {league.league_id}, season {league.year}")
     print(f"  teams: {league.settings.team_count}")
     print(f"  scoring_type: {league.settings.scoring_type}")
     print(f"  regular season matchup periods: {league.settings.reg_season_count}")
@@ -40,15 +51,22 @@ def _print_league(league: Any) -> None:
     # not matchups won: they sum to (matchup periods x categories) per team.
     # ESPN exposes no matchup record here; it has to be derived from the
     # schedule endpoint, so label these for what they actually are.
+    #
+    # Two teams may be run by the same owner, and who owns which is a real
+    # fact about the league's shape, so the claim label is per owner id
+    # (ESPN's own), not per team: `claim-1` on two rows is one person with
+    # two teams, which is why this is worth keeping and why it can be kept
+    # without a name.
+    claims: dict[str, str] = {}
     print(f"Teams ({len(league.teams)}) - W-L-T below are category tallies, not matchup records:")
     for team in league.teams:
-        owners = (
-            ", ".join(o.get("firstName", "?") for o in team.owners) if team.owners else "unclaimed"
-        )
+        owner_ids = [str(o.get("id")) for o in (team.owners or []) if o.get("id") is not None]
+        claims.setdefault(next(iter(owner_ids), ""), f"claim-{len(claims) + 1}")
+        label = " ".join(claims[i] for i in owner_ids) or "unclaimed"
         categories = team.wins + team.losses + team.ties
         print(
-            f"  [{team.team_id:>2}] {team.team_name:<28} "
-            f"cat {team.wins}-{team.losses}-{team.ties} of {categories}  owners: {owners}"
+            f"  [{team.team_id:>2}] {label:<16} "
+            f"cat {team.wins}-{team.losses}-{team.ties} of {categories}"
         )
 
 

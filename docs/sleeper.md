@@ -76,11 +76,11 @@ first season with an auction draft neither can do anything yet.
   (`sleeper.previous_league_id` now handles both). And
   `metadata.copy_from_league_id` is not a predecessor (finding 1).
 * *There is no daily lineup history, and it is not backfillable.*
-  **Unverified**, because the league has not played a day. Nothing in any
-  response seen carries a per-day lineup. The roster object has one current
-  `starters` list and nothing dated, which is consistent with the claim. The
-  proof is `--week 1` after the first week: if a matchup row's `starters`
-  is one list for the week, the claim stands.
+  **Confirmed** (2026-09-19, `scripts/league_survey.py sleeper`) on a
+  completed 2025 NBA season of a public league: every week's matchup row
+  carries exactly `custom_points, matchup_id, players, players_points,
+  points, roster_id, starters, starters_points`, with one `starters` list
+  of nine for the whole week and no per-day key in any of the 23 weeks.
 * *The player dump carries `espn_id`.* **Refuted** for the NBA. The key is
   there, and it is null on every player (answer 3).
 
@@ -218,7 +218,7 @@ autumn, and the league would fork into a new row each season. For this league
 the question is academic until 2027: it is its own first season, so its
 oldest id and its newest are today the same.
 
-### 2. There is no daily lineup history — expected, not yet verified
+### 2. There is no daily lineup history — confirmed
 
 This is the biggest capability gap and it is not fixable by mapping.
 
@@ -229,10 +229,20 @@ Sleeper equivalent in any response seen. The roster object holds one current
 return `starters` as the lineup *for that week*. Sleeper does not serve a
 per-day historical record of who sat where. What is gone is gone.
 
-This could not be checked against the league itself, which has not played a
-day. After the first week of the season, `--week 1` shows whether a matchup
-row's `starters` is a single list for the week (the claim stands) or anything
-finer (it does not).
+Confirmed on 2026-09-19 against a completed 2025 season of a public NBA
+league reached through GOAT League's members (`scripts/league_survey.py`):
+23 weeks, each matchup row a single `starters` list for the week, a
+`starters_points` per slot and a `players_points` per player, and no dated
+or per-day field anywhere. A week's score is all Sleeper keeps.
+
+**"Lock-In" is not in the data.** Sleeper's basketball leagues are sold as
+Lock-In points leagues (a manager locks in one day's score per slot for the
+week). No league document, setting or matchup row names it: in the API a
+Lock-In league is indistinguishable from any other points league, and the
+locked day is not recorded, only the week's points per slot. All 69 NBA
+leagues read in the survey were points leagues; none was categories or roto,
+which matches Patrick's reading of the app, where Lock-In points is the only
+basketball format offered.
 
 So: for a Sleeper league, daily lineups are **collectible going forward by
 polling and not backfillable**. Whatever a listener snapshots each day is all
