@@ -66,6 +66,15 @@ button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color
 button.btn.tiny{padding:2px 7px;font-size:10px}
 .rehearse{display:flex;gap:8px;align-items:center}
 .rehearse .count{font-family:var(--mono);font-size:18px;color:var(--accent);min-width:30px;text-align:right}
+/* Connecting to ESPN's room, from here rather than from a terminal: the
+   room's URL, filled in from the league's own settings and editable so a
+   mock's can be pasted, and one button that connects or disconnects. The
+   feed pill beside it is the status. */
+.connect{display:flex;gap:6px;align-items:center;min-width:0}
+.connect input{width:min(36ch,52vw);min-width:0;background:var(--sunk);border:1px solid var(--rule);color:var(--ink);font-family:var(--mono);font-size:12px;padding:5px 8px}
+.connect input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.connect input:disabled{color:var(--muted)}
+.connect .btn[disabled]{opacity:.45;cursor:not-allowed}
 
 /* the block */
 .block{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px 32px;padding:18px 16px 16px;border-bottom:1px solid var(--rule);background:var(--surface)}
@@ -369,6 +378,10 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
       <button class="btn tiny" id="r-pause">Pause</button>
       <button class="btn tiny" id="r-skip" title="sell him now to his real buyer">Sell now</button>
     </div>
+    <form class="connect" id="connect" autocomplete="off" hidden>
+      <input id="c-url" placeholder="ESPN draft room URL" aria-label="ESPN draft room URL" spellcheck="false">
+      <button class="btn tiny primary" id="c-go" type="submit">Connect</button>
+    </form>
     <span class="pill warn" id="link">reconnecting…</span>
     <span class="pill" id="feed">connecting…</span>
     <button class="btn tiny" id="theme" aria-pressed="false" title="light or dark">Lights up</button>
@@ -858,6 +871,7 @@ function render() {
   if (!S) return;
   const me = S.teams.find((t) => t.is_me) || null;
   renderMast();
+  renderConnect();
   renderFeed();
   renderLink();
   renderBlock();
@@ -890,8 +904,51 @@ function renderMast() {
   $("c-nom").textContent = S.to_nominate && S.to_nominate.name ? S.to_nominate.name : "–";
 }
 
+/* The ESPN window: connect and disconnect from here. The URL box is filled
+   once, from the league's own URL in the state, and then left alone -- a
+   mock's URL being pasted is never overwritten by the stream arriving
+   underneath it. */
+let urlPrefilled = false;
+
+function renderConnect() {
+  const c = S.connect, form = $("connect");
+  if (!c) { form.hidden = true; return; }
+  form.hidden = false;
+  const box = $("c-url"), go = $("c-go");
+  if (!urlPrefilled && document.activeElement !== box) {
+    box.value = c.url || c.default_url || "";
+    urlPrefilled = true;
+  }
+  if (c.connected && c.url) box.value = c.url;
+  box.disabled = c.connected;
+  go.textContent = c.connected ? "Disconnect" : "Connect";
+  go.classList.toggle("primary", !c.connected);
+}
+
+$("connect").onsubmit = async (e) => {
+  e.preventDefault();
+  const c = S && S.connect;
+  if (!c) return;
+  const go = $("c-go");
+  go.disabled = true;
+  try {
+    if (c.connected) {
+      S = await api("/api/disconnect", { method: "POST", body: "{}" });
+      toast("Disconnected from ESPN.", true);
+    } else {
+      const url = $("c-url").value.trim();
+      S = await api("/api/connect", { method: "POST", body: JSON.stringify({ url: url || null }) });
+      toast("Opening the ESPN window. Sign in there if it asks.", true);
+    }
+    render();
+  } catch (err) {
+    toast(err.message);
+  }
+  go.disabled = false;
+};
+
 function renderFeed() {
-  const f = S.feed || {}, el = $("feed");
+  const f = S.feed || {}, c = S.connect || null, el = $("feed");
   const r = f.rehearsal;
   $("rehearse").hidden = !r;
   if (r) {
@@ -899,15 +956,30 @@ function renderFeed() {
     $("r-count").textContent = r.seconds_left === null || r.seconds_left === undefined ? "" : r.seconds_left;
     $("r-pause").textContent = r.paused ? "Resume" : "Pause";
   }
-  if (f.mode === "page" || f.mode === "room") {
-    const what = f.mode === "room" ? "Auction room" : "ESPN page";
-    el.textContent = f.connected ? `${what} · read ${f.last_read || "…"}`
-      : `${what} not connected${f.error ? ": " + f.error : ""}`;
+  if (c && c.connected) {
+    // The window is the feed, so its sentence is the pill: "opening the
+    // ESPN window…", "sign in, in the ESPN window", "Auction room · read
+    // 18:02:11". Amber while it is on its way or waiting for a person; red
+    // only when it is open, signed in and still cannot read the room.
+    el.textContent = c.message;
+    el.className = "pill " + (c.readable ? "ok" : c.readable === false && c.signed_in !== false ? "err" : "warn");
+    if (f.mode === "room" && f.problems) toast("Could not apply: " + f.problems.join("; "));
+  } else if (f.mode === "page") {
+    el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}`
+      : `ESPN page not connected${f.error ? ": " + f.error : ""}`;
     el.className = "pill " + (f.connected ? "ok" : "err");
     if (f.unlogged) toast("Money moved but the log did not show: " + f.unlogged.join("; "));
     if (f.problems) toast("Could not apply: " + f.problems.join("; "));
+  } else if (f.mode === "rehearsal") {
+    el.textContent = "rehearsal feed";
+    el.className = "pill";
+  } else if (c && c.message !== "not connected") {
+    // A window that closed or would not open: what happened, in red, until
+    // Connect is pressed again.
+    el.textContent = c.message;
+    el.className = "pill err";
   } else {
-    el.textContent = f.mode === "rehearsal" ? "rehearsal feed" : "typed entry";
+    el.textContent = c ? "not connected" : "typed entry";
     el.className = "pill";
   }
   if (f.ceiling_error) {

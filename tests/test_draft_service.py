@@ -511,6 +511,22 @@ def test_a_sign_in_page_reaches_the_screen_as_a_sentence_and_clears_itself() -> 
     client.post("/api/disconnect")
 
 
+def test_the_screen_connects_to_espn_from_the_masthead() -> None:
+    """No browser in this suite, so this guards the wiring: a Connect panel
+    with the URL box and one button, filled from the state's `connect`, and
+    the feed pill carrying the link's sentence rather than a second pill.
+    """
+    page = TestClient(create_draft_app(DraftSession(make_room()))).get("/").text
+
+    assert 'id="connect"' in page and 'id="c-url"' in page and 'id="c-go"' in page
+    assert "/api/connect" in page and "/api/disconnect" in page
+    assert "c.url || c.default_url" in page, "the box opens on the league's own URL"
+    assert 'go.textContent = c.connected ? "Disconnect" : "Connect"' in page
+    assert "el.textContent = c.message;" in page, "the feed pill is the status"
+    assert "renderConnect();" in page, "and it is drawn on every state"
+    assert '$("connect").onsubmit' in page
+
+
 def test_a_bidder_started_at_the_command_line_is_one_connected_at_start(bidder: Bidder) -> None:
     client = TestClient(create_draft_app(DraftSession(make_room()), bidder=bidder))
 
