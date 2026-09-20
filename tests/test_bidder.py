@@ -43,6 +43,7 @@ from app.draft.bidder import (
     Bidder,
     RoomView,
     SelectorError,
+    SignInRequiredError,
     StaticPage,
     check_maximum,
     decide,
@@ -50,6 +51,7 @@ from app.draft.bidder import (
 )
 
 SNAPSHOT = Path(__file__).parent / "fixtures" / "espn_auction_room.html"
+SIGN_IN = Path(__file__).parent / "fixtures" / "espn_sign_in.html"
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +134,12 @@ class FakeRoom:
         self.clicks: list[str] = []
         self.typed: list[tuple[str, str]] = []
         self.blank = False
+        #: ESPN has swapped the room for its sign-in page.
+        self.signed_out = False
+        self.remembered = 0
         self.raises: Exception | None = None
         self._page = StaticPage(room_html(**self.state))
+        self._sign_in = StaticPage.from_file(SIGN_IN)
 
     def set(self, **state: Any) -> None:
         self.state.update(state)
@@ -142,16 +148,21 @@ class FakeRoom:
     def texts(self, selector: str) -> list[str]:
         if self.raises is not None:
             raise self.raises
+        if self.signed_out:
+            return self._sign_in.texts(selector)
         return [] if self.blank else self._page.texts(selector)
 
     def enabled(self, selector: str) -> bool:
-        return False if self.blank else self._page.enabled(selector)
+        return False if self.blank or self.signed_out else self._page.enabled(selector)
 
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
 
     def fill(self, selector: str, value: str) -> None:
         self.typed.append((selector, value))
+
+    def remember(self) -> None:
+        self.remembered += 1
 
     def close(self) -> None:
         return None
@@ -242,6 +253,18 @@ def test_a_page_that_is_not_an_auction_room_raises_loudly() -> None:
 
     assert "markup has moved" in str(caught.value)
     assert SELECTORS["offer_button"][0] in str(caught.value), "the failure names what it tried"
+
+
+def test_the_sign_in_page_is_recognised_and_is_not_a_moved_markup() -> None:
+    """A lapsed session gets ESPN's sign-in page in place of the room. It has
+    none of the room's hooks either, and for an hour one morning that read as
+    a selector failure and a board with "Nobody" on it. The page says what it
+    is, and so does the error."""
+    with pytest.raises(SignInRequiredError) as caught:
+        read_room(StaticPage.from_file(SIGN_IN))
+
+    assert str(caught.value) == "sign in, in the ESPN window"
+    assert isinstance(caught.value, SelectorError), "still a page that is not a room"
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +513,49 @@ def test_an_exception_reading_the_room_is_caught_counted_and_reported() -> None:
     state = bidder.state()
     assert state["armed"] is False
     assert "TimeoutError" in (state["error"] or "")
+    assert room.clicks == []
+
+
+def test_a_signed_out_bidder_says_so_once_and_waits_for_the_room() -> None:
+    """Not a miss every half second: one line in the log, `signed_in` false
+    in the state, and then polling until the person at the window has
+    signed in -- at which point the room reads, the state flips back on its
+    own, and the session is kept for next time."""
+    room = FakeRoom()
+    bidder = make_bidder(room)
+    room.signed_out = True
+
+    for _ in range(6):
+        bidder._tick()
+
+    state = bidder.state()
+    assert state["signed_in"] is False
+    assert state["error"] == "sign in, in the ESPN window"
+    assert sum("sign-in" in line["text"] for line in state["log"]) == 1, "said once"
+    assert room.remembered == 0, "nothing to keep from a sign-in page"
+
+    room.signed_out = False
+    bidder._tick()
+
+    state = bidder.state()
+    assert state["signed_in"] is True and state["error"] is None
+    assert state["room"]["player"] == "Pascal Siakam"
+    assert state["last_read"], "and the read is stamped"
+    assert room.remembered == 1, "the session that just read the room is the one to keep"
+
+
+def test_a_sign_in_mid_draft_drops_the_maximum_and_says_why() -> None:
+    """There is no room to hold a maximum in, so it does not survive."""
+    room = FakeRoom()
+    bidder = make_bidder(room)
+    bidder._handle("arm", ("Pascal Siakam", 70))
+    room.signed_out = True
+
+    bidder._tick()
+
+    state = bidder.state()
+    assert state["armed"] is False
+    assert "sign-in" in (state["stopped_because"] or "")
     assert room.clicks == []
 
 

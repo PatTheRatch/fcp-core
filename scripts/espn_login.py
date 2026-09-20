@@ -16,6 +16,11 @@ The signed-in state is also saved to `~/.fcp-core/espn-state.json`, which a
 headless read can load, so a background job never needs the cookies from
 `.env` again.
 
+The bidder's own window (`app/draft/bidder.py`, opened by Connect on the
+draft screen) runs on this same profile and asks for the sign-in itself, so
+on draft night this script is not needed. It cannot run at the same time as
+that window: Chromium refuses a profile another window has open.
+
 Nothing here reads or writes `.env`, and nothing prints a cookie.
 """
 
@@ -26,11 +31,12 @@ import sys
 import time
 from pathlib import Path
 
+from app.draft.bidder import PROFILE_DIR as PROFILE
+from app.draft.bidder import SIGNED_OUT
+from app.draft.bidder import STATE_FILE as STATE
+
 HOME = Path.home() / ".fcp-core"
-PROFILE = HOME / "espn"
-STATE = HOME / "espn-state.json"
 LOG = HOME / "espn-login.log"
-SIGNED_OUT = ("Log in Required", "Log In to ESPN")
 
 
 def note(line: str) -> None:

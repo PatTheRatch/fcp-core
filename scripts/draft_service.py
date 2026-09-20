@@ -167,13 +167,7 @@ def main() -> int:
     if args.bid:
         if not args.page:
             raise SystemExit("--bid needs --page: it bids in the room the URL names")
-        from app.draft.bidder import STATE_FILE, Bidder
-
-        if not STATE_FILE.exists():
-            raise SystemExit(
-                f"--bid needs a signed-in ESPN session at {STATE_FILE}. "
-                "Run `python scripts/espn_login.py`, sign in, and leave the window open."
-            )
+        from app.draft.bidder import Bidder
 
         def cap() -> int | None:
             allocation = room.allocation

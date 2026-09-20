@@ -13,12 +13,15 @@ refusing to do something stupid with them.
 
 WHAT IT DRIVES
 
-One Playwright page of its own, opened from the signed-in session
-`scripts/espn_login.py` saves to `~/.fcp-core/espn-state.json`. Headed by
+One Playwright page of its own, on the persistent Chromium profile in
+`~/.fcp-core/espn` -- the same one `scripts/espn_login.py` uses -- so a
+sign-in done in this window is remembered for the next one. Headed by
 default: a window Patrick can watch, and can take over by clicking in it
-himself, because the last safety rule is a human with a mouse. The page
-reader (`app.draft.page`) keeps its own page; these two never share one, so
-a bid can never be blocked behind a read.
+himself, because the last safety rule is a human with a mouse. When ESPN
+wants a sign-in, the window is where it happens: the bidder recognises the
+sign-in page, says so once, and keeps polling until the room reads. The
+page reader (`app.draft.page`) keeps its own page; these two never share
+one, so a bid can never be blocked behind a read.
 
 THREE LAYERS, AND WHY
 
@@ -66,9 +69,20 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol
 
-#: The signed-in browser session `scripts/espn_login.py` writes. The
-#: `espn_s2` cookie in `.env` does not authenticate a browser any more.
+#: The Chromium profile the bidder's window runs on, shared with
+#: `scripts/espn_login.py`: a sign-in done in either window is kept here,
+#: so the next window opens signed in. The `espn_s2` cookie in `.env` does
+#: not authenticate a browser any more.
+PROFILE_DIR = Path.home() / ".fcp-core" / "espn"
+
+#: The signed-in session as a file, rewritten each time the room reads
+#: signed in, because a headless job elsewhere loads it.
 STATE_FILE = Path.home() / ".fcp-core" / "espn-state.json"
+
+#: What ESPN's sign-in page says, in place of a room, when the profile's
+#: session has lapsed. Either phrase on a page with no room on it means
+#: "sign in, in the ESPN window" and not "the markup has moved".
+SIGNED_OUT = ("Log in Required", "Log In to ESPN")
 
 #: How long to wait for the auction room to render before giving up on it.
 LOAD_TIMEOUT_MS = 45_000
@@ -143,6 +157,11 @@ class SelectorError(RuntimeError):
     """The page did not look like an auction room. Always reported."""
 
 
+class SignInRequiredError(SelectorError):
+    """The page is ESPN's sign-in page. Reported once, and not as a fault:
+    the fix is a person signing in, in the window, and the bidder waits."""
+
+
 # ---------------------------------------------------------------------------
 # what a page has to be able to do
 # ---------------------------------------------------------------------------
@@ -160,6 +179,9 @@ class PageLike(Protocol):
     def click(self, selector: str) -> None: ...
 
     def fill(self, selector: str, value: str) -> None: ...
+
+    def remember(self) -> None:
+        """Keep the signed-in session for next time, where there is a way to."""
 
     def close(self) -> None: ...
 
@@ -260,6 +282,11 @@ def read_room(page: PageLike) -> RoomView:
     missing = [key for key, rows in found.items() if not rows]
     labels, button, name = first["labels"], first["offer_button"], first["player_name"]
     if labels is None and button is None and name is None:
+        # Only asked for on a page with no room on it, so the happy path
+        # pays nothing for the check.
+        body = " ".join(page.texts("body"))
+        if any(marker in body for marker in SIGNED_OUT):
+            raise SignInRequiredError("sign in, in the ESPN window")
         raise SelectorError(
             "no bidding form, offer button or player card on the page; "
             f"the room's markup has moved (tried {SELECTORS['labels'][0]!r}, "
@@ -566,6 +593,9 @@ class StaticPage:
     def fill(self, selector: str, value: str) -> None:
         raise SelectorError("a saved page cannot be typed into")
 
+    def remember(self) -> None:
+        return None
+
     def close(self) -> None:
         return None
 
@@ -576,12 +606,19 @@ class StaticPage:
 
 
 class PlaywrightPage:
-    """A `PageLike` over a live Playwright page, and the browser behind it."""
+    """A `PageLike` over a live Playwright page, and the context behind it."""
 
-    def __init__(self, page: Any, playwright: Any = None, browser: Any = None) -> None:
+    def __init__(
+        self,
+        page: Any,
+        playwright: Any = None,
+        context: Any = None,
+        state_file: Path | None = None,
+    ) -> None:
         self._page = page
         self._playwright = playwright
-        self._browser = browser
+        self._context = context
+        self._state_file = state_file
 
     def texts(self, selector: str) -> list[str]:
         return [str(t) for t in self._page.locator(selector).all_inner_texts()]
@@ -596,8 +633,19 @@ class PlaywrightPage:
     def fill(self, selector: str, value: str) -> None:
         self._page.locator(selector).first.fill(value, timeout=4000)
 
+    def remember(self) -> None:
+        """The profile already keeps the session; the file is for the code
+        that reads one. Failing to write it is not the draft's problem."""
+        if self._context is None or self._state_file is None:
+            return
+        try:
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
+            self._context.storage_state(path=str(self._state_file))
+        except Exception:
+            pass
+
     def close(self) -> None:
-        for closer, how in ((self._browser, "close"), (self._playwright, "stop")):
+        for closer, how in ((self._context, "close"), (self._playwright, "stop")):
             try:
                 if closer is not None:
                     getattr(closer, how)()
@@ -605,34 +653,39 @@ class PlaywrightPage:
                 pass
 
 
-def open_room(url: str, *, headless: bool = False, state_file: Path = STATE_FILE) -> PlaywrightPage:
-    """A browser on the auction room, signed in from the saved session.
+def open_room(
+    url: str,
+    *,
+    headless: bool = False,
+    profile_dir: Path = PROFILE_DIR,
+    state_file: Path = STATE_FILE,
+) -> PlaywrightPage:
+    """A browser on the auction room, on the profile that remembers ESPN.
 
     Headed unless told otherwise: the window is Patrick's to watch and to
     take over with his own mouse, which is the last safety rule and the only
-    one this module cannot implement.
+    one this module cannot implement. It is also where he signs in when ESPN
+    asks, and because the profile persists, once is enough. One window at a
+    time: Chromium refuses a profile another window already has open, so
+    `scripts/espn_login.py` and this cannot run together.
     """
-    if not state_file.exists():
-        raise SelectorError(
-            f"no signed-in ESPN session at {state_file}. "
-            "Run `python scripts/espn_login.py`, sign in, and leave it open."
-        )
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover - environment
         raise SelectorError(
             "bidding needs Playwright: pip install -e '.[live]' && playwright install chromium"
         ) from exc
+    profile_dir.mkdir(parents=True, exist_ok=True)
     playwright = sync_playwright().start()
-    browser = playwright.chromium.launch(
-        headless=headless, args=["--disable-blink-features=AutomationControlled"]
+    context = playwright.chromium.launch_persistent_context(
+        str(profile_dir),
+        headless=headless,
+        viewport={"width": 1440, "height": 900},
+        args=["--disable-blink-features=AutomationControlled"],
     )
-    context = browser.new_context(
-        storage_state=str(state_file), viewport={"width": 1440, "height": 900}
-    )
-    page = context.new_page()
+    page = context.pages[0] if context.pages else context.new_page()
     page.goto(url, wait_until="domcontentloaded", timeout=LOAD_TIMEOUT_MS)
-    return PlaywrightPage(page, playwright, browser)
+    return PlaywrightPage(page, playwright, context, state_file)
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +712,7 @@ class Bidder(threading.Thread):
         headless: bool = False,
         dry_run: bool = False,
         poll: float = 0.5,
+        profile_dir: Path = PROFILE_DIR,
         state_file: Path = STATE_FILE,
         open_page: Callable[[], PageLike] | None = None,
         cap: Callable[[], int | None] | None = None,
@@ -670,7 +724,9 @@ class Bidder(threading.Thread):
         self.dry_run = dry_run
         self.poll = poll
         self._open_page = open_page or (
-            lambda: open_room(url, headless=headless, state_file=state_file)
+            lambda: open_room(
+                url, headless=headless, profile_dir=profile_dir, state_file=state_file
+            )
         )
         self._cap = cap or (lambda: None)
         self._on_change = on_change or (lambda: None)
@@ -679,6 +735,11 @@ class Bidder(threading.Thread):
         self._commands: queue.Queue[tuple[str, Any, Future[Any]]] = queue.Queue()
         self._stopping = threading.Event()
         self._page: PageLike | None = None
+        #: Whether ESPN is showing us a room or its sign-in page. None until
+        #: the first read says either; back to False if the session lapses
+        #: mid-draft, and True again when the room reads.
+        self._signed_in: bool | None = None
+        self._last_read: str | None = None
         self._view: RoomView | None = None
         self._armed: ArmState | None = None
         self._misses = 0
@@ -724,6 +785,9 @@ class Bidder(threading.Thread):
         return {
             "running": self.is_alive() and not self._stopping.is_set(),
             "dry_run": self.dry_run,
+            "page_open": self._page is not None,
+            "signed_in": self._signed_in,
+            "last_read": self._last_read,
             "error": self._error,
             "armed": armed is not None,
             "player": armed.player if armed else None,
@@ -740,13 +804,16 @@ class Bidder(threading.Thread):
 
     def run(self) -> None:
         try:
-            self._page = self._open_page()
+            page = self._open_page()
         except Exception as exc:
-            self._note(f"could not open the auction room: {type(exc).__name__}: {exc}")
+            self._note(f"could not open the ESPN window: {type(exc).__name__}: {exc}")
             with self._lock:
-                self._error = f"{type(exc).__name__}: {exc}"
+                self._error = f"could not open the ESPN window: {type(exc).__name__}: {exc}"
+            self._publish(force=True)
             self._refuse_queued()
             return
+        with self._lock:
+            self._page = page
         rehearsing = " (dry run: nothing will be clicked)" if self.dry_run else ""
         self._note(f"watching the auction room{rehearsing}")
         try:
@@ -798,6 +865,9 @@ class Bidder(threading.Thread):
     def _tick(self) -> None:
         try:
             view = self._read()
+        except SignInRequiredError as exc:
+            self._signed_out(str(exc))
+            return
         except SelectorError as exc:
             self._miss(f"could not read the room: {exc}")
             return
@@ -831,7 +901,28 @@ class Bidder(threading.Thread):
         with self._lock:
             self._view = view
             self._error = None
+            self._last_read = time.strftime("%H:%M:%S")
+            newly = self._signed_in is not True
+            self._signed_in = True
+        if newly:
+            # The room read, so the session is good: keep it for next time.
+            self._page.remember()
         return view
+
+    def _signed_out(self, message: str) -> None:
+        """ESPN is showing its sign-in page. Said once, not every half
+        second, and then waited out: the fix is a person signing in, in the
+        window, and the next read that finds the room ends it. A maximum
+        cannot survive it, because there is no room to hold it in."""
+        with self._lock:
+            first = self._signed_in is not False
+            self._signed_in = False
+            self._error = message
+            armed = self._armed
+        if first:
+            self._note(f"ESPN wants a sign-in: {message}")
+        if armed is not None:
+            self._disarm(SELECTOR, f"ESPN asked for a sign-in: {message}")
 
     def _miss(self, message: str) -> None:
         with self._lock:
