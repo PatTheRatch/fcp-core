@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from app.draft.bbm import ROLES
+from app.draft.estimate import estimated_worth
 from app.draft.feed import LoggedPick, OnBlock, match_name, match_team
 from app.draft.live import SCREEN_CATEGORIES, Room, bargain_warning, market_prices
 from app.draft.optimizer import Candidate, RosterPlan
@@ -119,7 +120,7 @@ def _install(context: CeilingContext) -> None:
     _CONTEXT = context
 
 
-def _compute(state: DraftState, player_id: int) -> Ceiling:
+def _compute(state: DraftState, player_id: int, baseline: RosterPlan | None = None) -> Ceiling:
     context = _CONTEXT
     if context is None:
         raise RuntimeError("ceiling worker started without its context")
@@ -133,6 +134,7 @@ def _compute(state: DraftState, player_id: int) -> Ceiling:
         limits=context.limits,
         restarts=context.restarts,
         allocation=context.allocation,
+        baseline=baseline,
     )
 
 
@@ -160,6 +162,19 @@ def process_executor(room: Room, workers: int = 2) -> Executor:
     )
 
 
+def block_executor(room: Room) -> Executor:
+    """One process that does nothing but the man on the block.
+
+    A process pool cannot reorder its own queue, so on a shared pool the
+    only way to jump the queue is to cancel the precomputations that have
+    not started and put them back afterwards -- which does nothing at all
+    about the ones already running. With two workers and a dozen likely
+    nominations queued, the player the room is actually bidding on waited
+    behind other people's arithmetic. He gets his own worker instead.
+    """
+    return process_executor(room, workers=1)
+
+
 # ---------------------------------------------------------------------------
 # the session
 # ---------------------------------------------------------------------------
@@ -175,11 +190,16 @@ class DraftSession:
         *,
         log: DraftLog | None = None,
         executor: Executor | None = None,
+        on_block: Executor | None = None,
         precompute: int = PRECOMPUTE,
     ) -> None:
         self.room = room
         self.log = log
         self.executor = executor
+        #: A pool reserved for the man on the block, so his ceiling never
+        #: waits behind precomputation. Without one the two share `executor`
+        #: and the block's work jumps the queue as best it can.
+        self.on_block = on_block
         self.precompute = precompute
         self._lock = threading.RLock()
         self._state = room.state
@@ -192,6 +212,7 @@ class DraftSession:
         self._priced: (
             tuple[tuple[Pick, ...], dict[int, tuple[int | None, str]], dict[int, int]] | None
         ) = None
+        self._warming = False
         self._names_by_id: dict[int, str] = {}
         for name, player_id in room.names.items():
             self._names_by_id.setdefault(player_id, name)
@@ -203,6 +224,7 @@ class DraftSession:
         if log is not None:
             self._replay(log.read())
         self._schedule()
+        self._warm_plan()
 
     # -- reading --------------------------------------------------------
 
@@ -353,6 +375,61 @@ class DraftSession:
             self._plans[picks] = plan
         return plan
 
+    def _warm_plan(self) -> None:
+        """Solve the plan off the request thread, so an estimate has one.
+
+        The estimate a player's card shows while his ceiling is still
+        searching is a swap into the best roster we can still finish, so
+        that roster has to exist. The screen asks for it after every pick
+        anyway; this only covers the gap between a pick landing and the
+        screen getting round to asking, and the very first nomination,
+        where no plan has ever been solved.
+        """
+        if self._warming or self._state.picks in self._plans:
+            return
+        self._warming = True
+        threading.Thread(target=self._warm, name="draft-plan", daemon=True).start()
+
+    def _warm(self) -> None:
+        try:
+            self.plan()
+        finally:
+            with self._lock:
+                self._warming = False
+                self._version += 1
+                # A pick may have landed while that was solving, in which
+                # case what was just cached is already a room out of date.
+                self._warm_plan()
+
+    def _recent_plan(self) -> RosterPlan | None:
+        """The plan for this room, or the last one solved for any room.
+
+        A plan one pick out of date is a poor basis for a decision and a
+        perfectly good basis for an estimate, which is all this is for.
+        """
+        plan = self._plans.get(self._state.picks)
+        if plan is not None:
+            return plan
+        return next(reversed(self._plans.values()), None)
+
+    def estimate(self, player_id: int) -> int | None:
+        """What he is worth to us, roughly, with no search. See `app.draft.estimate`."""
+        candidate = self._by_id.get(player_id)
+        plan = self._recent_plan()
+        if candidate is None or plan is None:
+            return None
+        room = self.room
+        return estimated_worth(
+            self._state,
+            plan,
+            candidate,
+            room.distributions,
+            punt=room.punt,
+            lineup=room.lineup,
+            limits=room.limits,
+            cap=room.allocation.cap(self._state) if room.allocation is not None else None,
+        )
+
     def wait_for_ceilings(self, timeout: float = 30.0) -> None:
         """Block until queued ceilings finish. For tests and scripts."""
         deadline = time.monotonic() + timeout
@@ -400,9 +477,16 @@ class DraftSession:
                 future.cancel()
                 del self._pending[key]
         self._schedule()
+        self._warm_plan()
 
     def _likeliest(self) -> list[int]:
-        """Players still available, most expensive by market price first."""
+        """Players still available, most expensive by market price first.
+
+        Market price and nothing else. A rehearsal knows exactly who is
+        nominated next and must never be allowed to say so: the rehearsal
+        may not do anything a real draft could not, or it stops being a
+        rehearsal of the thing that happens on the night.
+        """
         state = self._state
         market, _ = self._prices()
         priced = [
@@ -424,23 +508,38 @@ class DraftSession:
     def _submit(
         self, state: DraftState, player_id: int, *, front: bool = False
     ) -> Future[Ceiling] | None:
-        if self.executor is None or player_id not in self._by_id:
+        executor = (self.on_block if front else None) or self.executor
+        if executor is None or player_id not in self._by_id:
             return None
         key = (state.picks, player_id)
         if key in self._ceilings:
             return None
         existing = self._pending.get(key)
         if existing is not None and not existing.cancelled():
-            return existing
-        # A process pool cannot reorder its queue, so "front" means: cancel
-        # the precomputations not yet started, run this, and requeue them.
+            # He is usually one of the likeliest nominations too, so by the
+            # time he goes up his ceiling is already queued behind eleven
+            # other people's on the precompute pool. Take it back and give
+            # it to his own worker -- unless it has already started, in
+            # which case it is running and there is nothing to be gained.
+            reclaimed = front and self.on_block is not None and existing.cancel()
+            if not reclaimed:
+                return existing
+            del self._pending[key]
+        # A process pool cannot reorder its queue, so on a shared pool
+        # "front" means: cancel the precomputations not yet started, run
+        # this, and requeue them. With a pool of his own the block's work
+        # starts at once and the precomputations are left alone.
         requeue: list[int] = []
-        if front:
+        if front and self.on_block is None:
             for other_key, future in list(self._pending.items()):
                 if other_key != key and future.cancel():
                     del self._pending[other_key]
                     requeue.append(other_key[1])
-        future = self.executor.submit(_compute, state, player_id)
+        # The best roster we can still finish, when it has been solved for
+        # this exact room, is the without-him baseline for everyone it did
+        # not choose -- which is every player but thirteen. It saves the
+        # whole first solve of a ceiling. See `bid_ceiling`.
+        future = executor.submit(_compute, state, player_id, self._plans.get(state.picks))
         self._pending[key] = future
 
         def landed(done: Future[Ceiling], key: tuple[tuple[Pick, ...], int] = key) -> None:
@@ -551,8 +650,14 @@ class DraftSession:
             "espn_value": block.espn_value if block else None,
         }
 
-    def card(self, player_id: int) -> dict[str, Any]:
-        """Everything the room knows about one player, for this room."""
+    def card(self, player_id: int, *, estimate: bool = True) -> dict[str, Any]:
+        """Everything the room knows about one player, for this room.
+
+        `estimate` computes what he is worth to us without a search, for
+        the card to show until the exact ceiling lands. It is thirteen
+        roster scorings, which is nothing for one player and is not
+        nothing for a search of sixty, so the search turns it off.
+        """
         with self._lock:
             state = self._state
             room = self.room
@@ -621,7 +726,12 @@ class DraftSession:
                     else None
                 ),
                 "bbm": bbm,
-                "ceiling": _ceiling_view(ceiling, going, pending),
+                "ceiling": _ceiling_view(
+                    ceiling,
+                    going,
+                    pending,
+                    self.estimate(player_id) if estimate and ceiling is None else None,
+                ),
                 "warning": bargain_warning(
                     going,
                     ceiling.price if ceiling is not None else None,
@@ -643,7 +753,7 @@ class DraftSession:
             ]
             market, _ = self._prices()
             priced = sorted(ids, key=lambda pid: -(market.get(pid, (None, ""))[0] or 0))
-            return [self.card(pid) for pid in priced[:limit]]
+            return [self.card(pid, estimate=False) for pid in priced[:limit]]
 
     def pool_view(self) -> dict[str, Any]:
         """Every player on the board, with the line the screen draws him from.
@@ -742,9 +852,19 @@ def _withheld_card(player_id: int, name: str, source: str) -> dict[str, Any]:
     }
 
 
-def _ceiling_view(ceiling: Ceiling | None, going: int | None, pending: bool) -> dict[str, Any]:
+def _ceiling_view(
+    ceiling: Ceiling | None,
+    going: int | None,
+    pending: bool,
+    estimate: int | None = None,
+) -> dict[str, Any]:
     if ceiling is None:
-        return {"status": "pending" if pending else "not_started"}
+        # A number, labelled an estimate, beats an ellipsis on a clock.
+        return {
+            "status": "pending" if pending else "not_started",
+            "estimate": estimate,
+            "estimate_of": "what he is worth to us, from one swap into the plan",
+        }
     marginal = ceiling.marginal_at_floor
     if ceiling.price is None:
         verdict = "do not bid"

@@ -301,6 +301,21 @@ def _plan(
     )
 
 
+def evaluate(
+    players: Sequence[Candidate],
+    distributions: Sequence[CategoryDistribution],
+    punt: Iterable[str] = (),
+) -> RosterPlan:
+    """Score a roster exactly as it stands, with no search at all.
+
+    The public name for what the search uses internally. A caller that
+    already has a roster and only wants to know what it wins -- the draft
+    room's estimate, which asks what one swap would do -- has no business
+    running an optimisation to find out.
+    """
+    return _plan(list(players), distributions, frozenset(punt))
+
+
 #: Shuffled starting rosters tried in addition to the greedy one. Twelve was
 #: enough for the best run to appear repeatedly against 2026; each costs
 #: well under a second.

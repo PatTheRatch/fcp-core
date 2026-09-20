@@ -859,6 +859,16 @@ function renderWorth(card) {
       : "the most we should pay for him";
     return;
   }
+  // Still searching. An estimate from one swap into the plan is on the card
+  // (app/draft/estimate.py), and a number a reader can act on beats an
+  // ellipsis he cannot. It is marked as an estimate and replaced the moment
+  // the exact answer lands.
+  if (num(ce.estimate) !== null) {
+    cell.className = ce.estimate === 0 ? "worth nobid" : "worth estimate";
+    $("b-worth").textContent = ce.estimate === 0 ? "no bid" : money(ce.estimate);
+    $("b-worth-note").textContent = "an estimate — the exact ceiling is still searching";
+    return;
+  }
   $("b-worth").textContent = "–";
   $("b-worth-note").textContent = "working it out…";
 }
@@ -870,7 +880,6 @@ function renderBlock() {
     $("b-name").textContent = "Nobody";
     $("b-meta").textContent = "Click a player on the board, search below, or type one in.";
     resetMoney();
-    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
     $("b-went-lab").textContent = "Went for";
     strip.innerHTML = ""; note.innerHTML = "";
     return;
@@ -883,7 +892,6 @@ function renderBlock() {
   if (card && card.withheld) {
     $("b-meta").innerHTML = `Not this reader's to see. <span class="faint">${esc(card.withheld)}</span>`;
     resetMoney();
-    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
     strip.innerHTML = ""; note.innerHTML = "";
     return;
   }
@@ -891,7 +899,6 @@ function renderBlock() {
     // On the block but not on our board: a name the page reader saw.
     $("b-meta").textContent = "Not on our board — no projection for him. Enter the pick when he sells.";
     resetMoney();
-    $("b-plan-note").textContent = "";
     const offer = block && block.current_offer;
     $("b-went-lab").textContent = offer ? "Current offer" : "Went for";
     $("b-went").textContent = offer ? money(offer) : "–";
