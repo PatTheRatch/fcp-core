@@ -222,6 +222,16 @@ table.stand{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
 .stand td:first-child,.stand th:first-child{text-align:left;font-family:var(--body);text-transform:none;letter-spacing:0;font-size:13px}
 .stand td{font-family:var(--mono)}
 .stand tr.me td{background:var(--accent-soft)} .stand tr.me td:first-child{font-weight:600}
+/* Every column sorts, both ways. The header is a real button, so it is in
+   the tab order and answers Enter and Space without any help from us. */
+.stand th{padding:0}
+.stand th .sortbtn{font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;
+  background:none;border:0;cursor:pointer;width:100%;min-height:40px;padding:5px 8px;
+  display:flex;align-items:center;justify-content:flex-end;gap:5px}
+.stand th:first-child .sortbtn{justify-content:flex-start}
+.stand th .sortbtn:hover{color:var(--ink)}
+.stand th[aria-sort] .sortbtn{color:var(--accent)}
+.stand th .arrow{font-size:9px}
 .stand td.s1{background:var(--shade-1)} .stand td.s2{background:var(--shade-2)} .stand td.s3{background:var(--shade-3);font-weight:600}
 .stand td.rk{font-size:10px;color:var(--faint)}
 
@@ -1161,6 +1171,56 @@ function renderScarcity() {
 // where every team stands
 // ---------------------------------------------------------------------------
 
+/* The standings sort by any column, both ways. The state is module-level and
+   the table is rebuilt from it on every version, so a sort survives a pick
+   landing mid-read -- which on draft night is most of them. */
+let standSort = { key: null, dir: 1 };
+
+//: Which way round "best first" is. More is better everywhere but turnovers
+//: and the team's own name, so the first click on a column shows the good end.
+const BEST_FIRST = (key) => (key === "TO" || key === "team" ? 1 : -1);
+
+function standValue(row, key) {
+  if (key === "team") return String(row.team.name).trim().toLowerCase();
+  if (key === "picks") return row.picks;
+  return row.line[key];
+}
+
+function standCompare(a, b, key, dir) {
+  const left = standValue(a, key), right = standValue(b, key);
+  // A team with nothing in a category has no value, not a zero, and sorts to
+  // the bottom whichever way the column is pointing. So the direction is
+  // applied to the comparison and never to this: early in a draft most teams
+  // are empty, and turning a column round used to bring all of them to the
+  // top and bury the two rosters a reader was trying to compare.
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  if (typeof left === "string") return dir * left.localeCompare(right);
+  return dir * (left - right);
+}
+
+function sortStandings(key) {
+  standSort = standSort.key === key
+    ? { key, dir: -standSort.dir }
+    : { key, dir: BEST_FIRST(key) };
+  renderStandings();
+}
+
+function standHead(key, label) {
+  const on = standSort.key === key;
+  const sorted = on ? (standSort.dir === 1 ? "ascending" : "descending") : null;
+  const arrow = on ? (standSort.dir === 1 ? "▲" : "▼") : "";
+  return `<th${sorted ? ` aria-sort="${sorted}"` : ""}>`
+    + `<button type="button" class="sortbtn" data-sort="${esc(key)}">`
+    + `<span>${esc(label)}</span><span class="arrow">${arrow}</span></button></th>`;
+}
+
+$("stand").addEventListener("click", (e) => {
+  const button = e.target.closest ? e.target.closest("[data-sort]") : null;
+  if (button) sortStandings(button.dataset.sort);
+});
+
 function renderStandings() {
   if (!Pool.size) {
     $("stand").innerHTML = "";
@@ -1170,7 +1230,11 @@ function renderStandings() {
   const byTeam = {};
   S.teams.forEach((t) => { byTeam[t.team_id] = []; });
   S.picks.forEach((p) => { if (byTeam[p.team_id]) byTeam[p.team_id].push(p.player_id); });
-  const lines = S.teams.map((t) => ({ team: t, line: rosterLine(byTeam[t.team_id] || []) }));
+  const lines = S.teams.map((t) => ({
+    team: t,
+    line: rosterLine(byTeam[t.team_id] || []),
+    picks: (byTeam[t.team_id] || []).length,
+  }));
 
   // Rank each category down the column: turnovers the other way up, and a
   // team with nothing in a category ranked last rather than first.
@@ -1185,15 +1249,27 @@ function renderStandings() {
   const n = S.teams.length;
   const band = Math.max(1, Math.round(n / 4));
   $("stand-lede").innerHTML = `Each roster's projected per-game totals, shaded by rank among the ${n} teams: `
-    + `the top ${band} darkest. Read across a row for a team's shape, down a column for who owns a category.`;
-  $("stand").innerHTML = `<thead><tr><th>Team</th>${CATS.map((c) => `<th>${c}</th>`).join("")}<th>Picks</th></tr></thead><tbody>`
-    + lines.map(({ team, line }) => `<tr class="${team.is_me ? "me" : ""}"><td>${esc(String(team.name).trim())}</td>`
+    + `the top ${band} darkest. Read across a row for a team's shape, down a column for who owns a category. `
+    + `Any column heading sorts by it, and again to turn it round.`;
+
+  // The shading is by rank in the category and never by the sorted order, so
+  // sorting rearranges the rows and changes nothing a reader is reading.
+  const ordered = standSort.key
+    ? lines.slice().sort((a, b) => standCompare(a, b, standSort.key, standSort.dir))
+    : lines;
+
+  $("stand").innerHTML = "<thead><tr>"
+    + standHead("team", "Team")
+    + CATS.map((c) => standHead(c, c)).join("")
+    + standHead("picks", "Picks")
+    + "</tr></thead><tbody>"
+    + ordered.map(({ team, line, picks }) => `<tr class="${team.is_me ? "me" : ""}"><td>${esc(String(team.name).trim())}</td>`
       + CATS.map((cat) => {
         const v = line[cat], rk = ranks[cat][team.team_id];
         const cls = v === null ? "" : rk <= band ? "s3" : rk <= band * 2 ? "s2" : rk <= band * 3 ? "s1" : "";
         return `<td class="${cls}">${showCat(cat, v)}<span class="rk"> ${v === null ? "" : rk}</span></td>`;
       }).join("")
-      + `<td>${(byTeam[team.team_id] || []).length}</td></tr>`).join("")
+      + `<td>${picks}</td></tr>`).join("")
     + "</tbody>";
 }
 

@@ -83,7 +83,15 @@ left against how many picks are left, so a category being cornered and one
 going cheap are both visible.
 
 **Where every team stands.** Each roster's projected per-game totals, the two
-percentages weighted by attempts, shaded by rank down the column.
+percentages weighted by attempts, shaded by rank down the column. Every column
+heading sorts by it and again to turn it round; the headings are real buttons,
+so they are in the tab order and answer Enter and Space. The first click shows
+the good end of the column (fewest turnovers, most of everything else). The
+sort is held outside the render, so a pick landing mid-read redraws the table
+without losing it. The shading is always by rank in the category and never by
+the sorted order, so sorting rearranges rows and changes nothing being read.
+This table lives only on the draft screen; the in-season pages
+(`app/api/static/`) are separate files and share no component with it.
 
 **The roster we can still finish**, from `GET /api/plan`; **the ladder** of what
 each open place should cost; and **the tape**, the last fourteen picks.
