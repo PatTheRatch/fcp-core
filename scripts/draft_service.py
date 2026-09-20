@@ -35,6 +35,17 @@ rehearsal never touches the real draft's log.
 Without --page or --rehearse, picks come in through the screen or POST
 /api/picks and nothing reads ESPN. The room options (--plan, --restarts, --punt ...) are the same as
 scripts/draft_room.py's.
+
+BIDDING
+
+    python scripts/espn_login.py            # once, sign in, leave it open
+    python scripts/draft_service.py ... --page "<draft room>" --bid
+
+adds a second browser window that can place bids: a one-tap offer, and a
+maximum held for one player until it is reached, the player changes, or the
+STOP button is pressed. Off unless --bid is given, and with --bid --no-bid
+it rehearses the whole thing without ever clicking. Read docs/bidding.md
+before using it on a real draft: every click is real money.
 """
 
 from __future__ import annotations
@@ -68,6 +79,17 @@ def main() -> int:
     )
     ap.add_argument("--page", help="the ESPN draft room URL; omit to enter picks by hand")
     ap.add_argument("--trust-money", action="store_true", help="apply picks inferred from budgets")
+    ap.add_argument(
+        "--bid",
+        action="store_true",
+        help="open a second browser that can place bids; needs --page and scripts/espn_login.py",
+    )
+    ap.add_argument(
+        "--no-bid",
+        action="store_true",
+        help="with --bid: rehearse everything except the final click",
+    )
+    ap.add_argument("--bid-headless", action="store_true", help="with --bid: no window to watch")
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between page reads")
     ap.add_argument("--log", type=Path, help="pick log (default logs/draft-<season>.jsonl)")
     ap.add_argument("--rehearse", type=int, help="replay this season's real draft into the room")
@@ -141,8 +163,39 @@ def main() -> int:
         rehearsal.start()
         print(f"rehearsing {len(nominations)} nominations from {args.rehearse}", flush=True)
 
+    bidder = None
+    if args.bid:
+        if not args.page:
+            raise SystemExit("--bid needs --page: it bids in the room the URL names")
+        from app.draft.bidder import STATE_FILE, Bidder
+
+        if not STATE_FILE.exists():
+            raise SystemExit(
+                f"--bid needs a signed-in ESPN session at {STATE_FILE}. "
+                "Run `python scripts/espn_login.py`, sign in, and leave the window open."
+            )
+
+        def cap() -> int | None:
+            allocation = room.allocation
+            return allocation.cap(session.state) if allocation is not None else None
+
+        bidder = Bidder(
+            args.page,
+            headless=args.bid_headless,
+            dry_run=args.no_bid,
+            cap=cap,
+            on_change=session.bump,
+        )
+        bidder.start()
+        print(
+            "bidding is ON"
+            + (" (dry run: nothing will be clicked)" if args.no_bid else "")
+            + " -- every click is real money; docs/bidding.md",
+            flush=True,
+        )
+
     print(f"draft screen: http://{args.host}:{args.port}", flush=True)
-    app = create_draft_app(session, rehearsal=rehearsal)
+    app = create_draft_app(session, rehearsal=rehearsal, bidder=bidder)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
