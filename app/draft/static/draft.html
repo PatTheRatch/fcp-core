@@ -1135,28 +1135,28 @@ function bidState(b, room, worth, who) {
   return state;
 }
 
-function bidLine(b, room, worth) {
+/** What the block above does not already say. Who holds him, at what, for
+ *  how much, and what he is worth are all in the verdict and its figures
+ *  now, so this line is only what the tool itself is doing: whether it can
+ *  bid at all, why it is sitting on its hands, and what it last did. */
+function bidLine(b) {
   const bits = [];
   if (!b.running) {
     bits.push(`<span class="off">the bidder is not running</span>`
       + (b.error ? ` — ${fault(b.error)}` : ""));
-  } else if (b.armed) {
-    bits.push(`<span class="on">Armed</span> · holding to <b>$${b.maximum}</b>`
-      + ` for <b>${esc(b.player)}</b>`);
-  } else {
-    bits.push(`<span class="off">Not armed</span>`);
   }
   if (b.dry_run) bits.push(`<span class="on">dry run — nothing is clicked</span>`);
-  if (num(room.current_offer) !== null) {
-    bits.push(`offer <b>$${room.current_offer}</b>` + (room.leading
-      ? ` · <span class="lead">we are leading</span>`
-      : room.high_bidder ? ` · high bid ${esc(room.high_bidder)}` : ""));
-  }
-  if (worth !== null) bits.push(`worth to us <b>$${worth}</b>`);
   if (b.armed && b.waiting) bits.push(esc(b.waiting));
-  if (!b.armed && b.stopped_because) bits.push(`stopped: ${fault(b.stopped_because)}`);
-  if (b.last_action) {
-    bits.push(`last <b>${esc(b.last_action.text)}</b> at ${esc(b.last_action.at)}`);
+  const stopped = !b.armed && b.stopped_because ? String(b.stopped_because) : "";
+  if (stopped) bits.push(`stopped: ${fault(stopped)}`);
+  // What stopped us is usually also the last thing that happened, and the
+  // same sentence twice is what made this line unreadable.
+  const last = b.last_action ? String(b.last_action.text) : "";
+  const echoed = !!stopped && (stopped.includes(last) || last.includes(stopped));
+  if (last && !echoed) {
+    bits.push(`last <b>${esc(last)}</b> at ${esc(b.last_action.at)}`);
+  } else if (last) {
+    bits.push(`at ${esc(b.last_action.at)}`);
   }
   return bits.join(" · ");
 }
@@ -1198,7 +1198,7 @@ function renderBid() {
   $("bid-state-head").innerHTML = state.head;
   $("bid-state-sub").textContent = state.sub;
 
-  $("bid-line").innerHTML = bidLine(b, room, worth);
+  $("bid-line").innerHTML = bidLine(b);
   const log = b.log || [];
   $("bid-log-count").textContent = log.length === 1 ? "1 line" : `${log.length} lines`;
   $("bid-log").innerHTML = log.slice().reverse().map((e) =>
