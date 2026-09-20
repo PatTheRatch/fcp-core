@@ -51,7 +51,7 @@ from app.db.session import make_engine, make_session_factory
 from app.draft.live import RoomError, load_room
 from app.draft.rehearsal import Rehearsal, load_nominations
 from app.draft.service import PageFeed, create_draft_app
-from app.draft.session import DraftLog, DraftSession, process_executor
+from app.draft.session import DraftLog, DraftSession, block_executor, process_executor
 from app.projections.sources import describe
 
 
@@ -74,7 +74,12 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=20.0, help="seconds per rehearsal nomination")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--workers", type=int, default=3, help="processes computing ceilings")
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="processes precomputing ceilings; one more is reserved for the man on the block",
+    )
     ap.add_argument("--restarts", type=int, default=4)
     ap.add_argument("--punt", action="append", default=[])
     ap.add_argument("--plan", default="history", choices=("history", "optimizer", "none"))
@@ -110,7 +115,10 @@ def main() -> int:
     )
     log_path = args.log or default_log
     session = DraftSession(
-        room, log=DraftLog(log_path), executor=process_executor(room, args.workers)
+        room,
+        log=DraftLog(log_path),
+        executor=process_executor(room, args.workers),
+        on_block=block_executor(room),
     )
     print(room.pool_note, flush=True)
     print(f"source: {room.projection_source} ({describe(room.projection_source)})", flush=True)

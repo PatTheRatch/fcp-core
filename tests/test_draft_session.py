@@ -6,6 +6,7 @@ process, which exercises the same scheduling a process pool gets on draft
 day.
 """
 
+import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -176,6 +177,40 @@ def test_ceilings_are_ready_for_the_likeliest_nominations_and_never_stale(
     }
 
 
+def test_the_man_on_the_block_does_not_queue_behind_the_precomputation() -> None:
+    """A pool of his own, so his ceiling starts the moment he goes up.
+
+    The precompute pool is one worker held busy by a task that will not
+    finish until the test lets it. On a shared pool the block's ceiling
+    could not start; on its own it does, and finishes.
+    """
+    held = threading.Event()
+    room = make_room()
+    with (
+        ThreadPoolExecutor(1, initializer=_install, initargs=(context_for(room),)) as precompute,
+        ThreadPoolExecutor(1, initializer=_install, initargs=(context_for(room),)) as on_block,
+    ):
+        precompute.submit(held.wait, 10)  # the one precompute worker, blocked
+        session = DraftSession(room, executor=precompute, on_block=on_block, precompute=3)
+        try:
+            session.set_block(OnBlock("Kawhi Leonard", None, None, None), player_id=2)
+            ready = session.ceiling(2, wait=10.0)
+            assert ready is not None, "the block's ceiling ran while the other pool was jammed"
+            assert session.card(2)["ceiling"]["status"] == "ready"
+        finally:
+            held.set()
+
+
+def test_without_a_reserved_worker_the_block_still_jumps_the_queue(
+    executor: ThreadPoolExecutor,
+) -> None:
+    """The old arrangement is still there for a session given one pool."""
+    session = DraftSession(make_room(), executor=executor, precompute=3)
+    session.set_block(OnBlock("Kawhi Leonard", None, None, None), player_id=2)
+
+    assert session.ceiling(2, wait=10.0) is not None
+
+
 def test_the_card_carries_market_bbm_and_the_injury_discount() -> None:
     session = DraftSession(make_room())
     card = session.card(2)
@@ -322,3 +357,66 @@ def test_a_cheap_player_only_our_model_likes_carries_a_warning() -> None:
     assert bargain_warning(6, 41, 30.0) is None, "BBM agrees: more likely a real bargain"
     assert bargain_warning(20, 24, None) is None, "a small gap is ordinary disagreement"
     assert bargain_warning(None, 41, None) is None
+
+
+# ---------------------------------------------------------------------------
+# the estimate: a number on the block before the search has finished
+# ---------------------------------------------------------------------------
+
+
+def test_the_estimate_prices_a_swap_into_the_plan_without_a_search() -> None:
+    """A ceiling is a bisection over re-solves; the block needs a number now.
+
+    The six players score 90, 70, 65, 50, 40 and 35 a week, so the estimate
+    has one job to get right: more of what wins categories is worth more
+    money. It is a swap into the plan priced through the league's curve, and
+    nothing here runs a search.
+    """
+    session = DraftSession(make_room())
+    session.plan()
+
+    estimates = [session.estimate(pid) for pid in (1, 3, 5, 6)]
+
+    assert None not in estimates, "every player on the board gets a number"
+    ranked = [value for value in estimates if value is not None]
+    assert ranked == sorted(ranked, reverse=True), f"a better player is worth more: {ranked}"
+    assert ranked[0] > ranked[-1], "and the best is worth strictly more than the worst"
+
+
+def test_a_player_the_plan_has_chosen_is_worth_what_it_budgeted_for_him() -> None:
+    session = DraftSession(make_room())
+    plan = session.plan()
+
+    for chosen in plan.players:
+        assert session.estimate(chosen.player_id) == chosen.price
+
+
+def test_the_estimate_never_asks_for_more_than_we_can_legally_bid() -> None:
+    session = DraftSession(make_room())
+    session.plan()
+    session.apply(4, 1, 18)  # $18 of our $20 gone, one place left: $2 is the cap
+
+    estimate = session.estimate(1)
+
+    assert estimate is not None
+    assert estimate <= session.state.mine.max_bid(session.state.minimum_bid)
+
+
+def test_a_card_carries_an_estimate_while_its_ceiling_is_still_searching() -> None:
+    session = DraftSession(make_room())
+    session.plan()
+
+    card = session.card(2)
+
+    assert card["ceiling"]["status"] in {"pending", "not_started"}
+    assert card["ceiling"]["estimate"] is not None, "never a blank where a number can go"
+
+
+def test_the_search_skips_the_estimate_because_sixty_of_them_is_not_free() -> None:
+    session = DraftSession(make_room())
+    session.plan()
+
+    rows = session.search(limit=6)
+
+    assert rows, "the search still answers"
+    assert all(row["ceiling"].get("estimate") is None for row in rows)

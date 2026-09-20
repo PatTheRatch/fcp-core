@@ -134,6 +134,23 @@ def test_the_screen_is_served_and_asks_for_the_pool() -> None:
     assert "/api/events" in page.text, "and stays live on the stream"
 
 
+def test_the_page_reopens_a_stream_a_phone_has_dropped() -> None:
+    """iOS Safari drops the EventSource when the tab is backgrounded or the
+    screen locks, and does not always say so: the page then looks live and is
+    frozen. The page's answer is three wakeups, a "reconnecting…" pill and a
+    poll of /api/state while the stream is down. There is no browser in this
+    suite, so this only guards that the wiring is still in the file; the
+    behaviour itself was driven in a real browser against a running rehearsal.
+    """
+    page = TestClient(create_draft_app(DraftSession(make_room()))).get("/").text
+
+    for event in ("visibilitychange", "pageshow", "online"):
+        assert event in page, f"the page has to reopen the stream on {event}"
+    assert 'id="link"' in page, "the masthead needs somewhere to say it is reconnecting"
+    assert "reconnecting…" in page
+    assert "STREAM_POLL_MS" in page, "and it polls /api/state while the stream is down"
+
+
 def test_the_pool_carries_a_line_a_price_and_who_bought_him() -> None:
     session = DraftSession(make_room())
     session.apply(1, 2, 12)

@@ -317,6 +317,13 @@ def replay(
             limits=limits,
             restarts=restarts,
             allocation=allocation,
+            # The redraft is a measurement, not a clock: its whole value is
+            # that a number from it can be compared with one recorded last
+            # month. The fast path agrees with this one on 85% of
+            # nominations and to within $0.35 on average
+            # (scripts/ceiling_check.py), which is fine on draft night and
+            # is not what a scorecard wants. It stays on the old path.
+            fast=False,
         )
         want = ceiling.price
         if want is not None and market_cap is not None:

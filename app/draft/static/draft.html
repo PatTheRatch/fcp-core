@@ -73,11 +73,24 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .block .name{font-size:clamp(36px,6vw,64px);letter-spacing:-.005em;margin-top:2px}
 .block .meta{font-size:15px;color:var(--muted);margin-top:6px}
 .block .meta b{color:var(--ink);font-weight:600}
-.money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-left:1px solid var(--rule)}
-.money div{padding:4px 0 4px 18px}
-.money b{display:block;font-family:var(--mono);font-size:clamp(30px,4vw,44px);font-weight:600;line-height:1.05;text-shadow:var(--glow)}
-.money .ours b{color:var(--accent)}
-.money small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+/* The money. One number is the instruction -- what he is worth to us, which
+   is the ceiling -- and it is the one set large and in the accent. The
+   board's price, what the room will probably pay, the plan's place and what
+   he went for stand beside it at a reading size: context, not the call. */
+.money{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.7fr);gap:0 18px;border-left:1px solid var(--rule);padding-left:18px}
+.money .worth b{display:block;font-family:var(--mono);font-size:clamp(40px,5.4vw,60px);font-weight:600;line-height:1;color:var(--accent);text-shadow:var(--glow);letter-spacing:-.02em}
+.money .worth .lab{color:var(--accent)}
+.money .worth.estimate b{color:var(--warn)}
+.money .worth.estimate .lab{color:var(--warn)}
+.money .worth.nobid b{color:var(--stop);font-size:clamp(26px,3.2vw,36px)}
+.money .worth.nobid .lab{color:var(--stop)}
+.money .aside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;align-content:start}
+.money .aside div{padding:2px 0}
+.money .aside b{display:block;font-family:var(--mono);font-size:clamp(19px,2.2vw,26px);font-weight:600;line-height:1.1}
+/* "a $28 place" is a sentence, not a figure: it reads at a smaller size. */
+.money .phrase b{font-size:clamp(15px,1.7vw,19px);letter-spacing:-.01em}
+.money small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.3}
+.money .worth small{font-size:13.5px}
 .strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border:1px solid var(--rule);border-width:1px 0 1px 1px}
 .strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
 .strip .lab{display:block;text-align:right;margin-bottom:2px}
@@ -99,12 +112,36 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .risk-E,.risk-H{color:var(--stop)} .risk-M{color:var(--warn)} .risk-L{color:var(--good)}
 
 /* the desk: entering picks, and what is still for sale */
-.desk{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px 40px;padding:16px;border-bottom:1px solid var(--rule)}
-.desk h2,.sect h2,.lower h2{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-family:var(--display);font-weight:500;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--rule)}
-.entry{display:grid;grid-template-columns:minmax(0,1fr) 190px 88px;gap:6px}
-.entry input,.entry select,.search input{background:var(--ground);border:1px solid var(--rule);padding:8px 10px;width:100%;color:var(--ink)}
+/* The desk is the search alone now: entering a pick has its own block above,
+   because on the night that is the control that has to be found first. */
+.desk{display:grid;grid-template-columns:minmax(0,1fr);gap:18px 40px;padding:16px;border-bottom:1px solid var(--rule)}
+.desk h2,.sect h2,.lower h2,.deskentry h2{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-family:var(--display);font-weight:500;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--rule)}
+
+/* entering a pick: the draft-night fallback, and the one control that has to
+   work when everything else has. Its own block, full width, with tap targets
+   a thumb can hit and an answer that stays on the page until the next action. */
+.deskentry{padding:16px 16px 18px;border-bottom:3px solid var(--rule-strong);background:var(--surface)}
+.deskentry h2{color:var(--ink);font-size:16px;border-bottom-color:var(--rule-strong)}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) 220px 120px;gap:8px}
+.entry input,.entry select{background:var(--ground);border:1px solid var(--rule);padding:11px 12px;width:100%;color:var(--ink);font-size:16px;min-height:48px}
+.search input{background:var(--ground);border:1px solid var(--rule);padding:8px 10px;width:100%;color:var(--ink)}
 .entry input:focus,.entry select:focus,.search input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .buttons{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.deskentry .buttons{gap:8px;margin-top:10px}
+.deskentry .buttons .btn{font-size:13px;padding:0 18px;min-height:48px;letter-spacing:.05em}
+.deskentry .buttons .btn.primary{min-width:180px;font-size:15px}
+button.btn[disabled]{opacity:.55;cursor:progress}
+button.btn[disabled]:hover{border-color:var(--rule)}
+/* the answer: what was saved, or why it was refused. It sits under the
+   buttons and stays there until the next thing the reader does. */
+.result{margin-top:12px;padding:11px 13px;border:1px solid var(--rule);background:var(--ground);font-size:15px;line-height:1.4}
+.result.ok{border-color:var(--good);background:var(--good-soft)}
+.result.bad{border-color:var(--stop);background:var(--stop-soft)}
+.result .lab{display:block;margin-bottom:3px}
+.result.ok .lab{color:var(--good)} .result.bad .lab{color:var(--stop)}
+.result b{font-weight:600}
+.result .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.result .alts .btn{min-height:40px;padding:0 12px}
 .suggest{position:relative}
 .suggest ul{position:absolute;left:0;right:0;top:100%;margin:2px 0 0;padding:0;list-style:none;background:var(--surface);border:1px solid var(--rule-strong);z-index:15;max-height:260px;overflow:auto;box-shadow:var(--shadow)}
 .suggest li{padding:5px 9px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
@@ -185,12 +222,29 @@ table.stand{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
 .stand td:first-child,.stand th:first-child{text-align:left;font-family:var(--body);text-transform:none;letter-spacing:0;font-size:13px}
 .stand td{font-family:var(--mono)}
 .stand tr.me td{background:var(--accent-soft)} .stand tr.me td:first-child{font-weight:600}
+/* Every column sorts, both ways. The header is a real button, so it is in
+   the tab order and answers Enter and Space without any help from us. */
+.stand th{padding:0}
+.stand th .sortbtn{font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;
+  background:none;border:0;cursor:pointer;width:100%;min-height:40px;padding:5px 8px;
+  display:flex;align-items:center;justify-content:flex-end;gap:5px}
+.stand th:first-child .sortbtn{justify-content:flex-start}
+.stand th .sortbtn:hover{color:var(--ink)}
+.stand th[aria-sort] .sortbtn{color:var(--accent)}
+.stand th .arrow{font-size:9px}
 .stand td.s1{background:var(--shade-1)} .stand td.s2{background:var(--shade-2)} .stand td.s3{background:var(--shade-3);font-weight:600}
 .stand td.rk{font-size:10px;color:var(--faint)}
 
 /* hover card */
 .card{position:fixed;z-index:20;width:320px;max-width:calc(100vw - 24px);background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);box-shadow:var(--shadow);padding:10px 12px 12px;pointer-events:none;opacity:0;transition:opacity .08s}
 .card.on{opacity:1}
+/* Pinned by a tap: now it can be touched, which is what the close control
+   needs. On a pointer the card is passed straight through as before. */
+.card.pinned{pointer-events:auto}
+.card .cx{position:absolute;top:2px;right:2px;width:44px;height:44px;display:none;align-items:center;justify-content:center;background:var(--sunk);border:1px solid var(--rule);color:var(--ink);font-size:22px;line-height:1;cursor:pointer;padding:0}
+.card.pinned .cx{display:flex}
+.card.pinned .cx:hover{border-color:var(--rule-strong)}
+.card.pinned .cn,.card.pinned .cm{padding-right:46px}
 .card .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05}
 .card .cm{font-size:12.5px;color:var(--muted);margin:3px 0 8px}
 .card .cm b{color:var(--ink);font-weight:600}
@@ -206,9 +260,15 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
 @media (max-width:860px){
   .scar{grid-template-columns:repeat(3,minmax(0,1fr))} .scar div{border-bottom:1px solid var(--rule)}
   .block{grid-template-columns:1fr}
-  .money{border-left:0;border-top:1px solid var(--rule);padding-top:8px} .money div{padding-left:0;padding-right:12px}
+  .money{grid-template-columns:1fr;border-left:0;border-top:1px solid var(--rule);padding:8px 0 0}
+  .money .aside{margin-top:10px;padding-top:8px;border-top:1px solid var(--rule)}
   .lower,.desk{grid-template-columns:1fr} .agate{columns:1}
+  /* One column, and every control a thumb's width tall: this is the block a
+     manager reaches for when the page reader has stopped working. */
   .entry{grid-template-columns:1fr}
+  .entry input,.entry select{min-height:52px}
+  .deskentry .buttons .btn{flex:1 1 calc(50% - 4px);min-height:52px;padding:0 10px}
+  .deskentry .buttons .btn.primary{flex:1 1 100%;min-height:58px;min-width:0}
   .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px} .strip div{border-bottom:1px solid var(--rule)}
 }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -232,6 +292,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
       <button class="btn tiny" id="r-pause">Pause</button>
       <button class="btn tiny" id="r-skip" title="sell him now to his real buyer">Sell now</button>
     </div>
+    <span class="pill warn" id="link">reconnecting…</span>
     <span class="pill" id="feed">connecting…</span>
     <button class="btn tiny" id="theme" aria-pressed="false" title="light or dark">Lights up</button>
   </div>
@@ -244,34 +305,40 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
     <p class="meta" id="b-meta">Click a player on the board, search below, or type one in.</p>
   </div>
   <div class="money">
-    <div class="ours"><span class="lab">Our price</span><b class="num" id="b-ours">–</b><small id="b-ours-note">the board's valuation</small></div>
-    <div><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
-    <div><span class="lab" id="b-went-lab">Went for</span><b class="num" id="b-went">–</b><small id="b-went-note"></small></div>
+    <div class="worth"><span class="lab">Worth to us</span><b class="num" id="b-worth">–</b><small id="b-worth-note"></small></div>
+    <div class="aside">
+      <div><span class="lab">Our price</span><b class="num" id="b-ours">–</b><small id="b-ours-note">the board's valuation</small></div>
+      <div><span class="lab">Expected to go</span><b class="num" id="b-going">–</b><small id="b-going-note"></small></div>
+      <div id="b-plan-cell"><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
+      <div><span class="lab" id="b-went-lab">Went for</span><b class="num" id="b-went">–</b><small id="b-went-note"></small></div>
+    </div>
   </div>
   <div class="strip" id="b-strip"></div>
   <div class="blocknote" id="b-note"></div>
 </section>
 
-<section class="desk">
-  <div>
-    <h2>Enter a pick <span class="faint" style="text-transform:none;letter-spacing:0"><kbd>/</kbd> to type &middot; <kbd>Enter</kbd> to save</span></h2>
-    <form class="entry" id="e-form" autocomplete="off">
-      <div class="suggest">
-        <input id="e-player" placeholder="Player" autocomplete="off" aria-label="Player">
-        <ul id="e-suggest" hidden></ul>
-      </div>
-      <select id="e-team" aria-label="Team"></select>
-      <input id="e-price" class="num" type="number" min="1" placeholder="$" aria-label="Price">
-      <button type="submit" hidden></button>
-    </form>
-    <div class="buttons">
-      <button class="btn primary" id="e-save" type="button">Save pick</button>
-      <button class="btn" id="e-block" type="button">Put on block</button>
-      <button class="btn" id="e-undo" type="button">Undo last pick</button>
-      <button class="btn" id="e-clear" type="button">Clear the block</button>
+<section class="deskentry" id="deskentry">
+  <h2>Enter a pick <span class="faint" style="text-transform:none;letter-spacing:0"><kbd>/</kbd> to type &middot; <kbd>Enter</kbd> to save</span></h2>
+  <form class="entry" id="e-form" autocomplete="off">
+    <div class="suggest">
+      <input id="e-player" placeholder="Player" autocomplete="off" aria-label="Player">
+      <ul id="e-suggest" hidden></ul>
     </div>
-    <p class="ours-so-far" id="ours"></p>
+    <select id="e-team" aria-label="Team"></select>
+    <input id="e-price" class="num" type="number" min="1" inputmode="numeric" placeholder="$" aria-label="Price">
+    <button type="submit" hidden></button>
+  </form>
+  <div class="buttons">
+    <button class="btn primary" id="e-save" type="button">Save pick</button>
+    <button class="btn" id="e-block" type="button">Put on block</button>
+    <button class="btn" id="e-undo" type="button">Undo last pick</button>
+    <button class="btn" id="e-clear" type="button">Clear the block</button>
   </div>
+  <div class="result" id="e-result" role="status" aria-live="polite" hidden></div>
+  <p class="ours-so-far" id="ours"></p>
+</section>
+
+<section class="desk">
   <div class="search">
     <h2>Still for sale <span class="faint" style="text-transform:none;letter-spacing:0">most expensive first</span></h2>
     <input id="b-search" placeholder="Search players" autocomplete="off" aria-label="Search players">
@@ -281,7 +348,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   </div>
 </section>
 
-<div class="boardwrap"><table class="board" id="board"></table></div>
+<div class="boardwrap" id="boardwrap"><table class="board" id="board"></table></div>
 
 <section class="sect">
   <h2>What is left on the board</h2>
@@ -577,20 +644,100 @@ function rosterLine(playerIds) {
 // live state
 // ---------------------------------------------------------------------------
 
+/* ---------------------------------------------------------------------------
+   The stream, and what happens when a phone takes it away.
+
+   iOS Safari drops an EventSource when the tab goes to the background or the
+   screen locks, and it does not always reopen it: the page comes back looking
+   live and is in fact frozen at whatever it last drew. So three things:
+
+     the masthead says "reconnecting…" whenever the stream is not open, so a
+     stale page is never a silent one;
+     while it is down the page polls /api/state every few seconds, which is
+     slower than the stream but is not nothing;
+     coming back to the tab (`visibilitychange`) or back through the history
+     (`pageshow`, which also fires on a bfcache restore) reopens it at once
+     rather than waiting for the next retry.
+   --------------------------------------------------------------------------- */
+
+const STREAM_POLL_MS = 3000;
+const STREAM_RETRY_MS = 3000;
+
+const Stream = {
+  source: null,
+  open: false,
+  pollTimer: null,
+  retryTimer: null,
+};
+
+function takeState(snapshot) {
+  if (!snapshot || typeof snapshot.version !== "number") return;
+  S = snapshot;
+  if (!Pool.loaded) loadPool();
+  render();
+}
+
+function renderLink() {
+  const el = $("link");
+  if (!el) return;
+  el.hidden = Stream.open;
+  el.textContent = "reconnecting…";
+  el.className = "pill warn";
+}
+
+async function pollOnce() {
+  try { takeState(await api("/api/state")); } catch (e) { /* still down; the pill says so */ }
+}
+
+Stream.up = function up() {
+  if (!Stream.open) { Stream.open = true; renderLink(); }
+  clearInterval(Stream.pollTimer); Stream.pollTimer = null;
+  clearTimeout(Stream.retryTimer); Stream.retryTimer = null;
+};
+
+Stream.down = function down() {
+  Stream.open = false;
+  renderLink();
+  if (Stream.pollTimer === null) {
+    pollOnce();
+    Stream.pollTimer = setInterval(pollOnce, STREAM_POLL_MS);
+  }
+  if (Stream.retryTimer === null) {
+    Stream.retryTimer = setTimeout(() => { Stream.retryTimer = null; connect(); }, STREAM_RETRY_MS);
+  }
+};
+
 function connect() {
+  clearTimeout(Stream.retryTimer); Stream.retryTimer = null;
+  if (Stream.source) { try { Stream.source.close(); } catch (e) { /* already gone */ } }
+  Stream.source = null;
   let events;
-  try { events = new EventSource("/api/events"); } catch (e) { return; }
+  try { events = new EventSource("/api/events"); } catch (e) { Stream.down(); return; }
+  Stream.source = events;
+  events.onopen = () => Stream.up();
   events.addEventListener("state", (e) => {
-    try { S = JSON.parse(e.data); } catch (err) { return; }
-    if (!Pool.loaded) loadPool();
-    render();
+    Stream.up();
+    let snapshot;
+    try { snapshot = JSON.parse(e.data); } catch (err) { return; }
+    takeState(snapshot);
   });
   events.onerror = () => {
-    const el = $("feed");
-    el.textContent = "service not reachable — retrying";
-    el.className = "pill err";
+    // A browser retrying on its own leaves readyState CONNECTING; one that
+    // has given up leaves CLOSED, and that is the case a phone produces.
+    Stream.down();
   };
 }
+
+/** Back in front of the reader: reopen at once rather than on the next retry. */
+function wakeStream() {
+  if (document.visibilityState === "hidden") return;
+  pollOnce();
+  if (!Stream.source || Stream.source.readyState !== 1) connect();
+}
+
+document.addEventListener("visibilitychange", wakeStream);
+window.addEventListener("pageshow", wakeStream);
+window.addEventListener("online", wakeStream);
 
 async function loadPool() {
   let data;
@@ -613,6 +760,7 @@ function render() {
   const me = S.teams.find((t) => t.is_me) || null;
   renderMast();
   renderFeed();
+  renderLink();
   renderBlock();
   renderBoard(me);
   renderScarcity();
@@ -686,14 +834,62 @@ function blockSubject() {
   return null;
 }
 
+function resetMoney() {
+  ["b-worth", "b-ours", "b-going", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+  ["b-worth-note", "b-going-note", "b-plan-note"].forEach((id) => { $(id).textContent = ""; });
+  $("b-plan-cell").classList.remove("phrase");
+  $("b-went-note").textContent = "";
+  document.querySelector(".money .worth").className = "worth";
+}
+
+/** What he is worth to us: the ceiling, which is the number to bid by.
+ *
+ *  It used to sit in a box below the fold of the block while the accent
+ *  number was the board's valuation, so the screen pointed at a figure
+ *  nobody bids by. */
+function renderWorth(card) {
+  const cell = document.querySelector(".money .worth");
+  const ce = card.ceiling || {};
+  cell.className = "worth";
+  if (ce.status === "withheld") {
+    $("b-worth").textContent = "–";
+    $("b-worth-note").textContent = "not this reader's to see";
+    return;
+  }
+  if (ce.status === "ready" && ce.price === null) {
+    cell.className = "worth nobid";
+    $("b-worth").textContent = "no bid";
+    $("b-worth-note").textContent = "he adds less than a floor bid buys elsewhere";
+    return;
+  }
+  if (ce.status === "ready") {
+    $("b-worth").textContent = money(ce.price);
+    $("b-worth-note").textContent = ce.capped
+      ? "the most the plan lets one player take"
+      : "the most we should pay for him";
+    return;
+  }
+  // Still searching. An estimate from one swap into the plan is on the card
+  // (app/draft/estimate.py), and a number a reader can act on beats an
+  // ellipsis he cannot. It is marked as an estimate and replaced the moment
+  // the exact answer lands.
+  if (num(ce.estimate) !== null) {
+    cell.className = ce.estimate === 0 ? "worth nobid" : "worth estimate";
+    $("b-worth").textContent = ce.estimate === 0 ? "no bid" : money(ce.estimate);
+    $("b-worth-note").textContent = "an estimate — the exact ceiling is still searching";
+    return;
+  }
+  $("b-worth").textContent = "–";
+  $("b-worth-note").textContent = "working it out…";
+}
+
 function renderBlock() {
   const subject = blockSubject();
   const strip = $("b-strip"), note = $("b-note");
   if (!subject) {
     $("b-name").textContent = "Nobody";
     $("b-meta").textContent = "Click a player on the board, search below, or type one in.";
-    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
-    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
+    resetMoney();
     $("b-went-lab").textContent = "Went for";
     strip.innerHTML = ""; note.innerHTML = "";
     return;
@@ -705,16 +901,14 @@ function renderBlock() {
   // A card the gate emptied: the name, and why there is nothing under it.
   if (card && card.withheld) {
     $("b-meta").innerHTML = `Not this reader's to see. <span class="faint">${esc(card.withheld)}</span>`;
-    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
-    $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
+    resetMoney();
     strip.innerHTML = ""; note.innerHTML = "";
     return;
   }
   if (!card) {
     // On the block but not on our board: a name the page reader saw.
     $("b-meta").textContent = "Not on our board — no projection for him. Enter the pick when he sells.";
-    ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
-    $("b-plan-note").textContent = "";
+    resetMoney();
     const offer = block && block.current_offer;
     $("b-went-lab").textContent = offer ? "Current offer" : "Went for";
     $("b-went").textContent = offer ? money(offer) : "–";
@@ -728,14 +922,13 @@ function renderBlock() {
   $("b-meta").innerHTML = `<b>${esc(card.position || (where[0] || ""))}</b> · ${esc(games)}`
     + (where.length ? ` · eligible ${esc(where.join(", "))}` : "");
 
+  renderWorth(card);
   $("b-ours").textContent = money(card.board_price);
-  $("b-ours-note").textContent = card.market_price === null || card.market_price === undefined
-    ? "our board's valuation" : `expected to go ${money(card.market_price)}`;
-
-  const planRow = PLAN && PLAN.players ? PLAN.players.find((p) => p.player_id === card.player_id) : null;
-  $("b-plan").textContent = planRow ? money(planRow.price) : "–";
-  $("b-plan-note").textContent = !PLAN ? "working out the best roster…"
-    : planRow ? "he is in the best roster we can still finish" : "not in the roster we can still finish";
+  $("b-ours-note").textContent = "the board's valuation";
+  $("b-going").textContent = money(card.market_price);
+  $("b-going-note").textContent = card.market_source
+    ? "what the room will probably pay" : "not on the board";
+  renderPlanPays(card);
 
   const offer = block && block.current_offer;
   if (card.taken) {
@@ -758,8 +951,57 @@ function renderBlock() {
   if (buy) buy.onclick = () => {
     $("e-player").value = card.name;
     $("e-team").value = String(S.me);
+    clearEntryResult();
+    // On a phone the entry block is below the fold: bring it to the thumb.
+    $("deskentry").scrollIntoView({ block: "nearest", behavior: "smooth" });
     $("e-price").focus();
   };
+}
+
+/** The open place a player at his level falls into: the cheapest place that
+ *  covers what he is expected to go for, or the largest when none does. The
+ *  same rule `Allocation.open_places` uses to retire a place when we buy
+ *  (app/draft/room.py), so what the screen says and what the room does agree.
+ *  `places` arrives largest first. */
+function placeFor(places, going) {
+  if (!places || !places.length) return null;
+  if (going === null || going === undefined) return places[0];
+  const covering = places.filter((p) => p >= going);
+  return covering.length ? covering[covering.length - 1] : places[0];
+}
+
+/** What the plan is willing to spend here.
+ *
+ *  Thirteen players are in the plan and the other five hundred are not, so
+ *  "not in the roster we can still finish" was the answer to almost every
+ *  nomination and it told the reader nothing. When he is not one of the
+ *  plan's own picks, the plan still has a budget for a player at his level:
+ *  the open place his expected price falls into. */
+function renderPlanPays(card) {
+  const planRow = PLAN && PLAN.players
+    ? PLAN.players.find((p) => p.player_id === card.player_id) : null;
+  $("b-plan-cell").classList.remove("phrase");
+  if (planRow) {
+    $("b-plan").textContent = money(planRow.price);
+    $("b-plan-note").textContent = "he is in the best roster we can still finish";
+    return;
+  }
+  if (!PLAN) {
+    $("b-plan").textContent = "–";
+    $("b-plan-note").textContent = "working out the best roster…";
+    return;
+  }
+  const places = S.plan && Array.isArray(S.plan.open_places) ? S.plan.open_places : [];
+  const place = placeFor(places, num(card.market_price));
+  if (place === null) {
+    $("b-plan").textContent = "–";
+    $("b-plan-note").textContent = "no open places left";
+    return;
+  }
+  $("b-plan-cell").classList.add("phrase");
+  $("b-plan").textContent = `a $${place} place`;
+  $("b-plan-note").textContent = "not one of the plan's own picks; this is what "
+    + "it budgets for a player at his level";
 }
 
 function blockNote(card, row) {
@@ -770,13 +1012,14 @@ function blockNote(card, row) {
   } else if (ce.status === "withheld") {
     verdict = "";
   } else if (ce.status !== "ready") {
-    verdict = `<span class="verdict wait">Working out our ceiling…</span>`;
+    verdict = `<span class="verdict wait">Still searching for the exact ceiling</span>`;
   } else if (ce.price === null) {
     verdict = `<span class="verdict bad">Do not bid — he adds less than the floor bid buys elsewhere</span>`;
   } else if (String(ce.verdict || "").startsWith("inside")) {
-    verdict = `<span class="verdict good">Inside our ceiling — worth up to $${ce.price}${ce.capped ? " (the plan's cap)" : ""}</span>`;
+    verdict = `<span class="verdict good">Inside our ceiling — he should go for less than he is worth to us`
+      + `${ce.capped ? ", and the plan's cap is what set that" : ""}</span>`;
   } else {
-    verdict = `<span class="verdict bad">Likely goes for more than ${ce.capped ? "our plan allows" : "he's worth to us"} — let him go past $${ce.price}</span>`;
+    verdict = `<span class="verdict bad">Likely to go past what ${ce.capped ? "the plan allows" : "he is worth to us"}</span>`;
   }
   const warning = card.warning ? `<span class="verdict news">${esc(card.warning)}</span>` : "";
 
@@ -809,7 +1052,9 @@ function blockNote(card, row) {
   if (S.plan && S.plan.cap !== null && S.plan.cap !== undefined) bits.push(`the plan caps one player at ${money(S.plan.cap)}`);
   if (num(ce.marginal_at_floor) !== null) bits.push(`he adds ${Number(ce.marginal_at_floor).toFixed(2)} categories a week at $1`);
   const strip = Pool.size
-    ? `Read the strip against the room: each cell is shaded by where he sits among the ${Pool.size} players on this board. <b>Bid to our price; stop at the plan's.</b>`
+    ? `Read the strip against the room: each cell is shaded by where he sits among the ${Pool.size} players on this board. `
+      + `<b>Worth to us is the number to bid by.</b> Our price is the board's valuation and the going price is what the `
+      + `room will probably pay; both are context. Where to stop inside that is yours.`
     : "";
 
   return `${verdict}${warning}${facts.length ? `<div class="facts">${facts.join("")}</div>` : ""}${analyst}
@@ -926,6 +1171,56 @@ function renderScarcity() {
 // where every team stands
 // ---------------------------------------------------------------------------
 
+/* The standings sort by any column, both ways. The state is module-level and
+   the table is rebuilt from it on every version, so a sort survives a pick
+   landing mid-read -- which on draft night is most of them. */
+let standSort = { key: null, dir: 1 };
+
+//: Which way round "best first" is. More is better everywhere but turnovers
+//: and the team's own name, so the first click on a column shows the good end.
+const BEST_FIRST = (key) => (key === "TO" || key === "team" ? 1 : -1);
+
+function standValue(row, key) {
+  if (key === "team") return String(row.team.name).trim().toLowerCase();
+  if (key === "picks") return row.picks;
+  return row.line[key];
+}
+
+function standCompare(a, b, key, dir) {
+  const left = standValue(a, key), right = standValue(b, key);
+  // A team with nothing in a category has no value, not a zero, and sorts to
+  // the bottom whichever way the column is pointing. So the direction is
+  // applied to the comparison and never to this: early in a draft most teams
+  // are empty, and turning a column round used to bring all of them to the
+  // top and bury the two rosters a reader was trying to compare.
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  if (typeof left === "string") return dir * left.localeCompare(right);
+  return dir * (left - right);
+}
+
+function sortStandings(key) {
+  standSort = standSort.key === key
+    ? { key, dir: -standSort.dir }
+    : { key, dir: BEST_FIRST(key) };
+  renderStandings();
+}
+
+function standHead(key, label) {
+  const on = standSort.key === key;
+  const sorted = on ? (standSort.dir === 1 ? "ascending" : "descending") : null;
+  const arrow = on ? (standSort.dir === 1 ? "▲" : "▼") : "";
+  return `<th${sorted ? ` aria-sort="${sorted}"` : ""}>`
+    + `<button type="button" class="sortbtn" data-sort="${esc(key)}">`
+    + `<span>${esc(label)}</span><span class="arrow">${arrow}</span></button></th>`;
+}
+
+$("stand").addEventListener("click", (e) => {
+  const button = e.target.closest ? e.target.closest("[data-sort]") : null;
+  if (button) sortStandings(button.dataset.sort);
+});
+
 function renderStandings() {
   if (!Pool.size) {
     $("stand").innerHTML = "";
@@ -935,7 +1230,11 @@ function renderStandings() {
   const byTeam = {};
   S.teams.forEach((t) => { byTeam[t.team_id] = []; });
   S.picks.forEach((p) => { if (byTeam[p.team_id]) byTeam[p.team_id].push(p.player_id); });
-  const lines = S.teams.map((t) => ({ team: t, line: rosterLine(byTeam[t.team_id] || []) }));
+  const lines = S.teams.map((t) => ({
+    team: t,
+    line: rosterLine(byTeam[t.team_id] || []),
+    picks: (byTeam[t.team_id] || []).length,
+  }));
 
   // Rank each category down the column: turnovers the other way up, and a
   // team with nothing in a category ranked last rather than first.
@@ -950,15 +1249,27 @@ function renderStandings() {
   const n = S.teams.length;
   const band = Math.max(1, Math.round(n / 4));
   $("stand-lede").innerHTML = `Each roster's projected per-game totals, shaded by rank among the ${n} teams: `
-    + `the top ${band} darkest. Read across a row for a team's shape, down a column for who owns a category.`;
-  $("stand").innerHTML = `<thead><tr><th>Team</th>${CATS.map((c) => `<th>${c}</th>`).join("")}<th>Picks</th></tr></thead><tbody>`
-    + lines.map(({ team, line }) => `<tr class="${team.is_me ? "me" : ""}"><td>${esc(String(team.name).trim())}</td>`
+    + `the top ${band} darkest. Read across a row for a team's shape, down a column for who owns a category. `
+    + `Any column heading sorts by it, and again to turn it round.`;
+
+  // The shading is by rank in the category and never by the sorted order, so
+  // sorting rearranges the rows and changes nothing a reader is reading.
+  const ordered = standSort.key
+    ? lines.slice().sort((a, b) => standCompare(a, b, standSort.key, standSort.dir))
+    : lines;
+
+  $("stand").innerHTML = "<thead><tr>"
+    + standHead("team", "Team")
+    + CATS.map((c) => standHead(c, c)).join("")
+    + standHead("picks", "Picks")
+    + "</tr></thead><tbody>"
+    + ordered.map(({ team, line, picks }) => `<tr class="${team.is_me ? "me" : ""}"><td>${esc(String(team.name).trim())}</td>`
       + CATS.map((cat) => {
         const v = line[cat], rk = ranks[cat][team.team_id];
         const cls = v === null ? "" : rk <= band ? "s3" : rk <= band * 2 ? "s2" : rk <= band * 3 ? "s1" : "";
         return `<td class="${cls}">${showCat(cat, v)}<span class="rk"> ${v === null ? "" : rk}</span></td>`;
       }).join("")
-      + `<td>${(byTeam[team.team_id] || []).length}</td></tr>`).join("")
+      + `<td>${picks}</td></tr>`).join("")
     + "</tbody>";
 }
 
@@ -1067,11 +1378,12 @@ function renderOurs(me) {
 const card = $("card");
 let cardPinned = null;
 
-function showCard(td) {
+function showCard(td, pinned = false) {
   const id = Number(td.dataset.pid);
   const row = Pool.byId.get(id);
   const name = row ? row.name : (S.picks.find((p) => p.player_id === id) || {}).name || "";
-  let inner = `<div class="cn">${esc(name)}</div>`;
+  let inner = `<button class="cx" type="button" id="card-close" aria-label="Close">&times;</button>`
+    + `<div class="cn">${esc(name)}</div>`;
   if (!row || !lineOf(row)) {
     const why = Pool.withheld ? "not this reader's to see" : "no projection for him on this board";
     inner += `<div class="cm">${esc(why)} · <b>$${esc(td.dataset.price)}</b> to ${esc(td.dataset.team)}</div>`;
@@ -1082,6 +1394,7 @@ function showCard(td) {
       + `<div class="strip">${stripHtml(lineOf(row))}</div>`;
   }
   card.innerHTML = inner;
+  card.classList.toggle("pinned", !!pinned);
   // Below the cell, flipped above it when there is no room, and never off the
   // edge of a narrow window in either direction.
   const r = td.getBoundingClientRect(), w = 320, h = card.offsetHeight || 120;
@@ -1089,12 +1402,33 @@ function showCard(td) {
   let y = r.bottom + 6;
   if (y + h > window.innerHeight - 8) y = r.top - h - 6;
   y = Math.max(8, Math.min(y, Math.max(8, window.innerHeight - h - 8)));
+  y = clearOfTheEntry(y, h);
   card.style.left = x + "px";
   card.style.top = y + "px";
   card.classList.add("on");
+  const close = $("card-close");
+  if (close) close.onclick = (e) => { e.stopPropagation(); hideCard(); };
 }
 
-function hideCard() { card.classList.remove("on"); cardPinned = null; }
+/** Keep the card off the pick entry: on a phone the two are the same width,
+ *  and a card that covers Save covers the one control that has to work. */
+function clearOfTheEntry(y, h) {
+  const entry = $("deskentry");
+  if (!entry) return y;
+  const guard = entry.getBoundingClientRect();
+  if (guard.height <= 0 || y >= guard.bottom || y + h <= guard.top) return y;
+  const above = guard.top - h - 6;
+  if (above >= 8) return above;
+  const below = guard.bottom + 6;
+  if (below + h <= window.innerHeight - 8) return below;
+  return Math.max(8, above);
+}
+
+function hideCard() {
+  card.classList.remove("on");
+  card.classList.remove("pinned");
+  cardPinned = null;
+}
 
 // Delegated, because the board is rebuilt on every version.
 const boardTable = $("board");
@@ -1117,9 +1451,20 @@ boardTable.addEventListener("click", (e) => {
   // A tap pins the card; a second tap on the same cell lets it go.
   if (cardPinned === td.dataset.pid) { hideCard(); return; }
   cardPinned = td.dataset.pid;
-  showCard(td);
+  showCard(td, true);
 });
-window.addEventListener("scroll", () => { if (!cardPinned) hideCard(); }, { passive: true });
+/* A pinned card on a phone used to need a second tap on the same cell, and a
+   cell is a thumb's width: four ways out instead. A tap anywhere else, the
+   close control on the card, Escape, and any scroll -- of the window or of
+   the board's own sideways scroller, which is the one a thumb actually moves
+   and which the window's scroll event never hears about. */
+document.addEventListener("click", (e) => {
+  if (!cardPinned) return;
+  if (e.target.closest && (e.target.closest("#card") || e.target.closest("td[data-pid]"))) return;
+  hideCard();
+});
+window.addEventListener("scroll", hideCard, { passive: true });
+$("boardwrap").addEventListener("scroll", hideCard, { passive: true });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
 
 // ---------------------------------------------------------------------------
@@ -1189,16 +1534,62 @@ function renderTeamSelect() {
   }
 }
 
+/* The answer to a save, under the buttons, where the thumb that pressed Save
+   is already looking. It stays until the next thing the reader does rather
+   than fading: on the night, a pick that did not save has to be visible for
+   as long as it takes to notice. */
+function entryResult(kind, html, alternatives = [], heading = null) {
+  const el = $("e-result");
+  el.className = "result " + kind;
+  const label = heading || (kind === "ok" ? "Saved" : kind === "bad" ? "Not saved" : "Working");
+  el.innerHTML = `<span class="lab">${label}</span>${html}`
+    + (alternatives.length
+      ? `<div class="alts">` + alternatives
+          .map((a) => `<button class="btn tiny" type="button" data-alt="${esc(a)}">${esc(a)}</button>`)
+          .join("") + `</div>`
+      : "");
+  el.hidden = false;
+  el.querySelectorAll("[data-alt]").forEach((b) => {
+    b.onclick = () => {
+      $("e-player").value = b.dataset.alt;
+      clearEntryResult();
+      $("e-price").focus();
+    };
+  });
+}
+
+function clearEntryResult() { $("e-result").hidden = true; }
+
+let saving = false;
+
+function setSaving(busy) {
+  saving = busy;
+  const button = $("e-save");
+  button.disabled = busy;
+  button.textContent = busy ? "Saving…" : "Save pick";
+}
+
 async function savePick() {
+  if (saving) return;
   const player = $("e-player").value.trim(), price = Number($("e-price").value);
-  if (!player || !price) { toast("Player and price, please."); return; }
+  const team = $("e-team");
+  const teamName = team.options[team.selectedIndex] ? team.options[team.selectedIndex].text : "";
+  if (!player || !price) {
+    entryResult("bad", "A player and a price, please.");
+    return;
+  }
+  setSaving(true);
+  entryResult("", `Saving <b>${esc(player)}</b> to <b>${esc(teamName)}</b> for <b>$${price}</b>…`);
   try {
     S = await api("/api/picks", {
       method: "POST",
-      body: JSON.stringify({ player, team_id: Number($("e-team").value), price }),
+      body: JSON.stringify({ player, team_id: Number(team.value), price }),
     });
     const last = S.picks[S.picks.length - 1];
-    if (last) toast(`${last.name} → ${last.team} for $${last.price}`, true);
+    entryResult("ok", last
+      ? `<b>${esc(last.name)}</b> to <b>${esc(last.team)}</b> for <b>$${last.price}</b>`
+        + ` <span class="faint">· pick ${last.number} of ${S.total_picks}</span>`
+      : `The pick went in.`);
     $("e-player").value = ""; $("e-price").value = "";
     $("e-team").value = String(S.me);
     hideSuggest();
@@ -1206,7 +1597,11 @@ async function savePick() {
     render();
     $("e-player").focus();
   } catch (e) {
-    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+    // 409 (a rule the pick broke) and 422 (a name that matches nobody, or
+    // several) both land here, and both are shown where Save was pressed.
+    entryResult("bad", esc(e.message), (e.detail && e.detail.alternatives) || []);
+  } finally {
+    setSaving(false);
   }
 }
 
@@ -1216,22 +1611,29 @@ async function putOnBlock(body) {
     viewing = null; viewedCard = null;
     render();
   } catch (e) {
-    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+    entryResult("bad", esc(e.message), (e.detail && e.detail.alternatives) || [], "Not on the block");
   }
 }
 
 $("e-save").onclick = savePick;
 $("e-block").onclick = () => {
+  clearEntryResult();
   const player = $("e-player").value.trim();
   putOnBlock(player ? { player } : {});
 };
-$("e-clear").onclick = () => putOnBlock({});
+$("e-clear").onclick = () => { clearEntryResult(); putOnBlock({}); };
 $("e-undo").onclick = async () => {
   const last = S && S.picks.length ? S.picks[S.picks.length - 1] : null;
   if (!last) return;
   if (!window.confirm(`Undo ${last.name} to ${last.team} for $${last.price}?`)) return;
-  try { S = await api("/api/undo", { method: "POST" }); render(); toast("Undone", true); }
-  catch (e) { toast(e.message); }
+  try {
+    S = await api("/api/undo", { method: "POST" });
+    render();
+    entryResult("ok", `Took back <b>${esc(last.name)}</b> to <b>${esc(last.team)}</b>`
+      + ` for <b>$${last.price}</b>.`, [], "Undone");
+  } catch (e) {
+    entryResult("bad", esc(e.message), [], "Not undone");
+  }
 };
 $("r-pause").onclick = () => {
   const r = (S && S.feed && S.feed.rehearsal) || {};
@@ -1260,6 +1662,8 @@ function choose(i) {
 }
 $("e-player").oninput = () => {
   clearTimeout(suggestTimer);
+  // Typing the next name is the next action: the last answer has been read.
+  if (!saving) clearEntryResult();
   const q = $("e-player").value.trim();
   if (q.length < 2) { hideSuggest(); return; }
   suggestTimer = setTimeout(async () => {

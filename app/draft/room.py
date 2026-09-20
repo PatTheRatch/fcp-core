@@ -497,6 +497,24 @@ def plan_allocation(
     return Allocation.from_plan(plan, state, slack=slack), plan
 
 
+#: How close the bisection has to bracket the answer before it stops, at most.
+#: One dollar costs a whole re-solve more than two do, and the answer returned
+#: is the low end of the bracket -- a price we have proved is still worth
+#: paying -- so a wider bracket errs low rather than high.
+#:
+#: It is capped at a twentieth of the range as well, because two dollars means
+#: something different in a room bidding to $188 and in one bidding to $9. See
+#: `bid_ceiling`.
+BISECTION_GAP = 2
+BISECTION_SHARE = 20
+
+#: Restarts for the with-him solves. They all start from the without-him
+#: roster, which is a far better start than any shuffle, and the shuffles were
+#: most of the cost: nine solves at four restarts is fifty-four local searches
+#: for one ceiling.
+WARM_RESTARTS = 0
+
+
 def bid_ceiling(
     state: DraftState,
     player_id: int,
@@ -509,6 +527,8 @@ def bid_ceiling(
     restarts: int = DEFAULT_RESTARTS,
     seed: int = 0,
     allocation: Allocation | None = None,
+    baseline: RosterPlan | None = None,
+    fast: bool = True,
 ) -> Ceiling:
     """The most we should pay for the player on the block.
 
@@ -522,8 +542,36 @@ def bid_ceiling(
     takes more of the budget than the plan's largest open place allows,
     however well he rates against the board.
 
-    Costs one solve for the baseline and about seven for the search. Expect
-    a few seconds at the default restarts; pass fewer on the clock.
+    ON THE CLOCK
+
+    Measured on the VPS mid-draft, this took 8, 21, 24 and 56 seconds for
+    four players against a thirty-second nomination clock: about nine
+    solves at four restarts, which is fifty-four local searches. `fast`
+    cuts that four ways without changing what is being computed.
+
+      A BASELINE WE ALREADY HAVE. `baseline` is the best roster we can
+      still finish, which the session caches per pick sequence. When the
+      player is not in it, it *is* the best roster without him -- excluding
+      a player the solver did not want changes nothing -- so the
+      without-him solve is skipped. A baseline containing him is ignored.
+
+      NO RESTARTS WHERE THE START IS ALREADY GOOD. Every with-him solve
+      begins from the without-him roster, which is a neighbour of the
+      answer; the shuffled restarts beside it were paying for a search the
+      warm start had already done.
+
+      A BRACKET OF TWO DOLLARS, or a twentieth of the range where that is
+      narrower. The answer returned is the low end of the bracket, a price
+      already proved worth paying, so stopping a dollar early errs low.
+      See `BISECTION_GAP`.
+
+      A FIRST PROBE AT THE MARKET. The bisection used to halve from the
+      floor. It now spends its first probe on what he is expected to go
+      for, which is where the answer usually is, so the bracket collapses
+      round it rather than walking up to it.
+
+    `fast=False` is the old path exactly, kept so the two can be compared
+    (scripts/ceiling_check.py).
     """
     if player_id in state.taken:
         raise DraftError(f"player {player_id} has already been drafted")
@@ -535,6 +583,7 @@ def bid_ceiling(
         lock: Mapping[int, int] | None = None,
         exclude: Iterable[int] = (),
         starts: Iterable[Iterable[int]] = (),
+        tries: int | None = None,
     ) -> RosterPlan:
         return resolve(
             state,
@@ -543,7 +592,7 @@ def bid_ceiling(
             punt=punt,
             lineup=lineup,
             limits=limits,
-            restarts=restarts,
+            restarts=restarts if tries is None else tries,
             seed=seed,
             lock=lock,
             exclude=exclude,
@@ -551,25 +600,39 @@ def bid_ceiling(
             allocation=allocation,
         )
 
-    baseline = solve(exclude=[player_id])
+    reusable = fast and baseline is not None and player_id not in baseline.player_ids
+    without_him = baseline if reusable and baseline is not None else solve(exclude=[player_id])
     # Every with-him search starts from the without-him roster as well as
     # from the usual seeds, so the comparison measures the player and not
     # the search. It can only raise the with-him side, so a ceiling errs
     # generous rather than refusing a player worth having.
-    warm = [tuple(baseline.player_ids)]
+    warm = [tuple(without_him.player_ids)]
+    warm_tries = WARM_RESTARTS if fast else None
     legal = state.mine.max_bid(state.minimum_bid)
     plan_cap = allocation.cap(state) if allocation is not None else None
     ceiling = legal if plan_cap is None else min(legal, plan_cap)
     field_max = state.field_ceiling()
 
     def with_price(price: int) -> float:
-        plan = solve(lock={player_id: price}, starts=warm)
+        plan = solve(lock={player_id: price}, starts=warm, tries=warm_tries)
         # A plan that could not actually fit him is not a plan with him.
         if player_id not in plan.player_ids:
             return float("-inf")
+        if fast:
+            # The roster found at the last price is the best start for the
+            # next one. The without-him roster is a poor start at the top of
+            # the range -- with him at $46 it is not even affordable -- and
+            # that was where dropping the restarts lost its accuracy: a
+            # player worth the plan's cap was being talked down. Two starts
+            # are kept, the without-him roster and the most recent with-him
+            # one, so a solve is three local searches rather than six.
+            found = tuple(sorted(plan.player_ids))
+            if found not in warm:
+                del warm[1:]
+                warm.append(found)
         return plan.expected_wins
 
-    without = baseline.expected_wins
+    without = without_him.expected_wins
     if ceiling < state.minimum_bid:
         return Ceiling(player_id, None, legal, without, None, float("-inf"), field_max, plan_cap)
 
@@ -592,13 +655,33 @@ def bid_ceiling(
             capped=plan_cap is not None and high == plan_cap and plan_cap < legal,
         )
 
-    # Invariant: with_price(low) >= without > with_price(high).
+    # Invariant: with_price(low) >= without > with_price(high). The answer
+    # returned is `low`, a price we have proved is still worth paying, so a
+    # bracket wider than a dollar costs accuracy only downwards.
     best_value = at_low
-    while high - low > 1:
-        mid = (low + high) // 2
+    gap = max(1, min(BISECTION_GAP, (high - low) // BISECTION_SHARE)) if fast else 1
+    probe = _expected_price(state, candidates, player_id) if fast else None
+    while high - low > gap:
+        if probe is not None and low < probe < high:
+            mid, probe = probe, None
+        else:
+            mid = (low + high) // 2
         value = with_price(mid)
         if value >= without:
             low, best_value = mid, value
         else:
             high = mid
     return Ceiling(player_id, low, legal, without, best_value, marginal, field_max, plan_cap)
+
+
+def _expected_price(
+    state: DraftState, candidates: Sequence[Candidate], player_id: int
+) -> int | None:
+    """What he is expected to go for, in this room's money.
+
+    The candidates carry the going price (`app.draft.live.load_room` prices
+    them at what players cost, not at what they are worth), and `reprice`
+    scales it for the money still in the room. It is where the answer
+    usually is, so it is where the search spends its first probe.
+    """
+    return next((c.price for c in reprice(state, candidates) if c.player_id == player_id), None)
