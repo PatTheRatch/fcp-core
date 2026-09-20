@@ -99,12 +99,36 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .risk-E,.risk-H{color:var(--stop)} .risk-M{color:var(--warn)} .risk-L{color:var(--good)}
 
 /* the desk: entering picks, and what is still for sale */
-.desk{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px 40px;padding:16px;border-bottom:1px solid var(--rule)}
-.desk h2,.sect h2,.lower h2{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-family:var(--display);font-weight:500;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--rule)}
-.entry{display:grid;grid-template-columns:minmax(0,1fr) 190px 88px;gap:6px}
-.entry input,.entry select,.search input{background:var(--ground);border:1px solid var(--rule);padding:8px 10px;width:100%;color:var(--ink)}
+/* The desk is the search alone now: entering a pick has its own block above,
+   because on the night that is the control that has to be found first. */
+.desk{display:grid;grid-template-columns:minmax(0,1fr);gap:18px 40px;padding:16px;border-bottom:1px solid var(--rule)}
+.desk h2,.sect h2,.lower h2,.deskentry h2{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-family:var(--display);font-weight:500;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--rule)}
+
+/* entering a pick: the draft-night fallback, and the one control that has to
+   work when everything else has. Its own block, full width, with tap targets
+   a thumb can hit and an answer that stays on the page until the next action. */
+.deskentry{padding:16px 16px 18px;border-bottom:3px solid var(--rule-strong);background:var(--surface)}
+.deskentry h2{color:var(--ink);font-size:16px;border-bottom-color:var(--rule-strong)}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) 220px 120px;gap:8px}
+.entry input,.entry select{background:var(--ground);border:1px solid var(--rule);padding:11px 12px;width:100%;color:var(--ink);font-size:16px;min-height:48px}
+.search input{background:var(--ground);border:1px solid var(--rule);padding:8px 10px;width:100%;color:var(--ink)}
 .entry input:focus,.entry select:focus,.search input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .buttons{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.deskentry .buttons{gap:8px;margin-top:10px}
+.deskentry .buttons .btn{font-size:13px;padding:0 18px;min-height:48px;letter-spacing:.05em}
+.deskentry .buttons .btn.primary{min-width:180px;font-size:15px}
+button.btn[disabled]{opacity:.55;cursor:progress}
+button.btn[disabled]:hover{border-color:var(--rule)}
+/* the answer: what was saved, or why it was refused. It sits under the
+   buttons and stays there until the next thing the reader does. */
+.result{margin-top:12px;padding:11px 13px;border:1px solid var(--rule);background:var(--ground);font-size:15px;line-height:1.4}
+.result.ok{border-color:var(--good);background:var(--good-soft)}
+.result.bad{border-color:var(--stop);background:var(--stop-soft)}
+.result .lab{display:block;margin-bottom:3px}
+.result.ok .lab{color:var(--good)} .result.bad .lab{color:var(--stop)}
+.result b{font-weight:600}
+.result .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.result .alts .btn{min-height:40px;padding:0 12px}
 .suggest{position:relative}
 .suggest ul{position:absolute;left:0;right:0;top:100%;margin:2px 0 0;padding:0;list-style:none;background:var(--surface);border:1px solid var(--rule-strong);z-index:15;max-height:260px;overflow:auto;box-shadow:var(--shadow)}
 .suggest li{padding:5px 9px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
@@ -208,7 +232,12 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   .block{grid-template-columns:1fr}
   .money{border-left:0;border-top:1px solid var(--rule);padding-top:8px} .money div{padding-left:0;padding-right:12px}
   .lower,.desk{grid-template-columns:1fr} .agate{columns:1}
+  /* One column, and every control a thumb's width tall: this is the block a
+     manager reaches for when the page reader has stopped working. */
   .entry{grid-template-columns:1fr}
+  .entry input,.entry select{min-height:52px}
+  .deskentry .buttons .btn{flex:1 1 calc(50% - 4px);min-height:52px;padding:0 10px}
+  .deskentry .buttons .btn.primary{flex:1 1 100%;min-height:58px;min-width:0}
   .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px} .strip div{border-bottom:1px solid var(--rule)}
 }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -232,6 +261,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
       <button class="btn tiny" id="r-pause">Pause</button>
       <button class="btn tiny" id="r-skip" title="sell him now to his real buyer">Sell now</button>
     </div>
+    <span class="pill warn" id="link">reconnecting…</span>
     <span class="pill" id="feed">connecting…</span>
     <button class="btn tiny" id="theme" aria-pressed="false" title="light or dark">Lights up</button>
   </div>
@@ -252,26 +282,28 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   <div class="blocknote" id="b-note"></div>
 </section>
 
-<section class="desk">
-  <div>
-    <h2>Enter a pick <span class="faint" style="text-transform:none;letter-spacing:0"><kbd>/</kbd> to type &middot; <kbd>Enter</kbd> to save</span></h2>
-    <form class="entry" id="e-form" autocomplete="off">
-      <div class="suggest">
-        <input id="e-player" placeholder="Player" autocomplete="off" aria-label="Player">
-        <ul id="e-suggest" hidden></ul>
-      </div>
-      <select id="e-team" aria-label="Team"></select>
-      <input id="e-price" class="num" type="number" min="1" placeholder="$" aria-label="Price">
-      <button type="submit" hidden></button>
-    </form>
-    <div class="buttons">
-      <button class="btn primary" id="e-save" type="button">Save pick</button>
-      <button class="btn" id="e-block" type="button">Put on block</button>
-      <button class="btn" id="e-undo" type="button">Undo last pick</button>
-      <button class="btn" id="e-clear" type="button">Clear the block</button>
+<section class="deskentry" id="deskentry">
+  <h2>Enter a pick <span class="faint" style="text-transform:none;letter-spacing:0"><kbd>/</kbd> to type &middot; <kbd>Enter</kbd> to save</span></h2>
+  <form class="entry" id="e-form" autocomplete="off">
+    <div class="suggest">
+      <input id="e-player" placeholder="Player" autocomplete="off" aria-label="Player">
+      <ul id="e-suggest" hidden></ul>
     </div>
-    <p class="ours-so-far" id="ours"></p>
+    <select id="e-team" aria-label="Team"></select>
+    <input id="e-price" class="num" type="number" min="1" inputmode="numeric" placeholder="$" aria-label="Price">
+    <button type="submit" hidden></button>
+  </form>
+  <div class="buttons">
+    <button class="btn primary" id="e-save" type="button">Save pick</button>
+    <button class="btn" id="e-block" type="button">Put on block</button>
+    <button class="btn" id="e-undo" type="button">Undo last pick</button>
+    <button class="btn" id="e-clear" type="button">Clear the block</button>
   </div>
+  <div class="result" id="e-result" role="status" aria-live="polite" hidden></div>
+  <p class="ours-so-far" id="ours"></p>
+</section>
+
+<section class="desk">
   <div class="search">
     <h2>Still for sale <span class="faint" style="text-transform:none;letter-spacing:0">most expensive first</span></h2>
     <input id="b-search" placeholder="Search players" autocomplete="off" aria-label="Search players">
@@ -577,20 +609,100 @@ function rosterLine(playerIds) {
 // live state
 // ---------------------------------------------------------------------------
 
+/* ---------------------------------------------------------------------------
+   The stream, and what happens when a phone takes it away.
+
+   iOS Safari drops an EventSource when the tab goes to the background or the
+   screen locks, and it does not always reopen it: the page comes back looking
+   live and is in fact frozen at whatever it last drew. So three things:
+
+     the masthead says "reconnecting…" whenever the stream is not open, so a
+     stale page is never a silent one;
+     while it is down the page polls /api/state every few seconds, which is
+     slower than the stream but is not nothing;
+     coming back to the tab (`visibilitychange`) or back through the history
+     (`pageshow`, which also fires on a bfcache restore) reopens it at once
+     rather than waiting for the next retry.
+   --------------------------------------------------------------------------- */
+
+const STREAM_POLL_MS = 3000;
+const STREAM_RETRY_MS = 3000;
+
+const Stream = {
+  source: null,
+  open: false,
+  pollTimer: null,
+  retryTimer: null,
+};
+
+function takeState(snapshot) {
+  if (!snapshot || typeof snapshot.version !== "number") return;
+  S = snapshot;
+  if (!Pool.loaded) loadPool();
+  render();
+}
+
+function renderLink() {
+  const el = $("link");
+  if (!el) return;
+  el.hidden = Stream.open;
+  el.textContent = "reconnecting…";
+  el.className = "pill warn";
+}
+
+async function pollOnce() {
+  try { takeState(await api("/api/state")); } catch (e) { /* still down; the pill says so */ }
+}
+
+Stream.up = function up() {
+  if (!Stream.open) { Stream.open = true; renderLink(); }
+  clearInterval(Stream.pollTimer); Stream.pollTimer = null;
+  clearTimeout(Stream.retryTimer); Stream.retryTimer = null;
+};
+
+Stream.down = function down() {
+  Stream.open = false;
+  renderLink();
+  if (Stream.pollTimer === null) {
+    pollOnce();
+    Stream.pollTimer = setInterval(pollOnce, STREAM_POLL_MS);
+  }
+  if (Stream.retryTimer === null) {
+    Stream.retryTimer = setTimeout(() => { Stream.retryTimer = null; connect(); }, STREAM_RETRY_MS);
+  }
+};
+
 function connect() {
+  clearTimeout(Stream.retryTimer); Stream.retryTimer = null;
+  if (Stream.source) { try { Stream.source.close(); } catch (e) { /* already gone */ } }
+  Stream.source = null;
   let events;
-  try { events = new EventSource("/api/events"); } catch (e) { return; }
+  try { events = new EventSource("/api/events"); } catch (e) { Stream.down(); return; }
+  Stream.source = events;
+  events.onopen = () => Stream.up();
   events.addEventListener("state", (e) => {
-    try { S = JSON.parse(e.data); } catch (err) { return; }
-    if (!Pool.loaded) loadPool();
-    render();
+    Stream.up();
+    let snapshot;
+    try { snapshot = JSON.parse(e.data); } catch (err) { return; }
+    takeState(snapshot);
   });
   events.onerror = () => {
-    const el = $("feed");
-    el.textContent = "service not reachable — retrying";
-    el.className = "pill err";
+    // A browser retrying on its own leaves readyState CONNECTING; one that
+    // has given up leaves CLOSED, and that is the case a phone produces.
+    Stream.down();
   };
 }
+
+/** Back in front of the reader: reopen at once rather than on the next retry. */
+function wakeStream() {
+  if (document.visibilityState === "hidden") return;
+  pollOnce();
+  if (!Stream.source || Stream.source.readyState !== 1) connect();
+}
+
+document.addEventListener("visibilitychange", wakeStream);
+window.addEventListener("pageshow", wakeStream);
+window.addEventListener("online", wakeStream);
 
 async function loadPool() {
   let data;
@@ -613,6 +725,7 @@ function render() {
   const me = S.teams.find((t) => t.is_me) || null;
   renderMast();
   renderFeed();
+  renderLink();
   renderBlock();
   renderBoard(me);
   renderScarcity();
@@ -758,6 +871,9 @@ function renderBlock() {
   if (buy) buy.onclick = () => {
     $("e-player").value = card.name;
     $("e-team").value = String(S.me);
+    clearEntryResult();
+    // On a phone the entry block is below the fold: bring it to the thumb.
+    $("deskentry").scrollIntoView({ block: "nearest", behavior: "smooth" });
     $("e-price").focus();
   };
 }
@@ -1189,16 +1305,62 @@ function renderTeamSelect() {
   }
 }
 
+/* The answer to a save, under the buttons, where the thumb that pressed Save
+   is already looking. It stays until the next thing the reader does rather
+   than fading: on the night, a pick that did not save has to be visible for
+   as long as it takes to notice. */
+function entryResult(kind, html, alternatives = [], heading = null) {
+  const el = $("e-result");
+  el.className = "result " + kind;
+  const label = heading || (kind === "ok" ? "Saved" : kind === "bad" ? "Not saved" : "Working");
+  el.innerHTML = `<span class="lab">${label}</span>${html}`
+    + (alternatives.length
+      ? `<div class="alts">` + alternatives
+          .map((a) => `<button class="btn tiny" type="button" data-alt="${esc(a)}">${esc(a)}</button>`)
+          .join("") + `</div>`
+      : "");
+  el.hidden = false;
+  el.querySelectorAll("[data-alt]").forEach((b) => {
+    b.onclick = () => {
+      $("e-player").value = b.dataset.alt;
+      clearEntryResult();
+      $("e-price").focus();
+    };
+  });
+}
+
+function clearEntryResult() { $("e-result").hidden = true; }
+
+let saving = false;
+
+function setSaving(busy) {
+  saving = busy;
+  const button = $("e-save");
+  button.disabled = busy;
+  button.textContent = busy ? "Saving…" : "Save pick";
+}
+
 async function savePick() {
+  if (saving) return;
   const player = $("e-player").value.trim(), price = Number($("e-price").value);
-  if (!player || !price) { toast("Player and price, please."); return; }
+  const team = $("e-team");
+  const teamName = team.options[team.selectedIndex] ? team.options[team.selectedIndex].text : "";
+  if (!player || !price) {
+    entryResult("bad", "A player and a price, please.");
+    return;
+  }
+  setSaving(true);
+  entryResult("", `Saving <b>${esc(player)}</b> to <b>${esc(teamName)}</b> for <b>$${price}</b>…`);
   try {
     S = await api("/api/picks", {
       method: "POST",
-      body: JSON.stringify({ player, team_id: Number($("e-team").value), price }),
+      body: JSON.stringify({ player, team_id: Number(team.value), price }),
     });
     const last = S.picks[S.picks.length - 1];
-    if (last) toast(`${last.name} → ${last.team} for $${last.price}`, true);
+    entryResult("ok", last
+      ? `<b>${esc(last.name)}</b> to <b>${esc(last.team)}</b> for <b>$${last.price}</b>`
+        + ` <span class="faint">· pick ${last.number} of ${S.total_picks}</span>`
+      : `The pick went in.`);
     $("e-player").value = ""; $("e-price").value = "";
     $("e-team").value = String(S.me);
     hideSuggest();
@@ -1206,7 +1368,11 @@ async function savePick() {
     render();
     $("e-player").focus();
   } catch (e) {
-    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+    // 409 (a rule the pick broke) and 422 (a name that matches nobody, or
+    // several) both land here, and both are shown where Save was pressed.
+    entryResult("bad", esc(e.message), (e.detail && e.detail.alternatives) || []);
+  } finally {
+    setSaving(false);
   }
 }
 
@@ -1216,22 +1382,29 @@ async function putOnBlock(body) {
     viewing = null; viewedCard = null;
     render();
   } catch (e) {
-    toast(e.message, false, (e.detail && e.detail.alternatives) || []);
+    entryResult("bad", esc(e.message), (e.detail && e.detail.alternatives) || [], "Not on the block");
   }
 }
 
 $("e-save").onclick = savePick;
 $("e-block").onclick = () => {
+  clearEntryResult();
   const player = $("e-player").value.trim();
   putOnBlock(player ? { player } : {});
 };
-$("e-clear").onclick = () => putOnBlock({});
+$("e-clear").onclick = () => { clearEntryResult(); putOnBlock({}); };
 $("e-undo").onclick = async () => {
   const last = S && S.picks.length ? S.picks[S.picks.length - 1] : null;
   if (!last) return;
   if (!window.confirm(`Undo ${last.name} to ${last.team} for $${last.price}?`)) return;
-  try { S = await api("/api/undo", { method: "POST" }); render(); toast("Undone", true); }
-  catch (e) { toast(e.message); }
+  try {
+    S = await api("/api/undo", { method: "POST" });
+    render();
+    entryResult("ok", `Took back <b>${esc(last.name)}</b> to <b>${esc(last.team)}</b>`
+      + ` for <b>$${last.price}</b>.`, [], "Undone");
+  } catch (e) {
+    entryResult("bad", esc(e.message), [], "Not undone");
+  }
 };
 $("r-pause").onclick = () => {
   const r = (S && S.feed && S.feed.rehearsal) || {};
@@ -1260,6 +1433,8 @@ function choose(i) {
 }
 $("e-player").oninput = () => {
   clearTimeout(suggestTimer);
+  // Typing the next name is the next action: the last answer has been read.
+  if (!saving) clearEntryResult();
   const q = $("e-player").value.trim();
   if (q.length < 2) { hideSuggest(); return; }
   suggestTimer = setTimeout(async () => {

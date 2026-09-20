@@ -246,7 +246,14 @@ class DraftSession:
     def apply(self, player_id: int, team_id: int, price: int, *, source: str = "typed") -> Pick:
         with self._lock:
             pick = Pick(player_id, team_id, price)
-            self._state = self._state.apply(pick)  # raises DraftError, logs nothing
+            try:
+                self._state = self._state.apply(pick)  # logs nothing when it refuses
+            except DraftError as exc:
+                # The room is a value and knows ids; a manager reading a
+                # refusal on the clock needs the name he typed.
+                raise DraftError(
+                    str(exc).replace(f"player {player_id}", self.name_of(player_id))
+                ) from exc
             if self.log is not None:
                 self.log.append(
                     {
