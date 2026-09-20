@@ -862,9 +862,10 @@ function renderFeed() {
     $("r-count").textContent = r.seconds_left === null || r.seconds_left === undefined ? "" : r.seconds_left;
     $("r-pause").textContent = r.paused ? "Resume" : "Pause";
   }
-  if (f.mode === "page") {
-    el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}`
-      : `ESPN page not connected${f.error ? ": " + f.error : ""}`;
+  if (f.mode === "page" || f.mode === "room") {
+    const what = f.mode === "room" ? "Auction room" : "ESPN page";
+    el.textContent = f.connected ? `${what} · read ${f.last_read || "…"}`
+      : `${what} not connected${f.error ? ": " + f.error : ""}`;
     el.className = "pill " + (f.connected ? "ok" : "err");
     if (f.unlogged) toast("Money moved but the log did not show: " + f.unlogged.join("; "));
     if (f.problems) toast("Could not apply: " + f.problems.join("; "));

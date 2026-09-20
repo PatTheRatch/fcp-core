@@ -48,7 +48,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.draft.feed import BoardSnapshot, OnBlock, inferred_picks, new_picks, parse_board
+from app.draft.feed import (
+    BoardSnapshot,
+    LoggedPick,
+    OnBlock,
+    inferred_picks,
+    new_picks,
+    parse_board,
+)
 from app.draft.room import DraftError
 from app.draft.session import DraftSession, UnknownNameError
 
@@ -322,3 +329,98 @@ class PageFeed(threading.Thread):
             problems=problems[-5:] or None,
             unlogged=unlogged or None,
         )
+
+
+# ---------------------------------------------------------------------------
+# the same room, read through the bidder's browser
+# ---------------------------------------------------------------------------
+
+
+class RoomFeed(threading.Thread):
+    """The board, taken from the window the bidder is already watching.
+
+    `PageFeed` opens a second copy of the draft page with the cookies in
+    `.env`, which expire silently: when they have, it reads the sign-in
+    page, shows nobody on the block and no picks at all. The bidder has no
+    such problem -- it drives the window the manager signed in himself
+    (scripts/espn_login.py) and reads the room every half second. So when
+    there is a bidder, it is the feed: who is on the block comes straight
+    off its read, and a pick is recorded when the block moves on, to
+    whoever was leading at the last price seen.
+
+    A sale is only written when the *next* nomination arrives, because the
+    price at the moment the gavel falls is the last one the page showed.
+    Between the two the block keeps showing the man who has just gone, and
+    nothing is computed for a player nobody has nominated yet.
+    """
+
+    def __init__(self, session: DraftSession, bidder: Bidder, *, interval: float = 0.5) -> None:
+        super().__init__(name="draft-room-feed", daemon=True)
+        self.session = session
+        self.bidder = bidder
+        self.interval = interval
+        self.stopping = threading.Event()
+        #: The read blanks for a moment at every nomination, and a blank is
+        #: not a sale: the last read that had a player is what we hold.
+        self._last: dict[str, Any] | None = None
+        self._problems: list[str] = []
+
+    def run(self) -> None:
+        self.session.set_feed_status(mode="room", url=self.bidder.url, connected=False)
+        while not self.stopping.is_set():
+            try:
+                self.once(self.bidder.state())
+            except Exception as exc:  # a bad read must not end the draft
+                self.session.set_feed_status(connected=False, error=f"{type(exc).__name__}: {exc}")
+            self.stopping.wait(self.interval)
+
+    def once(self, state: dict[str, Any]) -> None:
+        """One pass over the bidder's published state. Separated from the
+        loop so a test can drive it a read at a time."""
+        session = self.session
+        room = state.get("room") if state.get("running") else None
+        if not room:
+            session.set_feed_status(mode="room", connected=False, error=state.get("error"))
+            return
+        player = room.get("player")
+        if player:
+            previous = self._last
+            if previous is not None and previous.get("player") != player:
+                self._sell(previous)
+            self._last = room
+            session.set_block(
+                OnBlock(
+                    player,
+                    room.get("current_offer"),
+                    room.get("high_bidder"),
+                    room.get("espn_value"),
+                )
+            )
+        session.set_feed_status(
+            mode="room",
+            connected=True,
+            error=None,
+            last_read=time.strftime("%H:%M:%S"),
+            ticker_rows=len(room.get("history") or ()),
+            problems=self._problems[-5:] or None,
+        )
+
+    def _sell(self, sold: dict[str, Any]) -> None:
+        """The block has moved on: the man who was on it went to whoever was
+        leading, at the price the page last showed. A nomination nobody ever
+        bid on cannot be sold, and is left for the manager to type."""
+        player, team, price = sold.get("player"), sold.get("high_bidder"), sold.get("current_offer")
+        if not player or not team or not price:
+            return
+        logged = LoggedPick(self._overall(sold), str(player), str(team), int(price))
+        try:
+            self.session.apply_logged(logged, source="room")
+        except (DraftError, UnknownNameError) as exc:
+            self._problems.append(f"{player} to {team} for ${price}: {exc}")
+
+    def _overall(self, sold: dict[str, Any]) -> int:
+        """ESPN's own pick number ("PK 15 OF 208") when the read had one,
+        and otherwise the next one by our own count."""
+        text = str(sold.get("pick") or "")
+        digits = "".join(c if c.isdigit() else " " for c in text).split()
+        return int(digits[0]) if digits else len(self.session.state.picks) + 1

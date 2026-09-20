@@ -838,7 +838,13 @@ class Bidder(threading.Thread):
             self._misses += 1
             self._error = message
             misses, armed = self._misses, self._armed
-        self._note(message)
+        # The room has no bidding form for a second or two at every
+        # nomination, so a read or two failing is the draft working, not a
+        # fault. Only a run of them is worth a line on the screen: one at
+        # MAX_MISSES, where a maximum would be dropped anyway, and nothing
+        # after that until reads come back.
+        if misses == MAX_MISSES:
+            self._note(f"{misses} reads in a row failed: {message}")
         if armed is not None and misses >= MAX_MISSES:
             self._disarm(SELECTOR, f"{misses} reads in a row failed: {message}")
 

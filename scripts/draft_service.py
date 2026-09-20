@@ -61,7 +61,7 @@ from app.config import get_settings
 from app.db.session import make_engine, make_session_factory
 from app.draft.live import RoomError, load_room
 from app.draft.rehearsal import Rehearsal, load_nominations
-from app.draft.service import PageFeed, create_draft_app
+from app.draft.service import PageFeed, RoomFeed, create_draft_app
 from app.draft.session import DraftLog, DraftSession, block_executor, process_executor
 from app.projections.sources import describe
 
@@ -153,7 +153,7 @@ def main() -> int:
         print(f"  {warning}", flush=True)
 
     rehearsal = None
-    if args.page:
+    if args.page and not args.bid:
         PageFeed(session, args.page, interval=args.interval, trust_money=args.trust_money).start()
     elif args.rehearse:
         factory = make_session_factory(make_engine(get_settings().database_url))
@@ -187,6 +187,11 @@ def main() -> int:
             on_change=session.bump,
         )
         bidder.start()
+        # The bidder's window is signed in and already reading the room
+        # every half second, so it is also the board's feed: PageFeed's
+        # second copy of the page, on the cookies in `.env`, is not started
+        # at all (see RoomFeed in app/draft/service.py).
+        RoomFeed(session, bidder).start()
         print(
             "bidding is ON"
             + (" (dry run: nothing will be clicked)" if args.no_bid else "")

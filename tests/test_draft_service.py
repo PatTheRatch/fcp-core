@@ -20,7 +20,7 @@ from app.draft.bidder import SELECTORS, Bidder
 from app.draft.live import SCREEN_CATEGORIES, PlayerLine, Room, player_lines
 from app.draft.optimizer import Candidate
 from app.draft.room import DraftState
-from app.draft.service import create_draft_app
+from app.draft.service import RoomFeed, create_draft_app
 from app.draft.session import DraftSession
 from app.draft.targets import CategoryDistribution
 from app.draft.valuation import PlayerProjection
@@ -303,3 +303,94 @@ def test_a_gated_source_the_viewer_does_not_own_leaves_the_pool_with_names_only(
     for row in pool["players"]:
         assert "line" not in row and "games" not in row
         assert "board_price" not in row and "market_price" not in row
+
+
+# --- the board, read through the bidder's own window ------------------------
+
+
+def room_read(player: str | None, offer: int | None, bidder: str | None, pick: str = "PK 3 OF 8"):
+    """One of the bidder's published reads, as `Bidder.state()` hands it over."""
+    return {
+        "running": True,
+        "error": None,
+        "room": None
+        if player is None
+        else {
+            "player": player,
+            "current_offer": offer,
+            "high_bidder": bidder,
+            "espn_value": 9,
+            "history": [f"${offer} {bidder}"] if bidder else [],
+            "pick": pick,
+        },
+    }
+
+
+class FakeBidder:
+    url = "https://fantasy.espn.com/basketball/draft?leagueId=1"
+
+
+def test_the_block_comes_from_the_window_we_are_signed_in_to() -> None:
+    """The cookies in `.env` expire silently, and a page feed reading the
+    sign-in page shows nobody on the block all night. The bidder's window is
+    signed in by hand, so its read is the board's."""
+    session = DraftSession(make_room())
+    feed = RoomFeed(session, FakeBidder())  # type: ignore[arg-type]
+
+    feed.once(room_read("Nikola Jokic", 12, "Brighton Bears"))
+
+    state = session.snapshot()
+    assert state["block"]["name"] == "Nikola Jokic"
+    assert state["block"]["current_offer"] == 12
+    assert state["block"]["high_bidder"] == "Brighton Bears"
+    assert state["feed"]["mode"] == "room" and state["feed"]["connected"] is True
+
+
+def test_a_pick_is_written_when_the_block_moves_on() -> None:
+    session = DraftSession(make_room())
+    feed = RoomFeed(session, FakeBidder())  # type: ignore[arg-type]
+
+    feed.once(room_read("Nikola Jokic", 12, "Brighton Bears"))
+    feed.once(room_read(None, None, None))  # the gap at every nomination
+    feed.once(room_read("Kawhi Leonard", 1, "Through The Wire"))
+
+    picks = session.state.picks
+    assert [(p.player_id, p.team_id, p.price) for p in picks] == [(1, 3, 12)], (
+        "Jokic went to Brighton at the last price the page showed, and Kawhi "
+        "is on the block, not sold"
+    )
+    assert session.snapshot()["block"]["name"] == "Kawhi Leonard"
+
+
+def test_a_nomination_nobody_bid_on_is_left_for_the_manager() -> None:
+    """No leader and no price is not a sale we can write; typing it is
+    better than inventing one."""
+    session = DraftSession(make_room())
+    feed = RoomFeed(session, FakeBidder())  # type: ignore[arg-type]
+
+    feed.once(room_read("Nikola Jokic", None, None))
+    feed.once(room_read("Kawhi Leonard", 1, "Through The Wire"))
+
+    assert session.state.picks == ()
+
+
+def test_a_read_we_have_already_applied_is_not_applied_twice() -> None:
+    session = DraftSession(make_room())
+    session.apply(1, 3, 12)
+    feed = RoomFeed(session, FakeBidder())  # type: ignore[arg-type]
+
+    feed.once(room_read("Nikola Jokic", 12, "Brighton Bears"))
+    feed.once(room_read("Kawhi Leonard", 1, "Through The Wire"))
+
+    assert len(session.state.picks) == 1, "the same sale read again is the same sale"
+
+
+def test_a_bidder_with_no_read_says_so_rather_than_blanking_the_board() -> None:
+    session = DraftSession(make_room())
+    feed = RoomFeed(session, FakeBidder())  # type: ignore[arg-type]
+
+    feed.once(room_read("Nikola Jokic", 12, "Brighton Bears"))
+    feed.once({"running": True, "error": "could not read the room", "room": None})
+
+    assert session.snapshot()["feed"]["connected"] is False
+    assert session.snapshot()["block"]["name"] == "Nikola Jokic", "the block stands"
