@@ -54,7 +54,14 @@ believe beats the price it shows.
    changed the page and the feed never fills, the night's plan is to type
    picks (step 3), which is why the rehearsal practises it.
 
-5. **Back up.** `bash scripts/backup_db.sh` on the VPS, and copy
+5. **If you mean to bid from the room, rehearse that too.** Sign in once
+   with `scripts/espn_login.py`, then run the mock with `--bid --no-bid`,
+   which does everything except the final click. Read **docs/bidding.md**
+   first, in full: it automates clicks on ESPN's site, every bid is real
+   money, and you are expected to watch the window it drives. Without
+   `--bid` none of it exists and nothing below changes.
+
+6. **Back up.** `bash scripts/backup_db.sh` on the VPS, and copy
    `data/bbm/` somewhere safe. The room reads the two BBM files at start, so
    keep them where the command below expects.
 
@@ -101,6 +108,12 @@ believe beats the price it shows.
   saved, and a pick that was mid-entry is the only thing to re-type.
 - **If a price was entered wrong:** "Undo last pick", then re-enter. Undo is
   logged too, so a restart replays the correction.
+- **If you are bidding from the room** (`--bid`): type the maximum once,
+  early in the nomination, and let it hold. STOP is pinned to the corner the
+  whole time it is armed and disarms instantly. It stops by itself when you
+  win him, when the block moves on, or when it cannot read the page three
+  times running, and it says which. It never bids above your maximum, above
+  the plan's cap, or above what ESPN will accept. docs/bidding.md.
 - **Our column is the accent column.** Its open places carry the plan's
   prices in italic: that is the money still allotted per place, and it moves
   as the room does. "Field max bid" is the most anyone else can pay; when it
@@ -126,3 +139,6 @@ believe beats the price it shows.
 | A player the reader saw is not on the board | He may be on the block, not sold. Wait a refresh; then "Put on block" or type him. |
 | Cards say ceiling pending for minutes | The workers are behind; the price and the plan are still right. Bid on those. |
 | The service will not start: the log has picks in it | A mock's log is in the way. Move `logs/draft-2027.jsonl` aside. |
+| `--bid` refuses to start: no signed-in session | `scripts/espn_login.py` has not been run, or the window was closed before it saved. Run it, sign in, leave it open. |
+| The bid line says it cannot find the room | ESPN moved its markup. Run `pytest tests/test_bidder.py` to see which hook died, then docs/bidding.md, "when ESPN changes". Until it is fixed, drop `--bid` and bid by hand. |
+| It disarmed itself mid-nomination | It says why on the live line, always. The usual reasons are the block moving on and three unreadable reads. Re-arm, or bid by hand. |

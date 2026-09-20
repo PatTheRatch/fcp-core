@@ -331,6 +331,18 @@ class DraftSession:
             self._block, self._block_id = block, player_id
             self._changed()
 
+    def bump(self) -> None:
+        """Say that something a screen draws has changed, from outside.
+
+        The version number is what the stream watches, and not everything a
+        screen draws lives in the session: the bidder (app/draft/bidder.py)
+        holds its own state on its own thread and calls this when it moves,
+        so that arming, a bid landing and a stop reach the page on the same
+        stream as a pick does rather than on a poll of their own.
+        """
+        with self._lock:
+            self._version += 1
+
     def set_feed_status(self, **status: Any) -> None:
         with self._lock:
             if {**self.feed_status, **status} != self.feed_status:

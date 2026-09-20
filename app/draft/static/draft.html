@@ -96,6 +96,47 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .strip .lab{display:block;text-align:right;margin-bottom:2px}
 .strip b{font-family:var(--mono);font-weight:500;font-size:16px}
 .strip .s1{background:var(--shade-1)} .strip .s2{background:var(--shade-2)} .strip .s3{background:var(--shade-3)}
+/* Bidding. Only drawn when the service was started with --bid; the whole
+   row is hidden otherwise, because a button that bids must not exist on a
+   screen with no browser behind it. Two controls and a stop, and nothing
+   else: one tap at the page's own next increment, and a maximum held.
+   The stop leaves the row and pins itself to the corner while armed, so it
+   is under a thumb wherever the page has been scrolled to. */
+/* Everything here sets min-width:0. These are grid and flex items, whose
+   automatic minimum is their content, and a number input's intrinsic width
+   is around 190px: left alone, the Hold box quietly widens the whole block
+   card past the viewport and the page scrolls sideways on a phone. */
+.bidbar{grid-column:1/-1;min-width:0;border-top:1px solid var(--rule);padding-top:12px;
+  display:grid;gap:8px}
+.bidnow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;min-width:0}
+.bidnow .btn{min-height:52px;font-size:13px;padding:0 20px;min-width:0}
+.bidnow .btn.primary{font-size:15px}
+.bidnow .btn[disabled]{opacity:.45;cursor:not-allowed}
+/* The second tap's label is a sentence, so it wraps rather than stretching. */
+#bid-hold{white-space:normal;line-height:1.25;max-width:22em;padding:6px 14px}
+.holdbox{display:flex;align-items:center;gap:8px;min-width:0;border:1px solid var(--rule);
+  background:var(--sunk);padding:0 6px 0 12px}
+.holdbox .lab{white-space:nowrap}
+.holdbox input{width:78px;min-width:0;min-height:50px;background:transparent;border:0;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;
+  text-align:right;color:var(--accent);-moz-appearance:textfield}
+.holdbox input::-webkit-outer-spin-button,.holdbox input::-webkit-inner-spin-button{
+  -webkit-appearance:none;margin:0}
+.holdbox input:focus{outline:none}
+.btn.stop{background:var(--stop);border-color:var(--stop);color:#fff;font-weight:600;font-size:14px}
+.btn.stop:hover{border-color:var(--ink)}
+body.armed #bid-stop{position:fixed;right:16px;bottom:16px;z-index:50;min-width:170px;min-height:68px;
+  font-size:18px;box-shadow:var(--shadow)}
+.bidline{margin:0;font-size:14px;color:var(--muted)}
+.bidline b{color:var(--ink);font-weight:600}
+.bidline .on{color:var(--accent);font-weight:600}
+.bidline .off{color:var(--faint)}
+.bidline .lead{color:var(--good);font-weight:600}
+.bidlog{list-style:none;margin:0;padding:0;font-family:var(--mono);font-size:12px;
+  color:var(--muted);max-height:104px;overflow:auto}
+.bidlog li{padding:1px 0}
+.bidlog li.placed{color:var(--accent)}
+.bidlog .t{color:var(--faint);margin-right:8px}
 .blocknote{grid-column:1/-1;font-size:14px;color:var(--muted);margin:0}
 .blocknote b{color:var(--ink);font-weight:600}
 .verdict{display:inline-block;padding:4px 10px;margin:0 8px 6px 0;font-size:13.5px;border:1px solid var(--rule)}
@@ -270,6 +311,13 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   .deskentry .buttons .btn{flex:1 1 calc(50% - 4px);min-height:52px;padding:0 10px}
   .deskentry .buttons .btn.primary{flex:1 1 100%;min-height:58px;min-width:0}
   .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px} .strip div{border-bottom:1px solid var(--rule)}
+  /* The same thumb rule the entry block follows: on a phone every bidding
+     control is full width and tall, and the stop spans the foot of the
+     screen rather than sitting in a corner of it. */
+  .bidnow{flex-direction:column}
+  .bidnow .btn,.holdbox{width:100%;min-height:58px}
+  .holdbox input{flex:1 1 60px;width:60px}
+  body.armed #bid-stop{left:16px;right:16px;width:auto;min-height:72px}
 }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
@@ -314,6 +362,20 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
     </div>
   </div>
   <div class="strip" id="b-strip"></div>
+  <div class="bidbar" id="bidbar" hidden>
+    <div class="bidnow">
+      <button class="btn primary" id="bid-now" type="button">Bid</button>
+      <div class="holdbox">
+        <span class="lab" id="bid-max-lab">Hold to</span>
+        <input id="bid-max" class="num" type="number" min="1" inputmode="numeric"
+               aria-label="The most we will pay for him">
+        <button class="btn" id="bid-hold" type="button">Hold</button>
+      </div>
+      <button class="btn stop" id="bid-stop" type="button" hidden>STOP</button>
+    </div>
+    <p class="bidline" id="bid-line" role="status" aria-live="polite"></p>
+    <ul class="bidlog" id="bid-log" aria-label="every bid this tool placed"></ul>
+  </div>
   <div class="blocknote" id="b-note"></div>
 </section>
 
@@ -762,6 +824,7 @@ function render() {
   renderFeed();
   renderLink();
   renderBlock();
+  renderBid();
   renderBoard(me);
   renderScarcity();
   renderStandings();
@@ -957,6 +1020,170 @@ function renderBlock() {
     $("e-price").focus();
   };
 }
+
+// ---------------------------------------------------------------------------
+// bidding
+//
+// Drawn only when S.bid exists, which is only when the service was started
+// with --bid. Every number here comes from the page ESPN is rendering --
+// the next increment, the legal max, what we have left -- and never from
+// this page's own arithmetic, because the auction is settled by ESPN's
+// numbers and not by ours. Every refusal below is enforced again in
+// app/draft/bidder.py: this half is courtesy, that half is the rule.
+// ---------------------------------------------------------------------------
+
+let holdPending = null;     // a maximum over the ceiling, waiting for a second tap
+let holdPendingTimer = null;
+let prefilledFor = null;    // the player the Hold box was last filled in for
+
+/** What he is worth to us: the exact ceiling, or the estimate standing in
+ *  for it while the search runs. The same number the accent figure shows. */
+function ceilingOf(card) {
+  const ce = (card && card.ceiling) || {};
+  return ce.status === "ready" ? num(ce.price) : num(ce.estimate);
+}
+
+function clearHoldPending() {
+  holdPending = null;
+  clearTimeout(holdPendingTimer);
+  $("bid-hold").textContent = "Hold";
+  $("bid-hold").classList.remove("stop");
+}
+
+function bidLine(b, room, worth) {
+  const bits = [];
+  if (!b.running) {
+    bits.push(`<span class="off">the bidder is not running</span>`
+      + (b.error ? ` — ${esc(b.error)}` : ""));
+  } else if (b.armed) {
+    bits.push(`<span class="on">Armed</span> · holding to <b>$${b.maximum}</b>`
+      + ` for <b>${esc(b.player)}</b>`);
+  } else {
+    bits.push(`<span class="off">Not armed</span>`);
+  }
+  if (b.dry_run) bits.push(`<span class="on">dry run — nothing is clicked</span>`);
+  if (num(room.current_offer) !== null) {
+    bits.push(`offer <b>$${room.current_offer}</b>` + (room.leading
+      ? ` · <span class="lead">we are leading</span>`
+      : room.high_bidder ? ` · high bid ${esc(room.high_bidder)}` : ""));
+  }
+  if (worth !== null) bits.push(`worth to us <b>$${worth}</b>`);
+  if (b.armed && b.waiting) bits.push(esc(b.waiting));
+  if (!b.armed && b.stopped_because) bits.push(`stopped: ${esc(b.stopped_because)}`);
+  if (b.last_action) {
+    bits.push(`last <b>${esc(b.last_action.text)}</b> at ${esc(b.last_action.at)}`);
+  }
+  return bits.join(" · ");
+}
+
+function renderBid() {
+  const b = S.bid, bar = $("bidbar");
+  if (!b) { bar.hidden = true; document.body.classList.remove("armed"); return; }
+  bar.hidden = false;
+  const room = b.room || {};
+  const subject = blockSubject();
+  const card = subject ? subject.card : null;
+
+  document.body.classList.toggle("armed", !!b.armed);
+  $("bid-stop").hidden = !b.armed;
+
+  // One tap, at the page's own next increment and never at a number of ours.
+  const next = num(room.next_increment);
+  $("bid-now").disabled = !(b.running && !room.leading && room.offer_ready && next !== null);
+  $("bid-now").textContent = room.leading ? "We are leading"
+    : next !== null ? `Bid $${next}` : "Nothing to bid on";
+
+  // The box opens at what he is worth to us, once per player. A number
+  // being typed is never overwritten by the stream arriving underneath it.
+  const worth = ceilingOf(card);
+  const who = room.player || (subject && subject.name) || null;
+  const box = $("bid-max");
+  if (who !== prefilledFor && document.activeElement !== box) {
+    prefilledFor = who;
+    box.value = worth === null ? "" : String(worth);
+    clearHoldPending();
+  }
+  box.disabled = !b.running || !!b.armed;
+  $("bid-hold").disabled = !b.running || !!b.armed;
+  $("bid-max-lab").textContent = b.armed ? "Holding to" : "Hold to";
+
+  $("bid-line").innerHTML = bidLine(b, room, worth);
+  $("bid-log").innerHTML = (b.log || []).slice().reverse().map((e) =>
+    `<li class="${e.bid ? "placed" : ""}"><span class="t">${esc(e.at)}</span>${esc(e.text)}</li>`
+  ).join("");
+}
+
+$("bid-now").onclick = async () => {
+  // Disabled for the round trip so a double tap cannot become two bids;
+  // the next state event redraws it, and a refusal redraws it at once
+  // rather than leaving a dead button until something else moves.
+  $("bid-now").disabled = true;
+  try {
+    const result = await api("/api/bid/once", { method: "POST", body: "{}" });
+    toast(`Offered $${result.amount}.`, true);
+  } catch (e) {
+    toast(e.message);
+  }
+  if (S) renderBid();
+};
+
+$("bid-hold").onclick = async () => {
+  const value = Number($("bid-max").value);
+  if (!Number.isFinite(value) || value < 1) { toast("Type a maximum first."); return; }
+  const b = (S && S.bid) || {}, room = b.room || {};
+  const subject = blockSubject();
+  const worth = ceilingOf(subject ? subject.card : null);
+
+  // Two numbers are not ours to overrule: the plan's cap on any one player,
+  // and what ESPN will actually accept. Both refuse outright, with the
+  // reason, and neither leaves a pending tap behind.
+  const cap = S.plan ? num(S.plan.cap) : null;
+  const legal = num(room.legal_max), cash = num(room.our_cash);
+  const refusal = cap !== null && value > cap
+      ? `$${value} is over the plan's $${cap} cap for one player.`
+    : legal !== null && value > legal
+      ? `$${value} is over the $${legal} ESPN will let us offer.`
+    : cash !== null && value > cash
+      ? `$${value} is over the $${cash} we have left.`
+    : null;
+  if (refusal) { clearHoldPending(); toast(refusal); return; }
+
+  // Over the ceiling is a judgement and not an error. It is allowed, once
+  // the screen has said out loud what it is about to do and been tapped a
+  // second time -- which is the difference between overpaying on purpose
+  // and overpaying because a box was already full of the wrong number.
+  if (worth !== null && value > worth && holdPending !== value) {
+    holdPending = value;
+    $("bid-hold").classList.add("stop");
+    $("bid-hold").textContent = `Tap again to hold $${value} — $${value - worth} over`
+      + ` the $${worth} he is worth to us`;
+    clearTimeout(holdPendingTimer);
+    holdPendingTimer = setTimeout(clearHoldPending, 8000);
+    return;
+  }
+
+  clearHoldPending();
+  try {
+    S = await api("/api/bid/arm", {
+      method: "POST",
+      body: JSON.stringify({ max: value, player: room.player || null }),
+    });
+    render();
+    toast(`Holding up to $${value}.`, true);
+  } catch (e) {
+    toast(e.message);
+  }
+};
+
+$("bid-stop").onclick = async () => {
+  try {
+    S = await api("/api/bid/stop", { method: "POST", body: "{}" });
+    render();
+    toast("Stopped. Nothing more will be bid.", true);
+  } catch (e) {
+    toast(e.message);
+  }
+};
 
 /** The open place a player at his level falls into: the cheapest place that
  *  covers what he is expected to go for, or the largest when none does. The

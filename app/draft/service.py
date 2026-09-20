@@ -18,8 +18,20 @@ started by `scripts/draft_service.py`, with nothing shared with
     GET  /api/pool              the whole board's per-game lines, for the screen's arithmetic
     GET  /api/plan              the best roster we can still finish
 
+With `--bid`, and only then, three more, and the bidder's own state inside
+/api/state (see app/draft/bidder.py and docs/bidding.md):
+
+    POST /api/bid/once          offer the next increment, once; {"amount": n} to type one
+    POST /api/bid/arm {max}     hold a maximum for the man on the block
+    POST /api/bid/stop          disarm
+
+Without `--bid` nothing opens a browser, the three routes are not defined at
+all, and /api/state carries no `bid` key -- which is what the screen reads to
+decide whether any of it exists.
+
 A refused pick is a 409 with the rule it broke. A name that matches nobody,
-or several, is a 422 with the alternatives.
+or several, is a 422 with the alternatives. A bid the bidder's own rules
+refuse is a 409 with the rule; a bidder that is not running is a 503.
 """
 
 from __future__ import annotations
@@ -41,6 +53,7 @@ from app.draft.room import DraftError
 from app.draft.session import DraftSession, UnknownNameError
 
 if TYPE_CHECKING:
+    from app.draft.bidder import Bidder
     from app.draft.rehearsal import Rehearsal
 
 SCREEN = Path(__file__).parent / "static" / "draft.html"
@@ -61,10 +74,39 @@ class BlockIn(BaseModel):
     high_bidder: str | None = None
 
 
+class ArmIn(BaseModel):
+    max: int = Field(description="the most we will pay for the man on the block")
+    player: str | None = Field(
+        None, description="who we think is on the block; refused if it is somebody else"
+    )
+
+
+class TapIn(BaseModel):
+    amount: int | None = Field(
+        None, description="a typed offer; omit for the button's own next increment"
+    )
+
+
 def create_draft_app(
-    session: DraftSession, *, poll: float = 0.25, rehearsal: Rehearsal | None = None
+    session: DraftSession,
+    *,
+    poll: float = 0.25,
+    rehearsal: Rehearsal | None = None,
+    bidder: Bidder | None = None,
 ) -> FastAPI:
     app = FastAPI(title="FCP Draft", version="0.1.0")
+
+    def snapshot() -> dict[str, Any]:
+        """The session's state, plus the bidder's when there is one.
+
+        The key is absent rather than null without `--bid`, because absent
+        is what the screen tests to decide whether to draw any of it: a
+        service with no browser must not show a button that bids.
+        """
+        state = session.snapshot()
+        if bidder is not None:
+            state["bid"] = bidder.state()
+        return state
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def screen() -> str:
@@ -87,7 +129,7 @@ def create_draft_app(
 
     @app.get("/api/state")
     def state() -> dict[str, Any]:
-        return session.snapshot()
+        return snapshot()
 
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
@@ -95,9 +137,9 @@ def create_draft_app(
             last = -1
             while not await request.is_disconnected():
                 if session.version != last:
-                    snapshot = await asyncio.to_thread(session.snapshot)
-                    last = snapshot["version"]
-                    yield f"event: state\ndata: {json.dumps(snapshot)}\n\n"
+                    state = await asyncio.to_thread(snapshot)
+                    last = state["version"]
+                    yield f"event: state\ndata: {json.dumps(state)}\n\n"
                 await asyncio.sleep(poll)
 
         return StreamingResponse(stream(), media_type="text/event-stream")
@@ -161,6 +203,45 @@ def create_draft_app(
     @app.get("/api/plan")
     def plan() -> dict[str, Any]:
         return session.plan_view()
+
+    # -- bidding, only when the service was started with --bid -------------
+    #
+    # Defined inside the `if` rather than guarded by a 404 inside each
+    # handler, so that a service with no browser does not advertise them in
+    # /docs either. The routes are thin on purpose: every rule they appear
+    # to enforce is enforced again in the bidder's own thread, because the
+    # screen is not the only thing that can call these.
+
+    if bidder is not None:
+
+        def _bid_error(exc: Exception) -> HTTPException:
+            if isinstance(exc, ValueError):
+                return HTTPException(status_code=409, detail=str(exc))
+            return HTTPException(status_code=503, detail=f"{type(exc).__name__}: {exc}")
+
+        @app.post("/api/bid/once")
+        def bid_once(body: TapIn | None = None) -> dict[str, Any]:
+            try:
+                amount = body.amount if body else None
+                return bidder.bid_exact(amount) if amount is not None else bidder.bid_once()
+            except Exception as exc:
+                raise _bid_error(exc) from exc
+
+        @app.post("/api/bid/arm")
+        def bid_arm(body: ArmIn) -> dict[str, Any]:
+            try:
+                bidder.arm(body.player or "", body.max)
+            except Exception as exc:
+                raise _bid_error(exc) from exc
+            return snapshot()
+
+        @app.post("/api/bid/stop")
+        def bid_stop() -> dict[str, Any]:
+            try:
+                bidder.disarm("stopped from the screen")
+            except Exception as exc:
+                raise _bid_error(exc) from exc
+            return snapshot()
 
     return app
 
