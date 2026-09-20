@@ -215,6 +215,13 @@ table.stand{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
 /* hover card */
 .card{position:fixed;z-index:20;width:320px;max-width:calc(100vw - 24px);background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);box-shadow:var(--shadow);padding:10px 12px 12px;pointer-events:none;opacity:0;transition:opacity .08s}
 .card.on{opacity:1}
+/* Pinned by a tap: now it can be touched, which is what the close control
+   needs. On a pointer the card is passed straight through as before. */
+.card.pinned{pointer-events:auto}
+.card .cx{position:absolute;top:2px;right:2px;width:44px;height:44px;display:none;align-items:center;justify-content:center;background:var(--sunk);border:1px solid var(--rule);color:var(--ink);font-size:22px;line-height:1;cursor:pointer;padding:0}
+.card.pinned .cx{display:flex}
+.card.pinned .cx:hover{border-color:var(--rule-strong)}
+.card.pinned .cn,.card.pinned .cm{padding-right:46px}
 .card .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05}
 .card .cm{font-size:12.5px;color:var(--muted);margin:3px 0 8px}
 .card .cm b{color:var(--ink);font-weight:600}
@@ -313,7 +320,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   </div>
 </section>
 
-<div class="boardwrap"><table class="board" id="board"></table></div>
+<div class="boardwrap" id="boardwrap"><table class="board" id="board"></table></div>
 
 <section class="sect">
   <h2>What is left on the board</h2>
@@ -1183,11 +1190,12 @@ function renderOurs(me) {
 const card = $("card");
 let cardPinned = null;
 
-function showCard(td) {
+function showCard(td, pinned = false) {
   const id = Number(td.dataset.pid);
   const row = Pool.byId.get(id);
   const name = row ? row.name : (S.picks.find((p) => p.player_id === id) || {}).name || "";
-  let inner = `<div class="cn">${esc(name)}</div>`;
+  let inner = `<button class="cx" type="button" id="card-close" aria-label="Close">&times;</button>`
+    + `<div class="cn">${esc(name)}</div>`;
   if (!row || !lineOf(row)) {
     const why = Pool.withheld ? "not this reader's to see" : "no projection for him on this board";
     inner += `<div class="cm">${esc(why)} · <b>$${esc(td.dataset.price)}</b> to ${esc(td.dataset.team)}</div>`;
@@ -1198,6 +1206,7 @@ function showCard(td) {
       + `<div class="strip">${stripHtml(lineOf(row))}</div>`;
   }
   card.innerHTML = inner;
+  card.classList.toggle("pinned", !!pinned);
   // Below the cell, flipped above it when there is no room, and never off the
   // edge of a narrow window in either direction.
   const r = td.getBoundingClientRect(), w = 320, h = card.offsetHeight || 120;
@@ -1205,12 +1214,33 @@ function showCard(td) {
   let y = r.bottom + 6;
   if (y + h > window.innerHeight - 8) y = r.top - h - 6;
   y = Math.max(8, Math.min(y, Math.max(8, window.innerHeight - h - 8)));
+  y = clearOfTheEntry(y, h);
   card.style.left = x + "px";
   card.style.top = y + "px";
   card.classList.add("on");
+  const close = $("card-close");
+  if (close) close.onclick = (e) => { e.stopPropagation(); hideCard(); };
 }
 
-function hideCard() { card.classList.remove("on"); cardPinned = null; }
+/** Keep the card off the pick entry: on a phone the two are the same width,
+ *  and a card that covers Save covers the one control that has to work. */
+function clearOfTheEntry(y, h) {
+  const entry = $("deskentry");
+  if (!entry) return y;
+  const guard = entry.getBoundingClientRect();
+  if (guard.height <= 0 || y >= guard.bottom || y + h <= guard.top) return y;
+  const above = guard.top - h - 6;
+  if (above >= 8) return above;
+  const below = guard.bottom + 6;
+  if (below + h <= window.innerHeight - 8) return below;
+  return Math.max(8, above);
+}
+
+function hideCard() {
+  card.classList.remove("on");
+  card.classList.remove("pinned");
+  cardPinned = null;
+}
 
 // Delegated, because the board is rebuilt on every version.
 const boardTable = $("board");
@@ -1233,9 +1263,20 @@ boardTable.addEventListener("click", (e) => {
   // A tap pins the card; a second tap on the same cell lets it go.
   if (cardPinned === td.dataset.pid) { hideCard(); return; }
   cardPinned = td.dataset.pid;
-  showCard(td);
+  showCard(td, true);
 });
-window.addEventListener("scroll", () => { if (!cardPinned) hideCard(); }, { passive: true });
+/* A pinned card on a phone used to need a second tap on the same cell, and a
+   cell is a thumb's width: four ways out instead. A tap anywhere else, the
+   close control on the card, Escape, and any scroll -- of the window or of
+   the board's own sideways scroller, which is the one a thumb actually moves
+   and which the window's scroll event never hears about. */
+document.addEventListener("click", (e) => {
+  if (!cardPinned) return;
+  if (e.target.closest && (e.target.closest("#card") || e.target.closest("td[data-pid]"))) return;
+  hideCard();
+});
+window.addEventListener("scroll", hideCard, { passive: true });
+$("boardwrap").addEventListener("scroll", hideCard, { passive: true });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
 
 // ---------------------------------------------------------------------------
