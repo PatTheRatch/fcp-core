@@ -210,6 +210,7 @@ class RoomLink:
             "connected": False,
             "signed_in": None,
             "readable": None,
+            "room_open": None,
             "message": "not connected",
         }
         if bidder is None:
@@ -227,6 +228,24 @@ class RoomLink:
                 "readable": False,
                 "message": "sign in, in the ESPN window",
             }
+        if state.get("room_open") is False:
+            # No room on the page, and not a fault: the page is still being
+            # painted, or the draft has not opened. The second is where the
+            # day-before check ends, and it is the answer wanted: the
+            # address, the window and the session are all right.
+            not_open = state["error"] == "the draft has not opened yet"
+            return {
+                **base,
+                "connected": True,
+                "signed_in": state["signed_in"],
+                "readable": False,
+                "room_open": False,
+                "message": (
+                    "the draft has not opened yet · ESPN says “Loading your draft”"
+                    if not_open
+                    else "reading the room…"
+                ),
+            }
         read = state["room"] is not None and state["error"] is None
         if read:
             message = f"Auction room · read {state['last_read']}"
@@ -239,6 +258,7 @@ class RoomLink:
             "connected": True,
             "signed_in": state["signed_in"],
             "readable": read if state["last_read"] or state["error"] else None,
+            "room_open": state.get("room_open"),
             "message": message,
         }
 

@@ -71,7 +71,16 @@ believe beats the price it shows.
    clicks on ESPN's site, every bid is real money, and you are expected to
    watch the window it drives. Until Connect is pressed none of it exists.
 
-6. **Back up.** `bash scripts/backup_db.sh` on the VPS, and copy
+6. **The day before, press Connect against the real room.** Open
+   `scripts/Draft Room.command`, leave the URL box as it is, press
+   **Connect**. The pill should settle, in amber, on *the draft has not
+   opened yet · ESPN says "Loading your draft"*: that one line proves the
+   address, the window and the sign-in, which is everything that can go
+   stale before the night (checked this way on 2026-09-20; the first few
+   reads say *reading the room…* while the page paints). *sign in, in the
+   ESPN window* means do that, now, not on the night. Then Disconnect.
+
+7. **Back up.** `bash scripts/backup_db.sh` on the VPS, and copy
    `data/bbm/` somewhere safe. The launcher reads the two newest BBM files
    from `data/bbm/` at start, so keep them there.
 
@@ -92,6 +101,8 @@ believe beats the price it shows.
   window* -- do that, in the Chromium window that opened, and wait -- or
   straight to green, *Auction room · read HH:MM:SS*. Leave that window
   open and visible: it is the reader, and it is where a bid is placed.
+- Amber *the draft has not opened yet* means you are early: leave it, the
+  pill goes green on its own when ESPN opens the room.
 - If the pill stays red, read what it says. *could not open the ESPN
   window* means Playwright or Chromium is missing (step 4). A read failure
   after sign-in means the markup has moved: the table below. Either way
@@ -166,7 +177,7 @@ screen; `--page` alone reads the room the older way, on the cookies in
 |---|---|
 | "No projected lines stored for 2027" at start | ESPN has not published 2027 projections yet; the BBM room does not need them, so this only appears without `--bbm`. Pass the BBM files. |
 | The pull refuses the export | The BBM settings changed. Restore the playoff weeks and 16 teams, pull again. |
-| `Draft Room.command` refuses to start | It says which: no BBM export in `data/bbm/` (pull one, step 1), no `FCP_TRACKED_TEAM_ID` in `.env` (set it, or run `draft_night.py --me "Through The Wire"`), or the database is not up. The window stays open so the message can be read. |
+| `Draft Room.command` refuses to start | It says which: no BBM export in `data/bbm/` (pull one, step 1), no `FCP_TRACKED_TEAM_ID` in `.env` (set it, or run `draft_night.py --me "Through The Wire"`), or the database is not up (Docker Desktop stopped while the laptop slept, on 2026-09-20: open Docker, then `docker compose up -d` in the repo, then try again). The window stays open so the message can be read. |
 | The URL box is empty | `.env` is missing one of `ESPN_LEAGUE_ID`, `ESPN_SWID`, `FCP_TRACKED_TEAM_ID`. Paste the room's URL from ESPN's address bar; it works the same. |
 | Pill says *could not open the ESPN window* | Playwright or Chromium is not installed (step 4), or `scripts/espn_login.py` is running and has the profile open -- close it; the two cannot share the profile. Then Disconnect, Connect. |
 | Pill stays on *sign in, in the ESPN window* after signing in | Wait one read (half a second). If it stays, the window is on ESPN's home rather than the room: Disconnect, Connect. |

@@ -84,6 +84,12 @@ STATE_FILE = Path.home() / ".fcp-core" / "espn-state.json"
 #: "sign in, in the ESPN window" and not "the markup has moved".
 SIGNED_OUT = ("Log in Required", "Log In to ESPN")
 
+#: What the room's own address shows before the draft opens: the shell of
+#: the page with this and nothing else, for as long as it takes. Seen on the
+#: league's real room on 2026-09-20, three weeks out. A page saying this is
+#: signed in and at the right address; it is not a moved markup.
+NOT_OPEN = ("Loading your draft",)
+
 #: How long to wait for the auction room to render before giving up on it.
 LOAD_TIMEOUT_MS = 45_000
 
@@ -160,6 +166,11 @@ class SelectorError(RuntimeError):
 class SignInRequiredError(SelectorError):
     """The page is ESPN's sign-in page. Reported once, and not as a fault:
     the fix is a person signing in, in the window, and the bidder waits."""
+
+
+class RoomNotOpenError(SelectorError):
+    """The page is the room's address before the draft has opened. Reported
+    once, and not as a fault: the fix is the clock, and the bidder waits."""
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +298,13 @@ def read_room(page: PageLike) -> RoomView:
         body = " ".join(page.texts("body"))
         if any(marker in body for marker in SIGNED_OUT):
             raise SignInRequiredError("sign in, in the ESPN window")
+        if any(marker in body for marker in NOT_OPEN):
+            raise RoomNotOpenError("the draft has not opened yet")
+        if not body.strip():
+            # Nothing on the page at all is the page still being painted,
+            # which every Connect sees for its first few reads. A moved
+            # markup has a page full of words that are not the room's.
+            raise RoomNotOpenError("the page has not rendered yet")
         raise SelectorError(
             "no bidding form, offer button or player card on the page; "
             f"the room's markup has moved (tried {SELECTORS['labels'][0]!r}, "
@@ -739,6 +757,9 @@ class Bidder(threading.Thread):
         #: the first read says either; back to False if the session lapses
         #: mid-draft, and True again when the room reads.
         self._signed_in: bool | None = None
+        #: Whether the address holds a room yet. None until a read says;
+        #: False while ESPN shows "Loading your draft"; True once it reads.
+        self._room_open: bool | None = None
         self._last_read: str | None = None
         self._view: RoomView | None = None
         self._armed: ArmState | None = None
@@ -787,6 +808,7 @@ class Bidder(threading.Thread):
             "dry_run": self.dry_run,
             "page_open": self._page is not None,
             "signed_in": self._signed_in,
+            "room_open": self._room_open,
             "last_read": self._last_read,
             "error": self._error,
             "armed": armed is not None,
@@ -868,6 +890,9 @@ class Bidder(threading.Thread):
         except SignInRequiredError as exc:
             self._signed_out(str(exc))
             return
+        except RoomNotOpenError as exc:
+            self._not_open(str(exc))
+            return
         except SelectorError as exc:
             self._miss(f"could not read the room: {exc}")
             return
@@ -904,6 +929,7 @@ class Bidder(threading.Thread):
             self._last_read = time.strftime("%H:%M:%S")
             newly = self._signed_in is not True
             self._signed_in = True
+            self._room_open = True
         if newly:
             # The room read, so the session is good: keep it for next time.
             self._page.remember()
@@ -923,6 +949,23 @@ class Bidder(threading.Thread):
             self._note(f"ESPN wants a sign-in: {message}")
         if armed is not None:
             self._disarm(SELECTOR, f"ESPN asked for a sign-in: {message}")
+
+    def _not_open(self, message: str) -> None:
+        """The room's address, before the draft: said once, then waited out,
+        the same as a sign-in. This is what the day-before check sees, and
+        it is the good outcome -- the window, the address and the session
+        are all right, and only the clock is missing."""
+        with self._lock:
+            # Once per reason, not once: "still rendering" gives way to
+            # "not opened yet" a second later, and both belong in the log.
+            first = self._room_open is not False or self._error != message
+            self._room_open = False
+            self._error = message
+            armed = self._armed
+        if first:
+            self._note(message)
+        if armed is not None:
+            self._disarm(SELECTOR, f"the room went away: {message}")
 
     def _miss(self, message: str) -> None:
         with self._lock:

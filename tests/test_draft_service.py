@@ -394,6 +394,7 @@ def test_the_room_connects_from_the_screen_on_the_league_s_own_url() -> None:
         "connected": False,
         "signed_in": None,
         "readable": None,
+        "room_open": None,
         "message": "not connected",
     }
     assert "bid" not in before, "no bidder, no bidding controls"
@@ -480,6 +481,34 @@ def test_a_window_that_will_not_open_is_reported_and_connect_can_be_tried_again(
     assert "chromium is not installed" in state["connect"]["message"]
     assert client.post("/api/connect", json={}).status_code == 200, "try again, not 409"
     assert len(made) == 2
+    client.post("/api/disconnect")
+
+
+def test_a_room_not_yet_open_reaches_the_screen_as_waiting_and_not_as_a_fault() -> None:
+    """The day-before check: Connect against the league's own address, and
+    the pill says the draft has not opened, in amber, rather than that the
+    markup has moved, in red. The page tells the two apart by `room_open`."""
+    from tests.test_bidder import FakeRoom
+
+    room = FakeRoom()
+    room.not_open = True
+    client = TestClient(
+        create_draft_app(
+            DraftSession(make_room()),
+            bidder_factory=fake_factory(room, made=[]),
+            default_url=LEAGUE_URL,
+        )
+    )
+
+    client.post("/api/connect", json={})
+    state = until(client, lambda s: s["connect"]["room_open"] is False)
+    assert state["connect"]["message"].startswith("the draft has not opened yet")
+    assert state["connect"]["readable"] is False and state["connect"]["connected"] is True
+    assert "room_open" in client.get("/").text, "the pill colours by it"
+
+    room.not_open = False
+    state = until(client, lambda s: s["connect"]["readable"] is True)
+    assert state["connect"]["room_open"] is True
     client.post("/api/disconnect")
 
 

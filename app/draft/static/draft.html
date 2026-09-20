@@ -959,10 +959,12 @@ function renderFeed() {
   if (c && c.connected) {
     // The window is the feed, so its sentence is the pill: "opening the
     // ESPN window…", "sign in, in the ESPN window", "Auction room · read
-    // 18:02:11". Amber while it is on its way or waiting for a person; red
-    // only when it is open, signed in and still cannot read the room.
+    // 18:02:11". Amber while it is on its way, waiting for a person, or
+    // waiting for the draft to open; red only when it is open, signed in
+    // and still cannot read the room.
     el.textContent = c.message;
-    el.className = "pill " + (c.readable ? "ok" : c.readable === false && c.signed_in !== false ? "err" : "warn");
+    const waiting = c.signed_in === false || c.room_open === false;
+    el.className = "pill " + (c.readable ? "ok" : c.readable === false && !waiting ? "err" : "warn");
     if (f.mode === "room" && f.problems) toast("Could not apply: " + f.problems.join("; "));
   } else if (f.mode === "page") {
     el.textContent = f.connected ? `ESPN page · read ${f.last_read || "…"}`

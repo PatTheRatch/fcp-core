@@ -41,6 +41,7 @@ from app.draft.bidder import (
     WON,
     ArmState,
     Bidder,
+    RoomNotOpenError,
     RoomView,
     SelectorError,
     SignInRequiredError,
@@ -52,6 +53,10 @@ from app.draft.bidder import (
 
 SNAPSHOT = Path(__file__).parent / "fixtures" / "espn_auction_room.html"
 SIGN_IN = Path(__file__).parent / "fixtures" / "espn_sign_in.html"
+
+#: The room's address before the draft opens, as seen on the league's real
+#: room on 2026-09-20: the page shell and this one line. Not a capture.
+NOT_OPEN_HTML = '<html><body><div id="__next"><p>Loading your draft</p></div></body></html>'
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +141,19 @@ class FakeRoom:
         self.blank = False
         #: ESPN has swapped the room for its sign-in page.
         self.signed_out = False
+        #: The draft has not opened: the address shows "Loading your draft".
+        self.not_open = False
         self.remembered = 0
         self.raises: Exception | None = None
         self._page = StaticPage(room_html(**self.state))
         self._sign_in = StaticPage.from_file(SIGN_IN)
+        self._not_open = StaticPage(NOT_OPEN_HTML)
+        #: `blank`: a page with words on it that are not the room's, which
+        #: is what a moved markup looks like. A page with no words at all
+        #: is "still rendering", and a different test.
+        self._elsewhere = StaticPage(
+            "<html><body><h1>Fantasy Basketball</h1><p>Welcome back.</p></body></html>"
+        )
 
     def set(self, **state: Any) -> None:
         self.state.update(state)
@@ -150,10 +164,13 @@ class FakeRoom:
             raise self.raises
         if self.signed_out:
             return self._sign_in.texts(selector)
-        return [] if self.blank else self._page.texts(selector)
+        if self.not_open:
+            return self._not_open.texts(selector)
+        return self._elsewhere.texts(selector) if self.blank else self._page.texts(selector)
 
     def enabled(self, selector: str) -> bool:
-        return False if self.blank or self.signed_out else self._page.enabled(selector)
+        away = self.blank or self.signed_out or self.not_open
+        return False if away else self._page.enabled(selector)
 
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
@@ -253,6 +270,27 @@ def test_a_page_that_is_not_an_auction_room_raises_loudly() -> None:
 
     assert "markup has moved" in str(caught.value)
     assert SELECTORS["offer_button"][0] in str(caught.value), "the failure names what it tried"
+
+
+def test_the_room_before_the_draft_is_recognised_and_is_not_a_moved_markup() -> None:
+    """Three weeks out, the league's own room address shows "Loading your
+    draft" and nothing else, for as long as you leave it. The first Connect
+    against it said the markup had moved, in red -- when it was the best
+    news the day-before check can give: right address, window and session."""
+    with pytest.raises(RoomNotOpenError) as caught:
+        read_room(StaticPage(NOT_OPEN_HTML))
+
+    assert str(caught.value) == "the draft has not opened yet"
+    assert isinstance(caught.value, SelectorError), "still a page that is not a room"
+
+
+def test_a_page_with_nothing_on_it_yet_is_still_rendering_and_not_a_moved_markup() -> None:
+    """Every Connect reads a blank page for its first second or two, and it
+    showed as red for those seconds. Blank is "not yet", and waited out."""
+    with pytest.raises(RoomNotOpenError) as caught:
+        read_room(StaticPage('<html><body><div id="__next"></div></body></html>'))
+
+    assert str(caught.value) == "the page has not rendered yet"
 
 
 def test_the_sign_in_page_is_recognised_and_is_not_a_moved_markup() -> None:
@@ -514,6 +552,30 @@ def test_an_exception_reading_the_room_is_caught_counted_and_reported() -> None:
     assert state["armed"] is False
     assert "TimeoutError" in (state["error"] or "")
     assert room.clicks == []
+
+
+def test_a_bidder_at_a_room_not_yet_open_says_so_once_and_waits() -> None:
+    """One line, `room_open` false, and polling; the read that finds the
+    room ends it, with nothing to do at the window."""
+    room = FakeRoom()
+    bidder = make_bidder(room)
+    room.not_open = True
+
+    for _ in range(6):
+        bidder._tick()
+
+    state = bidder.state()
+    assert state["room_open"] is False
+    assert state["error"] == "the draft has not opened yet"
+    assert sum("not opened" in line["text"] for line in state["log"]) == 1, "said once"
+    assert state["signed_in"] is None, "a page with no room in it proves nothing about the session"
+
+    room.not_open = False
+    bidder._tick()
+
+    state = bidder.state()
+    assert state["room_open"] is True and state["error"] is None
+    assert state["room"]["player"] == "Pascal Siakam"
 
 
 def test_a_signed_out_bidder_says_so_once_and_waits_for_the_room() -> None:
