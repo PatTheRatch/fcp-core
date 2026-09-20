@@ -10,8 +10,10 @@ suite -- which is the reason it is small, defensive about missing numbers, and
 built to render a room with no lines at all.
 """
 
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import replace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -242,9 +244,10 @@ def bidder() -> Iterator[Bidder]:
     agent.join(timeout=5)
 
 
-def test_without_bid_there_are_no_bidding_routes_and_no_bidding_state() -> None:
-    """The flag is the whole safety story for a service nobody meant to arm:
-    no routes to call, and no `bid` key for the screen to draw from."""
+def test_without_a_browser_there_are_no_bidding_routes_and_no_bidding_state() -> None:
+    """A service with no way to open a browser is the whole safety story
+    for a room nobody meant to arm: no routes to call, no `bid` key for the
+    screen to draw from, and Connect has nothing to connect with."""
     client = TestClient(create_draft_app(DraftSession(make_room())))
 
     assert client.post("/api/bid/once").status_code == 404
@@ -252,6 +255,7 @@ def test_without_bid_there_are_no_bidding_routes_and_no_bidding_state() -> None:
     assert client.post("/api/bid/stop").status_code == 404
     assert "bid" not in client.get("/api/state").json()
     assert "/api/bid" not in client.get("/openapi.json").text, "nor in the docs"
+    assert client.post("/api/connect", json={}).status_code == 409
 
 
 def test_with_bid_the_routes_are_there_and_the_state_carries_the_room(bidder: Bidder) -> None:
@@ -334,6 +338,187 @@ def test_a_gated_source_the_viewer_does_not_own_leaves_the_pool_with_names_only(
     for row in pool["players"]:
         assert "line" not in row and "games" not in row
         assert "board_price" not in row and "market_price" not in row
+
+
+# --- connecting to ESPN from the screen --------------------------------------
+
+
+LEAGUE_URL = (
+    "https://fantasy.espn.com/basketball/draft"
+    "?leagueId=12345&seasonId=2027&teamId=10&memberId={0A1B2C3D-4E5F-6A7B-8C9D-0E1F2A3B4C5D}"
+)
+
+
+def until(client: TestClient, ready: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    """The state, once `ready` says so; the bidder reads on its own thread."""
+    state: dict[str, Any] = {}
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        state = client.get("/api/state").json()
+        if ready(state):
+            return state
+        time.sleep(0.02)
+    raise AssertionError(f"never ready: {state.get('connect')}")
+
+
+def fake_factory(room: Any, *, made: list[Bidder]) -> Callable[[str], Bidder]:
+    """A bidder factory that opens no browser: `room` is what it reads."""
+
+    def make(url: str) -> Bidder:
+        bidder = Bidder(url, open_page=lambda: room, poll=0.01)
+        made.append(bidder)
+        return bidder
+
+    return make
+
+
+def test_the_room_connects_from_the_screen_on_the_league_s_own_url() -> None:
+    """No terminal and no flags: the state names the URL, Connect opens the
+    window on it, the pill goes through its stages, and the board reads
+    through the same window."""
+    from tests.test_bidder import FakeRoom
+
+    made: list[Bidder] = []
+    client = TestClient(
+        create_draft_app(
+            DraftSession(make_room()),
+            bidder_factory=fake_factory(FakeRoom(), made=made),
+            default_url=LEAGUE_URL,
+        )
+    )
+
+    before = client.get("/api/state").json()
+    assert before["connect"] == {
+        "url": None,
+        "default_url": LEAGUE_URL,
+        "connected": False,
+        "signed_in": None,
+        "readable": None,
+        "message": "not connected",
+    }
+    assert "bid" not in before, "no bidder, no bidding controls"
+    assert client.post("/api/bid/once", json={}).status_code == 503, "the route exists and says so"
+
+    connected = client.post("/api/connect", json={}).json()
+    assert connected["connect"]["connected"] is True
+    assert connected["connect"]["url"] == LEAGUE_URL and made[0].url == LEAGUE_URL
+    assert "bid" in connected, "a bidder exists now, so the controls do"
+
+    state = until(client, lambda s: s["connect"]["readable"] is True)
+    assert state["connect"]["signed_in"] is True
+    assert state["connect"]["message"].startswith("Auction room · read ")
+    assert state["feed"]["mode"] == "room" and state["feed"]["connected"] is True
+    assert state["bid"]["room"]["player"] == "Pascal Siakam"
+
+    again = client.post("/api/connect", json={"url": "https://example.invalid/other"})
+    assert again.status_code == 409 and "disconnect first" in again.json()["detail"]
+
+    after = client.post("/api/disconnect").json()
+    assert after["connect"]["connected"] is False and after["connect"]["url"] is None
+    assert "bid" not in after
+    assert after["feed"]["mode"] == "typed", "the feed is the typed one again"
+    assert not made[0].is_alive(), "the window is closed, not orphaned"
+    made[0].join(timeout=1)
+
+
+def test_a_pasted_url_is_the_one_the_window_opens_on() -> None:
+    from tests.test_bidder import FakeRoom
+
+    made: list[Bidder] = []
+    client = TestClient(
+        create_draft_app(
+            DraftSession(make_room()),
+            bidder_factory=fake_factory(FakeRoom(), made=made),
+            default_url=LEAGUE_URL,
+        )
+    )
+    mock = "https://fantasy.espn.com/basketball/draft?leagueId=999&seasonId=2027&teamId=3"
+
+    client.post("/api/connect", json={"url": f"  {mock}  "})
+
+    assert made[0].url == mock, "a pasted mock URL beats the league's own, and is trimmed"
+    client.post("/api/disconnect")
+
+
+def test_with_no_url_anywhere_connect_says_what_to_set() -> None:
+    from tests.test_bidder import FakeRoom
+
+    client = TestClient(
+        create_draft_app(
+            DraftSession(make_room()), bidder_factory=fake_factory(FakeRoom(), made=[])
+        )
+    )
+
+    refused = client.post("/api/connect", json={})
+
+    assert refused.status_code == 422
+    assert "paste" in refused.json()["detail"] and "FCP_TRACKED_TEAM_ID" in refused.json()["detail"]
+    assert client.get("/api/state").json()["connect"]["connected"] is False
+
+
+def test_a_window_that_will_not_open_is_reported_and_connect_can_be_tried_again() -> None:
+    """The failure is a sentence in the state, not a silent dead thread, and
+    it does not wedge the screen: the next Connect replaces it."""
+    made: list[Bidder] = []
+
+    def broken(url: str) -> Bidder:
+        def refuse() -> Any:
+            raise RuntimeError("chromium is not installed")
+
+        bidder = Bidder(url, open_page=refuse, poll=0.01)
+        made.append(bidder)
+        return bidder
+
+    client = TestClient(
+        create_draft_app(DraftSession(make_room()), bidder_factory=broken, default_url=LEAGUE_URL)
+    )
+
+    client.post("/api/connect", json={})
+    state = until(client, lambda s: s["connect"]["connected"] is False)
+
+    assert "could not open the ESPN window" in state["connect"]["message"]
+    assert "chromium is not installed" in state["connect"]["message"]
+    assert client.post("/api/connect", json={}).status_code == 200, "try again, not 409"
+    assert len(made) == 2
+    client.post("/api/disconnect")
+
+
+def test_a_sign_in_page_reaches_the_screen_as_a_sentence_and_clears_itself() -> None:
+    """The morning the board said Nobody for an hour, this is what was
+    missing: the state saying the window wants a sign-in, and then saying
+    the room reads once the person at the window has signed in."""
+    from tests.test_bidder import FakeRoom
+
+    room = FakeRoom()
+    room.signed_out = True
+    client = TestClient(
+        create_draft_app(
+            DraftSession(make_room()),
+            bidder_factory=fake_factory(room, made=[]),
+            default_url=LEAGUE_URL,
+        )
+    )
+
+    client.post("/api/connect", json={})
+    state = until(client, lambda s: s["connect"]["signed_in"] is False)
+    assert state["connect"]["message"] == "sign in, in the ESPN window"
+    assert state["connect"]["readable"] is False and state["connect"]["connected"] is True
+
+    room.signed_out = False
+    state = until(client, lambda s: s["connect"]["readable"] is True)
+    assert state["connect"]["signed_in"] is True
+    assert state["connect"]["message"].startswith("Auction room · read ")
+    client.post("/api/disconnect")
+
+
+def test_a_bidder_started_at_the_command_line_is_one_connected_at_start(bidder: Bidder) -> None:
+    client = TestClient(create_draft_app(DraftSession(make_room()), bidder=bidder))
+
+    state = until(client, lambda s: s["connect"]["readable"] is True)
+
+    assert state["connect"]["connected"] is True and state["connect"]["url"] == bidder.url
+    assert state["feed"]["mode"] == "room", "and the board reads through its window"
+    assert client.post("/api/connect", json={}).status_code == 409
 
 
 # --- the board, read through the bidder's own window ------------------------

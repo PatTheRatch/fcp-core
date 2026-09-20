@@ -18,20 +18,33 @@ started by `scripts/draft_service.py`, with nothing shared with
     GET  /api/pool              the whole board's per-game lines, for the screen's arithmetic
     GET  /api/plan              the best roster we can still finish
 
-With `--bid`, and only then, three more, and the bidder's own state inside
-/api/state (see app/draft/bidder.py and docs/bidding.md):
+ESPN's room is connected from the screen, not the command line:
+
+    POST /api/connect {url?}    open the ESPN window on the room (the league's own URL by default)
+    POST /api/disconnect        close it
+    GET  /api/state             carries `connect`: the URL, whether the window is signed
+                                in and reading, and a sentence saying which
+
+Connecting makes the bidder (app/draft/bidder.py) and the feed that reads
+the board through its window (`RoomFeed`, below); `--bid --page` at the
+command line is the same thing connected at start. Only when the service
+can open a browser at all are there three more routes, and the bidder's own
+state inside /api/state (see docs/bidding.md):
 
     POST /api/bid/once          offer the next increment, once; {"amount": n} to type one
     POST /api/bid/arm {max}     hold a maximum for the man on the block
     POST /api/bid/stop          disarm
 
-Without `--bid` nothing opens a browser, the three routes are not defined at
-all, and /api/state carries no `bid` key -- which is what the screen reads to
-decide whether any of it exists.
+/api/state carries a `bid` key only while a bidder exists -- which is what
+the screen reads to decide whether to draw any of it -- and the three routes
+answer 503 until one does. A service made with no way to open a browser
+does not define them at all.
 
 A refused pick is a 409 with the rule it broke. A name that matches nobody,
 or several, is a 422 with the alternatives. A bid the bidder's own rules
 refuse is a 409 with the rule; a bidder that is not running is a 503.
+Connecting while connected is a 409; connecting with no URL anywhere is a
+422 that says what to set.
 """
 
 from __future__ import annotations
@@ -40,7 +53,8 @@ import asyncio
 import json
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -94,25 +108,174 @@ class TapIn(BaseModel):
     )
 
 
+class ConnectIn(BaseModel):
+    url: str | None = Field(None, description="the ESPN draft room; omit for the league's own")
+
+
+#: Makes an unstarted bidder for a URL. The script supplies one that wires
+#: the room's cap and the session's version into it; a test supplies one
+#: that opens no browser.
+BidderFactory = Callable[[str], "Bidder"]
+
+
+class RoomLink:
+    """The bidder and the feed that reads the board through its window,
+    made and unmade while the service runs.
+
+    Both used to be built once at start-up from `--bid --page`, so
+    connecting to ESPN meant a terminal and a nine-flag command, and
+    nothing could be done about a window that had gone wrong short of
+    restarting the draft. Now they are made from the screen, on the
+    league's own URL or a pasted one, and taken down the same way. A bidder
+    started at the command line is one that was connected at start.
+    """
+
+    def __init__(
+        self,
+        session: DraftSession,
+        factory: BidderFactory | None = None,
+        *,
+        default_url: str | None = None,
+        bidder: Bidder | None = None,
+    ) -> None:
+        self.session = session
+        self.factory = factory
+        self.default_url = default_url
+        self.bidder: Bidder | None = None
+        self.feed: RoomFeed | None = None
+        self._lock = threading.Lock()
+        if bidder is not None:
+            self._attach(bidder)
+
+    @property
+    def possible(self) -> bool:
+        """Whether this service can ever have a room to bid in."""
+        return self.factory is not None or self.bidder is not None
+
+    @property
+    def connected(self) -> bool:
+        return self.bidder is not None and self.bidder.is_alive()
+
+    def connect(self, url: str | None) -> None:
+        """Open the window on `url`, or on the league's own room. Raises
+        `ValueError` when there is nothing to open it on or with."""
+        with self._lock:
+            if self.connected:
+                raise ValueError("already connected to ESPN's room; disconnect first")
+            if self.factory is None:
+                raise ValueError("this service cannot open a browser")
+            target = (url or "").strip() or self.default_url
+            if not target:
+                raise ValueError(
+                    "no draft room URL: paste the room's URL, or set ESPN_LEAGUE_ID, "
+                    "ESPN_SWID and FCP_TRACKED_TEAM_ID in .env so it can be built"
+                )
+            self._drop()
+            bidder = self.factory(target)
+            bidder.start()
+            self._attach(bidder)
+        self.session.bump()
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self._drop()
+        self.session.bump()
+
+    def _attach(self, bidder: Bidder) -> None:
+        self.bidder = bidder
+        self.feed = RoomFeed(self.session, bidder)
+        self.feed.start()
+
+    def _drop(self) -> None:
+        """Stop both and wait for them, so the next connect starts clean and
+        the feed cannot write a stale status over the reset below."""
+        feed, bidder = self.feed, self.bidder
+        self.feed = self.bidder = None
+        if feed is not None:
+            feed.stopping.set()
+        if bidder is not None:
+            bidder.stop()
+            bidder.join(timeout=10.0)
+        if feed is not None:
+            feed.join(timeout=2.0)
+            self.session.set_feed_status(mode="typed", url=None, connected=False, error=None)
+
+    def status(self) -> dict[str, Any]:
+        """What the screen says about the link, in one sentence: the order a
+        connection goes through, and where it is stuck when it is."""
+        bidder = self.bidder
+        base: dict[str, Any] = {
+            "url": bidder.url if bidder is not None else None,
+            "default_url": self.default_url,
+            "connected": False,
+            "signed_in": None,
+            "readable": None,
+            "message": "not connected",
+        }
+        if bidder is None:
+            return base
+        state = bidder.state()
+        if not state["running"]:
+            return {**base, "message": state["error"] or "the ESPN window has closed"}
+        if not state["page_open"]:
+            return {**base, "connected": True, "message": "opening the ESPN window…"}
+        if state["signed_in"] is False:
+            return {
+                **base,
+                "connected": True,
+                "signed_in": False,
+                "readable": False,
+                "message": "sign in, in the ESPN window",
+            }
+        read = state["room"] is not None and state["error"] is None
+        if read:
+            message = f"Auction room · read {state['last_read']}"
+        elif state["error"]:
+            message = str(state["error"])
+        else:
+            message = "reading the room…"
+        return {
+            **base,
+            "connected": True,
+            "signed_in": state["signed_in"],
+            "readable": read if state["last_read"] or state["error"] else None,
+            "message": message,
+        }
+
+
 def create_draft_app(
     session: DraftSession,
     *,
     poll: float = 0.25,
     rehearsal: Rehearsal | None = None,
     bidder: Bidder | None = None,
+    bidder_factory: BidderFactory | None = None,
+    default_url: str | None = None,
+    on_ready: Callable[[], None] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="FCP Draft", version="0.1.0")
+    """The app. `on_ready` is called once the server is listening, which is
+    when a browser can be pointed at it (scripts/draft_night.py)."""
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if on_ready is not None:
+            on_ready()
+        yield
+
+    app = FastAPI(title="FCP Draft", version="0.1.0", lifespan=lifespan)
+    link = RoomLink(session, bidder_factory, default_url=default_url, bidder=bidder)
 
     def snapshot() -> dict[str, Any]:
-        """The session's state, plus the bidder's when there is one.
+        """The session's state, the link's, and the bidder's when there is one.
 
-        The key is absent rather than null without `--bid`, because absent
+        `bid` is absent rather than null without a bidder, because absent
         is what the screen tests to decide whether to draw any of it: a
         service with no browser must not show a button that bids.
         """
         state = session.snapshot()
-        if bidder is not None:
-            state["bid"] = bidder.state()
+        state["connect"] = link.status()
+        if link.bidder is not None:
+            state["bid"] = link.bidder.state()
         return state
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -211,7 +374,32 @@ def create_draft_app(
     def plan() -> dict[str, Any]:
         return session.plan_view()
 
-    # -- bidding, only when the service was started with --bid -------------
+    # -- the ESPN window --------------------------------------------------
+
+    @app.post("/api/connect")
+    def connect(body: ConnectIn | None = None) -> dict[str, Any]:
+        if link.connected:
+            raise HTTPException(
+                status_code=409, detail="already connected to ESPN's room; disconnect first"
+            )
+        if not link.possible:
+            raise HTTPException(status_code=409, detail="this service cannot open a browser")
+        try:
+            link.connect(body.url if body else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail=f"could not start: {type(exc).__name__}: {exc}"
+            ) from exc
+        return snapshot()
+
+    @app.post("/api/disconnect")
+    def disconnect() -> dict[str, Any]:
+        link.disconnect()
+        return snapshot()
+
+    # -- bidding, only when the service can open a browser at all ---------
     #
     # Defined inside the `if` rather than guarded by a 404 inside each
     # handler, so that a service with no browser does not advertise them in
@@ -219,9 +407,18 @@ def create_draft_app(
     # to enforce is enforced again in the bidder's own thread, because the
     # screen is not the only thing that can call these.
 
-    if bidder is not None:
+    if link.possible:
+
+        def _bidder() -> Bidder:
+            if link.bidder is None:
+                raise HTTPException(
+                    status_code=503, detail="not connected to ESPN's room; press Connect"
+                )
+            return link.bidder
 
         def _bid_error(exc: Exception) -> HTTPException:
+            if isinstance(exc, HTTPException):
+                return exc
             if isinstance(exc, ValueError):
                 return HTTPException(status_code=409, detail=str(exc))
             return HTTPException(status_code=503, detail=f"{type(exc).__name__}: {exc}")
@@ -229,6 +426,7 @@ def create_draft_app(
         @app.post("/api/bid/once")
         def bid_once(body: TapIn | None = None) -> dict[str, Any]:
             try:
+                bidder = _bidder()
                 amount = body.amount if body else None
                 return bidder.bid_exact(amount) if amount is not None else bidder.bid_once()
             except Exception as exc:
@@ -237,7 +435,7 @@ def create_draft_app(
         @app.post("/api/bid/arm")
         def bid_arm(body: ArmIn) -> dict[str, Any]:
             try:
-                bidder.arm(body.player or "", body.max)
+                _bidder().arm(body.player or "", body.max)
             except Exception as exc:
                 raise _bid_error(exc) from exc
             return snapshot()
@@ -245,7 +443,7 @@ def create_draft_app(
         @app.post("/api/bid/stop")
         def bid_stop() -> dict[str, Any]:
             try:
-                bidder.disarm("stopped from the screen")
+                _bidder().disarm("stopped from the screen")
             except Exception as exc:
                 raise _bid_error(exc) from exc
             return snapshot()
@@ -372,6 +570,10 @@ class RoomFeed(threading.Thread):
                 self.once(self.bidder.state())
             except Exception as exc:  # a bad read must not end the draft
                 self.session.set_feed_status(connected=False, error=f"{type(exc).__name__}: {exc}")
+            if not self.bidder.is_alive():
+                # The window has gone, and its last state has just been
+                # read into the status; there is nothing more to poll.
+                return
             self.stopping.wait(self.interval)
 
     def once(self, state: dict[str, Any]) -> None:

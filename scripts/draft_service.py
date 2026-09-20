@@ -4,10 +4,11 @@
 Usage:
     python scripts/draft_service.py --season 2027 --me "Through The Wire" \\
         --bbm ~/Documents/PatriotGames/player_rankings/BBM_Projections_2027_total.xls \\
-        --bbm-per-game ~/Documents/PatriotGames/player_rankings/BBM_Projections_2027_pergame.xls \\
-        --page "https://fantasy.espn.com/basketball/draft?leagueId=...&seasonId=2027&teamId=3"
+        --bbm-per-game ~/Documents/PatriotGames/player_rankings/BBM_Projections_2027_pergame.xls
 
-Then http://127.0.0.1:8765/api/state, or /docs for every endpoint.
+Then http://127.0.0.1:8765/api/state, or /docs for every endpoint. On the
+night, `scripts/draft_night.py` (or `Draft Room.command`) runs this with
+every default filled in and opens the screen.
 
 Without a Basketball Monster membership, `--projection-set <id>` drafts on an
 uploaded set instead (scripts/upload_projections.py). The two are exclusive,
@@ -21,6 +22,16 @@ deletes one.
 
 Open http://127.0.0.1:8765 for the draft screen.
 
+ESPN'S ROOM
+
+The screen's Connect button opens a browser window on the league's own
+draft room (built from ESPN_LEAGUE_ID, ESPN_SWID and FCP_TRACKED_TEAM_ID in
+.env, or a pasted URL for a mock), reads the board through it, and can
+place bids from the screen. Sign in, in that window, if it asks; the
+profile in ~/.fcp-core/espn remembers it. `--page URL --bid` does the same
+connect at start-up, and `--page` alone reads the room the older way, on
+the cookies in .env.
+
 REHEARSING
 
     python scripts/draft_service.py --season 2027 --me "Through The Wire" \\
@@ -33,19 +44,15 @@ paid. The log defaults to logs/rehearsal-<season>-<time>.jsonl so a
 rehearsal never touches the real draft's log.
 
 Without --page or --rehearse, picks come in through the screen or POST
-/api/picks and nothing reads ESPN. The room options (--plan, --restarts, --punt ...) are the same as
+/api/picks and nothing reads ESPN until Connect is pressed. The room
+options (--plan, --restarts, --punt ...) are the same as
 scripts/draft_room.py's.
 
 BIDDING
 
-    python scripts/espn_login.py            # once, sign in, leave it open
-    python scripts/draft_service.py ... --page "<draft room>" --bid
-
-adds a second browser window that can place bids: a one-tap offer, and a
-maximum held for one player until it is reached, the player changes, or the
-STOP button is pressed. Off unless --bid is given, and with --bid --no-bid
-it rehearses the whole thing without ever clicking. Read docs/bidding.md
-before using it on a real draft: every click is real money.
+Every click in the ESPN window is real money. Read docs/bidding.md before
+connecting to a draft that counts. `--no-bid` rehearses the whole thing
+without ever clicking, whether connected at start or from the screen.
 """
 
 from __future__ import annotations
@@ -53,7 +60,9 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 
@@ -61,15 +70,21 @@ from app.config import get_settings
 from app.db.session import make_engine, make_session_factory
 from app.draft.live import RoomError, load_room
 from app.draft.rehearsal import Rehearsal, load_nominations
-from app.draft.service import PageFeed, RoomFeed, create_draft_app
+from app.draft.room_url import draft_room_url
+from app.draft.service import PageFeed, create_draft_app
 from app.draft.session import DraftLog, DraftSession, block_executor, process_executor
 from app.projections.sources import describe
 
+if TYPE_CHECKING:
+    from app.draft.bidder import Bidder
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--season", type=int, required=True)
-    ap.add_argument("--me", required=True, help="our team's name")
+
+def build_parser(*, require_room: bool = True) -> argparse.ArgumentParser:
+    """Every flag. `require_room=False` is for scripts/draft_night.py, which
+    fills --season and --me in itself and lets the flags override."""
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap.add_argument("--season", type=int, required=require_room)
+    ap.add_argument("--me", required=require_room, help="our team's name")
     ap.add_argument("--bbm", type=Path, help="Basketball Monster export, Total Games Value")
     ap.add_argument("--bbm-per-game", type=Path, help="the same export on Per Game Value")
     ap.add_argument(
@@ -77,19 +92,19 @@ def main() -> int:
         type=int,
         help="an uploaded projection set to draft on instead of --bbm",
     )
-    ap.add_argument("--page", help="the ESPN draft room URL; omit to enter picks by hand")
+    ap.add_argument("--page", help="the ESPN draft room URL; omit to connect from the screen")
     ap.add_argument("--trust-money", action="store_true", help="apply picks inferred from budgets")
     ap.add_argument(
         "--bid",
         action="store_true",
-        help="open a second browser that can place bids; needs --page and scripts/espn_login.py",
+        help="with --page: open the ESPN window at start rather than from the screen",
     )
     ap.add_argument(
         "--no-bid",
         action="store_true",
-        help="with --bid: rehearse everything except the final click",
+        help="rehearse everything except the final click, in the ESPN window",
     )
-    ap.add_argument("--bid-headless", action="store_true", help="with --bid: no window to watch")
+    ap.add_argument("--bid-headless", action="store_true", help="no ESPN window to watch")
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between page reads")
     ap.add_argument("--log", type=Path, help="pick log (default logs/draft-<season>.jsonl)")
     ap.add_argument("--rehearse", type=int, help="replay this season's real draft into the room")
@@ -108,8 +123,27 @@ def main() -> int:
     ap.add_argument("--plan-slack", type=float, default=0.10)
     ap.add_argument("--pool-season", type=int)
     ap.add_argument("--pool-kind", default="projected", choices=("projected", "total"))
-    args = ap.parse_args()
+    return ap
 
+
+def league_room_url(season: int) -> str | None:
+    """The league's own draft room, when .env holds enough to name it. None
+    when it does not, or when .env has no ESPN login at all: the box on the
+    screen is then empty and waits for a paste."""
+    from pydantic import ValidationError
+
+    from app.espn import get_espn_settings
+
+    try:
+        espn = get_espn_settings()
+    except ValidationError:
+        return None
+    return draft_room_url(espn.espn_league_id, season, espn.fcp_tracked_team_id, espn.espn_swid)
+
+
+def serve(args: argparse.Namespace, *, on_ready: Callable[[], None] | None = None) -> int:
+    """Load the room and run the service until it is stopped. `on_ready` is
+    called once the server is listening, which is when a browser can open."""
     try:
         room = load_room(
             args.season,
@@ -129,6 +163,8 @@ def main() -> int:
 
     if args.page and args.rehearse:
         raise SystemExit("--page and --rehearse are two different feeds; pick one")
+    if args.bid and not args.page:
+        raise SystemExit("--bid needs --page: it opens the room the URL names")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     default_log = (
         Path("logs") / f"rehearsal-{args.rehearse}-{stamp}.jsonl"
@@ -163,40 +199,56 @@ def main() -> int:
         rehearsal.start()
         print(f"rehearsing {len(nominations)} nominations from {args.rehearse}", flush=True)
 
-    bidder = None
-    if args.bid:
-        if not args.page:
-            raise SystemExit("--bid needs --page: it bids in the room the URL names")
+    def cap() -> int | None:
+        allocation = room.allocation
+        return allocation.cap(session.state) if allocation is not None else None
+
+    def make_bidder(url: str) -> Bidder:
+        # Imported here, and only here, so that a room that never connects
+        # needs nothing of Playwright's installed.
         from app.draft.bidder import Bidder
 
-        def cap() -> int | None:
-            allocation = room.allocation
-            return allocation.cap(session.state) if allocation is not None else None
-
-        bidder = Bidder(
-            args.page,
+        return Bidder(
+            url,
             headless=args.bid_headless,
             dry_run=args.no_bid,
             cap=cap,
             on_change=session.bump,
         )
+
+    bidder = None
+    if args.bid:
+        bidder = make_bidder(args.page)
         bidder.start()
-        # The bidder's window is signed in and already reading the room
-        # every half second, so it is also the board's feed: PageFeed's
-        # second copy of the page, on the cookies in `.env`, is not started
-        # at all (see RoomFeed in app/draft/service.py).
-        RoomFeed(session, bidder).start()
         print(
-            "bidding is ON"
+            "connected to ESPN's room at start"
             + (" (dry run: nothing will be clicked)" if args.no_bid else "")
             + " -- every click is real money; docs/bidding.md",
             flush=True,
         )
+    default_url = league_room_url(args.season)
+    print(
+        f"ESPN room: {default_url.split('&memberId=')[0]}..."
+        if default_url
+        else "ESPN room: no URL in .env; paste one on the screen",
+        flush=True,
+    )
 
     print(f"draft screen: http://{args.host}:{args.port}", flush=True)
-    app = create_draft_app(session, rehearsal=rehearsal, bidder=bidder)
+    app = create_draft_app(
+        session,
+        rehearsal=rehearsal,
+        bidder=bidder,
+        bidder_factory=make_bidder,
+        default_url=default_url,
+        on_ready=on_ready,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
+
+
+def main() -> int:
+    return serve(build_parser().parse_args())
 
 
 if __name__ == "__main__":
