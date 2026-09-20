@@ -166,7 +166,7 @@ def _teams(session: Session, league_season: LeagueSeason) -> dict[int, str]:
 
 def load_room(
     season: int,
-    me: str,
+    me: str | int,
     *,
     pool_season: int | None,
     pool_kind: str,
@@ -274,7 +274,9 @@ def load_room(
         names = {p.name: int(p.espn_player_id) for p in session.scalars(sql_select(Player)).all()}
         names.update({c.name: c.player_id for c in candidates})
 
-        mine = match_team(me, teams.values())
+        # A name, matched loosely, or ESPN's own team id -- which is how the
+        # launcher names us from FCP_TRACKED_TEAM_ID without knowing the name.
+        mine = teams.get(me) if isinstance(me, int) else match_team(me, teams.values())
         if mine is None:
             raise RoomError(f"no team called {me!r}. Teams: {', '.join(teams.values())}")
         my_id = next(tid for tid, name in teams.items() if name == mine)
