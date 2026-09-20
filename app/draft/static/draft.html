@@ -127,12 +127,41 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .btn.stop:hover{border-color:var(--ink)}
 body.armed #bid-stop{position:fixed;right:16px;bottom:16px;z-index:50;min-width:170px;min-height:68px;
   font-size:18px;box-shadow:var(--shadow)}
+/* Who holds him, said once and large. This is read at arm's length on a
+   phone with an auction clock running, so it carries a single verdict and a
+   handful of figures; the sentence below it keeps the detail. It is
+   deliberately smaller than the "Worth to us" figure, which is a different
+   question. */
+.bidstate{min-width:0;border:1px solid var(--rule);background:var(--sunk);padding:8px 12px}
+.bidstate .lab{display:block;margin-bottom:2px}
+.bidstate .head{display:block;font-family:var(--display);font-weight:600;text-transform:uppercase;
+  letter-spacing:.02em;font-size:clamp(21px,2.6vw,28px);line-height:1.1;color:var(--ink);
+  overflow-wrap:anywhere}
+.bidstate .amt{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.bidstate .sub{display:block;margin-top:3px;font-family:var(--mono);
+  font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--muted)}
+.bidstate.idle .head{color:var(--muted)}
+.bidstate.good{border-color:var(--good);background:var(--good-soft)}
+.bidstate.good .head,.bidstate.good .lab{color:var(--good)}
+.bidstate.warn{border-color:var(--warn);background:var(--warn-soft)}
+.bidstate.warn .head,.bidstate.warn .lab{color:var(--warn)}
+.bidstate.stop{border-color:var(--stop);background:var(--stop-soft)}
+.bidstate.stop .head,.bidstate.stop .lab{color:var(--stop)}
 .bidline{margin:0;font-size:14px;color:var(--muted)}
 .bidline b{color:var(--ink);font-weight:600}
 .bidline .on{color:var(--accent);font-weight:600}
 .bidline .off{color:var(--faint)}
 .bidline .lead{color:var(--good);font-weight:600}
-.bidlog{list-style:none;margin:0;padding:0;font-family:var(--mono);font-size:12px;
+.bidline .fault{color:var(--stop);cursor:help}
+/* The log is evidence, not status: forty repeats of the same selector error
+   are worth keeping and are not worth the screen they were taking. */
+.biddetails{min-width:0}
+.biddetails>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline;padding:2px 0}
+.biddetails>summary::-webkit-details-marker{display:none}
+.biddetails>summary::before{content:"\25B8";color:var(--faint);font-size:10px}
+.biddetails[open]>summary::before{content:"\25BE"}
+.biddetails>summary .count{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.bidlog{list-style:none;margin:4px 0 0;padding:0;font-family:var(--mono);font-size:12px;
   color:var(--muted);max-height:104px;overflow:auto}
 .bidlog li{padding:1px 0}
 .bidlog li.placed{color:var(--accent)}
@@ -363,6 +392,11 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   </div>
   <div class="strip" id="b-strip"></div>
   <div class="bidbar" id="bidbar" hidden>
+    <div class="bidstate idle" id="bid-state" role="status" aria-live="polite">
+      <span class="lab" id="bid-state-lab">on the block</span>
+      <b class="head" id="bid-state-head">Nothing on the block</b>
+      <span class="sub" id="bid-state-sub"></span>
+    </div>
     <div class="bidnow">
       <button class="btn primary" id="bid-now" type="button">Bid</button>
       <div class="holdbox">
@@ -374,7 +408,10 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
       <button class="btn stop" id="bid-stop" type="button" hidden>STOP</button>
     </div>
     <p class="bidline" id="bid-line" role="status" aria-live="polite"></p>
-    <ul class="bidlog" id="bid-log" aria-label="every bid this tool placed"></ul>
+    <details class="biddetails" id="bid-logbox">
+      <summary><span class="lab">Log</span><span class="count" id="bid-log-count"></span></summary>
+      <ul class="bidlog" id="bid-log" aria-label="every bid this tool placed"></ul>
+    </details>
   </div>
   <div class="blocknote" id="b-note"></div>
 </section>
@@ -1051,11 +1088,58 @@ function clearHoldPending() {
   $("bid-hold").classList.remove("stop");
 }
 
+/** A failure, short enough to read at a glance. A selector failure arrives
+ *  as a sentence with the CSS it tried inside it; all the reader needs on
+ *  the line is that the room stopped being readable, and the whole text is
+ *  still there in the title and in the log, so nothing is lost. */
+function fault(text) {
+  const full = String(text === null || text === undefined ? "" : text);
+  const brief = /markup has moved|no bidding form|could not read the room/i.test(full)
+    ? "lost the room's markup"
+    : full.length > 64 ? `${full.slice(0, 63).trimEnd()}…` : full;
+  return `<span class="fault" title="${esc(full)}">${esc(brief)}</span>`;
+}
+
+/** Who holds the player, right now, in one verdict. This is the thing a
+ *  manager is squinting at a phone for while the clock runs; the numbers
+ *  under it are the few that bear on the next tap, and everything else
+ *  belongs to the sentence below. */
+function bidState(b, room, worth, who) {
+  const offer = num(room.current_offer);
+  const money = (amount) => `<span class="amt">$${amount}</span>`;
+  const state = { tone: "idle", lab: "on the block", head: "Nothing on the block" };
+
+  if (room.leading) {
+    state.tone = "good";
+    state.lab = "he is ours for now";
+    state.head = offer === null ? "We have him" : `We have him at ${money(offer)}`;
+  } else if (offer !== null) {
+    // Taking him means bidding over the offer, so an offer standing at what
+    // he is worth to us is already past our number: being outbid is the
+    // ordinary case and only this one is worth alarming anybody about.
+    const past = worth !== null && offer >= worth;
+    state.tone = past ? "stop" : "warn";
+    state.lab = past ? "past our number" : "outbid";
+    state.head = room.high_bidder
+      ? `${esc(room.high_bidder)} has him at ${money(offer)}`
+      : `High bid ${money(offer)}`;
+  } else if (who) {
+    state.head = "Nobody has bid";
+  }
+
+  const bits = [];
+  if (offer !== null) bits.push(`offer $${offer}`);
+  if (worth !== null) bits.push(`worth $${worth}`);
+  if (b.armed && num(b.maximum) !== null) bits.push(`holding to $${b.maximum}`);
+  state.sub = bits.join("  ·  ");
+  return state;
+}
+
 function bidLine(b, room, worth) {
   const bits = [];
   if (!b.running) {
     bits.push(`<span class="off">the bidder is not running</span>`
-      + (b.error ? ` — ${esc(b.error)}` : ""));
+      + (b.error ? ` — ${fault(b.error)}` : ""));
   } else if (b.armed) {
     bits.push(`<span class="on">Armed</span> · holding to <b>$${b.maximum}</b>`
       + ` for <b>${esc(b.player)}</b>`);
@@ -1070,7 +1154,7 @@ function bidLine(b, room, worth) {
   }
   if (worth !== null) bits.push(`worth to us <b>$${worth}</b>`);
   if (b.armed && b.waiting) bits.push(esc(b.waiting));
-  if (!b.armed && b.stopped_because) bits.push(`stopped: ${esc(b.stopped_because)}`);
+  if (!b.armed && b.stopped_because) bits.push(`stopped: ${fault(b.stopped_because)}`);
   if (b.last_action) {
     bits.push(`last <b>${esc(b.last_action.text)}</b> at ${esc(b.last_action.at)}`);
   }
@@ -1108,11 +1192,30 @@ function renderBid() {
   $("bid-hold").disabled = !b.running || !!b.armed;
   $("bid-max-lab").textContent = b.armed ? "Holding to" : "Hold to";
 
+  const state = bidState(b, room, worth, who);
+  $("bid-state").className = `bidstate ${state.tone}`;
+  $("bid-state-lab").textContent = state.lab;
+  $("bid-state-head").innerHTML = state.head;
+  $("bid-state-sub").textContent = state.sub;
+
   $("bid-line").innerHTML = bidLine(b, room, worth);
-  $("bid-log").innerHTML = (b.log || []).slice().reverse().map((e) =>
+  const log = b.log || [];
+  $("bid-log-count").textContent = log.length === 1 ? "1 line" : `${log.length} lines`;
+  $("bid-log").innerHTML = log.slice().reverse().map((e) =>
     `<li class="${e.bid ? "placed" : ""}"><span class="t">${esc(e.at)}</span>${esc(e.text)}</li>`
   ).join("");
 }
+
+// The log opens shut, because it is a wall of monospace with the same read
+// failure in it forty times, and it stays however this viewer last left it.
+function readLogOpen() {
+  try { return window.localStorage.getItem("fcp-bidlog") === "open"; } catch (e) { return false; }
+}
+function writeLogOpen(open) {
+  try { window.localStorage.setItem("fcp-bidlog", open ? "open" : "shut"); } catch (e) { /* private window */ }
+}
+$("bid-logbox").open = readLogOpen();
+$("bid-logbox").addEventListener("toggle", () => writeLogOpen($("bid-logbox").open));
 
 $("bid-now").onclick = async () => {
   // Disabled for the round trip so a double tap cannot become two bids;

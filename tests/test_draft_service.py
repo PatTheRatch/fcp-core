@@ -153,6 +153,37 @@ def test_the_page_reopens_a_stream_a_phone_has_dropped() -> None:
     assert "STREAM_POLL_MS" in page, "and it polls /api/state while the stream is down"
 
 
+def test_the_bidding_panel_says_who_holds_the_player() -> None:
+    """Mid-auction the only question is whether he is ours, and the answer used
+    to be buried in a run-on line of clauses. The panel now opens with a block
+    that says it in one verdict and a tone: green when we are leading, amber
+    when somebody has outbid us, red once the offer has passed what he is worth
+    to us. No browser here, so this guards the wiring only.
+    """
+    page = TestClient(create_draft_app(DraftSession(make_room()))).get("/").text
+
+    assert 'id="bid-state"' in page, "the panel needs somewhere to say who holds him"
+    assert "We have him" in page and "has him at" in page and "Nobody has bid" in page
+    assert "Nothing on the block" in page, "and a room with nothing in it still renders"
+    for tone in (".bidstate.good", ".bidstate.warn", ".bidstate.stop"):
+        assert tone in page, f"{tone} is how the verdict is coloured"
+
+
+def test_the_bidding_log_is_folded_away_and_failures_are_said_briefly() -> None:
+    """The log was a wall of monospace on the screen, mostly the same read
+    failure repeated, and a selector failure pasted its whole sentence -- the
+    CSS it tried and all -- into the visible line. Both move out of the glance:
+    the log behind a summary that remembers how this viewer left it, the
+    failure down to a phrase with the full text on the title and in the log.
+    """
+    page = TestClient(create_draft_app(DraftSession(make_room()))).get("/").text
+
+    assert 'id="bid-logbox"' in page and "<details" in page, "the log folds away"
+    assert "fcp-bidlog" in page, "and each viewer's choice is remembered"
+    assert "lost the room's markup" in page, "the short form of a selector failure"
+    assert 'title="${esc(full)}"' in page, "with every word of it still on the element"
+
+
 def test_the_pool_carries_a_line_a_price_and_who_bought_him() -> None:
     session = DraftSession(make_room())
     session.apply(1, 2, 12)
