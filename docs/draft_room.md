@@ -11,8 +11,11 @@ shows on a refresh.
 ## What is on it, top to bottom
 
 **The masthead.** The pick counter, inflation, the field's maximum bid, who
-nominates next, the feed's status, the rehearsal controls when one is running,
-and the light/dark switch. Under the title: how many teams, the budget, the
+nominates next, the Connect panel (the ESPN room's URL and one button that
+connects or disconnects; docs/draft_night.md), the feed's status -- which,
+once connected, is the window's own sentence: opening, sign in, or read at
+a time -- the rehearsal controls when one is running, and the light/dark
+switch. Under the title: how many teams, the budget, the
 roster size and **where the numbers came from**, which is `source_note` from
 the state (`app/projections/sources.py`, `describe`).
 

@@ -46,34 +46,31 @@ Once, ever:
 pip install -e '.[live]' && playwright install chromium
 ```
 
-Once per draft session — this opens a browser window, you sign in by hand,
-and it saves the signed-in session to `~/.fcp-core/espn-state.json`. Leave
-the window open:
+Then, on the draft screen, press **Connect** (docs/draft_night.md). It
+opens a Chromium window on the room -- the league's own URL, built from
+`.env`, or whatever was pasted into the box -- on the persistent profile in
+`~/.fcp-core/espn`. If ESPN wants a sign-in, the window shows its sign-in
+page, the pill reads *sign in, in the ESPN window*, and you sign in there,
+once; the profile remembers it. The pill goes green when the room reads.
+That window is both the reader and the bidder. **Disconnect** closes it.
 
-```bash
-.venv/bin/python scripts/espn_login.py --url "<the ESPN draft room URL>"
-```
+The `espn_s2` cookie in `.env` does **not** authenticate a browser; the
+profile is the only way in. Nothing in the bidding path reads `.env` for
+cookies, and nothing prints, logs or returns one. `scripts/espn_login.py`
+still works for signing in ahead of time, on the same profile, but not at
+the same time as the window: Chromium refuses a profile another window has
+open.
 
-The `espn_s2` cookie in `.env` does **not** authenticate a browser any more;
-this file is the only way in. Nothing in the bidding path reads `.env`.
+Start the service with `--no-bid` to rehearse: everything happens — reading,
+arming, deciding, logging, the live line, the whole screen — except the
+final click. Do this first, in a mock. `--bid-headless` hides the window,
+which is for tests. `--page "<URL>" --bid` connects at start rather than
+from the screen; it is the same thing.
 
-Then start the service with `--bid` (which needs `--page`):
-
-```bash
-.venv/bin/python scripts/draft_service.py --season 2027 --me "Through The Wire" \
-  --bbm data/bbm/BBM_Projections_2027_total.xls \
-  --bbm-per-game data/bbm/BBM_Projections_2027_pergame.xls \
-  --page "<the ESPN draft room URL>" --bid
-```
-
-Add `--no-bid` to rehearse: everything happens — reading, arming, deciding,
-logging, the live line, the whole screen — except the final click. Do this
-first, in a mock. `--bid-headless` hides the window, which is for tests.
-
-**Without `--bid` nothing changes.** No browser opens, the three routes are
-not defined, `/api/state` carries no `bid` key, and the screen draws none of
-it. The rehearsal (`--rehearse`) and the typed-pick path work exactly as
-before.
+**Until Connect is pressed nothing bids.** No browser is open, `/api/state`
+carries no `bid` key, the three bidding routes answer 503, and the screen
+draws none of the controls. The rehearsal (`--rehearse`) and the typed-pick
+path work exactly as before.
 
 ## The safety rules
 
@@ -105,7 +102,7 @@ number is an accident.
 
 ## What is on the screen
 
-On the block card, below the strip, when `--bid` is on:
+On the block card, below the strip, while connected:
 
 - **Bid $N** — greyed out while we lead or while there is no button to press.
 - **Hold to $X** — the box opens at what he is worth to us (the ceiling, or
@@ -169,18 +166,21 @@ Two things about ESPN's form worth knowing:
 
 ## The routes
 
-Only defined with `--bid`; they are not in `/docs` otherwise.
-
 ```
+POST /api/connect {"url":u?}    open the ESPN window; the league's own room without a URL
+POST /api/disconnect            close it
 POST /api/bid/once              offer the next increment, once
 POST /api/bid/once {"amount":n} a typed offer, through the custom box
 POST /api/bid/arm  {"max":n}    hold a maximum for the man on the block
 POST /api/bid/stop              disarm
-GET  /api/state                 carries `bid` with the room, the log and the reason
+GET  /api/state                 carries `connect` always, and `bid` -- the room, the
+                                log and the reason -- while a window exists
 ```
 
-A bid the rules refuse is a **409** with the rule as the message. A bidder
-that is not running is a **503**.
+`connect` is `{url, default_url, connected, signed_in, readable, message}`,
+and `message` is the sentence the pill shows. A bid the rules refuse is a
+**409** with the rule as the message. A bidder that is not running, or no
+window at all, is a **503**. Connecting while connected is a **409**.
 
 ## What is not tested, and cannot be
 
