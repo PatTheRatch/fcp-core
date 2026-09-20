@@ -77,6 +77,8 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .money div{padding:4px 0 4px 18px}
 .money b{display:block;font-family:var(--mono);font-size:clamp(30px,4vw,44px);font-weight:600;line-height:1.05;text-shadow:var(--glow)}
 .money .ours b{color:var(--accent)}
+/* "a $28 place" is a sentence, not a figure: it reads at a smaller size. */
+.money .phrase b{font-size:clamp(18px,2.4vw,26px);letter-spacing:-.01em}
 .money small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
 .strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border:1px solid var(--rule);border-width:1px 0 1px 1px}
 .strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
@@ -282,7 +284,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
   </div>
   <div class="money">
     <div class="ours"><span class="lab">Our price</span><b class="num" id="b-ours">–</b><small id="b-ours-note">the board's valuation</small></div>
-    <div><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
+    <div id="b-plan-cell"><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
     <div><span class="lab" id="b-went-lab">Went for</span><b class="num" id="b-went">–</b><small id="b-went-note"></small></div>
   </div>
   <div class="strip" id="b-strip"></div>
@@ -813,6 +815,7 @@ function renderBlock() {
     $("b-name").textContent = "Nobody";
     $("b-meta").textContent = "Click a player on the board, search below, or type one in.";
     ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-cell").classList.remove("phrase");
     $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
     $("b-went-lab").textContent = "Went for";
     strip.innerHTML = ""; note.innerHTML = "";
@@ -826,6 +829,7 @@ function renderBlock() {
   if (card && card.withheld) {
     $("b-meta").innerHTML = `Not this reader's to see. <span class="faint">${esc(card.withheld)}</span>`;
     ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-cell").classList.remove("phrase");
     $("b-plan-note").textContent = ""; $("b-went-note").textContent = "";
     strip.innerHTML = ""; note.innerHTML = "";
     return;
@@ -834,6 +838,7 @@ function renderBlock() {
     // On the block but not on our board: a name the page reader saw.
     $("b-meta").textContent = "Not on our board — no projection for him. Enter the pick when he sells.";
     ["b-ours", "b-plan", "b-went"].forEach((id) => { $(id).textContent = "–"; });
+    $("b-plan-cell").classList.remove("phrase");
     $("b-plan-note").textContent = "";
     const offer = block && block.current_offer;
     $("b-went-lab").textContent = offer ? "Current offer" : "Went for";
@@ -852,10 +857,7 @@ function renderBlock() {
   $("b-ours-note").textContent = card.market_price === null || card.market_price === undefined
     ? "our board's valuation" : `expected to go ${money(card.market_price)}`;
 
-  const planRow = PLAN && PLAN.players ? PLAN.players.find((p) => p.player_id === card.player_id) : null;
-  $("b-plan").textContent = planRow ? money(planRow.price) : "–";
-  $("b-plan-note").textContent = !PLAN ? "working out the best roster…"
-    : planRow ? "he is in the best roster we can still finish" : "not in the roster we can still finish";
+  renderPlanPays(card);
 
   const offer = block && block.current_offer;
   if (card.taken) {
@@ -883,6 +885,52 @@ function renderBlock() {
     $("deskentry").scrollIntoView({ block: "nearest", behavior: "smooth" });
     $("e-price").focus();
   };
+}
+
+/** The open place a player at his level falls into: the cheapest place that
+ *  covers what he is expected to go for, or the largest when none does. The
+ *  same rule `Allocation.open_places` uses to retire a place when we buy
+ *  (app/draft/room.py), so what the screen says and what the room does agree.
+ *  `places` arrives largest first. */
+function placeFor(places, going) {
+  if (!places || !places.length) return null;
+  if (going === null || going === undefined) return places[0];
+  const covering = places.filter((p) => p >= going);
+  return covering.length ? covering[covering.length - 1] : places[0];
+}
+
+/** What the plan is willing to spend here.
+ *
+ *  Thirteen players are in the plan and the other five hundred are not, so
+ *  "not in the roster we can still finish" was the answer to almost every
+ *  nomination and it told the reader nothing. When he is not one of the
+ *  plan's own picks, the plan still has a budget for a player at his level:
+ *  the open place his expected price falls into. */
+function renderPlanPays(card) {
+  const planRow = PLAN && PLAN.players
+    ? PLAN.players.find((p) => p.player_id === card.player_id) : null;
+  $("b-plan-cell").classList.remove("phrase");
+  if (planRow) {
+    $("b-plan").textContent = money(planRow.price);
+    $("b-plan-note").textContent = "he is in the best roster we can still finish";
+    return;
+  }
+  if (!PLAN) {
+    $("b-plan").textContent = "–";
+    $("b-plan-note").textContent = "working out the best roster…";
+    return;
+  }
+  const places = S.plan && Array.isArray(S.plan.open_places) ? S.plan.open_places : [];
+  const place = placeFor(places, num(card.market_price));
+  if (place === null) {
+    $("b-plan").textContent = "–";
+    $("b-plan-note").textContent = "no open places left";
+    return;
+  }
+  $("b-plan-cell").classList.add("phrase");
+  $("b-plan").textContent = `a $${place} place`;
+  $("b-plan-note").textContent = "not one of the plan's own picks; this is what "
+    + "it budgets for a player at his level";
 }
 
 function blockNote(card, row) {
