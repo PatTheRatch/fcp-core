@@ -1,6 +1,11 @@
 # The in-season loop, rehearsed on a season already played
 
-**Written:** 2026-09-21. **What it was for:** step 4 (docs/jobs.md) — the
+**Written:** 2026-09-21. **Findings 1, 2, 3 and 10 fixed the same day**
+(`6acd33e`, `d4f5d97`, `86bb303`, `3025ab9`); check 1 re-scored and now
+PASSES. See "What was fixed, and what the re-run showed" below; the findings
+themselves are left as they were written, each marked with what it became.
+
+**What it was for:** step 4 (docs/jobs.md) — the
 morning's `precompute` jobs, the stored `team_reports` rows, the digest and
 the two pages that read them — had unit tests and had never once run
 together against a real season. The `jobs` table on this machine was empty
@@ -24,6 +29,10 @@ night — live, there is nothing after now — and all four would quietly
 corrupt any replay, any backfill, and any morning a worker catches up late.
 And a fifth of the morning's cost turned out to be one league-wide
 calculation done again for every team.
+
+**All four were fixed the same day**, and the check that caught three of
+them — now asserting all four — passes on the re-run. The last section of
+this document has the before and after.
 
 ## What was replayed, and what was not
 
@@ -128,7 +137,17 @@ that is a factor of about a thousand, which is the point of storing them.
 
 ## The checks
 
-### 1. No look-ahead — **FAIL**, four ways
+### 1. No look-ahead — **FAIL**, four ways (re-run 2026-09-21: **PASS**)
+
+> **Re-scored.** All four are fixed, and the check asserts all four now: the
+> script grew a posted-totals assertion, which is (a) below, and its
+> league-section assertion was rewritten to read the number off the line the
+> digest actually renders rather than comparing two of its own queries. The
+> same command — `--season 2026 --period 12 --teams all --only-days 77,78
+> --workers 3 --checks` — comes back `1_no_look_ahead` **pass, 0 rows**, on
+> 28 team-day payloads and two days of digests. The before and after lines
+> are in the section at the end of this document.
+
 
 The script checks five things from the stored payloads and two from the
 digest's own queries: no scoring period before today counted as remaining,
@@ -138,12 +157,13 @@ the team has spent, and the digest's two trailing windows. The first four
 passed on all 39 team-days. Three of the others failed, on every day of
 every run: (b), (c) and (d) below.
 
-(a) is **not** one the script asserts. It was found by reading the day-77
+(a) was **not** one the script asserted. It was found by reading the day-77
 digest — a team said to have 709 points banked on the morning before the
-week began — and confirmed by hand against the database. Asserting it would
-mean reimplementing the correct sum inside the checker, which is
-`scripts/pickups_backtest.rebuild_posted`; worth doing if the fix below is
-not taken.
+week began — and confirmed by hand against the database. Asserting it meant
+reimplementing the correct sum inside the checker, which then lived only in
+`scripts/pickups_backtest.rebuild_posted`. It was worth doing and has been
+done (`3025ab9`): the checker writes the sum out itself and compares it
+against `load_team_week`, rather than calling the function it is checking.
 
 **(a) The week's posted totals are the whole matchup period's.**
 `app/pickups/state.py::_posted` reads `matchup_team_stats`, which has one
@@ -166,7 +186,8 @@ built on that.
 This one is already known: `scripts/pickups_backtest.py`'s docstring names
 it "THE MATCHUP TOTALS LEAK" and works around it by substituting
 `state._posted` for the length of a backtest. The product's own path — the
-precompute, the routes, the pages, the digest — still has it.
+precompute, the routes, the pages, the digest — still has it. (Fixed the
+same day; see finding 1 below.)
 
 **(b) The adds a team has spent count adds it had not yet made.**
 `state._adds_in_period(session, team, first_day, last_day)` windows on the
@@ -369,10 +390,12 @@ deploy) pays it on the first team of the next morning.
 
 Ranked by what they would cost, worst first. "Opening night" asks the one
 question that matters this month: **would this have hurt on a live morning
-in October?** Nothing here was fixed — no finding stopped the replay
-completing, and the brief is that the owner decides.
+in October?** Nothing was fixed in the pass that wrote this — no finding
+stopped the replay completing, and the brief was that the owner decides.
+He decided the same day: 1, 2, 3 and 10 are fixed, and each says below what
+it became. 4 to 9 stand as written.
 
-### 1. The week's posted totals are the whole matchup period's
+### 1. The week's posted totals are the whole matchup period's — **FIXED** (`6acd33e`)
 
 **Opening night: no. Everywhere else: severe.**
 `app/pickups/state.py::_posted` reads `matchup_team_stats`, which carries a
@@ -397,7 +420,24 @@ ESPN on nine team-periods. Then delete the backtest's monkeypatch.
 a missed morning, a page asked for `?today=` a past day (which the week page
 supports), and every number the backtest measures the recommender by.
 
-### 2. The adds a team has spent include adds it has not made yet
+**Fixed as proposed, with one decision the proposal did not make.**
+`state._posted` takes the day (`6acd33e`). It keeps ESPN's own row when the
+database holds no `player_game_stats` on or after `today` — the genuinely
+live case, where that row is the running tally and carries stat corrections
+our box scores may not — and otherwise sums the started lines. The boundary
+is **exclusive**: posted covers the period's days *before* `today`, because
+`scoring_periods_remaining` begins at `today` and the projection adds that
+day itself. The backtest's monkeypatch is gone. Verified against ESPN on
+nine 2026 team-periods (teams 1, 3 and 11 over periods 1 to 3): the sum over
+a whole period reproduces `matchup_team_stats` exactly, 0 mismatches.
+
+The exclusive boundary is what the backtest's cap should have been and was
+not. Its `_POSTED_CAP` was inclusive of day N, so day N counted once as
+posted and again as projected; 584 of the backtest's 616 team-decision
+points therefore had a different posted total afterwards. See
+docs/pickups_backtest.md for what that moved.
+
+### 2. The adds a team has spent include adds it has not made yet — **FIXED** (`d4f5d97`)
 
 **Opening night: no. Everywhere else: severe, and it silences the product.**
 `state._adds_in_period(session, team, first_day, last_day)` counts over the
@@ -415,12 +455,16 @@ turns the recommendation off, on a third of the mornings replayed. Unlike
 finding 1 this one is **not** in the backtest's list of known leaks, and the
 backtest does not patch it.
 
-**Proposed fix:** pass `today` down and bound the query with
-`Transaction.scoring_period <= today`. One line, and the same shape as
-`_faab_spent` beside it. **Check afterwards** whether any backtest number
-moves: a suppressed plan is a zero, and zeros are quiet.
+**Fixed as proposed** (`d4f5d97`): `_adds_in_period(session, team, first_day,
+through_day)`, bounded at `today`, which is `_faab_spent`'s own bound. The
+docstring says why the two must agree — an add and the money it cost are one
+transaction. Day 77 for team 86 now reads 1 add used of 7 and 6 left, and the
+day-78 digest, which used to say there was nothing to plan, carries a
+two-move plan. The backtest's add budget never binds (two decision points a
+period against a budget of seven), so nothing there should move on this
+account; docs/pickups_backtest.md records what the re-run found.
 
-### 3. The digest's two trailing counts have no far end
+### 3. The digest's two trailing counts have no far end — **FIXED** (`86bb303`)
 
 **Opening night: no. On a replay: wrong by a factor of sixty.**
 `app/digest.py::adds_in_window` and `league_section`'s wire tally both ask
@@ -431,10 +475,18 @@ day 80: churn line 83 adds in the last 14 days; truly 15
 day 80: league section 609 wire moves in the last day; truly 9
 ```
 
-**Proposed fix:** add the far end to both. Two lines. The digest is the one
-surface a manager reads without a page in front of him, and "609 moves on
-the wire in the last day" is the sort of number that destroys trust in
-everything above it.
+**Fixed as proposed** (`86bb303`): `processed_at <= now` on both. The digest
+is the one surface a manager reads without a page in front of him, and "609
+moves on the wire in the last day" is the sort of number that destroys trust
+in everything above it. The day-77 digest now says 9 moves and 14 adds; the
+day-78 one, 10 moves and 15 adds.
+
+Worth recording because it nearly hid the fix: the script's own assertion
+for this one was comparing two queries written inside the script, one open
+and one closed, and so reported a difference whatever the digest did. It
+went on failing after the digest was right. It now reads the number back off
+`league_section`'s rendered line. An assertion that does not ask the product
+anything is worse than no assertion, because it looks like one.
 
 ### 4. `category_distributions` is recomputed for every team, twice
 
@@ -496,7 +548,7 @@ mode's `create_app` wrote a `users` row during the rehearsal, and with
 checking on the VPS before the switch-over rather than after, because the
 owner's digest is routed by that address.
 
-### 10. The rehearsal's own rows are still on the queue
+### 10. The rehearsal's own rows are still on the queue — **FIXED** (`3025ab9`)
 
 **No severity; said so it is not a surprise.** 44 `jobs` rows (43 done, one
 the deliberately parked fault) and 74 `team_reports` rows for 2026 remain on
@@ -504,9 +556,92 @@ the local database. Every job is marked `rehearsal: true` and labelled
 `rehearsal:...`; the reports are for days in the past, so no route will
 serve one as fresh. Nothing was deleted.
 
+**Since:** those 44 rows were deleted on 2026-09-21, after checking that
+every row on the table was one of them — the `jobs` table is now empty on
+this machine — and `rehearse_week.py` clears up after itself by default.
+At the end of a run it deletes the rows carrying `rehearsal: true` **and its
+own run tag**, which is the same narrowing its workers claim under, so it
+can no more delete a real job than run one. `--keep` leaves them for
+inspection. The `team_reports` rows stay either way, deliberately: they are
+ordinary stored reports for days in the past, no route serves one as fresh,
+and the next run of the same day overwrites them.
+
+## What was fixed, and what the re-run showed
+
+Findings 1, 2, 3 and 10 were fixed on 2026-09-21 — the owner's call, all
+four together — and the check that failed on all of them was re-run on the
+same command:
+
+```
+scripts/rehearse_week.py --season 2026 --period 12 --teams all \
+    --only-days 77,78 --workers 3 --checks
+```
+
+**Check 1, before.** The script asserted three of the four; the posted
+totals were found by hand and are written here in the same shape so the two
+columns can be read together.
+
+```
+1_no_look_ahead: FAIL
+day 77 Through The Wire: posted PTS 709 on the matchup row, the whole
+                         period's total; 175 was scored on day 77 itself
+day 77 Through The Wire stream: adds_used is 7, but only 1 add had been
+                         made by day 77 (adds_left 0 of 7)
+day 80 the digest: the churn line counts 83 adds in the last 14 days;
+                         only 15 were made before 2026-01-08 15:00
+day 80 the digest: the league section counts 609 wire moves in the last
+                         day; only 9 were made before 2026-01-08 15:00
+```
+
+**Check 1, after:**
+
+```
+1_no_look_ahead: PASS, 0 rows
+  posted    28 team-days compared against an independent sum of the started
+            lines on the period's days before today; no difference anywhere
+  adds      28 team-day payloads compared against the adds actually made by
+            then; no difference anywhere
+  churn     day 77: 14 adds in the last 14 days.   day 78: 15
+  wire      day 77: 9 moves on the wire in the last day.   day 78: 10
+```
+
+The day-77 example in full. Team 86 (Through The Wire), period 12, days
+77–83:
+
+| | before | after |
+|---|---|---|
+| posted PTS, morning of day 77 | 709 | **0** — the week has not started |
+| posted PTS, morning of day 78 | 709 | **175** — exactly day 77's scoring |
+| posted PTS, morning of day 80 | 709 | **364** — days 77–79 |
+| posted PTS, morning of day 81 | 709 | **401** — days 77–80 |
+| `adds_used` on day 77 | 7 of 7 | **1 of 7**, 6 left |
+| `adds_used` on day 80 | 7 of 7 | **5 of 7**, 2 left |
+| the churn line on day 77 | (day 80: 83) | **14** |
+| the wire line on day 77 | (day 80: 609) | **9** |
+
+Note the boundary. Posted on the morning of day 77 is **zero**, not the 175
+this document's finding (a) quoted: 175 is what day 77 itself scored, and
+day 77 is still to be played when that morning's report is built. It shows
+up on day 78, which is where it belongs — and the 401 this document quoted
+for days 77–80 appears on the morning of day 81, not day 80, for the same
+reason.
+
+What it bought, in the product rather than in a number: the day-78 digest,
+which read "no adds left this period, so there is nothing to plan today",
+now carries a two-move plan.
+
+**Everything else the re-run measured** was where it was. Nine checks
+passed, none failed. 28 precomputes over two mornings, 58.6 s wall on three
+workers for each 14-team day (against 60.6 s before), median 5.5 s a
+team-day, four digests of 980–1223 characters, six page fetches at a median
+of 0.04 s. The queue-semantics four and determinism passed again.
+
 ## Running it again
 
 Exactly what was run, in this order:
+
+A run now deletes its own `jobs` rows when it finishes and says how many;
+`--keep` leaves them.
 
 ```
 .venv/bin/python scripts/rehearse_week.py --season 2026 --period 12 \
