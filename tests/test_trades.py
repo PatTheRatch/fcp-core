@@ -29,7 +29,8 @@ from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
 from app.pickups.bids import clear_cache
 from app.pickups.judge import TYPICAL_PICKUP
 from app.pickups.projection import clear_cache as clear_lines
-from app.trades import TRADE_HURDLE, TeamOffer, evaluate_trade
+from app.trades import CALIBRATION_NOTE, PUBLISHED, TRADE_HURDLE, TeamOffer, evaluate_trade
+from app.trades.calibration import COIN_RANGE, DEALS, WINDOW_DAYS
 from app.trades.summary import WORDS, join, words
 from scripts.trade import AmbiguousNameError, player_by_name, render
 from tests.pickups_db import (
@@ -571,6 +572,24 @@ def test_a_name_that_matches_two_men_is_refused_with_the_alternatives() -> None:
     assert refused.value.matches == ("Evan Turner", "Myles Turner")
     with pytest.raises(KeyError):
         player_by_name(roster, "Jokic")
+
+
+def test_the_published_note_says_what_the_published_numbers_say() -> None:
+    """The page prints `CALIBRATION_NOTE` verbatim, so it must not drift.
+
+    A forecast shown without its record is the thing docs/trades.md section 7
+    says we must not ship, and a record that no longer matches the run behind
+    it would be worse than none. This holds the sentence to the data beside
+    it: the primary cell, the sample, the coin, and no jargon.
+    """
+    first = PUBLISHED[0]
+    assert first.horizon == f"next {WINDOW_DAYS} days", "the cell declared primary before the run"
+    assert f"{first.picked} of them" in CALIBRATION_NOTE
+    assert f"{DEALS} trades" in CALIBRATION_NOTE
+    assert f"between {COIN_RANGE[0]} and {COIN_RANGE[1]} of {DEALS}" in CALIBRATION_NOTE
+    assert COIN_RANGE[0] <= first.picked <= COIN_RANGE[1], "which is why it says it is a coin"
+    for jargon in ("Spearman", "correlation", "R1", "per-week"):
+        assert jargon not in CALIBRATION_NOTE
 
 
 def test_the_summary_joins_names_the_way_a_sentence_does() -> None:

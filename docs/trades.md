@@ -1,20 +1,31 @@
 # Trades, looked at forward: one currency, both sides, and an honest calibration
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, daily lineups, 16 teams in 2027
-**Written:** 2026-09-21
-**Status:** the engine (`app/trades/`), the CLI (`scripts/trade.py`) and the calibration (`scripts/trade_calibration.py`) are built. No API route and no page yet; §6 is the payload they will sit on.
+**Written:** 2026-09-21, revised the same day after the run declared in §7a
+**Status:** the engine (`app/trades/`), the CLI (`scripts/trade.py`), the calibration (`scripts/trade_calibration.py`) and the published record (`app/trades/calibration.py`) are built. No API route and no page yet; §6 is the payload they will sit on.
 **Companions:** [`pickups.md`](pickups.md) (the currency and the recommender it came from), [`scoring/`](scoring) and `app/scoring/trade_grades.py` (the same trades, graded in hindsight), [`inseason_rehearsal.md`](inseason_rehearsal.md) (the look-ahead lesson §5 is built on)
 
 ---
 
 ## 0. The answer, up front
 
-**The evaluator is no better than a coin flip at picking which side of a
-trade did better.** On the 55 deals this database can both evaluate forward
-and grade in hindsight, it picked the side that came out ahead 27 times — 49%
-— and the rank correlation between what it predicted and what was delivered is
-+0.05. Section 7 has the numbers, what they are and are not evidence of, and
-what I think is wrong. Nothing here was tuned to improve them.
+**The evaluator is no better than a coin flip at picking which side of a trade
+did better, and the one revision we were allowed did not change that.** On the
+55 deals this database can both evaluate forward and grade in hindsight, the
+revised headline picked the side that came out ahead 25 times on the window we
+declared as primary — 45%, where a fair coin gives between 20 and 35 of 55
+nineteen times in twenty. Yesterday's number was 27 of 55. All four cells of
+the table we said we would print — two headline numbers by two horizons — land
+inside that coin's interval, so none of the differences between them is a
+finding either. Section 7 has all of it, including the fact that the revision
+made the consolidation error it was written for **worse**, not better.
+
+One thing did come out of the run that was not there yesterday. **The
+evaluator is decent at players and hopeless at deals.** What it says a man is
+worth a week ranks at +0.39 against what his real box scores were worth over
+the next month, across 174 men in these deals; subtract one side of a trade
+from the other and that becomes +0.01. The forecasts are not noise. The
+difference of two of them, on two rosters, is.
 
 What is built is still worth having, and the calibration is the reason to say
 so carefully rather than the reason to bin it:
@@ -32,18 +43,29 @@ so carefully rather than the reason to bin it:
   that this is our estimate of his roster's needs rather than his opinion.
 - It **shows its working**: games remaining, the games behind every
   projection, who is hurt, who is thin.
+- It now **carries its own record**. `app/trades/calibration.py` holds the
+  published run as data and a `CALIBRATION_NOTE` the page prints verbatim
+  under the number, in the manager's own words: how often this number has
+  pointed at the side that did better, over what window, on how many deals,
+  and what a coin does on the same sample.
 
 Read it as a calculator for a conversation, not as an oracle. That is what
-`docs/pickups.md` calls a tool and not gospel, and a 49% hit rate on the
+`docs/pickups.md` calls a tool and not gospel, and a 45% hit rate on the
 outcome is the strongest possible argument for the language being careful.
+
+The summary sentence under a deal now says the fit first and the number
+second, for the same reason: the categories it wins and gives up are the same
+week laid out one line at a time, and the headline is a forecast with the
+record above.
 
 ---
 
 ## 1. What it judges, and in what
 
-Module `app/trades/`, two files: `evaluate.py` (the engine) and `summary.py`
-(the sentence under it). Everything is a function of loaded state, and the
-whole of `app/pickups/judge.py` is reused rather than re-derived.
+Module `app/trades/`, three files: `evaluate.py` (the engine), `summary.py`
+(the sentence under it) and `calibration.py` (the published record, as data
+and as a note the page prints). Everything is a function of loaded state, and
+the whole of `app/pickups/judge.py` is reused rather than re-derived.
 
 ```
 evaluate_trade(session, league_season, today, side_a, side_b, *, drops=...) -> TradeReport
@@ -55,6 +77,7 @@ side the report carries a `SideReport` with:
 | | what |
 |---|---|
 | `judgement` | `app.pickups.judge.Judgement`: this week's delta, the rest-of-season delta per week, the weeks left, the net, and the projected end-of-season record with and without |
+| `season_independent` | the season term the first cut used, each man valued on his own inside a league-average team, kept beside the headline so both can be measured (§7a, §7) |
 | `categories` | nine `CategoryView`s: the counts before and after in an ordinary week, and the chance of winning each before and after |
 | `playoffs` | `PlayoffLens`: the same arithmetic over the playoff matchup periods alone, or a sentence saying why it cannot be counted |
 | `receives` / `gives` / `drops` | `PlayerCard`s: what each man is worth a week, his games left, his playoff games, his status, and what his projection rests on |
@@ -71,9 +94,15 @@ against the same lineup, the same normal head-to-head against the actual
 opponent, the same knowable lines. Not an approximation of the streaming
 report's number: the function itself.
 
-**`delta_season_per_week`** is `app.pickups.judge.judge`, which charges the
-roster places the deal touches through the league-standard lens. §3 is about
-the one thing that had to be generalised to get there.
+**`delta_season_per_week`** is the expected category wins of this team's
+active roster in an ordinary week with the deal in it, less the same week
+without it, through the league standard (`Standard.week_wins` over the summed
+`weekly_lines`). It is the same pair of lines the nine-category table is drawn
+from, so the headline number and the table are one arithmetic read two ways.
+That is **revision R1**, declared in §7a before it was run; §3 is the
+per-place rule it replaced, which is still what a pickup is charged by, still
+what the playoff lens reads, and still on the payload as
+`season_independent`.
 
 **`weeks_remaining`** is `weeks_after_this_period(today)`: the matchup weeks
 after the one being played, so `delta_week` and the season term never share a
@@ -158,7 +187,16 @@ and the existing suites — `test_pickups_judge.py`, `test_pickups_stream.py`,
 `test_pickups_season.py` — pass unchanged. That is not luck: the recommender
 only ever passed one man on each side (the rest-of-season report always
 overrides the season term with the optimizer's own), and for one man a side
-the two formulas are identical by construction.
+the two formulas are identical by construction. Revision R1 did not move them
+either, for the same reason and one more: a pickup never goes through the
+trade evaluator at all. The three suites passed untouched after it too.
+
+**This is no longer the trade's headline.** Since R1 the headline season term
+is the roster with-and-without described in §1, and `places_cost` is what
+`SideReport.season_independent` carries beside it, what the playoff lens
+still reads, and what every pickup is still charged by. §7 is why it was
+demoted and what demoting it did — which, on the shape it was demoted for,
+was to make the error larger.
 
 **Who gets dropped.** A side that receives more men than it gives needs a
 place for each extra one. Open places take them first (`week.open_slots`);
@@ -250,6 +288,7 @@ TradeReport
       delta_week, delta_season_per_week, weeks_remaining, replacement,
       banked, record_without, record_with, measured,
       delta_total, weeks_covered, per_week
+    season_independent                     the old per-man season term, labelled
     categories[9]:                         CategoryView
       abbreviation, before, after, delta, p_before, p_after, p_delta, moved
     playoffs:                              PlayoffLens
@@ -259,7 +298,7 @@ TradeReport
     summary, notes[]
 ```
 
-Three things a page should draw and not hide:
+Four things a page should draw and not hide:
 
 1. **The nine, as a two-column diff with a probability bar.** The counts are
    the change; the probability is whether the change matters. A manager
@@ -270,6 +309,12 @@ Three things a page should draw and not hide:
    difference between a number and a number you can argue with.
 3. **`thin` and `hurt` on every `PlayerCard`.** A trade evaluation that hides
    a 12-game sample is worse than none (`THIN_GAMES = 12`).
+4. **`app.trades.calibration.CALIBRATION_NOTE`, verbatim, under the number.**
+   It is three sentences of plain English saying how often this number has
+   pointed at the side that did better, on how many deals, over what window,
+   and what a coin does on the same sample — and that the category table does
+   not depend on it. A forecast printed without its record is the one thing
+   §7 says we must not ship.
 
 The report is bounded, so the route should return an object rather than a
 `Page`, like both pickup routes. It makes no ESPN request. A season with no
@@ -278,44 +323,104 @@ schedule, roster or wire should be a 409 for the same reason
 
 ---
 
-## 7. The calibration: it does not predict the outcome
+## 7. The calibration: it does not predict the outcome, and the revision did not fix it
 
-**110 trade sides -- 55 deals -- across 6 seasons is the whole sample, and every figure below rests on it.** Sign agreement with the hindsight grade is **46%** over the sides; the rank correlation is **+0.05** and the ordinary correlation -0.04. Mean error (predicted minus delivered) is +0.006 categories a week, mean absolute error 0.253. Generated by `scripts/trade_calibration.py` in 64s, review_days=1.
+Read §7a first. One revision was declared before this run, the primary cell
+was named before it, and nothing below was tuned after it. The numbers in this
+section are the re-run of 2026-09-21; the run they replace is kept at the
+bottom as the "before".
 
-The two sides of a deal are not two observations: the prediction is very nearly antisymmetric between them, so the independent question is **which side of each deal the evaluator picked**. It picked the side that did better in **27 of 55** deals (49%), against 50% for a coin.
+### The answer
 
-For scale: the predictions have a spread of 0.226 categories a week and what was delivered a spread of 0.252, so the mean absolute error above is about the size of the thing being predicted.
+**Primary cell, as declared — the revised headline (R1) against the thirty
+days after the deal, at deal level: the evaluator picked the side that did
+better in 25 of 55 deals, 45%. A fair coin gives between 20 and 35 of 55
+nineteen times in twenty.** Yesterday's headline on yesterday's horizon was 27
+of 55, 49%. Every one of the four cells we said we would print lands inside
+that coin's interval, which is the first thing to say about all of them: none
+of the differences between the cells is a finding, including the ones that
+flatter the revision.
 
-| | n | sign agreement | Spearman | Pearson | mean error | mean abs error |
-|---|---|---|---|---|---|---|
-| all sides | 110 | 46% | +0.05 | -0.04 | +0.006 | 0.253 |
-| even counts | 85 | 46% | +0.09 | -0.00 | -0.071 | 0.217 |
-| uneven counts | 25 | 48% | -0.19 | -0.09 | +0.265 | 0.376 |
-| nobody broke down after | 85 | 55% | +0.32 | +0.12 | +0.029 | 0.212 |
+Two things the run does say, neither of them about the headline:
 
-Against the decision lens (`MoveGrade.decision`, the same day's data through the hindsight engine's own arithmetic): Spearman +0.44, mean error +0.003.
+- **The revision made the consolidation error worse.** The uneven sides — two
+  men for one, the shape R1 was written for — had a mean error of +0.265
+  categories a week under the old per-man number. Under R1 it is **+0.389**
+  against the thirty days and +0.355 against the rest of the season. §7 finding
+  3 of the previous run called the old number's treatment of consolidation
+  "the one finding that looks like a model defect"; the fix, declared in
+  advance and honoured, pushed the number the same way and further.
+- **The evaluator is decent at players and hopeless at deals.** Over the 174
+  men in these deals, what it said each was worth a week ranks at **+0.39**
+  against what his real box scores were worth over the same thirty days,
+  through the same lens, with a mean error of +0.028 on a delivered spread of
+  0.255. Subtract one side of a deal from the other and the rank correlation
+  falls to +0.01. That was the diagnostic's whole purpose, declared before the
+  run, and it answers the question cleanly: the projections are not the
+  problem.
 
-### By season
+### The run, in full
 
-| season | n | sign agreement | Spearman | mean predicted | mean delivered |
+**The primary cell, named before the run: R1 (the roster) x next 30 days, deal level. The evaluator picked the side that did better in 25 of 55 deals (45%), where a coin gives 20-35 of 55 (36%-64%) nineteen times in twenty.** Over the 110 sides the rank correlation is +0.01 and the mean error +0.073 categories a week. 110 sides across 6 seasons is the whole sample and every figure below rests on it. Generated by `scripts/trade_calibration.py` in 69s, review_days=1, short window 30 days.
+
+For scale: the predictions have a spread of 0.293 categories a week and what was delivered a spread of 0.295, so the mean absolute error of 0.328 is about the size of the thing being predicted.
+
+### The 2x2, all four cells from one run
+
+| headline | horizon | deals | picked the better side | sides | Spearman | mean error | mean abs error |
+|---|---|---|---|---|---|---|---|
+| **R1 (the roster)** | **next 30 days** | 55 | 25 of 55 (45%) | 110 | +0.01 | +0.073 | 0.328 |
+| R1 (the roster) | rest of season | 55 | 30 of 55 (55%) | 110 | +0.09 | +0.079 | 0.287 |
+| per man (the old one) | next 30 days | 55 | 20 of 55 (36%) | 110 | -0.12 | +0.000 | 0.312 |
+| per man (the old one) | rest of season | 55 | 27 of 55 (49%) | 110 | +0.05 | +0.006 | 0.253 |
+
+The two sides of a deal are not two observations -- the prediction is very nearly antisymmetric between them -- so the deal-level column is the independent question and the side-level columns describe the same data twice. For 55 deals, a coin gives 20-35 of 55 (36%-64%) nineteen times in twenty.
+
+### Splits, on the primary cell (R1 (the roster) x next 30 days)
+
+| | sides | sign agreement | Spearman | mean error | mean abs error |
 |---|---|---|---|---|---|
-| 2019 | 10 | 60% | +0.50 | +0.000 | -0.035 |
-| 2021 | 6 | 17% | -0.66 | +0.000 | +0.039 |
-| 2023 | 6 | 0% | -0.93 | +0.000 | -0.042 |
-| 2024 | 26 | 73% | +0.45 | +0.000 | -0.030 |
-| 2025 | 28 | 39% | +0.20 | +0.000 | +0.018 |
-| 2026 | 34 | 41% | -0.08 | -0.005 | -0.004 |
+| all sides | 110 | 52% | +0.01 | +0.073 | 0.328 |
+| even counts | 85 | 54% | +0.10 | -0.020 | 0.279 |
+| uneven counts | 25 | 44% | -0.36 | +0.389 | 0.495 |
+| nobody broke down after | 85 | 54% | +0.09 | +0.095 | 0.310 |
+
+The uneven sides are the ones R1 was written for. Under R1 their mean error is +0.389 over 25 sides against the next 30 days; +0.355 over 25 sides against the rest of season. The per-man headline gave +0.265 over 25 sides against the rest of the season on 2026-09-21, which is the number R1 was meant to fix.
+
+### How sure it was, decided on the prediction
+
+| deals ranked by |predicted edge| | n | picked the better side | a coin |
+|---|---|---|---|
+| top third (edge at or above 0.40 a week) | 18 | 8 of 18 (44%) | a coin gives 5-13 of 18 (28%-72%) nineteen times in twenty |
+| the other two thirds | 37 | 17 of 37 (46%) | a coin gives 13-24 of 37 (35%-65%) nineteen times in twenty |
+
+### The players themselves
+
+For every man in a scored deal (174 of them, counted once per deal), what the evaluator said his roster place was worth on the morning against what his real box scores were worth per week over the same thirty days, through the same league-standard lens: Spearman **+0.39**, Pearson +0.35, mean error +0.028 categories a week, mean absolute error 0.213. Predicted spread 0.248, delivered spread 0.255.
+
+Against the decision lens (`MoveGrade.decision`, the same day's data through the hindsight engine's own arithmetic): Spearman +0.49 for the R1 headline and +0.44 for the per-man one.
+
+### By season, on the primary cell (R1 (the roster) x next 30 days)
+
+| season | sides | sign agreement | Spearman | mean predicted | mean delivered |
+|---|---|---|---|---|---|
+| 2019 | 10 | 50% | +0.21 | +0.176 | -0.021 |
+| 2021 | 6 | 17% | -0.49 | +0.118 | -0.024 |
+| 2023 | 6 | 50% | +0.03 | +0.253 | -0.014 |
+| 2024 | 26 | 69% | +0.34 | +0.082 | -0.022 |
+| 2025 | 28 | 57% | +0.01 | +0.030 | +0.017 |
+| 2026 | 34 | 41% | -0.13 | +0.026 | +0.011 |
 
 ### The worst misses, and why
 
-- **2021 day 32, Moneyballers  £££££££: in Anthony Davis, LaMelo Ball; out Jamal Murray, Clint Capela, Tyler Herro** -- predicted +0.302 a week, delivered -0.774 over 14 period(s). Anthony Davis played under half the games scheduled after the deal: an injury nobody had on the day, which is luck and not a bug.
-- **2021 day 32, East End Doncic and Dirk: in Jamal Murray, Clint Capela, Tyler Herro; out Anthony Davis, LaMelo Ball, Bismack Biyombo** -- predicted -0.302 a week, delivered +0.759 over 14 period(s). Anthony Davis left and then broke down, so the side that gave him up is credited by hindsight for a risk it did not take.
-- **2024 day 72, The G Smoothies: in Bradley Beal, Ja Morant; out Joel Embiid, Dario Saric** -- predicted -0.793 a week, delivered +0.076 over 9 period(s). Joel Embiid left and then broke down, so the side that gave him up is credited by hindsight for a risk it did not take.
-- **2026 day 72, Brighton Bears: in Nikola Jokic; out Deni Avdija, Onyeka Okongwu** -- predicted +0.594 a week, delivered -0.247 over 9 period(s). an uneven deal: the evaluator charges the place it costs at what that place was worth and the hindsight grade charges a flat replacement, so part of this gap is the two settlements rather than the forecast.
-- **2023 day 84, Tom's Team: in Joel Embiid; out Kyle Kuzma, Damian Lillard** -- predicted +0.323 a week, delivered -0.509 over 6 period(s). an uneven deal: the evaluator charges the place it costs at what that place was worth and the hindsight grade charges a flat replacement, so part of this gap is the two settlements rather than the forecast.
-- **2026 day 72, Optimize the MVPs: in Deni Avdija, Onyeka Okongwu; out Nikola Jokic, Ryan Nembhard** -- predicted -0.594 a week, delivered +0.225 over 9 period(s). the projections held up; the gap is fit -- the season term values a man against the league's average team, and the grade counts what he did in this one's lineup.
-- **2024 day 72, Brighton Bears: in Joel Embiid; out Bradley Beal, Ja Morant** -- predicted +0.793 a week, delivered +0.035 over 5 period(s). the line for Bradley Beal, Ja Morant rested on fewer than a dozen games of his own, which the report flags and this run does not discount.
-- **2021 day 84, Thibs Dust: in Myles Turner; out Kevin Durant** -- predicted -0.488 a week, delivered +0.189 over 6 period(s). Kevin Durant left and then broke down, so the side that gave him up is credited by hindsight for a risk it did not take.
+- **2021 day 84, Thibs Dust: in Myles Turner; out Kevin Durant** -- predicted -0.994 a week, delivered +0.227 over 5 period(s). Kevin Durant left and then broke down, so the side that gave him up is credited by hindsight for a risk it did not take.
+- **2021 day 84, Embiids Burner Account: in Kevin Durant; out Myles Turner** -- predicted +0.963 a week, delivered -0.164 over 5 period(s). Kevin Durant played under half the games scheduled after the deal: an injury nobody had on the day, which is luck and not a bug.
+- **2026 day 72, Brighton Bears: in Nikola Jokic; out Deni Avdija, Onyeka Okongwu** -- predicted +0.455 a week, delivered -0.636 over 5 period(s). an uneven deal: the evaluator fills the place it opens with the best man on the wire and the hindsight grade charges a flat replacement level, so part of this gap is the two settlements rather than the forecast.
+- **2026 day 72, Optimize the MVPs: in Deni Avdija, Onyeka Okongwu; out Nikola Jokic, Ryan Nembhard** -- predicted -0.339 a week, delivered +0.743 over 5 period(s). the projections held up; the gap is what the men did afterwards -- the season term is this roster's week with the deal and without it, and the grade counts what the lineup really posted.
+- **2023 day 13, Foxes ShutUpNDribble: in Joel Embiid; out Jaylen Brown, Deandre Ayton, Josh Giddey** -- predicted +0.480 a week, delivered -0.586 over 6 period(s). the line for Joel Embiid, Jaylen Brown, Deandre Ayton, Josh Giddey rested on fewer than a dozen games of his own, which the report flags and this run does not discount.
+- **2024 day 72, Brighton Bears: in Joel Embiid; out Bradley Beal, Ja Morant** -- predicted +1.013 a week, delivered +0.035 over 5 period(s). the line for Bradley Beal, Ja Morant rested on fewer than a dozen games of his own, which the report flags and this run does not discount.
+- **2023 day 84, Tom's Team: in Joel Embiid; out Kyle Kuzma, Damian Lillard** -- predicted +0.411 a week, delivered -0.564 over 5 period(s). an uneven deal: the evaluator fills the place it opens with the best man on the wire and the hindsight grade charges a flat replacement level, so part of this gap is the two settlements rather than the forecast.
+- **2021 day 32, Moneyballers  £££££££: in Anthony Davis, LaMelo Ball; out Jamal Murray, Clint Capela, Tyler Herro** -- predicted +0.333 a week, delivered -0.544 over 5 period(s). Anthony Davis played under half the games scheduled after the deal: an injury nobody had on the day, which is luck and not a bug.
 
 ### What could not be scored
 
@@ -323,54 +428,93 @@ Against the decision lens (`MoveGrade.decision`, the same day's data through the
 - 3 sides of trades with more than one counterparty.
 - 5 events where the two teams' reconstructions did not mirror.
 - 0 sides with no gradeable stretch after the move.
+- 0 sides with no matchup period inside the thirty days.
 
-### What I think is wrong, and what I do not
+### Reading it
 
-Four things, in the order I would look at them.
+**1. R1 is ahead of the per-man number on both horizons, and that is not a
+claim.** 45% against 36% on the thirty days, 55% against 49% on the rest of the
+season. Five deals and nine deals, on a sample where a coin swings fifteen.
+The honest statement is that the revision did not damage the headline and did
+not rescue it.
 
-**1. The target may be mostly noise.** `MoveGrade.result` is what a team
-actually posted with the incoming players against the same team with them
-removed and the outgoing ones put back, averaged over up to fourteen matchup
-periods. Over that window a player is traded again, dropped, injured, or has
-his role changed. The delivered figures have a spread of 0.25 categories a
-week and the predictions a spread of 0.23, so the mean absolute error is
-about the size of the whole quantity: there is not much signal above the
-noise floor to find. I do not think this excuses the result. I think it means
-a larger sample would not obviously rescue it either, and that the honest
-target for a forward trade tool may be the next month rather than the rest of
-the year.
+**2. The thirty-day window is worse than the rest of the season, which is the
+opposite of what the last run guessed.** Finding 1 of the previous write-up
+said "the honest target for a forward trade tool may be the next month rather
+than the rest of the year". It is not: both headlines do worse on the month
+than on the whole stretch, on the hit rate and on the rank correlation. We
+declared the month as primary before seeing that, so it is the number we
+publish. The guess I would now make — and it is a guess, and it is not being
+acted on — is that a month is four or five matchup periods and a single
+period's nine category results are extremely noisy, so the shorter target is
+noisier rather than cleaner; averaging fourteen periods at least averages
+something.
 
-**2. Injuries do most of the work, and nobody can see them coming.** Splitting
-the sample on whether anybody in the deal played under half his team's
-scheduled games afterwards moves sign agreement from 46% to 55% and the rank
-correlation from +0.05 to +0.32. That is a real effect and it is **not** a
-result I can claim: the split is made on the outcome, so it is not something
-the evaluator could do on the morning. It is why the worst misses in the
-table above are Anthony Davis in 2021, Joel Embiid in 2024 and Kristaps
-Porzingis in 2026 — three deals where a star changed hands and then missed
-half the season. What it does say is where the remaining honest work is:
-availability, not production.
+**3. Why R1 made uneven deals worse, as far as the rows can say.** The two
+engines settle an opened roster place differently, and R1 widened the gap
+rather than closing it. The hindsight grade charges a flat replacement level
+for the spot — the median pickup in this league, about 0.07 categories a week.
+The old forward number credited the opened place at `max(best free agent, the
+0.06 floor)`, one place at a time. R1 does something more generous still: it
+puts the best free agent's **whole weekly line** into the after-roster, so the
+gain shows up through the saturating probabilities of a real roster rather
+than as a scalar. On a played season the wire is reconstructed — whoever
+played and was in nobody's lineup — so "the best free agent" can be a
+genuinely useful player, and the forward side of the deal is credited with him
+while the grade credits the same spot with 0.07. Part of the +0.389 is that
+settlement and not the forecast. **It has not been changed**, for the same
+reason nothing was changed last time: the idea arrived after the number.
 
-**3. The evaluator over-rates consolidation.** Among the sides that gave two
-men for one — the shape where `places_cost` credits the opened place at the
-wire — the mean error is +0.27 categories a week, against −0.07 on even
-counts. In a nine-category league two starters routinely beat one superstar,
-because expected wins is a sum of *saturating* probabilities and a star's
-marginal contribution flattens out, while `places_cost` values each man
-independently inside the league-average team and then values the emptied place
-at the typical-pickup floor of 0.06. Both halves of that push the same way.
-This is the one finding that looks like a model defect rather than the world,
-and it is on 25 sides across about a dozen deals, which is a hint and not a
-measurement. **It has not been changed**, because changing it after seeing
-this table is exactly the tuning the brief forbids.
+**4. Confidence does not help, and that claim was legitimate either way.** The
+split was defined before the run, on the prediction alone: deals ranked by the
+size of the predicted edge, top third against the rest. The top third (an edge
+of 0.40 categories a week or more) picked the better side in 8 of 18, 44%; the
+other two thirds in 17 of 37, 46%. The tool is not more right when it is more
+sure. Had it fallen the other way it would have been the most useful thing in
+the run — a rule for when to trust the number — and it did not.
 
-**4. The two forward lenses agree; it is the future they both miss.** Against
-`MoveGrade.decision` — the hindsight engine's own knowable-at-the-time grade,
-the same day's data through different arithmetic — the rank correlation is
-+0.44 and the mean error +0.003. So the evaluator is not disagreeing with the
-project's other valuation of the same facts. Both of them then fail to
-predict the result at about the same rate. That points at the world and the
-window rather than at a bug in either.
+**5. The two forward lenses still agree; it is the future they both miss.**
+Against `MoveGrade.decision`, the hindsight engine's own knowable-at-the-time
+grade, R1 ranks at +0.49 and the per-man number at +0.44. The evaluator is not
+disagreeing with the project's other valuation of the same facts. Both then
+fail to predict the result.
+
+**6. Injuries still do most of the work.** Splitting on whether anybody in the
+deal played under half his scheduled games afterwards moves sign agreement
+from 52% to 54% and the rank correlation from +0.01 to +0.09 — a much weaker
+version of the same effect the last run saw, and still **not** a result that
+can be claimed, because the split is made on the outcome. Where the remaining
+honest work is has not changed: availability, not production.
+
+### Yesterday's run, the before
+
+The per-man headline against the rest of the season, 2026-09-21, before any
+of this: 27 of 55 deals (49%), sign agreement 46% over the sides, Spearman
++0.05, Pearson -0.04, mean error +0.006, mean absolute error 0.253. By split:
+even counts 46% and +0.09 on 85 sides; uneven counts 48% and -0.19 on 25
+sides, mean error **+0.265**; "nobody broke down after" 55% and +0.32 on 85
+sides. Against the decision lens, +0.44.
+
+That cell is still in the table above — bottom row — and it still reads 27 of
+55, which is the check that this is the same sample scored the same way.
+
+### Not done, and deliberately
+
+Ideas that arrived *after* the numbers, written down here instead of being
+built, because the whole point of §7a was that one revision was all we were
+allowed:
+
+- Settle an opened place the same way in both engines — charge the forward
+  side a flat replacement level rather than the best free agent's line — and
+  see how much of the uneven-deal error is arithmetic rather than forecast.
+  This is the obvious next measurement and it is not a tuning knob, which is
+  the argument for doing it next and not now.
+- Report the two sides as a ranking rather than a number, since the rank is
+  the only part anybody acts on and the magnitude is demonstrably noise.
+- Show the player-level number on the page, which is the part that measured
+  well, rather than only the deal-level difference, which did not.
+- Model availability. Every run of this calibration has ended in the same
+  sentence.
 
 ### What a played season costs the measurement
 
@@ -471,20 +615,24 @@ exactly yesterday's.
   is scarcer than money in season, so it is labelled against the paid one.
   Whichever it is, it must be a bar the other reports already use, or a trade
   and a claim cannot be compared on a page.
-- **The season term values a man against the league's average team, not
-  against the roster he is joining.** That is `judge.py`'s existing lens and
-  the argument for it is in its docstring: fit is priced in `delta_week`, and
-  a place's worth should be comparable across teams. The optimizer's
-  with-and-without over a whole roster (`app.pickups.season`) would price fit
-  over the whole season too. It would also cost a full optimize per side per
-  deal, and it would mean a trade and a pickup were charged differently. I
-  took the cheaper and more consistent one. §7's finding 3 is the strongest
-  argument for revisiting it.
-- **A place a 2-for-1 opens is shown in the category table filled by the best
-  man on the wire**, by name, rather than left empty. Leaving it empty would
-  show a consolidating deal losing in every category while the net said it was
-  fine. Filling it puts a man in the table who is not in the deal. I chose the
-  one that matches what the judgement actually charges.
+- **The season term is judged on the roster, not on the league's average
+  team.** The first cut took the other one, and the argument for it is still
+  good: `judge.py`'s lens is comparable across teams, fit is priced in
+  `delta_week`, and a trade and a pickup are then charged by the same rule.
+  Revision R1 (§7a) took the with-and-without instead, because expected wins
+  saturates and a per-man sum cannot see it. Both numbers are on the payload;
+  §7 is what happened when they were measured against each other, which is
+  that neither of them predicts the outcome and the new one is worse on the
+  very shape it was written for. A reader who wanted the old one back would
+  not be arguing with the evidence.
+- **A place a 2-for-1 opens is filled by the best man on the wire**, by name,
+  in the category table and now in the headline too, rather than left empty.
+  Leaving it empty would show a consolidating deal losing in every category
+  while the net said it was fine. Filling it puts a man in the table who is
+  not in the deal, and — see §7, finding 3 — it credits that place a good deal
+  more generously than the hindsight grade's flat replacement level does. The
+  alternative is to charge the flat level on both sides, and that is written
+  down in §7 under "not done" rather than taken.
 - **The default drop is the cheapest place, not the best fit.** A fit-aware
   drop would need the optimizer; the cheapest place is the same ordering
   `app.pickups.season` already ranks drop candidates by, and the report says a
@@ -497,6 +645,12 @@ exactly yesterday's.
 - **The calibration compares the season term, not the net.** The net includes
   this week's head-to-head, which the hindsight grade has no counterpart for.
   Comparing nets would mix two quantities.
+- **The short horizon keeps whole matchup periods.** Thirty days is four or
+  five of them, and a period is graded against the opponent's own totals, so
+  half a matchup has nothing to be graded against. `grade_move(within=...)`
+  therefore keeps every period that *begins* inside the window, which means
+  the last one can end a few days outside it. Cutting at the day instead would
+  need a new comparison rather than a new window.
 - **No API route and no page.** The brief's scope, and §6 is the handover.
 
 ---
@@ -508,7 +662,9 @@ exactly yesterday's.
   search the league for deals worth proposing. That is the obvious next thing
   and it is also the thing §7 says to be most careful about: a search over
   every pair of rosters, ranked by a number that picks the right side of a
-  deal 49% of the time, would generate confident nonsense at volume.
+  deal 45% of the time, would generate confident nonsense at volume. §7's
+  player-level result is the one encouraging thing here — a search over
+  *players* is on firmer ground than a search over deals.
 - **No FAAB leg.** ESPN's ledger carries `ACQUISITION_BUDGET_TRADE` items (the
   2026 day-85 trade has one), and the evaluator ignores money changing hands.
 - **No keeper value.** 2027 has keepers; a man traded in March is worth
