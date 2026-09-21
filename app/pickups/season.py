@@ -150,11 +150,17 @@ __all__ = [
 #: between are where they were -- 0.05 delivers +0.98 at 12.8% no-move, 0.10
 #: delivers +1.05 at 25.2% -- but the sweep no longer stops at 0.10. **0.20
 #: delivers +1.21 over 30 days on 307 moves at 49.0% no-move, and is now what
-#: the script's tuning rule picks.** It is a real finding and it is not this
-#: file's to act on: doubling the bar halves the moves, and whether that is
-#: the right trade is the owner's call, not a measurement's. The constant
-#: stays at 0.10 until he moves it.
-SEASON_HURDLE_PAID = 0.10
+#: the script's tuning rule picks.** Doubling the bar roughly halves the
+#: moves, which is a trade and not a measurement, so it was put to him.
+#:
+#: Patrick moved it to 0.20 on 2026-09-21, shown both: 450 moves at +1.05
+#: against 307 at +1.21, and that the lower bar collects more in total
+#: (about 474 categories league-wide against 370). He chose fewer and better,
+#: for the reason he gave on the 18th: seven adds a matchup period are shared
+#: with streaming, and the backtest does not charge a season move for the
+#: stream it displaces. The bar labels a move and never hides one, so a move
+#: under it still appears with its number.
+SEASON_HURDLE_PAID = 0.20
 
 #: The same for a free add into an open place: lower, because it costs
 #: neither a player nor money, only the place. Half the paid bar, as before.
@@ -163,8 +169,10 @@ SEASON_HURDLE_PAID = 0.10
 #: could not have measured it anyway: its pairs ran the free bar above the
 #: paid one, which the design rejects. The grid has since been corrected, and
 #: the 2026-09-21 run's pairs are 0.05/0.02, 0.10/0.05 and 0.20/0.10.) So
-#: this follows the paid bar rather than carrying a number of its own.
-SEASON_HURDLE_FREE = 0.05
+#: this follows the paid bar rather than carrying a number of its own: it
+#: moved to 0.10 with it on 2026-09-21, which is also the pair that run's
+#: +1.21 was measured on.
+SEASON_HURDLE_FREE = 0.10
 
 #: Free agents carried into the optimizer, the best by rest-of-season value
 #: (docs/pickups.md section 4.4, "N = 60"). Beyond this the wire is players

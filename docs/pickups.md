@@ -492,7 +492,7 @@ Open, to be decided when the phase is reached:
 - Exact ESPN field names for `onTeamId`, `status` and the waiver clear date (probe first).
 - Event thresholds: ownership ±5.0 and minutes ±8.0 are starting values.
 - Prior weight `k = 20` in the rate blend.
-- Streaming and season hurdles, 0.10 / 0.05 / 0.02, pending the backtest.
+- Streaming and season hurdles: settled from the backtest, 0.20 streaming and 0.20 paid / 0.10 free for the season (2026-09-21; the record is in docs/pickups_backtest.md).
 - Notification service. ntfy is the least setup; Telegram is the nicest phone experience. **Narrowed** (2026-09-18): it no longer has to be one. Email over plain SMTP is a third shape beside them (§5.2), every configured channel gets the digest, and one failing does not stop the other — so the decision is now which to *switch on*, not which to build.
 - Whether the `late` pass at 00:30 UTC earns its keep, or two passes suffice. Measure how many events it produces that `report` did not.
 - Whether the recent-form tilt in §4.2 improves the backtest or just adds noise. It is switchable so this can be measured.

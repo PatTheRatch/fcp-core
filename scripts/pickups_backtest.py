@@ -1680,8 +1680,16 @@ HURDLES_APPLIED = (
     "that the cell measured the paid bar alone; `SEASON_HURDLE_FREE` follows the paid "
     "bar at half, 0.02 -> 0.05, unmeasured on its own. The grid has since been "
     "corrected to run the free bar below the paid one and extended to 0.20 paid, so "
-    "the season rows above are not the same cells that decision was taken on; the "
-    "constants stand where he put them until he moves them again."
+    "the season rows above are not the same cells that decision was taken on."
+    "\n\n"
+    "**Applied 2026-09-21, Patrick's decision:** `SEASON_HURDLE_PAID` 0.10 -> 0.20 and "
+    "`SEASON_HURDLE_FREE` 0.05 -> 0.10, the pair the corrected sweep measured at +1.21 "
+    'categories over 30 days on 307 moves, saying "no move" 49% of the time. He was '
+    "shown the other side of it -- the 0.10 bar names 450 moves at +1.05, which is more "
+    "in total -- and chose fewer and better: adds are seven a matchup period and shared "
+    "with streaming, and this backtest does not charge a season move for the stream it "
+    "displaces. `STREAM_HURDLE` stays at 0.20, which the same run now shows as the best "
+    "of the four settings and not only the most frugal."
 )
 
 #: Choices this backtest makes that a reader could reasonably have made
