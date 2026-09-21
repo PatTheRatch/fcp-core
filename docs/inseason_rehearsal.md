@@ -90,11 +90,13 @@ builders; and both report routes plus the glance through a FastAPI
   `create_app` wrote the owner's row itself (`accounts.ensure_owner`), which
   is the only row the rehearsal added outside `jobs` and `team_reports`.
 
-The rehearsal's own jobs stay on the `jobs` table, marked `rehearsal: true`
-in their payload and under dedupe labels beginning `rehearsal:`. A rehearsal
-worker narrows every claim to its own run, so it cannot take, fail or reap a
-real job; a real worker has no such narrowing and would run one, building
-the day its payload names.
+The rehearsal's own jobs are marked `rehearsal: true` in their payload and
+carry dedupe labels beginning `rehearsal:`. A rehearsal worker narrows every
+claim to its own run, so it cannot take, fail or reap a real job; a real
+worker has no such narrowing and would run one, building the day its payload
+names. On the pass that wrote this document they stayed on the `jobs` table
+afterwards (finding 10); since 2026-09-21 a run deletes its own rows when it
+finishes, unless `--keep` is passed.
 
 ## The timing
 
@@ -147,7 +149,6 @@ that is a factor of about a thousand, which is the point of storing them.
 > --workers 3 --checks` — comes back `1_no_look_ahead` **pass, 0 rows**, on
 > 28 team-day payloads and two days of digests. The before and after lines
 > are in the section at the end of this document.
-
 
 The script checks five things from the stored payloads and two from the
 digest's own queries: no scoring period before today counted as remaining,
