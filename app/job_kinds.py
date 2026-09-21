@@ -459,6 +459,40 @@ def _member_digest(
 # ---------------------------------------------------------------------------
 
 
+BAD_CLOCK = "the job names a day that is not a date"
+
+
+def payload_day(job: JobRef, key: str) -> date | None:
+    """The day a job says it is about, or None when it means today.
+
+    A real job carries no clock: the morning's precompute is about the
+    morning it runs in. A **rehearsal** job does carry one
+    (`scripts/rehearse_week.py` replays a played season through this queue,
+    a day at a time), and the handler has to honour it in the worker
+    process, which is where the report is actually built. Without this the
+    day could only be passed by calling the handler directly, and then the
+    queue, the claim and the worker would never be exercised at all.
+    """
+    named = job.payload.get(key)
+    if named is None:
+        return None
+    try:
+        return date.fromisoformat(str(named))
+    except ValueError:
+        raise JobError(BAD_CLOCK, retry=False) from None
+
+
+def payload_moment(job: JobRef, key: str) -> datetime | None:
+    """The moment a job says it is about, or None when it means now."""
+    named = job.payload.get(key)
+    if named is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(named))
+    except ValueError:
+        raise JobError(BAD_CLOCK, retry=False) from None
+
+
 def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
     """The four kinds, bound to the process's settings (or a test's)."""
 
@@ -468,6 +502,10 @@ def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
     return {
         jobs.INGEST: lambda factory, job: run_ingest(factory, job, current()),
         jobs.STATUS_PASS: lambda factory, job: run_pass(factory, job, current()),
-        jobs.PRECOMPUTE: lambda factory, job: run_precompute(factory, job),
-        jobs.DIGEST: lambda factory, job: run_digest(factory, job, current()),
+        jobs.PRECOMPUTE: lambda factory, job: run_precompute(
+            factory, job, payload_day(job, "today")
+        ),
+        jobs.DIGEST: lambda factory, job: run_digest(
+            factory, job, current(), payload_moment(job, "now")
+        ),
     }

@@ -36,6 +36,7 @@ plan. It needs the team's manager but not the paid tier (docs/product.md,
 route (docs/site.md).
 """
 
+from collections.abc import Callable
 from datetime import date
 from typing import Annotated, Any
 
@@ -96,6 +97,14 @@ NOT_LISTENED = "season {season} has nothing to build a pickup report from: {miss
 NO_SCHEDULE = "no NBA schedule is stored (scripts/backfill_pro_schedule.py)"
 NO_ROSTER = "no status snapshots and no lineup days, so no roster can be read"
 
+#: Today, as these routes read it: which day a request without `today` means,
+#: and which day a stored row counts as fresh for. The server never moves it.
+#: A rehearsal of a season already played (`scripts/rehearse_week.py`) does,
+#: because "today" there is a morning in January and a row built now would
+#: otherwise never be the fresh one -- which is the only way to show that the
+#: page is answered from the store rather than rebuilt.
+TODAY: Callable[[], date] = date.today
+
 
 def readiness(
     session: Session, league_season: LeagueSeason
@@ -142,7 +151,7 @@ def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
 
 
 def _day(calendar: SeasonCalendar, today: int | None) -> int:
-    return today if today is not None else calendar.scoring_period_on(date.today())
+    return today if today is not None else calendar.scoring_period_on(TODAY())
 
 
 def build_payload(
@@ -171,7 +180,7 @@ def stored_report(
     session: Session, calendar: SeasonCalendar, team: Team, kind: str, day: int
 ) -> dict[str, Any] | None:
     """Today's stored report, when `day` is today and a row built today is there."""
-    on = date.today()
+    on = TODAY()
     if day != calendar.scoring_period_on(on):
         return None
     row = reports.fresh(session, team.id, kind, day, on=on)

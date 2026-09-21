@@ -44,7 +44,7 @@ from app.db.models import (
     TeamReport,
 )
 from app.espn import ESPNSettings
-from app.job_kinds import REFUSED, handlers, run_digest, run_pass, run_precompute
+from app.job_kinds import BAD_CLOCK, REFUSED, handlers, run_digest, run_pass, run_precompute
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from app.pickups.state import season_calendar
@@ -63,6 +63,7 @@ from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
     configure,
+    day_date,
     eligible,
     games,
     on_the_wire,
@@ -347,6 +348,82 @@ def test_a_job_whose_worker_died_is_taken_again(factory: sessionmaker[Session]) 
         assert row is not None and row.state == "queued" and row.last_error == jobs.LOST_WORKER
         again = jobs.claim(session, "alive", later + jobs.BACKOFF[0])
         assert again is not None and again.id == job_id and again.attempts == 2
+
+
+def test_a_worker_that_narrows_its_claim_never_touches_another_workers_rows(
+    factory: sessionmaker[Session],
+) -> None:
+    """The rehearsal (`scripts/rehearse_week.py`) puts its own jobs on the
+    real queue beside real ones, and must not be able to take, fail or reap
+    one of those. `only` is what stops it, and it has to hold for all three:
+    a narrowed claim skips the other rows, and the reaper it runs first must
+    leave another worker's dead job alone rather than handing it back."""
+    with factory() as session:
+        league = _league(session)
+        # The real job first, so it is also the one a claim would reach for.
+        theirs = jobs.enqueue(
+            session, jobs.DIGEST, run_after=NOW, label="theirs", league_id=league.id
+        ).id
+        mine = jobs.enqueue(
+            session,
+            jobs.DIGEST,
+            run_after=NOW,
+            label="mine",
+            league_id=league.id,
+            payload={"rehearsal": True},
+        ).id
+        session.commit()
+    ours = Job.payload["rehearsal"].astext == "true"
+
+    with factory() as session:
+        held = jobs.claim(session, "theirs", NOW)
+        assert held is not None and held.id == theirs, "the real job, claimed first, is due first"
+    with factory() as session:
+        narrowed = jobs.claim(session, "rehearsal", NOW, only=ours)
+        assert narrowed is not None and narrowed.id == mine
+        assert jobs.claim(session, "rehearsal", NOW, only=ours) is None, "nothing else is ours"
+
+    # Their job has now been `running` past the lease: a narrowed reaper has
+    # to leave it there, for the worker that owns it.
+    later = NOW + jobs.LEASE + timedelta(minutes=1)
+    with factory() as session:
+        assert jobs.reap(session, later, only=ours) == 1, "only our own lost job"
+        session.commit()
+        assert session.get(Job, theirs).state == jobs.RUNNING  # type: ignore[union-attr]
+        assert session.get(Job, mine).state == jobs.QUEUED  # type: ignore[union-attr]
+
+
+def test_a_job_that_names_a_day_is_built_for_that_day_not_for_today(
+    factory: sessionmaker[Session],
+) -> None:
+    """The precompute's day comes from its payload when it carries one.
+
+    A real morning's job carries none and means today. The rehearsal replays
+    a morning in a season already played, and the report has to be built for
+    *that* morning inside the worker process -- which is the only place it
+    is built -- so the day rides in the payload. A payload that names
+    something that is not a date is a failure nobody should retry."""
+    with factory() as session:
+        home = _seed_a_season(session)
+        calendar = season_calendar(session, SEASON)
+        assert calendar is not None
+        that_morning = day_date(4)
+        payload = {"today": that_morning.isoformat()}
+        job = jobs.JobRef(1, jobs.PRECOMPUTE, None, home.id, None, 1, payload)
+        wanted = calendar.scoring_period_on(that_morning)
+        today = calendar.scoring_period_on(date.today())
+    assert wanted != today, "the fixture's calendar would not tell the two apart"
+
+    note = handlers(settings_for())[jobs.PRECOMPUTE](factory, job)
+    assert note == f"stored stream and season for day {wanted}"
+    with factory() as session:
+        stored = {int(row.scoring_period) for row in session.scalars(select(TeamReport)).all()}
+        assert stored == {wanted}
+
+    bad = jobs.JobRef(2, jobs.PRECOMPUTE, None, home.id, None, 1, {"today": "the morning"})
+    with pytest.raises(jobs.JobError) as refused:
+        handlers(settings_for())[jobs.PRECOMPUTE](factory, bad)
+    assert refused.value.message == BAD_CLOCK and refused.value.retry is False
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,16 @@ SECRETS
 exception's class name, never its text: ESPN's and the SMTP server's
 messages can quote a URL, a bot token or an address. The worker's log lines
 carry the same, and nothing else.
+
+TAKING ONLY SOME JOBS
+
+`claim` and `run_next` take an optional `only`: a condition on `Job` that
+narrows what this worker will touch, claim, orphan-fail and reap. The
+production worker passes none and takes everything. It is there so a worker
+that is not the production one -- the rehearsal's
+(`scripts/rehearse_week.py`), which replays a played season against this
+same queue -- cannot claim, fail or reap a real job that happens to be
+sitting beside its own.
 """
 
 from __future__ import annotations
@@ -48,7 +58,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import ColumnElement, exists, select, true, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
@@ -220,20 +230,29 @@ def _ready(at: datetime) -> Any:
     return (Job.state == QUEUED) & (Job.run_after <= at) & ~waiting
 
 
-def lock_next(session: Session, at: datetime | None = None) -> Job | None:
+def _mine(only: ColumnElement[bool] | None) -> Any:
+    """The narrowing a worker asked for, or nothing at all."""
+    return true() if only is None else only
+
+
+def lock_next(
+    session: Session, at: datetime | None = None, *, only: ColumnElement[bool] | None = None
+) -> Job | None:
     """The next due job, locked for this transaction; jobs another worker has
     locked are skipped, not waited on. Commits nothing: `claim` does."""
     at = at or now()
     return session.scalar(
         select(Job)
-        .where(_ready(at))
+        .where(_ready(at), _mine(only))
         .order_by(Job.run_after, Job.id)
         .limit(1)
         .with_for_update(skip_locked=True, of=Job)
     )
 
 
-def fail_orphans(session: Session, at: datetime | None = None) -> int:
+def fail_orphans(
+    session: Session, at: datetime | None = None, *, only: ColumnElement[bool] | None = None
+) -> int:
     """Fail every queued job whose prerequisite failed. Does not commit."""
     at = at or now()
     prerequisite = aliased(Job)
@@ -242,6 +261,7 @@ def fail_orphans(session: Session, at: datetime | None = None) -> int:
         .where(
             Job.state == QUEUED,
             exists().where(prerequisite.id == Job.depends_on, prerequisite.state == FAILED),
+            _mine(only),
         )
         .with_for_update(skip_locked=True, of=Job)
     ).all()
@@ -254,13 +274,15 @@ def fail_orphans(session: Session, at: datetime | None = None) -> int:
     return len(orphans)
 
 
-def reap(session: Session, at: datetime | None = None) -> int:
+def reap(
+    session: Session, at: datetime | None = None, *, only: ColumnElement[bool] | None = None
+) -> int:
     """Jobs whose worker vanished (`running` past `LEASE`): one failed
     attempt each, retried or given up as any failure is. Does not commit."""
     at = at or now()
     stale = session.scalars(
         select(Job)
-        .where(Job.state == RUNNING, Job.started_at < at - LEASE)
+        .where(Job.state == RUNNING, Job.started_at < at - LEASE, _mine(only))
         .with_for_update(skip_locked=True)
     ).all()
     for job in stale:
@@ -268,14 +290,20 @@ def reap(session: Session, at: datetime | None = None) -> int:
     return len(stale)
 
 
-def claim(session: Session, worker: str, at: datetime | None = None) -> JobRef | None:
+def claim(
+    session: Session,
+    worker: str,
+    at: datetime | None = None,
+    *,
+    only: ColumnElement[bool] | None = None,
+) -> JobRef | None:
     """Take the next due job for this worker, or None. Commits the claim, so
     the row says `running` and whose it is before any work starts."""
     at = at or now()
-    fail_orphans(session, at)
-    reap(session, at)
+    fail_orphans(session, at, only=only)
+    reap(session, at, only=only)
     session.commit()
-    job = lock_next(session, at)
+    job = lock_next(session, at, only=only)
     if job is None:
         session.commit()
         return None
@@ -361,11 +389,12 @@ def run_next(
     *,
     worker: str | None = None,
     at: datetime | None = None,
+    only: ColumnElement[bool] | None = None,
 ) -> Outcome | None:
     """Claim one due job, run it, record the outcome. None when nothing is due."""
     worker = worker or worker_name()
     with factory() as session:
-        job = claim(session, worker, at)
+        job = claim(session, worker, at, only=only)
     if job is None:
         return None
     handler = handlers.get(job.kind)
