@@ -47,6 +47,22 @@
   and Patrick on 2026-09-18: 0.20 categories streaming, 0.10 / 0.05 a week
   for a paid / free season move. Language is "worth a look", never
   "recommended": the tool suggests, the manager decides.
+- The forward trade evaluator (`app/trades`, `scripts/trade.py`,
+  docs/trades.md). The same currency as a pickup, so "trade for him" and
+  "pick him up" are one scale: `app/pickups/judge.py` generalised from one
+  roster place to several (`places_cost`), with the pickup path's numbers
+  unchanged. Both sides are judged with the same machinery and the other
+  side is always labelled our estimate of his needs, never his opinion. It
+  carries the nine categories one by one, in counts and in the chance of
+  winning each, the playoff weeks as a separate lens, the drop a 2-for-1
+  forces and the place it opens, and what every projection rests on. The
+  league's trade review window is in no table, so one day is carried in the
+  code with its evidence (the four 2026 `TRADE_ACCEPT` rows all moved their
+  players the next day). **The calibration says it does not predict the
+  outcome:** on 55 reconstructed deals it picked the side that did better 27
+  times, 49%, rank correlation +0.05 (`scripts/trade_calibration.py`,
+  docs/trades.md section 7). Nothing was tuned to improve that. No route and
+  no page yet.
 - The recommender backtest (`scripts/pickups_backtest.py`,
   docs/pickups_backtest.md): every 2026 team, 616 decision points, scored in
   categories by replaying the real matchup with the lineup re-solved both
