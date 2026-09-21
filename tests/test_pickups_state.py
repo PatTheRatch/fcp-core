@@ -317,6 +317,34 @@ def test_the_add_budget_is_one_for_each_day_of_the_matchup_period(session: Sessi
     assert load_team_week(session, ls, AWAY, today=4).adds_used == 1
 
 
+def test_the_adds_spent_stop_at_today_exactly_as_the_faab_does(session: Session) -> None:
+    """An add and the money it cost are one transaction, so one bound serves both.
+
+    Counted over the period's whole span instead, a report for the morning of
+    day 2 charges the team every claim it went on to make that week -- and a
+    team the report believes has spent its budget is told there is nothing to
+    plan today, so the recommendation disappears entirely. That is what it did
+    on thirteen of the thirty-nine team-days the in-season rehearsal replayed.
+    """
+    ls, (home, _), _ = league_season(session, days_per_period=7)
+    configure(ls)
+    games(session, 10, [1])
+    winning_bid(session, home, 1, 3, player(session, "Monday"))
+    for day in range(3, 8):
+        winning_bid(session, home, day, 1, player(session, f"Day {day}"))
+    winning_bid(session, home, 7, 1, player(session, "Saturday as well"))
+
+    week = load_team_week(session, ls, HOME, today=2)
+
+    assert week.adds_budget == 7
+    assert week.adds_used == 1, "only Monday's claim had been made by the morning of day 2"
+    assert week.adds_left == 6, "a team with adds left gets a plan"
+    assert week.faab_remaining == 97, "and the same day bounds the money"
+    whole_week = load_team_week(session, ls, HOME, today=7)
+    assert whole_week.adds_used == 7 and whole_week.adds_left == 0
+    assert whole_week.faab_remaining == 91
+
+
 def test_a_short_period_has_a_short_add_budget(session: Session) -> None:
     """The opening week of this league is six days, so it allows six adds."""
     ls, _, _ = league_season(session, days_per_period=6)

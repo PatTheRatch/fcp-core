@@ -93,7 +93,9 @@ ADDS, AND WAIVERS
 Two league rules bound what the recommender may propose. Adds are budgeted
 by the matchup period -- one for each of its days, spent on any days of it
 (`ADDS_PER_PERIOD_DAY`) -- so a week is a budget of seven and the report
-carries what is left of it. And a free agent the league has on waivers
+carries what is left of it. What has been spent of it is counted on the
+period's days **up to and including `today`**, the same bound `_faab_spent`
+uses and for the same reason. And a free agent the league has on waivers
 cannot play for us before the scoring period in which he clears, so his
 `waiver_clears_on` is carried beside him and the seating reads it.
 """
@@ -434,18 +436,28 @@ def load_team_week(
         faab_overspent=max(0, spent - budget),
         open_slots=max(0, roster_size_for(league_season) - len(active)),
         ir_slot_free=int(league_season.injured_reserve_slots or 0) > ir_used,
-        adds_used=_adds_in_period(session, team, first_day, last_day),
+        adds_used=_adds_in_period(session, team, first_day, today),
         adds_budget=ADDS_PER_PERIOD_DAY * (last_day - first_day + 1),
     )
 
 
-def _adds_in_period(session: Session, team: Team, first_day: int, last_day: int) -> int:
-    """Executed adds this team made on the days of one matchup period.
+def _adds_in_period(session: Session, team: Team, first_day: int, through_day: int) -> int:
+    """Executed adds this team had made this period by the end of `through_day`.
 
     An add is a WAIVER or FREEAGENT transaction ESPN carried out with an
     ADD item to this team (`app.scoring.replacement.ADD_TYPES`), counted the
     way `app.pickups.season._adds_in_window` counts a fortnight's: one per
     item, so a claim that added two men spends two of the budget.
+
+    The far end is `today`, not the period's last day, and it must be the
+    same day `_faab_spent` stops at: an add and the money it cost are one
+    transaction, so a report that charges a team for the bid must charge it
+    for the add, and a report that does not must not do either. Windowing on
+    the whole period instead read the adds a team had not made yet, which is
+    worse than a wrong number -- a team the report believes has spent its
+    budget is told there is nothing to plan today, and the recommendation
+    disappears. Thirteen of the thirty-nine team-days the in-season
+    rehearsal replayed lost their plan that way.
     """
     count = session.scalar(
         select(func.count())
@@ -456,7 +468,7 @@ def _adds_in_period(session: Session, team: Team, first_day: int, last_day: int)
             Transaction.type.in_(ADD_TYPES),
             Transaction.status == EXECUTED,
             Transaction.scoring_period >= first_day,
-            Transaction.scoring_period <= last_day,
+            Transaction.scoring_period <= through_day,
             TransactionItem.item_type == "ADD",
             TransactionItem.to_team_id == team.id,
         )
