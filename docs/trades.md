@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, daily lineups, 16 teams in 2027
 **Written:** 2026-09-21, revised the same day after the run declared in §7a
-**Status:** the engine (`app/trades/`), the CLI (`scripts/trade.py`), the calibration (`scripts/trade_calibration.py`) and the published record (`app/trades/calibration.py`) are built. No API route and no page yet; §6 is the payload they will sit on.
+**Status:** the engine (`app/trades/`), the CLI (`scripts/trade.py`), the calibration (`scripts/trade_calibration.py`) and the published record (`app/trades/calibration.py`) are built, and since 2026-09-21 so are the two routes and the page (`app/api/trades.py`, `app/api/static/trades.html`, §10). §6 is the payload they sit on.
 **Companions:** [`pickups.md`](pickups.md) (the currency and the recommender it came from), [`scoring/`](scoring) and `app/scoring/trade_grades.py` (the same trades, graded in hindsight), [`inseason_rehearsal.md`](inseason_rehearsal.md) (the look-ahead lesson §5 is built on)
 
 ---
@@ -265,7 +265,7 @@ report is entitled to see.
 
 ---
 
-## 6. The payload, for the page that comes next
+## 6. The payload, and the page it is drawn on
 
 The dataclasses were designed as the thing a page draws, so a schema is a
 transcription rather than a redesign. One `TradeReport`, two `SideReport`s,
@@ -316,10 +316,10 @@ Four things a page should draw and not hide:
    not depend on it. A forecast printed without its record is the one thing
    §7 says we must not ship.
 
-The report is bounded, so the route should return an object rather than a
-`Page`, like both pickup routes. It makes no ESPN request. A season with no
-schedule, roster or wire should be a 409 for the same reason
-`/pickups/stream` is.
+The report is bounded, so the route returns an object rather than a `Page`,
+like both pickup routes. It makes no ESPN request. A season with no schedule
+or roster was going to be a 409 for the same reason `/pickups/stream` is, and
+is not: §10 says why, and what it answers instead.
 
 ---
 
@@ -651,13 +651,17 @@ exactly yesterday's.
   therefore keeps every period that *begins* inside the window, which means
   the last one can end a few days outside it. Cutting at the day instead would
   need a new comparison rather than a new window.
-- **No API route and no page.** The brief's scope, and §6 is the handover.
+- **The page leads with the fit and prints the record under the number.**
+  §0 decided it and §10 is how it was drawn. A reader who wanted the headline
+  at the top would be arguing with §7 rather than with the layout.
+- **The trade routes answer a season with nothing to judge from rather than
+  refusing it**, which is the one place they differ from the two pickup
+  routes' 409 (§10).
 
 ---
 
 ## 9. What is not built
 
-- No route, no schema, no page.
 - **No suggestion engine.** The evaluator prices a deal you name; it does not
   search the league for deals worth proposing. That is the obvious next thing
   and it is also the thing §7 says to be most careful about: a search over
@@ -674,3 +678,114 @@ exactly yesterday's.
   to the newest earlier season that posted anything, and the report carries a
   note saying so — but the CLI needs a stored NBA schedule, and
   `pro_team_games` has no 2027 rows yet.
+
+---
+
+## 10. The page
+
+`/l/{league_id}/{season}/team/{team_id}/trades`, under the site's shell and
+in the light house style, after Moves in the My team menu (docs/site.md). The
+same gate as the other team pages: this team's verified manager, and entitled
+(`require_team_plan_page`). Plain HTML, CSS and JavaScript, no build step,
+read per request, like every other page.
+
+**It is a fit tool, not a winner-picker,** which is §0's decision drawn. The
+page leads with what the deal does to each roster's nine categories and to
+each side's needs, shows the headline second and smaller, and prints the
+record in plain words at the bottom.
+
+Top to bottom:
+
+- **The masthead**, in the house pattern: the team, the season, the day and
+  its date, and that the rosters are that morning's and nothing after it is
+  read.
+- **The builder.** A team to trade with; the two rosters as lists, where a
+  tap moves a man into *We give* or *We get* and a second tap takes him out;
+  a "who is dropped" choice — one per place a side is short of — for whichever
+  side has no room, left alone meaning *the cheapest place (chosen for you)*,
+  which is what §3 already does and says it did. One button: **Judge this
+  trade**. The whole deal is mirrored into the query string (`with`, `give`,
+  `get`, `drop`, `theirdrop`, and `today` like every other page), so a judged
+  trade is bookmarkable and a refresh lands back on it, judged.
+- **The result, fit first.** Each side's nine in the fixed order, ours first,
+  side by side on a wide screen and stacked on a phone: the ordinary week
+  before and after, the change, and the change in the chance of winning that
+  category, with the shift strip over the table. A gain and a loss are told
+  apart by a sign and an arrow before they are told apart by colour, and the
+  *count's* change is drawn in plain ink rather than green or red, because
+  more turnovers is a bigger number and a worse week and only the probability
+  beside it knows which way that cuts. Under each table, the engine's own
+  sentence, which already leads with the fit.
+- **The number, second and smaller.** Per side: this week plus the change per
+  week over the weeks left and the net; the projected record with and
+  without; "clears the 0.20 bar" or "below" as a label and never as advice;
+  the playoff lens; and how an uneven deal was settled — the named free agent
+  whose week fills an opened place, or the named drop and what it cost. The
+  other side is labelled *our estimate of their side, not what they think*
+  wherever it appears.
+- **What it rests on**, per man: what he is worth a week, the games of his
+  own behind the projection and its source, his games left and his playoff
+  games, and a mark on anything thin or hurt.
+- **How much to trust the number**: `CALIBRATION_NOTE`, verbatim, and no link
+  off the page.
+
+**Two routes**, beside the pickup routes and named like them
+(`app/api/trades.py`):
+
+    GET .../teams/{team_id}/trades/rosters ?with_team= &today=
+    GET .../teams/{team_id}/trades/report  ?with_team= &give= &get= &drop= &their_drop= &today=
+
+Both are the paid team layer (`require_team_manager` and
+`require_entitlement`, the one check the week, season and moves routes
+declare). Player ids go in and out as ESPN's, as everywhere else. The report
+route answers `evaluate_trade`'s own payload (§6) and computes nothing of its
+own; both routes carry `calibration_note`, so the page never keeps a copy of
+a record that a re-run would make stale.
+
+The rosters route is what the pickers are drawn from, so the page hard-codes
+no roster and guesses none. It reads the roster stored on or before the day
+asked for: a builder opened on a replayed day 52 offers day 52's men, and
+`tests/test_api_trades.py` proves it on a fixture where a later day holds one
+more.
+
+**A season with nothing to judge from is not an error.** 2027 before its
+draft has no schedule and no rosters; both routes answer 200 with
+`readiness` — the same two things `app.api.pickups.readiness` looks for — and
+the page says so in a sentence and draws no pickers. That is a deliberate
+difference from the pickup routes, which 409: a plan with no wire is not a
+plan, but a trade page has a builder to draw and a record to print before any
+deal exists.
+
+**Bad input is a 422 with a sentence a manager can act on.** Every one of
+them, in `app/api/trades.py`:
+
+- A team cannot trade with itself: pick a different team to trade with.
+- Name the team on the other side of this deal.
+- There is no team {id} in this league's {season} season.
+- Nothing is being traded: name at least one player given or got.
+- {name} is on both sides of this deal: name him once, as given or as got.
+- {team} does not have {names} on its roster on day {day}.
+- {name} is on {team}'s injured reserve on day {day}: he holds no active
+  place, so he cannot be traded or dropped to make room in this report.
+- {team} cannot drop {names}: not on its active roster on day {day}.
+- {team} cannot both trade away and drop {names}.
+- {team} has no room for the {n} player(s) arriving and nobody left to drop:
+  every other man on its roster is already in this deal. Give it one fewer
+  player, or take one back.
+- {team} needs {n} more roster place(s) for this deal and can free {m}: it
+  could still drop {names}. Give it one fewer player, or take one back.
+
+The last two are guards rather than a common path. With the equal roster
+sizes ESPN gives every team there is always somebody to drop, and the report
+drops him rather than refusing; only a roster holding more men than the other
+side has places can produce them, which is what the fixture builds.
+
+**Waiting.** An evaluation is about 2.4 seconds cold in a fresh process and
+1.9 warm, measured on the stored 2026 season, day 52, Turner for Queta. That
+is nothing like the pickup reports' 45 seconds cold, because a trade prices a
+deal that was named rather than searching the whole wire and re-running the
+week for every candidate. The page still never looks dead: the button
+disables itself and says what it is doing in words, the builder stays usable,
+and the result replaces itself when it arrives. **The morning precompute is
+not worth extending to it** — there is no deal to precompute until a manager
+names one, and two seconds is not a wait worth caching for.
