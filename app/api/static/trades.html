@@ -481,12 +481,19 @@ function drawMasthead() {
   document.title = `${us} — trades`;
   $("title").textContent = us;
   $("eyebrow").textContent = `Full Court Press · ${WHERE.season} · trades`;
+  const source = `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
+  if (ROSTERS && !ROSTERS.readiness.ready) {
+    // No schedule and no rosters: there is no day to judge on, so the
+    // masthead does not pretend there is one.
+    $("sub").innerHTML = `The ${WHERE.season} season has not started. ${source}`;
+    return;
+  }
   const day = ROSTERS ? ROSTERS.today : WHERE.today;
   $("sub").innerHTML =
     `Judged on day <b>${day === null || day === undefined ? "–" : day}</b>` +
     `${ROSTERS && ROSTERS.today_date ? ` (${dayName(ROSTERS.today_date)})` : ""}. ` +
     `Rosters as they stood that morning; nothing after it is read. ` +
-    `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
+    source;
 }
 
 function drawReadout(report) {
@@ -565,9 +572,12 @@ async function loadRosters() {
   if (!ROSTERS.readiness.ready) {
     $("builder").hidden = true;
     $("record-tag").textContent = "the published run";
+    // The route's own sentence, capitalised and given a next step; the page
+    // does not write a second one of its own on top of it.
+    const said = ROSTERS.readiness.note;
     fail(
-      `There is nothing to judge a trade from in ${WHERE.season} yet: ` +
-        `${ROSTERS.readiness.note}. Come back once the season has a draft and a schedule.`,
+      `${said.charAt(0).toUpperCase()}${said.slice(1)}. There is nothing to judge a deal ` +
+        `against until the season has a draft and a schedule.`,
     );
     return false;
   }
