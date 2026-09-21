@@ -610,7 +610,13 @@ def test_with_no_adds_left_the_report_still_lists_moves_and_recommends_none(
 ) -> None:
     """One add a day of the period, spent on any days: seven here, and the
     seventh is the last. The wire is still worth reading, and nothing is
-    recommended until the next period."""
+    recommended until the next period.
+
+    All seven land on or before the day asked about, because what has been
+    spent is counted through today and not over the period's whole span --
+    a report for day 5 that charged the team for claims it makes on day 6
+    would silence itself for a reason that is not true (`state._adds_in_period`).
+    """
     ls, home, away, first = build_week(session, bench=1)
     idle = rostered(session, home, first, "Idle", slots=ANY, pro_team=10, per_game=TEN_POINTS)
     rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
@@ -620,8 +626,13 @@ def test_with_no_adds_left_the_report_still_lists_moves_and_recommends_none(
     games(session, 10, [1, 2])
     games(session, 11, [1, 2])
     games(session, 20, [5, 6, 7])
-    for day in range(1, 8):
+    # Seven adds over the first five days: two on day 1, two on day 2, one
+    # each on 3, 4 and 5. More than one add in a day is what this league
+    # allows, and 204 of its 2026 team-days had one.
+    for day in (1, 2, 3, 4, 5):
         winning_bid(session, home, day, 0, idle)
+    for day in (1, 2):
+        winning_bid(session, home, day, 0, player(session, f"Also day {day}"))
 
     report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
 
