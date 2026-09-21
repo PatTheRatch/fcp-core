@@ -407,6 +407,58 @@ minute, local database only.
 
 ---
 
+## 7a. Declared before the re-run, 2026-09-21
+
+One revision, declared here before it was run, then exactly one re-run of the
+calibration, published whatever it showed. With 55 deals, anything more is
+fooling ourselves. Everything below this line was written **before** the
+revision was built and before any number came back; §7 above is the "before"
+it will be read against.
+
+**Revision R1 — the headline is judged on the roster.** The season term of a
+side's judgement becomes: the expected category wins per week of that team's
+actual active roster with the deal, minus without it, against the league
+standard — i.e. `Standard.week_wins` (or whatever the nine-category table
+already uses to produce its win probabilities) applied to the summed
+rest-of-season weekly lines (`weekly_lines`) of the active roster before and
+after. In an uneven deal the opened place is filled by the named best free
+agent (as the table already shows) and the forced drop removes the named man,
+inside the same before/after. The old per-man number stays in the payload as
+`season_independent`, labelled, so both can be measured; the bar, the week
+term, the playoff lens and the language are unchanged apart from reading the
+new number. The pickup path's numbers must remain identical (it does not go
+through the trade evaluator; prove it by the existing suites passing
+untouched).
+
+**Target T30 — the next thirty days.** Beside the existing rest-of-season
+hindsight grade, grade each side over the 30 days after the deal lands — the
+window `scripts/pickups_backtest.py` uses. Use `grade_move`'s own arithmetic
+restricted to that window; if it cannot be windowed without new machinery,
+build the minimum and say exactly what you built.
+
+**What will be reported, all of it, from one run:**
+
+- The 2×2: {old headline, R1 headline} × {rest-of-season, T30}, each with
+  deal-level "picked the side that did better" (n of N) and side-level
+  Spearman and mean error. **Primary cell, named now: R1 × T30, deal-level.**
+- Uneven sides' mean error under R1 (was +0.27 under the old headline).
+- An ex-ante confidence split, defined now: deals ranked by |R1 predicted
+  delta|, top third versus the rest, deal-level hit rate in each. (Defined on
+  the prediction, not the outcome, so it is a legitimate claim whichever way
+  it falls.)
+- A player-level diagnostic: for every player in the scored deals, the
+  evaluator's predicted weekly value on the day versus what he delivered per
+  week over T30 (same lens), Spearman and n. This separates "the projections
+  carry no signal" from "differencing two similar players destroys it".
+- A coin's 95% interval for the deal-level n, printed beside every hit rate,
+  so nobody reads 31 of 55 as a finding.
+
+**What will not be done after the run:** no change to R1, the window, the
+splits, the sample, or the bar. Seasons, exclusions and `review_days=1` are
+exactly yesterday's.
+
+---
+
 ## 8. Decisions a reader could reasonably have made differently
 
 - **One day of review, not two or zero.** The ledger says the deal seats the
