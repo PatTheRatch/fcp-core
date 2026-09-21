@@ -139,20 +139,31 @@ __all__ = [
 ]
 
 #: Expected categories a week a swap that costs FAAB has to add, read
-#: against the judgement's net per week (docs/pickups.md section 4.4). Set by
-#: the 2026 backtest (docs/pickups_backtest.md): at 0.05 the report delivered
-#: +0.98 categories over 30 days saying "no move" 13% of the time; at 0.10 it
-#: delivered +1.06 saying no 25% of the time, the one setting that clears the
-#: design rule. Patrick chose the higher bar on 2026-09-18: fewer, better
-#: moves, with a finite add budget and finite FAAB. The sweep stopped here,
-#: so a higher bar is unmeasured.
+#: against the judgement's net per week (docs/pickups.md section 4.4).
+#: Patrick chose it on 2026-09-18 off the backtest of that day: at 0.05 the
+#: report delivered +0.98 categories over 30 days saying "no move" 13% of the
+#: time; at 0.10 it delivered +1.06 saying no 25% of the time, which was the
+#: only setting measured that cleared the design rule. Fewer, better moves,
+#: with a finite add budget and finite FAAB.
+#:
+#: Re-measured 2026-09-21 (docs/pickups_backtest.md). The two cells he chose
+#: between are where they were -- 0.05 delivers +0.98 at 12.8% no-move, 0.10
+#: delivers +1.05 at 25.2% -- but the sweep no longer stops at 0.10. **0.20
+#: delivers +1.21 over 30 days on 307 moves at 49.0% no-move, and is now what
+#: the script's tuning rule picks.** It is a real finding and it is not this
+#: file's to act on: doubling the bar halves the moves, and whether that is
+#: the right trade is the owner's call, not a measurement's. The constant
+#: stays at 0.10 until he moves it.
 SEASON_HURDLE_PAID = 0.10
 
 #: The same for a free add into an open place: lower, because it costs
-#: neither a player nor money, only the place. Half the paid bar, as before;
-#: the sweep could not measure it apart (adds into an open place are rare,
-#: and its pairs ran the free bar above the paid one, which the design
-#: rejects), so this follows the paid bar rather than a number of its own.
+#: neither a player nor money, only the place. Half the paid bar, as before.
+#: The sweep still cannot measure it apart -- adds into an open place are
+#: rare, so a pair's cell measures its paid bar alone. (The 2026-09-18 grid
+#: could not have measured it anyway: its pairs ran the free bar above the
+#: paid one, which the design rejects. The grid has since been corrected, and
+#: the 2026-09-21 run's pairs are 0.05/0.02, 0.10/0.05 and 0.20/0.10.) So
+#: this follows the paid bar rather than carrying a number of its own.
 SEASON_HURDLE_FREE = 0.05
 
 #: Free agents carried into the optimizer, the best by rest-of-season value

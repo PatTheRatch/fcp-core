@@ -119,12 +119,19 @@ if TYPE_CHECKING:  # A cycle at runtime: `bids` ranks the wire with `weight`.
     from app.pickups.bids import Bid
 
 #: Categories a move must add, over both horizons (`Judgement.delta_total`),
-#: to be recommended (docs/pickups.md section 4.3). Set by the 2026 backtest
-#: (docs/pickups_backtest.md, 14 teams, 616 decision points): the sweep over
-#: 0.05-0.20 delivered +0.17 categories a matchup at every setting, with the
-#: no-move rate rising from 4.7% to 10.6%, so the top of the sweep buys the
-#: least churn for no loss. Patrick chose it on 2026-09-18 because adds are
-#: budgeted per matchup period and FAAB is finite. The bar barely bites
+#: to be recommended (docs/pickups.md section 4.3). Patrick chose it on
+#: 2026-09-18, off the backtest of that day, because adds are budgeted per
+#: matchup period and FAAB is finite: the sweep over 0.05-0.20 read +0.17
+#: categories a matchup at every setting, so the top of it bought the least
+#: churn for no loss.
+#:
+#: Re-measured 2026-09-21 (docs/pickups_backtest.md, 14 teams, 616 decision
+#: points), after the posted totals stopped counting the decision day twice:
+#: the sweep now reads +0.15, +0.14, +0.15, +0.16 at 0.05, 0.10, 0.15, 0.20,
+#: with the no-move rate rising from 4.8% to 11.0%. Lower than the numbers
+#: this comment used to quote, and no longer flat -- 0.20 is the best of the
+#: four rather than merely the cheapest -- so the reason for the number
+#: stands and the figures behind it have changed. The bar barely bites
 #: because an empty-day fill is recommended whenever it helps at all
 #: (`Move.clears`); that rule, not this number, is the churn lever.
 STREAM_HURDLE = 0.20

@@ -1528,6 +1528,10 @@ def report(
                 f"{_pct(season.no_move_rate)} no-move)."
             )
     lines.append("")
+    # Written here rather than added to the document by hand, because the last
+    # time it was added by hand the next run deleted it.
+    lines.append(HURDLES_APPLIED)
+    lines.append("")
     lines.append(
         f"**This script changes no constant.** The run covers {_teams(teams)}; the "
         "settings above are its recommendation, and the two hurdle constants are "
@@ -1582,6 +1586,8 @@ def report(
         "totals, with nothing substituted."
     )
     lines.append("")
+    lines.append(POSTED_BOUNDARY_MOVED)
+    lines.append("")
     lines.append(
         "**Verified no leak** in the two places the design note asks about: "
         "`app/scoring/knowable.py` filters to `scoring_period < day` and the "
@@ -1617,6 +1623,16 @@ def report(
         "with no recorded opponent, since there are no categories to win."
     )
     lines.append(
+        "- **The add budget never binds here.** The replay takes two decision points a "
+        "matchup period (its first and fourth days) and scores the moves found at each, "
+        "so no team ever approaches the one-add-a-day-of-the-period budget the reports "
+        "carry (`ADDS_PER_PERIOD_DAY`, docs/pickups.md section 4.3). Nothing here "
+        "measures a plan's second move, or a day with no adds left; the hurdles were "
+        "fitted on one move a decision. Before 2026-09-21 it could bind spuriously, "
+        "because the adds a team had spent were counted over the period's whole span "
+        "rather than through the decision day."
+    )
+    lines.append(
         "- **Ten 2026 days carry no box scores at all**, and `daily_lineup_slots` stops "
         "at day 160 while stats run to 174. Decision points falling on an empty day "
         "yield no pool and are counted separately as `pool_empty`."
@@ -1630,6 +1646,43 @@ def report(
     lines.append("")
     return "\n".join(lines) + "\n"
 
+
+#: What the exclusive boundary cost, measured once when it was adopted. A
+#: record for the next reader of the tables above, which are not the tables
+#: the 2026-09-18 run produced.
+POSTED_BOUNDARY_MOVED = (
+    "**It moved the streaming numbers, and almost nothing else.** The cap this script "
+    "used to install was inclusive of day N, so it counted day N's lines as already "
+    "posted while the projection was adding that same day on top; 584 of the 616 "
+    "team-decision points had a different posted total afterwards, and the whole run's "
+    "posted PTS fell from 125,125 to 77,483. Against the 2026-09-18 run: the streaming "
+    "mean fell from +0.17 categories a matchup at every hurdle to +0.14 to +0.16, the "
+    "win rate from 82.6-83.1% to 81.4-82.3%, and the calibration ratio from about 2.0 "
+    "to about 1.7; the number of moves named and the no-move rate barely moved (574 to "
+    "573 at the 0.05 bar, 538 to 536 at 0.20). The rest-of-season side is unchanged "
+    "where the two grids overlap -- the 0.05 paid cell 524 moves at +0.98 against 525 "
+    "at +0.98, the 0.10 paid cell 453 at +1.06 against 450 at +1.05 -- which is what "
+    "it should be, since only that report's week half reads the posted totals. The "
+    "baseline is identical to three decimals (1,120 moves, +0.050 a week, -0.558 over "
+    "30 days, 84.2%), which is the check that the scoring machinery itself did not "
+    "move."
+)
+
+#: What the owner did with an earlier run's recommendation. A record, not a
+#: measurement, and the only part of section 4 this script does not compute --
+#: it lives here because a hand-written paragraph in the document does not
+#: survive the next run, and the 2026-09-18 one did not.
+HURDLES_APPLIED = (
+    "**Applied 2026-09-18, Patrick's decision:** `STREAM_HURDLE` 0.10 -> 0.20 (the "
+    "least churn for no loss, with a finite add budget and finite FAAB) and "
+    "`SEASON_HURDLE_PAID` 0.05 -> 0.10. That run's grid ran the free bar above the "
+    "paid one, which the design rejects, and adds into an open place are rare enough "
+    "that the cell measured the paid bar alone; `SEASON_HURDLE_FREE` follows the paid "
+    "bar at half, 0.02 -> 0.05, unmeasured on its own. The grid has since been "
+    "corrected to run the free bar below the paid one and extended to 0.20 paid, so "
+    "the season rows above are not the same cells that decision was taken on; the "
+    "constants stand where he put them until he moves them again."
+)
 
 #: Choices this backtest makes that a reader could reasonably have made
 #: differently, recorded because the note's convention is to write them down.
