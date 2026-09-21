@@ -316,7 +316,14 @@ def unnotified(
 def adds_in_window(
     session: Session, league_season: LeagueSeason, team_id: int, *, now: datetime, days: int
 ) -> int:
-    """Executed wire adds by this team in the trailing window, the volume guard."""
+    """Executed wire adds by this team in the trailing window, the volume guard.
+
+    The window has two ends. Without the far one it is not a trailing window
+    at all but everything since `now - days`, which on a live morning reads
+    right because nothing has happened after now, and on any replayed day
+    reads the rest of the season: a digest built for a day in January counted
+    83 adds in the last fortnight where 15 had been made.
+    """
     since = now - timedelta(days=days)
     return (
         session.scalar(
@@ -330,6 +337,7 @@ def adds_in_window(
                 Transaction.status == "EXECUTED",
                 Transaction.processed_at.is_not(None),
                 Transaction.processed_at >= since,
+                Transaction.processed_at <= now,
                 TransactionItem.item_type == "ADD",
             )
         )
@@ -636,6 +644,10 @@ def league_section(session: Session, league_season: LeagueSeason, *, now: dateti
             )
         if len(rows) > LEAGUE_MATCHUP_LIMIT:
             out.append(f"  and {len(rows) - LEAGUE_MATCHUP_LIMIT} more")
+    # Both ends of the day, as `adds_in_window` has both ends of its
+    # fortnight: open at the far end this counted every move the league went
+    # on to make, and a replayed morning said 609 moves on the wire in the
+    # last day where nine had been made.
     since = now - timedelta(hours=LEAGUE_MOVES_HOURS)
     moves = (
         session.scalar(
@@ -646,6 +658,7 @@ def league_section(session: Session, league_season: LeagueSeason, *, now: dateti
                 Transaction.type.in_(WIRE_TYPES),
                 Transaction.status == "EXECUTED",
                 Transaction.processed_at >= since,
+                Transaction.processed_at <= now,
             )
         )
         or 0

@@ -32,6 +32,7 @@ from app.db.models import (
 from app.db.session import make_engine, make_session_factory
 from app.digest import (
     CHURN_DAYS,
+    LEAGUE_MOVES_HOURS,
     MAX_LINES,
     ROSTER_EVENT_LIMIT,
     WIRE_EVENT_LIMIT,
@@ -41,6 +42,7 @@ from app.digest import (
     build_digest,
     latest_listened_season,
     league_season_for,
+    league_section,
     mark_notified,
 )
 from app.listener import events as kinds
@@ -290,6 +292,59 @@ def test_churn_counts_my_executed_adds_inside_the_window_only(session: Session) 
     _transaction(session, mine, player, processed=LATER, espn_id="a-trade", kind="TRADE_ACCEPT")
 
     assert _digest(session).adds_recently == 1
+
+
+def test_the_churn_window_has_a_far_end_as_well_as_a_near_one(session: Session) -> None:
+    """A trailing window that never closes reads the rest of the season.
+
+    Live it cannot show, because nothing has been processed after now; on a
+    replayed day, a backfill or a worker catching up a missed morning, the
+    same query counts every claim the team went on to make. The rehearsal's
+    day-80 digest said 83 adds in the last fortnight where 15 had been made.
+    """
+    _pass(session, _baseline(), FIRST)
+    league_season = _stored(session)
+    mine = session.scalars(
+        select(Team).where(Team.league_season_id == league_season.id, Team.espn_team_id == MINE)
+    ).one()
+    player = session.scalars(select(Player).where(Player.espn_player_id == 300)).one()
+
+    _transaction(session, mine, player, processed=LATER - timedelta(days=1), espn_id="behind-us")
+    _transaction(session, mine, player, processed=LATER + timedelta(days=1), espn_id="tomorrow")
+    _transaction(session, mine, player, processed=LATER + timedelta(days=40), espn_id="in-march")
+
+    assert _digest(session).adds_recently == 1, "only the claim already made"
+
+
+def test_the_leagues_wire_traffic_stops_at_the_moment_the_digest_is_built(
+    session: Session,
+) -> None:
+    """The same open window, on the line every member sees.
+
+    "609 moves on the wire in the last day" is the sort of number that costs
+    the reader his trust in everything above it; on the day the rehearsal
+    replayed, nine had been made.
+    """
+    _pass(session, _baseline(), FIRST)
+    league_season = _stored(session)
+    mine = session.scalars(
+        select(Team).where(Team.league_season_id == league_season.id, Team.espn_team_id == MINE)
+    ).one()
+    player = session.scalars(select(Player).where(Player.espn_player_id == 300)).one()
+
+    _transaction(session, mine, player, processed=LATER - timedelta(hours=2), espn_id="last-night")
+    _transaction(
+        session,
+        mine,
+        player,
+        processed=LATER - timedelta(hours=LEAGUE_MOVES_HOURS + 2),
+        espn_id="too-old",
+    )
+    _transaction(session, mine, player, processed=LATER + timedelta(hours=2), espn_id="tonight")
+
+    lines = league_section(session, league_season, now=LATER)
+
+    assert lines[-1] == "  1 move on the wire in the last day"
 
 
 def test_the_message_stays_under_forty_lines_however_much_happened() -> None:
