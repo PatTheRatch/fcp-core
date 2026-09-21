@@ -9,6 +9,7 @@
     /l/{league_id}/{season}/team/{team_id}/week     the week plan
     /l/{league_id}/{season}/team/{team_id}/season   the season plan
     /l/{league_id}/{season}/team/{team_id}/moves    the scorecard of this team's own moves
+    /l/{league_id}/{season}/team/{team_id}/trades   what a proposed trade would do to both
     /account/connections | /projections | /alerts   the viewer's own account
     GET /me/alerts                            the one JSON route the pages needed
 
@@ -170,6 +171,17 @@ def team_season_page() -> HTMLResponse:
 def team_moves_page() -> HTMLResponse:
     """The scorecard's view of this team's own moves: the wire, trades, the draft."""
     return _page("moves.html")
+
+
+@router.get(
+    "/l/{league_id}/{season}/team/{team_id}/trades",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[TEAM_PLAN_PAGE],
+)
+def team_trades_page() -> HTMLResponse:
+    """Build a trade and see what it does to both rosters' nine categories."""
+    return _page("trades.html")
 
 
 # ---------------------------------------------------------------------------

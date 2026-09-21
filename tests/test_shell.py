@@ -56,7 +56,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "app" / "api" / "static"
 
 LEAGUE_SECTIONS = ("week", "standings", "draft", "history")
-TEAM_SECTIONS = ("week", "season", "moves")
+TEAM_SECTIONS = ("week", "season", "moves", "trades")
 ACCOUNT_SECTIONS = ("connections", "projections", "alerts")
 
 LEAGUE_REFUSED = "This league&#x27;s pages are its members&#x27;."
@@ -343,6 +343,7 @@ SHELL_PAGES = [
     "week.html",
     "season.html",
     "moves.html",
+    "trades.html",
     "connections.html",
     "projections.html",
     "alerts.html",
@@ -365,7 +366,7 @@ def test_every_page_draws_the_shell_in_the_house_style(name: str) -> None:
 def test_the_shell_is_the_navigation_the_product_draws() -> None:
     """docs/product.md, "Navigation": the words, in the order drawn."""
     shell = (STATIC / "shell.js").read_text()
-    order = ["This week", "Standings", "Draft", "History", "Week", "Season", "Moves"]
+    order = ["This week", "Standings", "Draft", "History", "Week", "Season", "Moves", "Trades"]
     at = [shell.index(f'"{word}"') for word in order]
     assert at == sorted(at)
     for word in ("My team", "Claim your team", "Connections", "Projections", "Alerts", "Sign out"):
@@ -409,6 +410,7 @@ def test_the_map_in_the_docs_names_every_page() -> None:
         "/l/{league_id}/{season}/team/{team_id}/week",
         "/l/{league_id}/{season}/team/{team_id}/season",
         "/l/{league_id}/{season}/team/{team_id}/moves",
+        "/l/{league_id}/{season}/team/{team_id}/trades",
         "/account/connections",
         "/account/projections",
         "/account/alerts",

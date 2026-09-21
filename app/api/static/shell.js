@@ -40,6 +40,7 @@ const TEAM_SECTIONS = [
   ["week", "Week"],
   ["season", "Season"],
   ["moves", "Moves"],
+  ["trades", "Trades"],
 ];
 const ACCOUNT_SECTIONS = [
   ["connections", "Connections"],

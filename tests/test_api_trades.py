@@ -1,4 +1,4 @@
-"""The two trade routes, on a league small enough to check by hand.
+"""The two trade routes and the page over them, on a league checkable by hand.
 
 One small season for the module: Home with four men on a five-place roster,
 Away with six, everybody playing every day, and a wire with one man on it.
@@ -11,8 +11,8 @@ What is pinned here: that the report route answers with the engine's own
 numbers and not a second computation; that every refusal is a sentence a
 manager can act on; that a season with no schedule is answered rather than
 refused; that a roster read as of a day is that day's and never a later
-one's; and that the published record travels with every answer, so nothing
-that draws it has to keep a copy.
+one's; and that the page is on the menu and prints the calibration note
+verbatim from `app.trades.calibration`.
 """
 
 from collections.abc import Iterator, Mapping
@@ -511,3 +511,48 @@ def test_a_roster_that_cannot_hold_the_deal_says_who_it_could_still_drop(
         get=everybody,
     )
     assert nobody_left == routes.NO_ROOM_AT_ALL.format(team="Home", arriving=6)
+
+
+# ---------------------------------------------------------------------------
+# the page over them
+# ---------------------------------------------------------------------------
+
+
+def test_the_page_is_served_under_the_shell(client: TestClient) -> None:
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{HOME}/trades")
+
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    assert "Build a trade" in page.text
+    assert "How much to trust the number" in page.text
+    assert '<div id="shell"></div>' in page.text
+    assert "/pages/static/pages.css" in page.text
+    assert "/pages/static/shell.js" in page.text
+
+
+def test_the_page_prints_the_published_record_and_keeps_no_copy_of_it(
+    client: TestClient, session: Session
+) -> None:
+    """The note is served with the answer, never written into the markup.
+
+    A record pasted into a page drifts from the run behind it the first time
+    the calibration is re-run. The page reads it from both routes, so this
+    asserts against the constant itself (docs/trades.md section 6).
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{HOME}/trades").text
+    assert CALIBRATION_NOTE not in page, "the page prints it; it does not hold it"
+    assert "calibration_note" in page, "and it is what the page prints"
+
+    for answer in (
+        client.get(url("rosters"), params={"today": TODAY}),
+        client.get(
+            url("report"),
+            params={
+                "with_team": AWAY,
+                "give": list(espn(session, "HomeC")),
+                "get": list(espn(session, "Star")),
+                "today": TODAY,
+            },
+        ),
+    ):
+        assert answer.json()["calibration_note"] == CALIBRATION_NOTE

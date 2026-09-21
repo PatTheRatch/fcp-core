@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trades</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow" id="eyebrow">Full Court Press &middot; trades</p>
+  <h1 id="title">&nbsp;</h1>
+  <p class="sub" id="sub"></p>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<dl class="line" id="readout" hidden></dl>
+
+<main id="body" hidden>
+
+  <section id="builder">
+    <div class="shead"><h2>Build a trade</h2><span class="tag" id="builder-tag"></span></div>
+    <p class="lede" id="builder-lede">Pick the other team, then tap the men on each roster to
+      move them into the deal. Tap a man again to take him back out.</p>
+    <p class="room"><label for="other">Trade with</label>
+      <select id="other"><option value="">choose a team</option></select></p>
+    <div class="two">
+      <div class="side">
+        <h3 id="ours-name">Our roster</h3>
+        <p class="whose">what we would give</p>
+        <ul class="roster" id="ours"></ul>
+      </div>
+      <div class="side">
+        <h3 id="theirs-name">Their roster</h3>
+        <p class="whose">what we would get</p>
+        <ul class="roster" id="theirs"></ul>
+      </div>
+    </div>
+    <div class="deal" id="deal"></div>
+    <div id="rooms"></div>
+    <p class="doing">
+      <button class="cta" id="judge" type="button">Judge this trade</button>
+      <span class="working" id="working"></span>
+      <a class="more" id="clear" href="#">Start again</a>
+    </p>
+  </section>
+
+  <section id="fit" hidden>
+    <div class="shead"><h2>What it does to the nine</h2><span class="tag" id="fit-tag"></span></div>
+    <p class="lede" id="fit-lede"></p>
+    <div class="two" id="sides"></div>
+  </section>
+
+  <section id="number" hidden>
+    <div class="shead"><h2>The number</h2><span class="tag" id="number-tag"></span></div>
+    <p class="lede" id="number-lede"></p>
+    <div class="two" id="judgements"></div>
+  </section>
+
+  <section id="rests" hidden>
+    <div class="shead"><h2>What it rests on</h2><span class="tag" id="rests-tag"></span></div>
+    <p class="lede">Every line is the one knowable on the morning of the deal. A man with few
+      games of his own is marked <b>thin</b>: the rate under him could be anything.</p>
+    <div class="scroll"><table class="grid">
+      <thead><tr><th class="l">Player</th><th class="l">To</th><th>A week</th><th>Games so far</th>
+        <th>Games left</th><th>Playoff games</th><th class="l">Rests on</th></tr></thead>
+      <tbody id="rests-rows"></tbody>
+    </table></div>
+  </section>
+
+  <section id="record">
+    <div class="shead"><h2>How much to trust the number</h2>
+      <span class="tag" id="record-tag"></span></div>
+    <p class="lede" id="note"></p>
+  </section>
+
+</main>
+
+<p class="foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* The forward trade evaluator as a page: everything `scripts/trade.py`
+   prints, in the same words and in the order docs/trades.md asks for.
+
+   Fit first. The nine categories before and after are arithmetic about the
+   roster as it stands today, and the headline number is a forecast whose
+   record is a coin (docs/trades.md sections 0 and 7) -- so the categories
+   lead and the number follows, smaller, with its record under it.
+
+   The deal lives in the URL, so a judged trade is bookmarkable and survives
+   a refresh. Two fetches: the rosters the pickers are drawn from, and the
+   report itself, which takes a couple of seconds and says so while it runs. */
+
+const WHERE = place();
+const QUERY = new URLSearchParams(window.location.search);
+
+/** The deal being built: the other team, who moves, and who is dropped. */
+const DEAL = {
+  other: numberOr(QUERY.get("with")),
+  give: idList(QUERY.get("give")),
+  take: idList(QUERY.get("get")),
+  drop: idList(QUERY.get("drop")),
+  theirDrop: idList(QUERY.get("theirdrop")),
+};
+
+let CONTEXT = null;
+let ROSTERS = null;
+let JUDGING = false;
+
+function numberOr(text) {
+  const value = Number(text);
+  return text === null || text === "" || Number.isNaN(value) ? null : value;
+}
+
+function idList(text) {
+  if (!text) return [];
+  return text
+    .split(",")
+    .map((part) => Number(part))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+const teamsOf = () => (CONTEXT && CONTEXT.teams) || [];
+const nameOf = (id) => {
+  const found = teamsOf().find((t) => t.espn_team_id === id);
+  return found ? found.name : `team ${id}`;
+};
+const rosterOf = (id) =>
+  ((ROSTERS && ROSTERS.teams) || []).find((t) => t.espn_team_id === id) || null;
+
+/* ---- the address bar ---------------------------------------------------- */
+
+/** The deal, written back into the URL: bookmark it, or refresh onto it. */
+function mirror() {
+  const query = new URLSearchParams();
+  if (WHERE.today !== null) query.set("today", WHERE.today);
+  if (WHERE.me) query.set("me", WHERE.me);
+  if (DEAL.other !== null) query.set("with", DEAL.other);
+  if (DEAL.give.length) query.set("give", DEAL.give.join(","));
+  if (DEAL.take.length) query.set("get", DEAL.take.join(","));
+  if (DEAL.drop.length) query.set("drop", DEAL.drop.join(","));
+  if (DEAL.theirDrop.length) query.set("theirdrop", DEAL.theirDrop.join(","));
+  const text = query.toString();
+  window.history.replaceState(null, "", window.location.pathname + (text ? `?${text}` : ""));
+}
+
+/** The query the report route is asked with, from the same state. */
+function askedWith() {
+  const query = new URLSearchParams();
+  if (WHERE.today !== null) query.set("today", WHERE.today);
+  query.set("with_team", DEAL.other);
+  DEAL.give.forEach((id) => query.append("give", id));
+  DEAL.take.forEach((id) => query.append("get", id));
+  DEAL.drop.forEach((id) => query.append("drop", id));
+  DEAL.theirDrop.forEach((id) => query.append("their_drop", id));
+  return `?${query.toString()}`;
+}
+
+/* ---- the builder -------------------------------------------------------- */
+
+function drawTeamPicker() {
+  const select = $("other");
+  const options = teamsOf()
+    .filter((team) => team.espn_team_id !== WHERE.team)
+    .map(
+      (team) =>
+        `<option value="${team.espn_team_id}"` +
+        `${team.espn_team_id === DEAL.other ? " selected" : ""}>${escape(team.name)}</option>`,
+    );
+  select.innerHTML = `<option value="">choose a team</option>${options.join("")}`;
+  select.onchange = async () => {
+    DEAL.other = numberOr(select.value);
+    DEAL.take = [];
+    DEAL.theirDrop = [];
+    mirror();
+    await loadRosters();
+    drawBuilder();
+  };
+}
+
+/** One man, as a button that puts him in the deal or takes him out. */
+function pickHtml(player, chosen) {
+  const flags = [];
+  if (player.on_ir) flags.push("on IR");
+  else if (player.injury_status && player.injury_status !== "ACTIVE") {
+    flags.push(String(player.injury_status).toLowerCase());
+  }
+  const meta = [player.position || "", `${player.games_remaining}g`, ...flags]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    `<li><button type="button" class="pick" data-id="${player.espn_player_id}" ` +
+    `aria-pressed="${chosen ? "true" : "false"}"${player.on_ir ? " disabled" : ""}>` +
+    `<span class="who">${escape(player.name)}</span>` +
+    `<span class="meta${player.on_ir ? " out" : ""}">${escape(meta)}</span></button></li>`
+  );
+}
+
+function drawRoster(where, roster, chosen) {
+  const host = $(where);
+  if (!roster) {
+    host.innerHTML = `<li class="empty">No roster stored for this team on this day.</li>`;
+    return;
+  }
+  host.innerHTML = roster.players.map((p) => pickHtml(p, chosen.includes(p.espn_player_id))).join("");
+  host.querySelectorAll(".pick").forEach((button) => {
+    button.onclick = () => toggle(chosen, Number(button.dataset.id));
+  });
+}
+
+function toggle(chosen, id) {
+  const at = chosen.indexOf(id);
+  if (at >= 0) chosen.splice(at, 1);
+  else chosen.push(id);
+  // A man cannot be traded away and dropped at once, so picking him for the
+  // deal takes him out of the drop his own side had named.
+  DEAL.drop = DEAL.drop.filter((each) => !DEAL.give.includes(each));
+  DEAL.theirDrop = DEAL.theirDrop.filter((each) => !DEAL.take.includes(each));
+  mirror();
+  drawBuilder();
+}
+
+const named = (roster, ids) =>
+  roster ? roster.players.filter((p) => ids.includes(p.espn_player_id)) : [];
+
+function drawDeal() {
+  const ours = rosterOf(WHERE.team);
+  const theirs = DEAL.other === null ? null : rosterOf(DEAL.other);
+  const give = named(ours, DEAL.give).map((p) => `<b>${escape(p.name)}</b>`);
+  const take = named(theirs, DEAL.take).map((p) => `<b>${escape(p.name)}</b>`);
+  $("deal").innerHTML =
+    `<p>We give: ${give.length ? give.join(", ") : `<span class="none">nobody yet</span>`}</p>` +
+    `<p>We get: ${take.length ? take.join(", ") : `<span class="none">nobody yet</span>`}</p>`;
+}
+
+/** Places a side needs that its roster does not already have. */
+function shortBy(roster, arriving, leaving) {
+  if (!roster) return 0;
+  return Math.max(0, arriving - leaving - roster.open_slots);
+}
+
+/** The "who is dropped" choice: one per place a side is short of, for
+ *  whichever side has no room. Left alone it is the cheapest place on that
+ *  roster, which is what the report chooses and says it chose. */
+function drawRooms() {
+  const ours = rosterOf(WHERE.team);
+  const theirs = DEAL.other === null ? null : rosterOf(DEAL.other);
+  const rows = [
+    ["drop", ours, shortBy(ours, DEAL.take.length, DEAL.give.length), DEAL.give, DEAL.drop],
+    ["theirdrop", theirs, shortBy(theirs, DEAL.give.length, DEAL.take.length), DEAL.take,
+      DEAL.theirDrop],
+  ];
+  $("rooms").innerHTML = rows
+    .map(([key, roster, short, leaving, chosen]) => {
+      if (!roster || short <= 0) return "";
+      const free = roster.players.filter(
+        (p) => !p.on_ir && !leaving.includes(p.espn_player_id),
+      );
+      const picks = [];
+      for (let at = 0; at < short; at += 1) {
+        const here = chosen[at];
+        const options = free.map(
+          (p) =>
+            `<option value="${p.espn_player_id}"` +
+            `${p.espn_player_id === here ? " selected" : ""}>${escape(p.name)}</option>`,
+        );
+        picks.push(
+          `<select id="${key}-${at}" data-side="${key}">` +
+          `<option value="">the cheapest place (chosen for you)</option>${options.join("")}` +
+          `</select>`,
+        );
+      }
+      return (
+        `<p class="room">${escape(roster.team_name)} has no place for ` +
+        `${count(short, "man", "men")} arriving, so ` +
+        `${short === 1 ? "one has" : `${short} have`} to go: ${picks.join(" ")}</p>`
+      );
+    })
+    .join("");
+  $("rooms").querySelectorAll("select").forEach((select) => {
+    select.onchange = () => {
+      const side = select.dataset.side;
+      const picked = Array.from($("rooms").querySelectorAll(`select[data-side="${side}"]`))
+        .map((each) => numberOr(each.value))
+        .filter((id) => id !== null);
+      const ids = picked.filter((id, at) => picked.indexOf(id) === at);
+      if (side === "drop") DEAL.drop = ids;
+      else DEAL.theirDrop = ids;
+      mirror();
+      drawBuilder();
+    };
+  });
+}
+
+function drawBuilder() {
+  const ours = rosterOf(WHERE.team);
+  const theirs = DEAL.other === null ? null : rosterOf(DEAL.other);
+  $("ours-name").textContent = ours ? ours.team_name : nameOf(WHERE.team);
+  $("theirs-name").textContent = theirs ? theirs.team_name : "Their roster";
+  drawRoster("ours", ours, DEAL.give);
+  if (theirs) drawRoster("theirs", theirs, DEAL.take);
+  else $("theirs").innerHTML = `<li class="empty">Choose a team above.</li>`;
+  drawDeal();
+  drawRooms();
+  const ready = DEAL.other !== null && (DEAL.give.length > 0 || DEAL.take.length > 0);
+  $("judge").disabled = JUDGING || !ready;
+  $("builder-tag").textContent = ready ? "ready to judge" : "name a deal";
+}
+
+/* ---- the result: the nine first ----------------------------------------- */
+
+const arrow = (v, step) => (!isNum(v) || Math.abs(v) < step ? "·" : v > 0 ? "▲" : "▼");
+const tone = (v, step) => (!isNum(v) || Math.abs(v) < step ? "flat" : v > 0 ? "up" : "down");
+
+/** A change, signed -- but a change too small to show is a plain zero, never
+ *  "-0.0", which reads as a loss that is not there. */
+const moved = (v, step, places) =>
+  !isNum(v) || Math.abs(v) < step ? (0).toFixed(places) : signed(v, places);
+
+/** One side's nine, before and after, with the chance of winning each. */
+function nineHtml(side) {
+  const by = {};
+  (side.categories || []).forEach((view) => {
+    by[view.abbreviation] = view;
+  });
+  const rows = CATS.map((cat) => {
+    const view = by[cat];
+    if (!view) return "";
+    const step = cat.endsWith("%") ? 0.0005 : 0.05;
+    // The count's change is drawn in plain ink with an arrow for its
+    // direction, and never in green or red: more turnovers is a bigger
+    // number and a worse week, and only the chance of winning the category
+    // knows which way that cuts. The shift beside it is the one that is
+    // coloured, and it carries a sign and an arrow too, so a reader who sees
+    // no colour loses nothing.
+    return (
+      `<tr><td class="cat">${escape(cat)}</td>` +
+      `<td>${showCat(cat, view.before)}</td>` +
+      `<td>${showCat(cat, view.after)}</td>` +
+      `<td class="d">${arrow(view.delta, step)} ` +
+      `${moved(view.delta, step, cat.endsWith("%") ? 3 : 1)}</td>` +
+      `<td>${pct(view.p_before)}→${pct(view.p_after)}</td>` +
+      `<td class="d ${tone(view.p_delta, 0.005)}">${arrow(view.p_delta, 0.005)} ` +
+      `${moved(view.p_delta * 100, 0.5, 0)}</td></tr>`
+    );
+  });
+  return (
+    `<table class="grid nine"><thead><tr><th class="l">Cat</th><th>Before</th><th>After</th>` +
+    `<th>Change</th><th>Win</th><th>Shift</th></tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table>`
+  );
+}
+
+const shiftsOf = (side) =>
+  (side.categories || []).map((view) => ({ abbreviation: view.abbreviation, delta: view.p_delta }));
+
+function sideHtml(side, ours) {
+  return (
+    `<div class="side">` +
+    `<h3>${escape(side.team_name)}</h3>` +
+    `<p class="whose">${ours ? "our side" : "our estimate of their side, not what they think"}</p>` +
+    `<div class="strip">${shiftStrip(shiftsOf(side))}</div>` +
+    nineHtml(side) +
+    `<p class="lede" style="margin-top:14px">${escape(side.summary)}</p>` +
+    `</div>`
+  );
+}
+
+/** The headline, second and smaller: the number, the bar, the playoffs, and
+ *  how an uneven deal was settled. */
+function judgementHtml(side, report, ours) {
+  const bits = [];
+  bits.push(
+    `<article class="move"><div class="head">` +
+    `<span class="what">${escape(side.team_name)}${ours ? "" : " (our estimate)"}</span>` +
+    `<span class="mark ${side.clears ? "clears" : ""}">` +
+    `${side.clears ? "clears" : "below"} the ${fixed(side.hurdle, 2)} bar</span>` +
+    `<span class="net ${side.net >= 0 ? "up" : "down"}">${signed(side.net, 3)}</span>` +
+    `</div>` +
+    `<p class="why">This deal is <b>${signed(side.per_week, 3)}</b> categories a week over the ` +
+    `weeks it covers.</p>` +
+    judged(side.judgement),
+  );
+  const playoffs = side.playoffs || {};
+  bits.push(
+    `<p class="why">Playoffs: ` +
+    (playoffs.measurable
+      ? `days ${playoffs.first_scoring_period}–${playoffs.last_scoring_period}, ` +
+        `${fixed(playoffs.weeks, 1)} weeks, ${count(playoffs.games, "game")} for the men in the ` +
+        `deal — <b>${signed(playoffs.delta_per_week, 3)}</b> a week, ` +
+        `<b>${signed(playoffs.delta_total, 3)}</b> over the round.`
+      : `not counted — ${escape(playoffs.note || "")}`) +
+    `</p>`,
+  );
+  if (side.places_opened) {
+    bits.push(
+      `<p class="why">It leaves ${count(side.places_opened, "roster place")} open, worth ` +
+      `<b>${fixed(side.replacement, 3)}</b> a week on the wire` +
+      (side.replacement_player
+        ? ` — the best free agent is <b>${escape(side.replacement_player.name)}</b>, ` +
+          `whose week fills the place in the table above.`
+        : `; nobody on the wire beats the floor.`) +
+      `</p>`,
+    );
+  }
+  if (side.places_used) {
+    bits.push(
+      `<p class="why">${count(side.places_used, "man", "men")} arriving take open roster ` +
+      `places, so nobody has to go.</p>`,
+    );
+  }
+  if (side.drops && side.drops.length) {
+    const how = side.drop_source === "named" ? "named by us" : "the cheapest place on the roster";
+    bits.push(
+      `<p class="why">To make room: ` +
+      side.drops
+        .map((card) => `<b>${escape(card.name)}</b> (${fixed(card.value, 3)} a week)`)
+        .join(", ") +
+      ` — ${how}.</p>`,
+    );
+  }
+  bits.push(
+    `<p class="note">the deal lands on day ${report.effective_day}, ` +
+    `${count(report.review_days, "day")} of review</p></article>`,
+  );
+  return bits.join("");
+}
+
+/* ---- what it rests on --------------------------------------------------- */
+
+function restsRows(report) {
+  const rows = [];
+  report.sides.forEach((side) => {
+    const seen = [
+      ...side.receives.map((card) => [card, "in"]),
+      ...side.gives.map((card) => [card, "out"]),
+      ...side.drops.map((card) => [card, "dropped"]),
+    ];
+    seen.forEach(([card, which]) => {
+      const flags = [];
+      if (card.thin) flags.push("thin");
+      if (card.hurt) {
+        flags.push(
+          String(card.injury_status || "hurt").toLowerCase() +
+            (card.expected_return_date ? `, back ${dayName(card.expected_return_date)}` : ""),
+        );
+      }
+      rows.push(
+        `<tr><td class="name">${escape(card.name)}</td>` +
+        `<td class="name small">${escape(side.team_name)}, ${which}</td>` +
+        `<td>${signed(card.value, 3)}</td>` +
+        `<td>${card.games_so_far}</td>` +
+        `<td>${card.games_left}</td>` +
+        `<td>${card.playoff_games}</td>` +
+        `<td class="name small${flags.length ? " flag" : ""}">` +
+        `${escape(card.had_projection ? "a preseason projection" : "no projection")}, ` +
+        `${escape(card.projection_source)}${flags.length ? ` — ${escape(flags.join("; "))}` : ""}` +
+        `</td></tr>`,
+      );
+    });
+  });
+  return rows.join("");
+}
+
+/* ---- drawing the whole answer ------------------------------------------- */
+
+function drawMasthead() {
+  const us = nameOf(WHERE.team);
+  document.title = `${us} — trades`;
+  $("title").textContent = us;
+  $("eyebrow").textContent = `Full Court Press · ${WHERE.season} · trades`;
+  const day = ROSTERS ? ROSTERS.today : WHERE.today;
+  $("sub").innerHTML =
+    `Judged on day <b>${day === null || day === undefined ? "–" : day}</b>` +
+    `${ROSTERS && ROSTERS.today_date ? ` (${dayName(ROSTERS.today_date)})` : ""}. ` +
+    `Rosters as they stood that morning; nothing after it is read. ` +
+    `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
+}
+
+function drawReadout(report) {
+  const us = report.sides[0];
+  const them = report.sides[1];
+  const cells = [
+    ["Our side", `${signed(us.per_week, 2)}<small> categories a week</small>`, "hi"],
+    ["Their side", `${signed(them.per_week, 2)}<small> our estimate of it</small>`, ""],
+    ["Lands", `Day ${report.effective_day}<small> ${count(report.review_days, "day")} of ` +
+      `review</small>`, ""],
+    ["Weeks left", `${fixed(report.weeks_remaining, 1)}<small> through day ` +
+      `${report.last_scoring_period}</small>`, ""],
+    ["The wire", `${report.pool_size}<small> free agents, ` +
+      `${report.historical_wire ? "historical wire (no snapshots)" : "from the listener"}` +
+      `</small>`, report.historical_wire ? "caution" : ""],
+  ];
+  $("readout").innerHTML = cells
+    .map(([label, value, cls]) => `<div class="${cls}"><dt>${escape(label)}</dt><dd>${value}</dd></div>`)
+    .join("");
+  $("readout").hidden = false;
+}
+
+function drawReport(report) {
+  drawReadout(report);
+  $("fit-tag").textContent = "an ordinary week, before and after";
+  $("fit-lede").innerHTML =
+    "What each roster posts in an ordinary week with the deal and without it, and the chance " +
+    "of winning each category against the league's own measured spreads. This half is " +
+    "arithmetic about the rosters as they stand, not a forecast of who wins the trade.";
+  $("sides").innerHTML = report.sides
+    .map((side, at) => sideHtml(side, at === 0))
+    .join("");
+  $("fit").hidden = false;
+
+  $("number-tag").textContent = `bar: ${fixed(report.hurdle, 2)} a week`;
+  $("number-lede").innerHTML =
+    "The same deal as one number, over this week plus the weeks after it. The bar labels a " +
+    "deal and hides none: what is under it is printed in full with its number. Read the " +
+    "record below before you read this.";
+  $("judgements").innerHTML = report.sides
+    .map((side, at) => `<div class="side">${judgementHtml(side, report, at === 0)}</div>`)
+    .join("");
+  $("number").hidden = false;
+
+  $("rests-tag").textContent = `${report.pool_size} free agents on the wire`;
+  $("rests-rows").innerHTML = restsRows(report);
+  $("rests").hidden = false;
+
+  const notes = report.notes || [];
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
+    `Read-only: nothing here writes to the league or the database. ` +
+    `<br>The deal is seated ${count(report.review_days, "day")} after the morning it is judged ` +
+    `on: ${escape(report.review_source)}.` +
+    (notes.length ? `<br>${notes.map((note) => escape(note)).join("<br>")}` : "") +
+    `<br>Trades: <span class="mono">scripts/trade.py</span>, ` +
+    `<span class="mono">docs/trades.md</span>.`;
+}
+
+/* ---- fetching ----------------------------------------------------------- */
+
+const base = () => `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+
+async function loadRosters() {
+  const query = new URLSearchParams();
+  if (WHERE.today !== null) query.set("today", WHERE.today);
+  if (DEAL.other !== null) query.set("with_team", DEAL.other);
+  const answer = await get(`${base()}/teams/${WHERE.team}/trades/rosters?${query.toString()}`);
+  if (!answer.ok) {
+    fail(`The rosters could not be read: ${answer.detail}`);
+    return false;
+  }
+  ROSTERS = answer.body;
+  $("note").textContent = ROSTERS.calibration_note;
+  drawMasthead();
+  if (!ROSTERS.readiness.ready) {
+    $("builder").hidden = true;
+    $("record-tag").textContent = "the published run";
+    fail(
+      `There is nothing to judge a trade from in ${WHERE.season} yet: ` +
+        `${ROSTERS.readiness.note}. Come back once the season has a draft and a schedule.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+function working(saying) {
+  JUDGING = Boolean(saying);
+  $("working").textContent = saying || "";
+  $("judge").disabled = JUDGING || DEAL.other === null ||
+    (DEAL.give.length === 0 && DEAL.take.length === 0);
+}
+
+async function judge() {
+  if (JUDGING || DEAL.other === null) return;
+  working("Judging this deal: both rosters, week by week and category by category…");
+  $("failed").hidden = true;
+  const answer = await get(`${base()}/teams/${WHERE.team}/trades/report${askedWith()}`);
+  working("");
+  if (!answer.ok) {
+    ["fit", "number", "rests"].forEach((id) => ($(id).hidden = true));
+    $("readout").hidden = true;
+    fail(answer.detail);
+    return;
+  }
+  if (!answer.body.trade) {
+    fail(answer.body.readiness.note || "There is nothing to judge this deal from.");
+    return;
+  }
+  $("note").textContent = answer.body.calibration_note;
+  drawReport(answer.body.trade);
+}
+
+async function start() {
+  startTheme();
+  $("title").textContent = "Loading…";
+  $("record-tag").textContent = "the published run";
+  $("judge").disabled = true;
+  const query = params(WHERE);
+  const [context, ready] = await Promise.all([
+    get(`${base()}/pages/context${query}`),
+    loadRosters(),
+  ]);
+  if (context.ok) CONTEXT = context.body;
+  drawMasthead();
+  $("body").hidden = false;
+  if (!ready) return;
+  drawTeamPicker();
+  drawBuilder();
+  $("judge").onclick = judge;
+  $("clear").onclick = (event) => {
+    event.preventDefault();
+    DEAL.give = [];
+    DEAL.take = [];
+    DEAL.drop = [];
+    DEAL.theirDrop = [];
+    mirror();
+    ["fit", "number", "rests"].forEach((id) => ($(id).hidden = true));
+    $("readout").hidden = true;
+    $("failed").hidden = true;
+    drawBuilder();
+  };
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
+    `Read-only: nothing here writes to the league or the database. ` +
+    `<br>Trades: <span class="mono">scripts/trade.py</span>, ` +
+    `<span class="mono">docs/trades.md</span>.`;
+  if (DEAL.give.length || DEAL.take.length) await judge();
+}
+
+start();
+</script>
+</body>
+</html>

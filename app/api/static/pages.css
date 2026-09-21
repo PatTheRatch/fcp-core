@@ -66,6 +66,11 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
    with the switch on one, the sections on the next. The switch keeps its
    words for a screen reader and shows a glyph. */
 @media (max-width:560px){
+  /* A section's tag is pushed to the right of its heading, and it never
+     wraps, so on a phone a long heading was squeezed to one word a line.
+     Below this width the tag takes a line of its own instead. */
+  .shead{flex-wrap:wrap;gap:2px 14px}
+  .shead .tag{margin-left:0;flex-basis:100%;white-space:normal}
   .brand .long{display:none} .brand .short{display:inline}
   .nav{gap:4px 12px}
   .nav .end{gap:10px}
@@ -275,6 +280,50 @@ section{margin-top:56px}
 .yours p b{color:var(--ink)}
 .yours .strip{margin-top:12px}
 .more{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:12px}
+
+/* ---- the trade page: two sides, and the builder that names the deal -----
+   Two columns on a wide screen, stacked on a phone, ours always first. Rules
+   between them and nothing else: the house has no boxes. A gain and a loss
+   are told apart by a sign and an arrow before they are told apart by
+   colour, because a colour alone is no answer to a reader who cannot see it
+   (docs/trades.md, "The page"). */
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px}
+.two > .side{border-top:1px solid var(--rule-strong);padding-top:12px;min-width:0}
+.side h3{font-family:var(--display);font-size:17px;text-transform:uppercase;
+  letter-spacing:.04em;overflow-wrap:anywhere}
+.side .whose{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);margin:2px 0 0}
+.side .hint{color:var(--muted);font-size:14px;margin:6px 0 0}
+.roster{list-style:none;margin:10px 0 0;padding:0}
+.roster li{border-bottom:1px solid var(--rule)}
+.pick{display:flex;width:100%;align-items:baseline;gap:8px;text-align:left;background:none;
+  border:0;border-radius:0;padding:7px 4px;cursor:pointer;font-size:15px}
+.pick:hover{background:var(--sunk)}
+.pick[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.pick[aria-pressed="true"] .who::before{content:"\2713\00a0"}
+.pick .who{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.pick .meta{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap}
+.pick .meta.out{color:var(--stop)}
+.deal{border-top:1px solid var(--rule-strong);margin-top:24px;padding-top:12px}
+.deal p{margin:4px 0 0;font-size:16px}
+.deal .none{color:var(--faint);font-style:italic}
+.room{margin:12px 0 0;font-size:15px;color:var(--muted)}
+.room select{font:inherit;color:var(--ink);background:transparent;border:0;
+  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
+.doing{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:22px 0 0}
+.doing button[disabled]{opacity:.45;cursor:progress}
+.doing .working{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--muted)}
+/* Nine rows of six narrow columns, twice over, inside half a page: the one
+   table in the house that sets its own size rather than taking the grid's. */
+.nine td,.nine th{padding:7px 4px;font-size:12.5px}
+.nine td.cat{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.04em}
+.nine td.d.up{color:var(--good)} .nine td.d.down{color:var(--stop)}
+.nine td.d.flat{color:var(--faint)}
+.grid td.flag{font-family:var(--mono);font-size:11px;color:var(--warn)}
+@media (max-width:860px){
+  .two{grid-template-columns:1fr;gap:0}
+  .two > .side{margin-top:28px}
+}
 
 /* ---- the landing page --------------------------------------------------- */
 .landing .mast h1{font-size:clamp(40px,8vw,88px)}

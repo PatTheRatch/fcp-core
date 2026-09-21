@@ -30,6 +30,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/week` | My team, Week: the streaming report | the team's verified manager, entitled | `week.html` |
 | `/l/{league_id}/{season}/team/{team_id}/season` | My team, Season: the rest-of-season report | the team's verified manager, entitled | `season.html` |
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
+| `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
 | `/account/alerts` | Alerts: your own channels (add, confirm, disable), and the server's for its owner | anyone signed in | `alerts.html` |
@@ -68,7 +69,7 @@ FULL COURT PRESS  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTO
                     Seasons 2027 2026 ...                                 Week               Connections
                                                                           Season             Projections
                                                                           Moves              Alerts
-                                                                                             Sign out
+                                                                          Trades             Sign out
 ```
 
 - **The league** is the one in the URL. On a page without one (the account
@@ -84,7 +85,7 @@ FULL COURT PRESS  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTO
   (`aria-current="page"`).
 - **My team** is there only where he is a verified manager in this league:
   this season's team, else his newest one there. Its menu is Week, Season,
-  Moves. Without one it is **Claim your team** (or **Claim pending**), to
+  Moves, Trades. Without one it is **Claim your team** (or **Claim pending**), to
   the claim page. In single mode, where the one user reads every team, a
   league with no claim falls back to the team the context route calls ours
   (`MANAGER_TEAM`, or `?me=`), which is what the pages always did.
@@ -191,6 +192,38 @@ the outcome, both lenses and the reading. One fetch: the team's
 league's); the page is the team's slice of it, in the paid layer beside the
 plans.
 
+**My team: Trades.** The forward trade evaluator as a screen
+(docs/trades.md). The masthead says which day the deal is judged on and that
+the rosters are that morning's. Then **the builder**: a team to trade with,
+the two rosters as lists a tap moves a man in and out of, a "who is dropped"
+choice for whichever side has no room (left alone, the cheapest place, chosen
+for you), and one button, **Judge this trade**. The deal is written into the
+address bar, so a judged trade is bookmarkable and comes back on a refresh.
+
+The answer is **fit first**: each side's nine categories in the fixed order —
+what the roster posts in an ordinary week before and after, the change, and
+the change in the chance of winning it — ours on the left and theirs on the
+right, stacked on a phone, with a sign and an arrow on every movement so
+nothing depends on the colour. Under each, the engine's own sentence, which
+leads with the fit. **Then, smaller, the number**: this week plus the change
+per week over the weeks left, the projected record either way, whether it
+clears the 0.20 bar as a label, the playoff lens, and how an uneven deal was
+settled — the named free agent who fills an opened place, or the named drop
+and what it cost. Then **what it rests on**, per man: what he is worth a
+week, the games behind the projection, his games left and his playoff games,
+and a mark on anything thin or hurt. Last, under **How much to trust the
+number**, `app.trades.calibration.CALIBRATION_NOTE`, printed verbatim: the
+headline picks the better side of a trade about as often as a coin, and the
+page says so under the number rather than beside it.
+
+It reads two routes of its own, both the paid team layer: `trades/rosters`
+(both rosters as of the day, so the pickers are never hard-coded) and
+`trades/report` (the deal, judged). A season with nothing to judge from yet —
+2027 before its draft — is not an error: the routes answer with `readiness`
+and the page says so in a sentence and draws no broken pickers. An
+evaluation is a couple of seconds, so the button disables itself and says
+what it is doing while the builder stays usable.
+
 **Connections.** Step 2's page, restyled into the shell with section rules:
 connect a league, your connections, leagues you own (invites, claims to
 decide), your ESPN SWID. Nothing typed there is ever shown back.
@@ -253,6 +286,23 @@ or an ntfy topic by kind, never its URL). Reads `GET /me/channels` and
   of your own moves" is paid (docs/product.md), and every team's scorecard
   is league scope (docs/accounts.md). The page is behind the team check; the
   route stays league scope, as decided in step 1.
+- **The trade page leads with the fit and prints the record under the
+  number.** docs/trades.md section 7 measured the headline at a coin, and the
+  category table at nothing of the sort — it is the same week laid out one
+  line at a time. So the nine come first and the number second and smaller,
+  and `CALIBRATION_NOTE` is served by both trade routes rather than written
+  into the page, so a re-run of the calibration cannot leave a stale record
+  in the markup.
+- **A trade's rosters come from a route, not from the page.** The builder
+  could have been fed from `pages/context` and a guess, and it would have
+  been wrong on any replayed day. `trades/rosters` answers with the roster
+  stored on or before the day asked for, which is the same reading every
+  other number on the site is made from.
+- **A season with nothing to judge from is a 200, not a 409.** The two
+  pickup routes refuse an unlistened season, because a plan with no wire is
+  not a plan. A trade page has a builder to draw and a record to print before
+  any deal exists, so its routes answer with `readiness` and let the page say
+  what is missing.
 - **The season is chosen in the switcher and in each league page's
   masthead**, not as a new item in the bar, which is drawn exactly as the
   product document has it.
