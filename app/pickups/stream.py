@@ -711,6 +711,8 @@ def week_deltas(
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
     waivers: Mapping[int, tuple[date, int]] | None = None,
+    effective_day: int | None = None,
+    opponent_move: tuple[Sequence[int], Sequence[int]] | None = None,
 ) -> list[float]:
     """This week's change in expected categories won, for each (added, dropped).
 
@@ -723,6 +725,22 @@ def week_deltas(
     `waivers` is the caller's `app.pickups.state.waiver_state` for the men
     arriving, so a claim that cannot play until Thursday is seated here on
     the same days the streaming report would seat him.
+
+    `effective_day` is the first day of this period the move is actually in
+    force, for a move that cannot take effect today: a trade waits on the
+    other manager and on the league's review (`app.trades`). The days before
+    it are projected with the roster as it stands, on both sides of the
+    comparison, so they cancel in the delta while still counting toward the
+    totals the probabilities are read off. Seating is per day and independent,
+    so splitting the window in two is exact rather than an approximation, and
+    the default -- today -- is the whole window and the number this function
+    has always returned.
+
+    `opponent_move` is the same (added, dropped) applied to the opponent's
+    roster from the same day, for the case where the man on the other side of
+    the deal is also the man on the other side of this week's matchup. Without
+    it a trade with this week's opponent would be judged against the roster he
+    no longer has.
     """
     week = load_team_week(session, league_season, team_id, today)
     if week.opponent_team_id is None:
@@ -733,6 +751,9 @@ def week_deltas(
     if distributions is None:
         distributions = category_distributions(session, league_season)
     days = week.scoring_periods_remaining
+    split = days[0] if effective_day is None else effective_day
+    before_days = tuple(day for day in days if day < split)
+    after_days = tuple(day for day in days if day >= split)
 
     def contender(player: RosteredPlayer) -> Contender:
         per_game = per_game_line(session, season, player.player_id, today, tilt=tilt, as_of=as_of)
@@ -744,32 +765,48 @@ def week_deltas(
         )
 
     held = {player.player_id for player in week.roster}
+    opponent = load_team_week(session, league_season, week.opponent_team_id, today)
+    theirs_held = {player.player_id for player in opponent.roster}
     incoming = {player_id for added, _dropped in moves for player_id in added} - held
+    if opponent_move is not None:
+        incoming |= set(opponent_move[0]) - theirs_held
     arrivals = {
         player.player_id: contender(player)
         for player in build_players(session, league_season, incoming, days, waivers=waivers)
     }
     mine = {player.player_id: contender(player) for player in week.active}
+    lineup = lineup_for(league_season)
 
-    engine = _Week(days, lineup_for(league_season), week.my_totals)
-    opponent = load_team_week(session, league_season, week.opponent_team_id, today)
-    their_line = (
-        _Week(days, lineup_for(league_season), opponent.my_totals)
-        .project({player.player_id: contender(player) for player in opponent.active})
-        .line
-    )
-    base = sum(
-        head_to_head(engine.project(mine).line, their_line, distributions, len(days)).values()
-    )
+    def moved(
+        roster: Mapping[int, Contender], added: Sequence[int], dropped: Sequence[int]
+    ) -> dict[int, Contender]:
+        active = {k: v for k, v in roster.items() if k not in set(dropped)}
+        for player_id in added:
+            found = arrivals.get(player_id) or roster.get(player_id)
+            if found is not None:
+                active[player_id] = found
+        return active
+
+    theirs = {player.player_id: contender(player) for player in opponent.active}
+    their_before = _Week(before_days, lineup, opponent.my_totals).project(theirs).line
+    their_after = moved(theirs, *opponent_move) if opponent_move is not None else theirs
+    their_line = _Week(after_days, lineup, their_before).project(their_after).line
+
+    # The days before the move lands are the roster as it stands, in both
+    # worlds; the days from it are the roster the move leaves.
+    my_before = _Week(before_days, lineup, week.my_totals).project(mine).line
+    engine = _Week(after_days, lineup, my_before)
+    base_line = engine.project(mine).line
+    base = sum(head_to_head(base_line, their_line, distributions, len(days)).values())
 
     out: list[float] = []
     for added, dropped in moves:
-        active = {k: v for k, v in mine.items() if k not in set(dropped)}
-        for player_id in added:
-            found = arrivals.get(player_id) or mine.get(player_id)
-            if found is not None:
-                active[player_id] = found
-        after = head_to_head(engine.project(active).line, their_line, distributions, len(days))
+        after = head_to_head(
+            engine.project(moved(mine, added, dropped)).line,
+            their_line,
+            distributions,
+            len(days),
+        )
         out.append(sum(after.values()) - base)
     return out
 
