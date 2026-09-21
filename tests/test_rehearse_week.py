@@ -191,9 +191,7 @@ def test_the_adds_a_team_has_spent_may_only_be_the_ones_it_had_made() -> None:
     assert rehearsal.look_ahead_findings(reports.STREAM, _stream(), DAY, set(), 5) == []
     ahead = _stream(adds_used=7, adds_left=0)
     found = rehearsal.look_ahead_findings(reports.STREAM, ahead, DAY, set(), 5)
-    assert found == [
-        "adds_used is 7, but only 5 add(s) had been made by day 80 (adds_left 0 of 7)"
-    ]
+    assert found == ["adds_used is 7, but only 5 add(s) had been made by day 80 (adds_left 0 of 7)"]
     assert rehearsal.look_ahead_findings(reports.STREAM, ahead, DAY, set(), None) == [], (
         "not checked when the count could not be read"
     )

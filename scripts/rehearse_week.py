@@ -918,81 +918,92 @@ def killed_worker_recovered(
 # ---------------------------------------------------------------------------
 
 
-def profile_precompute(
-    factory: sessionmaker[Session], team: Subject, day: int, on: date, out_dir: Path
-) -> dict[str, Any]:
-    """One precompute under cProfile, and how much of it is the league's.
+#: Functions whose cost is the league's, not the team's: the same answer for
+#: every team in the league on the same morning. Read out of the profile by
+#: cumulative time, to say how much of a precompute they are.
+LEAGUE_WIDE = (
+    ("bids.py", "bid_fit"),
+    ("targets.py", "category_distributions"),
+    ("era.py", "category_trends"),
+    ("replacement.py", "replacement_value"),
+    ("state.py", "historical_free_agents"),
+    ("state.py", "load_free_agents"),
+)
 
-    The profile answers where the time goes. The three timings answer the
-    question the profile cannot: a second team's two reports built in the
-    **same session**, whose per-player projection cache is already warm from
-    the first team's, against the same team's built in a fresh one. The gap
-    between those two is what is identical for every team in the league on
-    that morning and would come back from a shared cache.
+
+def cumulative(stats: pstats.Stats, where: str, name: str) -> float:
+    """That function's cumulative seconds in this profile, or zero."""
+    for (path, _, function), row in stats.stats.items():  # type: ignore[attr-defined]
+        if function == name and str(path).endswith(where):
+            return round(float(row[3]), 2)
+    return 0.0
+
+
+def profile_one(team_pk: int, second_pk: int, day: int, on: date, out_dir: Path) -> int:
+    """A cold precompute profiled, then a warm one, in one fresh process.
+
+    `--profile-one` re-enters this file in an interpreter that has built
+    nothing, because cold is the case worth profiling: the league's FAAB fit
+    is cached for the life of a process (`app.pickups.bids._CACHE`), so a
+    precompute run at the end of a replay is the cheap one. The second
+    build, of another team in the same process, is what every team after the
+    first costs on a real morning -- the worker is long-running.
     """
     from app.job_kinds import run_precompute
 
-    job = JobRef(
-        id=0,
-        kind=jobs.PRECOMPUTE,
-        league_id=None,
-        team_id=team.team_pk,
-        user_id=None,
-        attempts=0,
-        payload={},
-    )
-    profiler = cProfile.Profile()
-    profiler.enable()
-    note = run_precompute(factory, job, today=on)
-    profiler.disable()
-    report = out_dir / "profile.txt"
-    with report.open("w", encoding="utf-8") as handle:
-        stats = pstats.Stats(profiler, stream=handle)
-        stats.sort_stats("cumulative").print_stats(30)
-    return {"note": note, "profile": str(report)}
+    factory = make_session_factory(make_engine(get_settings().database_url))
 
-
-def shared_work_share(
-    factory: sessionmaker[Session],
-    season: int,
-    first: Subject,
-    second: Subject,
-    day: int,
-) -> dict[str, Any]:
-    """How much of a team's report is work the whole league shares.
-
-    Three builds of the same two reports: the first team cold, the second in
-    that same warm session, and the second again in a session of its own.
-    The second team's cold time minus its warm time is the part that was
-    already done for the first team -- the wire, the projections, the
-    schedule, the replacement levels -- and the warm time is what is
-    genuinely his.
-    """
-    from app.api.pickups import build_payload
-
-    def build(session: Session, team: Subject) -> float:
-        league_season = league_season_of(session, season)
-        row = session.get(Team, team.team_pk)
-        if row is None:  # pragma: no cover - the caller read it from this table
-            raise SystemExit(f"team {team.team_pk} vanished")
+    def build(pk: int, name: str) -> tuple[float, pstats.Stats]:
+        job = JobRef(0, jobs.PRECOMPUTE, None, pk, None, 0, {})
+        profiler = cProfile.Profile()
         started = time.monotonic()
-        for kind in reports.KINDS:
-            build_payload(session, league_season, row, kind, day)
-        return round(time.monotonic() - started, 2)
+        profiler.enable()
+        run_precompute(factory, job, today=on)
+        profiler.disable()
+        seconds = round(time.monotonic() - started, 2)
+        report = out_dir / f"profile-{name}.txt"
+        with report.open("w", encoding="utf-8") as handle:
+            handle.write(f"{name} precompute, team {pk}, day {day}: {seconds}s\n\n")
+            pstats.Stats(profiler, stream=handle).sort_stats("cumulative").print_stats(25)
+        return seconds, pstats.Stats(profiler)
 
-    with factory() as session:
-        first_cold = build(session, first)
-        second_warm = build(session, second)
-    with factory() as session:
-        second_cold = build(session, second)
-    shared = round(second_cold - second_warm, 2)
-    return {
-        "first_team_cold": first_cold,
-        "second_team_warm_in_the_same_session": second_warm,
-        "second_team_cold_in_a_new_session": second_cold,
-        "shared_seconds": shared,
-        "shared_share": round(shared / second_cold, 3) if second_cold else 0.0,
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cold, cold_stats = build(team_pk, "cold")
+    warm, _ = build(second_pk, "warm")
+    answer = {
+        "cold_seconds": cold,
+        "warm_seconds": warm,
+        "league_wide_seconds": {
+            name: cumulative(cold_stats, where, name) for where, name in LEAGUE_WIDE
+        },
     }
+    (out_dir / "profile.json").write_text(json.dumps(answer, indent=2), encoding="utf-8")
+    print(json.dumps(answer))
+    return 0
+
+
+def profile_precompute(first: Subject, second: Subject, day: int, on: date, out_dir: Path) -> Any:
+    """Profile a precompute in a fresh interpreter of its own, cold then warm."""
+    subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--profile-one",
+            "--teams",
+            f"{first.team_pk},{second.team_pk}",
+            "--only-days",
+            str(day),
+            "--out",
+            str(out_dir),
+            "--run",
+            on.isoformat(),
+        ],
+        cwd=str(REPO_ROOT),
+        env=os.environ.copy(),
+        check=True,
+    )
+    written = out_dir / "profile.json"
+    return json.loads(written.read_text(encoding="utf-8")) if written.exists() else "not written"
 
 
 # ---------------------------------------------------------------------------
@@ -1299,9 +1310,9 @@ def replay(args: argparse.Namespace) -> int:
         "checks": checks,
     }
     if args.profile:
-        first_date = calendar.date_of(days[0])
-        result["profile"] = profile_precompute(factory, owner, days[0], first_date, out_dir)
-        result["shared_work"] = shared_work_share(factory, keys.season, owner, member, days[0])
+        result["profile"] = profile_precompute(
+            owner, member, days[0], calendar.date_of(days[0]), out_dir
+        )
 
     (out_dir / "rehearsal.json").write_text(
         json.dumps(result, indent=2, default=str), encoding="utf-8"
@@ -1329,12 +1340,23 @@ def main() -> int:
     parser.add_argument("--checks", action="store_true", help="also run the queue-semantics checks")
     parser.add_argument("--profile", action="store_true", help="also profile one precompute")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--profile-one", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--log", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
         if not args.run or not args.log:
             parser.error("--worker needs --run and --log")
         return work(args.run, Path(args.log))
+    if args.profile_one:
+        # Re-entered by `--profile`, in an interpreter that has built nothing.
+        first, second = (int(part) for part in args.teams.split(","))
+        return profile_one(
+            first,
+            second,
+            int(args.only_days),
+            date.fromisoformat(args.run),
+            Path(args.out).resolve(),
+        )
     return replay(args)
 
 
