@@ -47,12 +47,20 @@ day rather than today, because the day rides in the payload
 (`app.job_kinds.payload_day`) -- but it would still be obviously a
 rehearsal row in `worker.py --list`.
 
+That mark is also how a run clears up after itself: at the end it deletes
+the `jobs` rows carrying `rehearsal: true` and its own tag, and nothing
+else. `--keep` leaves them for inspection. The stored `team_reports` rows
+stay either way; they are for days in the past and no route serves one as
+fresh.
+
 THE CHECKS
 
 Each is reported pass/fail with the rows that offended, into `--out`:
 
 1. no look-ahead      a report for day N recommends nobody who was rostered
-                      that day, and counts no day before N as remaining
+                      that day, counts no day before N as remaining, has
+                      posted only what was scored before N, has spent only
+                      the adds made by N, and counts no transaction after N
 2. determinism        one team, one day, built twice, same payload
 3. digest size        4096 characters is Telegram's limit
 4. served from store   the route answers from the stored row, and quickly
@@ -71,6 +79,7 @@ import cProfile
 import json
 import os
 import pstats
+import re
 import statistics
 import subprocess
 import sys
@@ -83,7 +92,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import ColumnElement, and_, func, select
+from sqlalchemy import ColumnElement, and_, delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import channels, jobs, notify, reports
@@ -95,6 +104,7 @@ from app.db.models import (
     LeagueSeason,
     MatchupPeriod,
     Player,
+    PlayerGameStat,
     ProTeamGame,
     Team,
     TeamReport,
@@ -104,7 +114,14 @@ from app.db.models import (
 from app.db.session import make_engine, make_session_factory
 from app.job_kinds import handlers
 from app.jobs import JobError, JobRef
-from app.pickups.state import EXECUTED, SeasonCalendar, season_calendar
+from app.pickups.state import (
+    EXECUTED,
+    SeasonCalendar,
+    load_team_week,
+    period_for_day,
+    season_calendar,
+)
+from app.scoring.lines import COUNTS
 from app.scoring.replacement import ADD_TYPES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -178,6 +195,28 @@ def only_this_run(run: str) -> ColumnElement[bool]:
     marked: ColumnElement[bool] = Job.payload[REHEARSAL].astext == "true"
     mine: ColumnElement[bool] = Job.payload["run"].astext == run
     return and_(marked, mine)
+
+
+def clean_up(factory: sessionmaker[Session], run: str) -> int:
+    """Delete this run's own rows from `jobs`, and say how many. See `--keep`.
+
+    A rehearsal used to leave its queue behind -- 44 rows after the first
+    pass, one of them deliberately parked -- so the next person to look at
+    `jobs` found a morning that never happened. The narrowing is the same one
+    a rehearsal worker claims under (`only_this_run`): a row carrying
+    `rehearsal: true` AND this run's tag, so no real job can be caught by it
+    and no other run's rows are touched either.
+
+    `team_reports` rows are left alone deliberately. They are ordinary stored
+    reports for days in the past, no route will serve one as fresh (the
+    freshness rule is today's date for today's period), and the next run of
+    the same day overwrites them.
+    """
+    with factory() as session:
+        result = session.execute(delete(Job).where(only_this_run(run)))
+        deleted = int(getattr(result, "rowcount", 0) or 0)
+        session.commit()
+    return deleted
 
 
 def chosen_days(
@@ -451,18 +490,85 @@ def adds_through(
     )
 
 
+def posted_through(
+    session: Session, league_season: LeagueSeason, team_pk: int, period_id: int, day: int
+) -> dict[str, float]:
+    """What this team had really posted this period by the morning of `day`.
+
+    `app.pickups.state._posted`'s sum written out here rather than called,
+    because a check that asks the function it is checking proves nothing. The
+    started lines on the period's days **before** `day`: the morning's report
+    is built before that day's games, and `scoring_periods_remaining` begins
+    there, so day `day` belongs to the projection and not to the score.
+    """
+    columns = [getattr(PlayerGameStat, column) for column in COUNTS.values()]
+    rows = session.execute(
+        select(*columns)
+        .join(
+            DailyLineupSlot,
+            (DailyLineupSlot.player_id == PlayerGameStat.player_id)
+            & (DailyLineupSlot.scoring_period == PlayerGameStat.scoring_period),
+        )
+        .where(
+            DailyLineupSlot.team_id == team_pk,
+            DailyLineupSlot.matchup_period_id == period_id,
+            DailyLineupSlot.started.is_(True),
+            PlayerGameStat.season == int(league_season.season),
+            PlayerGameStat.scoring_period < day,
+            PlayerGameStat.played.is_(True),
+            PlayerGameStat.minutes > 0,
+        )
+    ).all()
+    totals = dict.fromkeys(COUNTS, 0.0)
+    for row in rows:
+        for abbreviation, value in zip(COUNTS, row, strict=True):
+            totals[abbreviation] += float(value or 0.0)
+    return totals
+
+
+def posted_findings(
+    session: Session, league_season: LeagueSeason, team: Subject, period_id: int, day: int
+) -> list[str]:
+    """Whether the week the report is built on stops at this morning.
+
+    `matchup_team_stats` carries a finished period's final total with no day
+    on it, so a report for a replayed day used to open with the whole week
+    already banked and project seven more days on top. Checked against the
+    independent sum above rather than against the stored payload, because the
+    payload carries only `projected`, which is this plus the projection.
+    """
+    week = load_team_week(session, league_season, team.espn_team_id, day)
+    truth = posted_through(session, league_season, team.team_pk, period_id, day)
+    wrong = sorted(
+        abbreviation
+        for abbreviation, value in truth.items()
+        if abs(week.my_totals.get(abbreviation) - value) > 1e-6
+    )
+    if not wrong:
+        return []
+    return [
+        f"the week's posted totals are wrong in {len(wrong)} categories"
+        f" ({', '.join(wrong)}): PTS reads {week.my_totals.get('PTS'):.0f},"
+        f" but {truth['PTS']:.0f} had been scored by the morning of day {day}"
+    ]
+
+
 def trailing_window_findings(
     session: Session, league_season: LeagueSeason, team_pk: int, at: datetime
 ) -> list[str]:
     """Whether the digest's two trailing counts stop at `at`.
 
-    `app.digest.adds_in_window` and `league_section`'s wire tally both ask
+    `app.digest.adds_in_window` and `league_section`'s wire tally used to ask
     for rows newer than `now - window` and never for rows older than `now`.
     On the live season that reads right, because there is nothing after now;
-    on a replay it reads to the end of the year. Compared here against the
-    same query with the near end closed.
+    on a replay it reads to the end of the year.
+
+    Both halves ask the product for its answer and compare it against the
+    same window closed at both ends, computed here. The wire tally has no
+    function of its own to call, so the number is read back off the line
+    `league_section` renders -- which is the line the member actually sees.
     """
-    from app.digest import CHURN_DAYS, LEAGUE_MOVES_HOURS, adds_in_window
+    from app.digest import CHURN_DAYS, LEAGUE_MOVES_HOURS, adds_in_window, league_section
     from app.scoring.wire import WIRE_TYPES
 
     out: list[str] = []
@@ -489,23 +595,35 @@ def trailing_window_findings(
             f" only {closed} were made before {at:%Y-%m-%d %H:%M}"
         )
     since = at - timedelta(hours=LEAGUE_MOVES_HOURS)
-    moves = (
-        select(func.count())
-        .select_from(Transaction)
-        .where(
-            Transaction.league_season_id == league_season.id,
-            Transaction.type.in_(WIRE_TYPES),
-            Transaction.status == EXECUTED,
+    behind = int(
+        session.scalar(
+            select(func.count())
+            .select_from(Transaction)
+            .where(
+                Transaction.league_season_id == league_season.id,
+                Transaction.type.in_(WIRE_TYPES),
+                Transaction.status == EXECUTED,
+                Transaction.processed_at.between(since, at),
+            )
         )
+        or 0
     )
-    ahead = int(session.scalar(moves.where(Transaction.processed_at >= since)) or 0)
-    behind = int(session.scalar(moves.where(Transaction.processed_at.between(since, at))) or 0)
-    if ahead != behind:
+    shown = wire_moves_line(league_section(session, league_season, now=at))
+    if shown != behind:
         out.append(
-            f"the league section counts {ahead} wire moves in the last day; only {behind}"
+            f"the league section counts {shown} wire moves in the last day; only {behind}"
             f" were made before {at:%Y-%m-%d %H:%M}"
         )
     return out
+
+
+def wire_moves_line(lines: Sequence[str]) -> int | None:
+    """The number off `league_section`'s last line, or None if it is not there."""
+    for line in reversed(lines):
+        found = re.search(r"(\d+) moves? on the wire in the last day", line)
+        if found is not None:
+            return int(found.group(1))
+    return None
 
 
 def quiet_day(session: Session, season: int, first: int, final: int) -> int | None:
@@ -1142,12 +1260,20 @@ def replay_one_day(
         morning.outcomes = morning_outcomes(session, run, day, teams)
         league_season = league_season_of(session, keys.season)
         first = first_day_of_period(session, keys.league_season_pk, day)
+        period_row = period_for_day(session, league_season, day)
         for team in teams:
             so_far = (
                 adds_through(session, keys.league_season_pk, team.team_pk, first, day)
                 if first is not None
                 else None
             )
+            if period_row is not None:
+                morning.look_ahead += [
+                    f"day {day} {team.name}: {line}"
+                    for line in posted_findings(
+                        session, league_season, team, int(period_row.id), day
+                    )
+                ]
             for kind, (payload, _) in stored_payloads(session, team, day).items():
                 morning.look_ahead += [
                     f"day {day} {team.name} {kind}: {line}"
@@ -1322,6 +1448,10 @@ def replay(args: argparse.Namespace) -> int:
         f"\nchecks: {len(checks) - len(failed)} passed, {len(failed)} failed"
         + (f" ({', '.join(failed)})" if failed else "")
     )
+    if args.keep:
+        print(f"kept this run's rows on the jobs table (--keep), labelled {REHEARSAL}:{run}:*")
+    else:
+        print(f"cleaned up {clean_up(factory, run)} job row(s) this run created")
     print(f"written to {out_dir}")
     return 1 if failed else 0
 
@@ -1338,6 +1468,9 @@ def main() -> int:
     parser.add_argument("--run", default=None, help="tag for this run's jobs; default the season")
     parser.add_argument("--owner", type=int, default=3, help="ESPN id of the team we manage")
     parser.add_argument("--checks", action="store_true", help="also run the queue-semantics checks")
+    parser.add_argument(
+        "--keep", action="store_true", help="leave this run's job rows on the queue"
+    )
     parser.add_argument("--profile", action="store_true", help="also profile one precompute")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-one", action="store_true", help=argparse.SUPPRESS)
