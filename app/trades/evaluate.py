@@ -14,10 +14,26 @@ judged by `app.pickups.judge`:
 `delta_week` is the head-to-head change in the matchup in front of us, from
 `app.pickups.stream.week_deltas` -- the same seating, the same normal model,
 the same knowable lines the streaming report uses. `delta_season_per_week` is
-`app.pickups.judge.places_cost` over the roster places the deal touches,
-valued through the league-standard lens. So "trade for Jokic" and "pick up
-whoever is on the wire" are two numbers in the same unit, and the projected
-end-of-season category record comes out of the same `Judgement`.
+this roster's ordinary week with the deal in it less the same week without it,
+through the league-standard lens (`app.pickups.judge.Standard.week_wins`): the
+two lines the nine-category table is drawn from. So "trade for Jokic" and
+"pick up whoever is on the wire" are two numbers in the same unit, and the
+projected end-of-season category record comes out of the same `Judgement`.
+
+THE SEASON TERM IS A WITH-AND-WITHOUT OVER THE ROSTER
+
+The first cut valued each man on his own inside a league-average team
+(`app.pickups.judge.places_cost`) and summed. That is comparable across teams
+and it cannot see saturation: expected wins is a sum of probabilities that
+flatten, so a roster already winning rebounds gains nothing from more of them
+and two starters routinely beat one superstar. The calibration of 2026-09-21
+measured the consequence -- consolidating deals over-rated by +0.27 categories
+a week -- and revision R1 (declared in docs/trades.md section 7a before it was
+run) made the headline the roster with-and-without instead. The per-man number
+is still computed and still on the payload as `SideReport.season_independent`,
+so the two can be read against each other; it is no longer the headline. The
+playoff lens is unchanged and still reads `places_cost`, because a whole
+playoff roster is a different question from a whole season's.
 
 WHEN THE TRADE LANDS
 
@@ -59,10 +75,11 @@ a roster he no longer has.
 
 UNEVEN COUNTS
 
-A two-for-one opens a roster place on one side and fills one on the other.
-`places_cost` settles both without a special case: the place left open is
-worth the wire (`wire_replacement`), and the place filled had to come from
-somewhere. When a side receives more men than it gives and has no open slot,
+A two-for-one opens a roster place on one side and fills one on the other. The
+place left open is filled, in the before-and-after and in the table both, by
+the best man on the wire (`wire_replacement` names the value, `_best_wire` the
+man), so the same roster is counted either way and nothing is quietly worth
+zero. When a side receives more men than it gives and has no open slot,
 somebody is dropped -- the caller may name him, and by default it is the
 cheapest man on the active roster by what his place is worth. The report
 names him and what he cost either way. Men on injured reserve are never
@@ -293,8 +310,13 @@ class SideReport:
     places_opened: int
     #: Open places the deal fills without anybody being dropped.
     places_used: int
-    #: The move in one currency over both horizons.
+    #: The move in one currency over both horizons. Its season term is the
+    #: roster with-and-without (revision R1, docs/trades.md section 7a).
     judgement: Judgement
+    #: The season term the first cut used: each man valued on his own inside
+    #: a league-average team (`places_cost`), kept here so the two can be
+    #: measured against each other and never as the headline.
+    season_independent: float
     #: The nine, before and after, in an ordinary week.
     categories: tuple[CategoryView, ...]
     playoffs: PlayoffLens
@@ -693,9 +715,7 @@ def _judge_side(
         effective_day=effective_day,
         opponent_move=opponent_move,
     )[0]
-    judgement = judge(spots, delta_week=delta_week, dropped=leaving, added=receiving)
 
-    replacement = judgement.replacement
     best_on_the_wire = _best_wire(wire, spots)
     opened = max(0, len(leaving) - len(receiving))
     used = max(0, min(side.week.open_slots, len(receiving) - len(leaving)))
@@ -703,6 +723,16 @@ def _judge_side(
     filler = weekly.get(best_on_the_wire, CategoryLine()) if best_on_the_wire is not None else None
     before_line = sum_lines(weekly.get(player_id, CategoryLine()) for player_id in side.active)
     after_line = _after(before_line, weekly, leaving, receiving, filler, opened)
+
+    independent = _independent_season(spots, leaving=leaving, receiving=receiving)
+    judgement = judge(
+        spots,
+        delta_week=delta_week,
+        dropped=leaving,
+        added=receiving,
+        delta_season_per_week=_roster_season(spots, lens, before_line, after_line),
+    )
+    replacement = judgement.replacement
 
     card = _card_builder(
         session,
@@ -739,6 +769,7 @@ def _judge_side(
         places_opened=opened,
         places_used=used,
         judgement=judgement,
+        season_independent=independent,
         categories=_views(before_line, after_line, categories, distributions),
         playoffs=lens_playoffs,
         replacement=replacement,
@@ -749,6 +780,54 @@ def _judge_side(
         notes=side.notes + _side_notes(side, weeks, opened, used),
     )
     return replace(built, summary=summarise(built))
+
+
+def _roster_season(
+    spots: SpotBook, lens: Standard, before: CategoryLine, after: CategoryLine
+) -> float:
+    """The season term: this roster's ordinary week, with the deal and without.
+
+    Revision R1 (docs/trades.md section 7a). Expected categories won in a week
+    by the active roster as the deal leaves it, less the same roster as it
+    stands -- the two lines the nine-category table is already drawn from, so
+    the headline number and the table are the same arithmetic read two ways.
+
+    It is the with-and-without the brief asked for and the first cut did not
+    do. `_independent_season` values each man on his own inside a
+    league-average team, and expected wins is a sum of *saturating*
+    probabilities: a roster already winning rebounds gains nothing from more
+    of them, and two starters routinely beat one superstar. Valuing each man
+    separately cannot see either, which is what over-rated consolidation by
+    +0.27 categories a week in the calibration of 2026-09-21.
+
+    Zero when the season has posted nothing to measure a league standard
+    against, exactly as the per-man term was: a number with no basis is worse
+    than no number.
+    """
+    if not spots.measured:
+        return 0.0
+    return lens.week_wins(after) - lens.week_wins(before)
+
+
+def _independent_season(
+    spots: SpotBook, *, leaving: Sequence[int], receiving: Sequence[int]
+) -> float:
+    """The old headline, kept beside the new one so both can be measured.
+
+    `places_cost` over the men in the deal: each place vacated worth the
+    better of the man in it and the wire, each place filled worth the better
+    of the man arriving and the wire. It is what a pickup is still charged by
+    (`app.pickups.judge.judge`), and it is comparable across teams, which a
+    roster with-and-without is not. It is no longer what a trade's headline
+    reads, and `docs/trades.md` section 7 says why.
+    """
+    if not spots.measured:
+        return 0.0
+    return -places_cost(
+        [spots.value(player_id) for player_id in leaving],
+        [spots.value(player_id) for player_id in receiving],
+        spots.replacement(exclude=receiving),
+    )
 
 
 def _settle_drops(side: _Side, spots: SpotBook) -> _Side:

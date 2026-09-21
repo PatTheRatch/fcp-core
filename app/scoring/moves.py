@@ -12,6 +12,19 @@ team still held any incoming player. After that the spot was refilled from
 the wire, which both sides of the move would have faced alike. A move whose
 incoming players were never held again is graded on the period after it.
 
+A SHORTER WINDOW: `within`
+
+Over a full rest of season a traded player is traded again, dropped, hurt or
+given a different role, and `docs/trades.md` section 7 measured how little of
+that a forecast can carry. So the window can be cut short: `within` is the
+last scoring period a graded matchup period may *begin* on, and
+`day + 30` -- the thirty days `scripts/pickups_backtest.py` scores a pickup
+over -- is the short horizon the trade calibration uses. Whole matchup periods
+either way, because the comparison is against the opponent's period totals and
+half a matchup has no opponent; a period that starts inside the window and
+ends a few days outside it is counted whole, which is the only approximation
+in the cut.
+
 RESULT (what it delivered)
 
 Per period, the team as it actually played, against the same team with the
@@ -158,7 +171,12 @@ def start_share(book: SeasonBook, team_id: int, player_id: int, before_day: int)
 
 
 def _window(
-    book: SeasonBook, team_id: int, day: int, players_in: Sequence[int], playoffs: bool
+    book: SeasonBook,
+    team_id: int,
+    day: int,
+    players_in: Sequence[int],
+    playoffs: bool,
+    within: int | None = None,
 ) -> tuple[int, ...]:
     after = [
         number
@@ -167,6 +185,7 @@ def _window(
         and period.final_scoring_period is not None
         and period.final_scoring_period > day
         and bool(period.is_playoff) == playoffs
+        and (within is None or int(period.first_scoring_period) <= within)
     ]
     if not after:
         return ()
@@ -215,9 +234,15 @@ def grade_move(
     replacement: float,
     playoffs: bool = False,
     band: float | None = None,
+    within: int | None = None,
 ) -> MoveGrade | None:
-    """Both lenses for one move, or None when no period of the stretch follows it."""
-    periods = _window(book, team_id, day, players_in, playoffs)
+    """Both lenses for one move, or None when no period of the stretch follows it.
+
+    `within` is the last scoring period a graded matchup period may *begin*
+    on: the short-window grade (see WINDOW above). Everything else is
+    unchanged, so the same arithmetic answers both horizons.
+    """
+    periods = _window(book, team_id, day, players_in, playoffs, within)
     if not periods:
         return None
     spots = (len(players_out) - len(players_in)) * replacement

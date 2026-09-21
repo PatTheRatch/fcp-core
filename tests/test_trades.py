@@ -5,15 +5,18 @@ per-game lines near the league's weekly means so that every category starts as
 a near coin flip: a swap then shows up as a change in expected wins rather
 than disappearing into a category already won.
 
-The cases are the ones the design has to get right. An even swap is
-antisymmetric -- what one side gains the other loses -- because the same
-arithmetic is run from both ends. A two-for-one opens a place on one side and
-forces a drop on the other, and the report names the man and what he cost. The
-playoff lens counts the playoff weeks alone. And the whole thing must read
-nothing after the day it is judged on, which is the one claim a docstring
-cannot make credible: the last test builds a database with the future in it,
-runs the report, deletes every outcome row after the judgement day, runs it
-again, and demands the same answer.
+The cases are the ones the design has to get right. An even swap moves the two
+sides in opposite directions, and the per-man number mirrors exactly, because
+the same arithmetic is run from both ends; the headline, which is a
+with-and-without over each team's own roster since revision R1, does not have
+to mirror, and a roster that already wins a category is not paid for more of
+it. A two-for-one opens a place on one side and forces a drop on the other,
+and the report names the man and what he cost. The playoff lens counts the
+playoff weeks alone. And the whole thing must read nothing after the day it is
+judged on, which is the one claim a docstring cannot make credible: the last
+test builds a database with the future in it, runs the report, deletes every
+outcome row after the judgement day, runs it again, and demands the same
+answer.
 """
 
 from collections.abc import Iterator, Mapping
@@ -27,7 +30,7 @@ from app.pickups.bids import clear_cache
 from app.pickups.judge import TYPICAL_PICKUP
 from app.pickups.projection import clear_cache as clear_lines
 from app.trades import TRADE_HURDLE, TeamOffer, evaluate_trade
-from app.trades.summary import join, words
+from app.trades.summary import WORDS, join, words
 from scripts.trade import AmbiguousNameError, player_by_name, render
 from tests.pickups_db import (
     ANY,
@@ -162,14 +165,23 @@ def build_rosters(
     return who
 
 
-def test_an_even_swap_is_judged_from_both_ends_and_the_two_agree(session: Session) -> None:
-    """The same machinery run from each roster: what the better man is worth
-    to the side that gets him is what he costs the side that gives him up, so
-    an even swap between two teams is antisymmetric to the last decimal.
+def test_an_even_swap_is_judged_from_both_ends_and_the_per_man_number_mirrors(
+    session: Session,
+) -> None:
+    """The same machinery run from each roster, and what revision R1 changed.
 
+    The per-man number values each man on his own inside a league-average
+    team, so what the better man is worth to the side that gets him is exactly
+    what he costs the side that gives him up: it mirrors to the last decimal.
     That is not a tautology in the code -- each side is a separate `SpotBook`,
-    a separate head-to-head and a separate league-standard sum -- so it is the
-    cheapest check that neither side is being judged by a different rule.
+    a separate head-to-head and a separate league-standard sum -- so it is
+    still the cheapest check that neither side is being judged by a different
+    rule, which is why it is kept on the payload.
+
+    The headline is now a with-and-without over each team's own roster, and
+    two rosters do not saturate alike. The two sides still move in opposite
+    directions; they no longer move by the same amount, and that difference is
+    the whole of what R1 buys.
     """
     ls, home, away, periods = build_league(session)
     who = build_rosters(session, ls, home, away, periods)
@@ -189,11 +201,70 @@ def test_an_even_swap_is_judged_from_both_ends_and_the_two_agree(session: Sessio
     assert [card.name for card in ours.gives] == ["HomeWeak"]
     assert ours.drops == () and theirs.drops == ()
     assert ours.net > 0 > theirs.net, "the side getting the better man gains"
-    assert ours.judgement.delta_season_per_week == pytest.approx(
-        -theirs.judgement.delta_season_per_week
+    assert ours.season_independent == pytest.approx(-theirs.season_independent)
+    assert ours.judgement.delta_season_per_week > 0 > theirs.judgement.delta_season_per_week, (
+        "the headline still knows which side got the better man"
     )
+    assert ours.judgement.delta_season_per_week != pytest.approx(
+        -theirs.judgement.delta_season_per_week
+    ), "two rosters do not saturate alike, which is the point of judging on the roster"
     assert ours.clears is (ours.per_week >= TRADE_HURDLE)
     assert len(ours.categories) == 9
+
+
+def test_a_roster_already_winning_a_category_is_not_paid_for_more_of_it(
+    session: Session,
+) -> None:
+    """Revision R1, on the shape it was declared for (docs/trades.md 7a).
+
+    Home has three big men and wins every counting category with a
+    probability of one. It gives two fringe players for a star. The per-man
+    number, which values the star inside a *league-average* team, pays more
+    than a category a week for him. The roster he is actually joining gains
+    almost nothing, because expected wins is a sum of saturating
+    probabilities: the points go up by three hundred a week and the chance of
+    winning points does not move, because it was already one.
+
+    That gap is what the calibration of 2026-09-21 measured as +0.27
+    categories a week of over-rating on uneven deals, and it is what the
+    headline now refuses to pay.
+    """
+    ls, (home, away), periods = league_season(
+        session, days_per_period=7, periods=PERIODS, regular_season_periods=REGULAR
+    )
+    configure(ls, lineup=SMALL_LINEUP, bench=3, injured_reserve=0)
+    matchup(session, periods[0], home, away, {home: EVEN, away: EVEN})
+    matchup(session, periods[1], home, away)
+    games(session, 10, SEASON_DAYS)
+    games(session, 20, SEASON_DAYS)
+    for name in ("Big1", "Big2", "Big3"):
+        rostered(session, home, periods[1], name, scaled(2.5))
+    fringe = [rostered(session, home, periods[1], name, scaled(0.1)) for name in ("Fr1", "Fr2")]
+    star = rostered(session, away, periods[1], "Star", scaled(2.2), pro_team=20)
+    for name in ("AwayA", "AwayB"):
+        rostered(session, away, periods[1], name, STARTER, pro_team=20)
+    on_wire(session, ls, "Wire", scaled(0.5))
+
+    report = evaluate_trade(
+        session,
+        ls,
+        TODAY,
+        TeamOffer(HOME, tuple(man.id for man in fringe)),
+        TeamOffer(AWAY, (star.id,)),
+        distributions=WEEK,
+    )
+
+    ours = report.side(HOME)
+    points = next(view for view in ours.categories if view.abbreviation == "PTS")
+    assert ours.places_opened == 1, "two men out for one in"
+    assert points.p_before == pytest.approx(1.0, abs=0.001), "already winning points"
+    assert points.after > points.before + 250, "and the deal adds a great many more"
+    assert points.p_delta == pytest.approx(0.0, abs=0.001), "which is worth nothing"
+    assert ours.season_independent > 1.0, "the old headline would have paid for it"
+    assert ours.judgement.delta_season_per_week == pytest.approx(0.0, abs=0.1), (
+        "the roster it is joining gains about nothing, and the headline says so"
+    )
+    assert ours.judgement.delta_season_per_week < ours.season_independent
 
 
 def test_the_deal_is_seated_from_the_day_it_could_land_not_today(session: Session) -> None:
@@ -386,7 +457,14 @@ def test_the_nine_show_the_counts_moving_and_the_chances_not(session: Session) -
     )
 
 
-def test_the_summary_says_what_moved_and_never_gives_an_order(session: Session) -> None:
+def test_the_summary_leads_with_the_fit_and_never_gives_an_order(session: Session) -> None:
+    """The categories first, the number second.
+
+    What a nine-cat manager cannot get anywhere else is which categories a
+    deal wins him and which it hands over, and that half of the report is
+    arithmetic about his roster rather than a forecast of the season. So it is
+    the first sentence, and the headline number is the second.
+    """
     ls, home, away, periods = build_league(session)
     who = build_rosters(session, ls, home, away, periods)
 
@@ -400,7 +478,10 @@ def test_the_summary_says_what_moved_and_never_gives_an_order(session: Session) 
     )
 
     summary = report.side(HOME).summary
-    assert summary.startswith("Gains")
+    lead = summary.split(". ")[0]
+    assert any(word in lead for word in WORDS.values()), "the first sentence names categories"
+    assert "a week" not in lead, "and carries no number"
+    assert "categories a week over the" in summary, "which comes in the sentence after it"
     assert "bar" in summary
     for verdict in ("accept", "reject", "should", "must", "do it", "take it"):
         assert verdict not in summary.lower()
@@ -443,6 +524,10 @@ def test_the_report_reads_nothing_after_the_day_it_is_judged_on(session: Session
     The NBA schedule is deliberately *not* deleted. Games still to be played
     are a fact about the future that is on record today, and the games-left
     counts are supposed to read them.
+
+    Revision R1 made the headline a sum over the whole active roster rather
+    than over the men in the deal, which is a great many more rows to read, so
+    both numbers are named below as well as compared field for field.
     """
     ls, home, away, periods = build_league(session)
     who = build_rosters(session, ls, home, away, periods)
@@ -465,6 +550,11 @@ def test_the_report_reads_nothing_after_the_day_it_is_judged_on(session: Session
     clear_lines()
     without_it = evaluate_trade(session, ls, TODAY, *offers, distributions=WEEK)
 
+    for before, after in zip(with_the_future.sides, without_it.sides, strict=True):
+        assert before.judgement.delta_season_per_week == pytest.approx(
+            after.judgement.delta_season_per_week
+        ), "the roster with-and-without reads nothing after today"
+        assert before.season_independent == pytest.approx(after.season_independent)
     assert with_the_future.sides == without_it.sides
     assert with_the_future == without_it
 

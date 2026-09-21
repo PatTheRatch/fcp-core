@@ -73,12 +73,19 @@ def join(names: Sequence[str]) -> str:
 
 
 def summarise(side: SideReport) -> str:
-    """Two to four sentences about one side of a deal, from its own numbers."""
+    """Two to four sentences about one side of a deal, from its own numbers.
+
+    Fit first, the number second. What a nine-cat manager cannot get anywhere
+    else is which categories this deal wins him and which it hands over, and
+    that half of the report is arithmetic about his roster today rather than a
+    forecast -- so it leads. The headline number follows it, and
+    `docs/trades.md` section 7 is the reason that is the right way round.
+    """
     return " ".join(
         sentence
         for sentence in (
-            _headline(side),
             _where(side),
+            _headline(side),
             _cost(side),
             _bar(side),
         )
@@ -87,6 +94,12 @@ def summarise(side: SideReport) -> str:
 
 
 def _headline(side: SideReport) -> str:
+    """The number, second: what the categories above come to on the season.
+
+    "Worth" rather than "Gains", because the sentence in front of it has
+    already said what the deal gains and a summary that says it twice reads
+    like a sales line.
+    """
     net, per_week = side.net, side.per_week
     weeks = side.judgement.weeks_covered
     if abs(net) < 0.05:
@@ -94,7 +107,7 @@ def _headline(side: SideReport) -> str:
             f"Worth about nothing either way over the {weeks:.0f} weeks it covers "
             f"({net:+.2f} categories)."
         )
-    direction = "Gains" if net > 0 else "Costs"
+    direction = "Worth" if net > 0 else "Costs"
     return (
         f"{direction} about {abs(per_week):.2f} categories a week over the "
         f"{weeks:.0f} weeks it covers, {net:+.2f} on the season."
@@ -104,7 +117,10 @@ def _headline(side: SideReport) -> str:
 def _where(side: SideReport) -> str:
     """Which categories the chance of winning actually moved in, and how far.
 
-    "Nearly all of it in" is only said of a deal that gains on the whole: a
+    The first sentence of the summary, because it is the half of the report
+    that does not rest on a forecast of the season.
+
+    "Nearly all of the gain" is only said of a deal that gains on the whole: a
     losing deal's best categories are not what it is mostly doing, and the
     first draft of this function said "Costs about 0.03 a week. Nearly all of
     it in field-goal percentage", which is a sentence about nothing.
@@ -118,7 +134,7 @@ def _where(side: SideReport) -> str:
         share = sum(view.p_delta for view in gains)
         total = sum(view.p_delta for view in moved if view.p_delta > 0)
         dominant = side.net > 0 and total and share / total > 0.8
-        parts.append(f"nearly all of it in {named}" if dominant else f"gains {named}")
+        parts.append(f"gains {named}, nearly all of the gain" if dominant else f"gains {named}")
     if losses:
         parts.append(f"gives up {join([words(view.abbreviation) for view in losses])}")
         if all(view.p_before < LOSING for view in losses):
