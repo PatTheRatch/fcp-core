@@ -760,6 +760,170 @@ class SeasonReportOut(BaseModel):
     adds_left: int
 
 
+class TradeReadinessOut(BaseModel):
+    """Whether the season has anything to judge a trade from, and what is missing.
+
+    A season before its draft -- no rosters, no schedule -- is not an error:
+    there is simply nothing to judge yet, and the page says so in a sentence
+    rather than drawing a broken builder (docs/trades.md, "The page").
+    """
+
+    ready: bool
+    missing: list[str] = Field(description="What the season lacks; empty when it is ready")
+    note: str | None = Field(description="The same thing as one sentence for a reader")
+
+
+class TradeRosterPlayerOut(BaseModel):
+    """One man on a roster, as the two pickers draw him."""
+
+    espn_player_id: int
+    name: str
+    position: str | None
+    pro_team_id: int
+    injury_status: str | None
+    expected_return_date: date | None
+    on_ir: bool = Field(description="On injured reserve: he holds no active place")
+    games_remaining: int = Field(description="Games left in the matchup period `today` falls in")
+
+
+class TradeRosterOut(BaseModel):
+    """One team's roster as of the day asked for, and the room it has."""
+
+    espn_team_id: int
+    team_name: str
+    ours: bool = Field(description="Whether this is the team whose page asked")
+    open_slots: int = Field(description="Active places not held, injured reserve aside")
+    ir_slot_free: bool
+    players: list[TradeRosterPlayerOut]
+
+
+class TradeRostersOut(BaseModel):
+    """What the builder needs to name a deal: who is on each roster today."""
+
+    season: int
+    today: int = Field(description="The scoring period the rosters are read as of")
+    today_date: date | None = Field(description="Null when no NBA schedule is stored")
+    readiness: TradeReadinessOut
+    teams: list[TradeRosterOut] = Field(description="Ours first; empty when nothing is stored")
+    calibration_note: str = Field(
+        description="The published record of the headline number, printed verbatim by the page"
+    )
+
+
+class TradePlayerOut(BaseModel):
+    """A player in the deal, and what the judgement about him rests on."""
+
+    espn_player_id: int
+    name: str
+    value: float = Field(description="Categories a week his roster place is worth, league standard")
+    games_left: int
+    playoff_games: int
+    injury_status: str | None
+    expected_return_date: date | None
+    games_so_far: int = Field(description="Games of his own behind the knowable line")
+    had_projection: bool
+    projection_source: str = Field(description='"blend" or "snapshot"')
+    thin: bool = Field(description="Fewer games of his own than the report trusts a rate on")
+    hurt: bool
+
+
+class TradeCategoryOut(BaseModel):
+    """One category before and after, in counts and in the chance of winning it."""
+
+    abbreviation: str
+    before: float
+    after: float
+    delta: float
+    p_before: float
+    p_after: float
+    p_delta: float
+    moved: bool = Field(description="Whether the chance of winning it moved by a point or more")
+
+
+class TradePlayoffsOut(BaseModel):
+    """The same deal counted over the playoff matchup periods alone."""
+
+    first_scoring_period: int | None
+    last_scoring_period: int | None
+    weeks: float
+    games: int = Field(description="Games the men in the deal have scheduled in the window")
+    delta_per_week: float
+    delta_total: float
+    categories: list[TradeCategoryOut]
+    note: str | None = Field(description="Why the lens says nothing, when it says nothing")
+    measurable: bool
+
+
+class TradeSideOut(BaseModel):
+    """One team's side of the trade, in full.
+
+    The other side is judged with the same machinery on our own projections:
+    it is our estimate of his roster's needs, and never his opinion.
+    """
+
+    espn_team_id: int
+    team_name: str
+    receives: list[TradePlayerOut]
+    gives: list[TradePlayerOut]
+    drops: list[TradePlayerOut] = Field(description="Men dropped to make room for the arrivals")
+    drop_source: str = Field(description='"named", "cheapest", "named and cheapest" or ""')
+    places_opened: int
+    places_used: int
+    judgement: JudgementOut = Field(
+        description="The deal in one currency; its season term is the roster with-and-without"
+    )
+    season_independent: float = Field(
+        description=(
+            "The season term the first cut used, each man valued on his own inside a "
+            "league-average team. Kept so both can be measured; never the headline"
+        )
+    )
+    categories: list[TradeCategoryOut]
+    playoffs: TradePlayoffsOut
+    replacement: float = Field(description="What the wire gives a roster place back, a week")
+    replacement_player: TradePlayerOut | None = Field(
+        description="The free agent whose line fills a place the deal opens; null when none does"
+    )
+    hurdle: float
+    clears: bool = Field(description="At or above the bar. A label, not advice")
+    net: float = Field(description="Categories the deal is worth this side over both horizons")
+    per_week: float
+    expected_per_week: float = Field(description="Categories this roster wins in a week, before")
+    summary: str
+    notes: list[str]
+
+
+class TradeOut(BaseModel):
+    """A proposed trade judged from both sides on one day (docs/trades.md section 6)."""
+
+    season: int
+    today: int = Field(description="The day it is judged on; nothing after it is read")
+    effective_day: int = Field(description="The first day the deal could be in a lineup")
+    review_days: int
+    review_source: str
+    first_scoring_period: int
+    last_scoring_period: int
+    weeks_remaining: float
+    sides: list[TradeSideOut] = Field(description="Ours first, then the other side")
+    hurdle: float
+    pool_size: int = Field(description="Free agents the wire replacement was taken over")
+    historical_wire: bool
+    notes: list[str]
+
+
+class TradeReportOut(BaseModel):
+    """The judged deal, or the sentence saying there is nothing to judge it from.
+
+    `calibration_note` travels with the number it qualifies, so the page never
+    keeps a copy of the record that could drift from the run behind it
+    (`app.trades.calibration`).
+    """
+
+    readiness: TradeReadinessOut
+    trade: TradeOut | None = Field(description="Null when the season is not ready")
+    calibration_note: str
+
+
 class ProjectionSetOut(BaseModel):
     """One stored upload of a manager's own projections.
 
