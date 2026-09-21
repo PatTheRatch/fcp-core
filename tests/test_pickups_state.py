@@ -32,6 +32,7 @@ from tests.pickups_db import (
     eligible,
     games,
     on_the_wire,
+    played,
     snapshot,
     winning_bid,
 )
@@ -117,6 +118,55 @@ def test_the_opponent_and_the_totals_posted_so_far_come_from_the_live_matchup(
     assert "FG%" not in week.my_totals.counts, "a percentage is rebuilt, never stored"
     assert week.my_totals.totals(["FG%"])["FG%"] == pytest.approx(80 / 170)
     assert week.opp_totals.get("PTS") == 190
+
+
+def test_on_a_live_morning_the_posted_totals_are_espns_own_row(session: Session) -> None:
+    """Nothing recorded on today or later means the season has not passed us.
+
+    ESPN is still writing that row, so it is the running tally and not a
+    finished week -- and it carries the stat corrections our own box scores
+    may not have, so it wins over a sum of them.
+    """
+    ls, (home, away), (first, _) = league_season(session)
+    configure(ls)
+    games(session, 10, [1])
+    matchup(session, first, home, away, {home: {"PTS": 150}, away: {"PTS": 190}})
+    held(session, home, first, player(session, "Monday"), 1, stats={"PTS": 10})
+    held(session, home, first, player(session, "Tuesday"), 2, stats={"PTS": 20})
+
+    week = load_team_week(session, ls, HOME, today=3)
+
+    assert week.my_totals.get("PTS") == 150, "ESPN's number, not our 30"
+
+
+def test_on_a_replayed_day_the_posted_totals_stop_the_night_before(session: Session) -> None:
+    """One box score on or after today and ESPN's row can no longer be trusted.
+
+    It has no day column, so for a period the season has run past it is the
+    finished week -- which is how a report for the morning of the first day
+    read 709 points already banked. Summed from the started lines instead,
+    and summed over the days *before* today: `scoring_periods_remaining`
+    begins at today, so the projection adds that day itself and counting it
+    here as well would count it twice.
+    """
+    ls, (home, away), (first, _) = league_season(session)
+    configure(ls)
+    games(session, 10, [1])
+    matchup(session, first, home, away, {home: {"PTS": 150}, away: {"PTS": 190}})
+    held(session, home, first, player(session, "Monday"), 1, stats={"PTS": 10})
+    held(session, home, first, player(session, "Tuesday"), 2, stats={"PTS": 20})
+    held(session, home, first, player(session, "Wednesday"), 3, stats={"PTS": 40})
+    held(session, home, first, player(session, "Thursday"), 4, stats={"PTS": 80})
+    # A game in the next matchup period: the future this database has, and
+    # the only thing that says today is a replay rather than now.
+    played(session, player(session, "Next Week"), 9, 30.0, {"PTS": 1000})
+
+    week = load_team_week(session, ls, HOME, today=3)
+
+    assert week.my_totals.get("PTS") == 30, "days 1 and 2; day 3 is still to be played"
+    assert week.opp_totals.get("PTS") == 0.0, "the opponent has posted nothing either"
+    whole_period = load_team_week(session, ls, HOME, today=5)
+    assert whole_period.my_totals.get("PTS") == 150, "over a whole period, ESPN's own total"
 
 
 def test_a_player_on_injured_reserve_is_flagged_and_uses_the_slot(session: Session) -> None:

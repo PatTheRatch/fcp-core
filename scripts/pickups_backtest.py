@@ -68,10 +68,7 @@ posted on it: a manager sets Tuesday's lineup on Tuesday morning. Seating by
 the night's own box score would hand every counterfactual a lineup nobody could
 have set, and would flatter every pickup.
 
-TWO DEFECTS THIS SCRIPT WORKS AROUND
-
-Neither is fixed here: both live in `app/`, which this branch may not change
-beyond the two hurdle constants. Both are reported in the write-up.
+ONE DEFECT THIS SCRIPT WORKS AROUND
 
 1. NO 2026 SCHEDULE. `app/pickups/state.py` counts a player's remaining games
    from `pro_team_games`, which holds no 2026 rows at all (only 2027 has any:
@@ -86,17 +83,27 @@ beyond the two hurdle constants. Both are reported in the write-up.
    teams, 2,461 team-game slots against the 2,460 a full 82-game season needs,
    no player with two games on one day, no team with two games on one day.
 
-2. THE MATCHUP TOTALS LEAK. `state.load_team_week` reads `my_totals` and
-   `opp_totals` from `matchup_team_stats`, which holds one row per (matchup,
-   team, category) -- the period's FINAL total, with no day column to cap it
-   by. At day N of a period the recommender sees the whole period, including
-   days that have not happened. WORKAROUND: `rebuild_posted` sums the started
-   lines through day N instead. Verified against ESPN: the same sum over a full
-   period reproduces `matchup_team_stats` exactly on all nine team-periods
-   checked (three teams x three periods).
+It is installed by attribute substitution on `app.pickups.state`, removed in a
+`finally`, and changes nothing on disk.
 
-Both are installed by attribute substitution on `app.pickups.state`, removed in
-a `finally`, and change nothing on disk.
+THE MATCHUP TOTALS LEAK, WHICH IS NOW THE PRODUCT'S JOB
+
+This script used to carry a second workaround. `state.load_team_week` read
+`my_totals` and `opp_totals` from `matchup_team_stats`, which holds one row per
+(matchup, team, category) -- the period's FINAL total, with no day column to cap
+it by -- so at day N of a period the recommender saw the whole period, including
+days that had not happened. `rebuild_posted` substituted a sum of the started
+lines, capped by a module-level `_POSTED_CAP` the replay set before each call.
+
+`app.pickups.state._posted` now does that itself: it takes the day, keeps
+ESPN's row only when the database has nothing on or after it (a genuinely live
+morning), and otherwise sums the started lines. So the replay installs nothing
+and the numbers below measure the recommender the product actually runs.
+
+One thing did move with it. The old cap was inclusive (`scoring_period <= N`),
+which double-counted day N, because `scoring_periods_remaining` begins at N and
+the projection adds that day on top. The product's boundary is exclusive, and
+the write-up records what that changed.
 
 WHAT IS DELIBERATELY NOT PATCHED
 
@@ -347,29 +354,6 @@ class Setting:
         return self.no_move_rate > MIN_NO_MOVE and self.mean > baseline
 
 
-#: The day the posted totals are capped at. One element because
-#: `state._posted` is called by `load_team_week` with a fixed signature; the
-#: replay sets it before each call and clears it after.
-_POSTED_CAP: list[int | None] = [None]
-
-
-def stored_posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine:
-    """The real `state._posted`: `matchup_team_stats` for the whole period."""
-    rows = session.execute(
-        text(
-            "SELECT abbreviation, value FROM matchup_team_stats "
-            "WHERE matchup_id = :m AND team_id = :t"
-        ),
-        {"m": matchup_id, "t": team_row_id},
-    ).all()
-    counts = {
-        str(abbreviation): float(value or 0.0)
-        for abbreviation, value in rows
-        if str(abbreviation) in COUNTS
-    }
-    return CategoryLine(counts, 0)
-
-
 def rebuild_schedule(
     session: Session,
     season: int,
@@ -427,83 +411,28 @@ def rebuild_schedule(
     return out
 
 
-def rebuild_posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine:
-    """`state._posted`, capped at `_POSTED_CAP[0]`; the stored total otherwise.
-
-    `matchup_team_stats` is the period's final, so it cannot answer "what has
-    this team posted so far". The started lines through day N can: their sum
-    over a full period reproduces the stored total exactly (see the module
-    docstring).
-
-    The window matters. `_POSTED_CAP` holds the *last day* of what has been
-    played so far, and the first is the matchup period's own first day -- the
-    cap is not a lower bound. Summing everything at or before the cap would
-    add every earlier period to this week's total. The period is reached
-    through `matchups`, because the id `_posted` is handed is a matchup's, not
-    a matchup period's.
-    """
-    cap = _POSTED_CAP[0]
-    if cap is None:
-        return stored_posted(session, matchup_id, team_row_id)
-    return sum_lines_for(session, matchup_id, team_row_id, cap)
-
-
 #: The `player_game_stats` column each `COUNTS` key is summed from, so the
 #: SELECT and the fold cannot drift out of order.
 _POSTED_COLUMNS: tuple[str, ...] = tuple(COUNTS.values())
 
 
-def sum_lines_for(session: Session, matchup_id: int, team_row_id: int, cap: int) -> CategoryLine:
-    """The started lines for one team's matchup, through `cap`, summed."""
-    rows = session.execute(
-        text(
-            f"""
-            SELECT {", ".join(f"pgs.{column}" for column in _POSTED_COLUMNS)}
-            FROM player_game_stats pgs
-            JOIN daily_lineup_slots dls ON dls.player_id = pgs.player_id
-              AND dls.scoring_period = pgs.scoring_period
-            WHERE dls.team_id = :team_id
-              AND pgs.season = :season
-              AND dls.matchup_period_id = (
-                SELECT matchup_period_id FROM matchups WHERE id = :matchup_id
-              )
-              AND pgs.scoring_period <= :cap
-              AND dls.started AND pgs.played AND pgs.minutes > 0
-            """
-        ),
-        {
-            "team_id": team_row_id,
-            "season": SEASON,
-            "matchup_id": matchup_id,
-            "cap": cap,
-        },
-    ).all()
-    totals = dict.fromkeys(COUNTS, 0.0)
-    for row in rows:
-        for abbreviation, value in zip(COUNTS, row, strict=True):
-            totals[abbreviation] = totals.get(abbreviation, 0.0) + float(value or 0.0)
-    return CategoryLine(totals, len(rows))
-
-
 @contextmanager
 def patched_state() -> Any:
-    """Install the two rebuilds on `app.pickups.state`, then put them back.
+    """Install the reconstructed schedule on `app.pickups.state`, then put it back.
 
-    Attribute substitution rather than a signature change, because this branch
-    may not alter `app/`.
+    Attribute substitution rather than a signature change, because the missing
+    2026 schedule is a hole in the data, not a bug in the recommender. The
+    posted totals used to be substituted here too; `state._posted` takes the
+    day itself now, so there is nothing left to install for them.
     """
     import app.pickups.state as state
 
     original_schedule = state.schedule
-    original_posted = state._posted
     state.schedule = rebuild_schedule
-    state._posted = rebuild_posted
     try:
         yield
     finally:
         state.schedule = original_schedule
-        state._posted = original_posted
-        _POSTED_CAP[0] = None
 
 
 # The projection cache this replay used to install by hand now lives in
@@ -1114,8 +1043,9 @@ def replay(
 
             # The projection cache is `app.pickups.projection`'s own now, and
             # keyed on the day, so the two reports below share every line
-            # they both need and neither sees another decision point's.
-            _POSTED_CAP[0] = day
+            # they both need and neither sees another decision point's. The
+            # posted totals need no setting up at all now: `state._posted`
+            # reads the day it is given.
             stream_report = _run_stream(session, league_season, team_id, day, pool, tilt, counters)
             season_report = _run_season(session, league_season, team_id, day, pool, tilt, counters)
 
@@ -1138,7 +1068,6 @@ def replay(
             if progress and done % 25 == 0:
                 print(f"   ... {done}/{total} decision points")
 
-    _POSTED_CAP[0] = None
     if drifts:
         # Not a score: how far the re-solved lineup is from the one the
         # manager actually set, which is the size of the "assume a perfectly
@@ -1623,11 +1552,7 @@ def report(
     )
     lines.append("")
 
-    lines.append("## 5. Two defects in the stored data, and what was done about them")
-    lines.append("")
-    lines.append(
-        "Neither is fixed on this branch: both live in `app/`, and this run only measures."
-    )
+    lines.append("## 5. One defect in the stored data, and one leak now closed")
     lines.append("")
     lines.append("### The 2026 schedule does not exist")
     lines.append("")
@@ -1643,14 +1568,18 @@ def report(
         "slots against the 2,460 a full 82-game season needs."
     )
     lines.append("")
-    lines.append("### The matchup totals leak the rest of the week")
+    lines.append("### The matchup totals no longer leak the rest of the week")
     lines.append("")
     lines.append(
-        "`state.load_team_week` reads `my_totals` and `opp_totals` from "
+        "`state.load_team_week` used to read `my_totals` and `opp_totals` from "
         "`matchup_team_stats`, the period's **final** total, with no day column to cap "
-        "it by. **Workaround:** the script rebuilds the totals from the started lines "
-        "on days up to N within that period only, which at the period's last day "
-        "reproduces `matchup_team_stats` exactly."
+        "it by, and this script substituted a capped sum of the started lines for the "
+        "length of a run. `state._posted` takes the day itself now: it keeps ESPN's "
+        "row only on a genuinely live morning -- one where the database holds no box "
+        "score on or after today -- and otherwise sums the started lines on the days "
+        "of this period **before** today, which over a whole period reproduces "
+        "`matchup_team_stats` exactly. This run therefore measures the product's own "
+        "totals, with nothing substituted."
     )
     lines.append("")
     lines.append(
@@ -1731,16 +1660,18 @@ DECISIONS: tuple[str, ...] = (
     "period, and the replay needs them per day.",
     "The schedule was reconstructed from box scores rather than declared a dead end, "
     "because without it the measurement is identically zero.",
-    "The matchup totals were capped at day N rather than left leaking. The cap is "
-    "verified exact against ESPN at the full period.",
+    "The matchup totals are the product's own now, not a substitution: `state._posted` "
+    "takes the day and sums the started lines before it, verified exact against ESPN "
+    "at the full period. The cap this script used to install was inclusive of day N, "
+    "which counted day N once as posted and again as projected.",
     "The hurdle grid is applied after one evaluation per decision point, not by "
     "re-running per cell. The hurdle is a reporting filter in both modules, so this is "
     "exact and not an approximation.",
     "The projection entry points are memoized per decision point. Verified identical "
     "move deltas to nine decimals, 11.6x faster; the cache is keyed on the day and "
     "rebuilt per decision point, so it cannot carry an answer across days.",
-    "Both workarounds are installed by attribute substitution and removed in a "
-    "`finally`, so nothing on disk changes.",
+    "The one remaining workaround, the reconstructed schedule, is installed by "
+    "attribute substitution and removed in a `finally`, so nothing on disk changes.",
     "The top 5 moves per decision are scored, not only the recommended one, so the "
     "top-ranked move's return is visible whether or not it cleared the bar.",
 )

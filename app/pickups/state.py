@@ -30,6 +30,30 @@ day before `expected_return_date` when his status is OUT, and every day when
 it is OUT with no date given. That last rule matches `startable`, which never
 counts an OUT player at all; here he comes back on the day ESPN says he will.
 
+WHAT HAS BEEN POSTED SO FAR
+
+`matchup_team_stats` holds one row per (matchup, team, category) and has no
+day column, so it cannot answer "what has this side posted by now": for a
+period that is over it is the period's FINAL total. On a live morning that
+does not show, because ESPN is still writing the row and it holds the
+running tally. On a replayed day, a caught-up morning or a page asked for
+`?today=` a past day, it is the finished week -- and the week report then
+projects the days still to come on top of a week already played.
+
+So `_posted` takes the day and decides which source can answer. Live -- the
+database holds no box score on `today` or later -- keeps ESPN's own row,
+because it carries stat corrections our box scores may not. Anything else is
+a replay, and the totals are summed from the started lines instead, which
+over a whole period reproduces `matchup_team_stats` exactly.
+
+The boundary is exclusive: a report for the morning of day N counts the
+days of this period **before** N. `scoring_periods_remaining` begins at N,
+so day N's games are the first thing the projection adds; counting them as
+posted as well would count them twice. That is the opposite of the rule
+`_faab_spent` and `_adds_in_period` use, and deliberately so -- a bid or an
+add made on the morning of day N has happened by the time the report is
+read, while day N's games have not.
+
 FAAB
 
 The in-season pot is `league_seasons.acquisition_budget` (100 every season),
@@ -377,9 +401,14 @@ def load_team_week(
         other_id = matchup.away_team_id if matchup.home_team_id == team.id else matchup.home_team_id
         if other_id is not None:
             opponent = session.get(Team, other_id)
-        my_totals = _posted(session, matchup.id, team.id)
+        season = int(league_season.season)
+        # Read once for both sides: it is a fact about the database, not the team.
+        live = is_live(session, season, today)
+        my_totals = _posted(session, period, matchup.id, team.id, today, season=season, live=live)
         if opponent is not None:
-            opp_totals = _posted(session, matchup.id, opponent.id)
+            opp_totals = _posted(
+                session, period, matchup.id, opponent.id, today, season=season, live=live
+            )
 
     held, on_ir = _lineup_roster(session, team.id, today)
     if held is None:
@@ -728,8 +757,84 @@ def _latest_pool(session: Session, league_season: LeagueSeason) -> set[int]:
     }
 
 
-def _posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine:
-    """The raw counts a team has posted in a matchup, as a line."""
+def is_live(session: Session, season: int, today: int) -> bool:
+    """Whether `today` is the newest day this database knows anything about.
+
+    The test for "am I being asked about now, or about a day the season has
+    already run past": a box score recorded on `today` or later can only mean
+    the second. `player_game_stats` is keyed on the NBA season rather than on
+    one league, which is right here -- the question is what this machine has
+    ingested, not what this league did.
+
+    Deliberately not a clock comparison. A worker catching up a morning it
+    missed has yesterday's date and a database full of yesterday's games, and
+    a page asked for `?today=` a past day has today's date and a database
+    full of everything since. Both must read as a replay, and both do.
+    """
+    return (
+        session.scalar(
+            select(PlayerGameStat.id)
+            .where(PlayerGameStat.season == season, PlayerGameStat.scoring_period >= today)
+            .limit(1)
+        )
+        is None
+    )
+
+
+#: The `player_game_stats` column each `COUNTS` key is summed from, so the
+#: SELECT and the fold cannot drift out of order.
+_POSTED_COLUMNS: tuple[str, ...] = tuple(COUNTS.values())
+
+
+def _posted(
+    session: Session,
+    period: MatchupPeriod,
+    matchup_id: int,
+    team_row_id: int,
+    today: int,
+    *,
+    season: int,
+    live: bool,
+) -> CategoryLine:
+    """The raw counts a team has posted in this matchup by the morning of `today`.
+
+    Two sources, and `live` picks between them (see the module docstring).
+    On a live morning ESPN's own `matchup_team_stats` row is the running
+    tally and is kept, because it carries the stat corrections our box scores
+    may not have. On any replayed day that row is the period's final total
+    with no day to cap it by, so the started lines on the period's days
+    **before** `today` are summed instead -- exclusive, because
+    `scoring_periods_remaining` starts at `today` and the projection will add
+    that day itself.
+    """
+    if live:
+        return _stored_posted(session, matchup_id, team_row_id)
+    rows = session.execute(
+        select(*(getattr(PlayerGameStat, column) for column in _POSTED_COLUMNS))
+        .join(
+            DailyLineupSlot,
+            (DailyLineupSlot.player_id == PlayerGameStat.player_id)
+            & (DailyLineupSlot.scoring_period == PlayerGameStat.scoring_period),
+        )
+        .where(
+            DailyLineupSlot.team_id == team_row_id,
+            DailyLineupSlot.matchup_period_id == period.id,
+            DailyLineupSlot.started.is_(True),
+            PlayerGameStat.season == season,
+            PlayerGameStat.scoring_period < today,
+            PlayerGameStat.played.is_(True),
+            PlayerGameStat.minutes > 0,
+        )
+    ).all()
+    totals = dict.fromkeys(COUNTS, 0.0)
+    for row in rows:
+        for abbreviation, value in zip(COUNTS, row, strict=True):
+            totals[abbreviation] += float(value or 0.0)
+    return CategoryLine(totals, len(rows))
+
+
+def _stored_posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine:
+    """ESPN's own row for this matchup: the running tally while it is running."""
     rows = session.execute(
         select(MatchupTeamStat.abbreviation, MatchupTeamStat.value).where(
             MatchupTeamStat.matchup_id == matchup_id,
