@@ -44,6 +44,24 @@ is filled, so the add that fills it is credited in full.
 A dropped good player is assumed gone: another manager takes him, and he is
 not coming back for the price of a waiver claim.
 
+MORE THAN ONE PLACE: `places_cost`
+
+A pickup touches one roster place. A trade touches several, and unevenly: a
+two-for-one opens a place on one side and fills one on the other. So the rule
+above is stated per place and summed (`places_cost`), and `season_cost` is
+the one-place case of it rather than a second formula:
+
+    before = sum over places vacated of max(value(man leaving), wire)
+    after  = sum over places filled  of max(value(man arriving), wire)
+             + wire, once for each place vacated and not refilled
+
+A place a move leaves open is worth the wire, because it will be streamed;
+a place a move fills that was empty was worth nothing, so the arrival is
+credited in full. Both fall out of the two sums without a special case, which
+is why a free add and a two-for-one are the same arithmetic here. Every
+pickup the recommender makes goes through `places_cost` with one man on each
+side, and the numbers are the ones it always gave.
+
 VALUE MEANS THE LEAGUE STANDARD
 
 `value()` here is `app.scoring.value.marginal` of a player's rest-of-season
@@ -267,26 +285,42 @@ def weekly_lines(
     }, weeks
 
 
+def places_cost(leaving: Sequence[float], arriving: Sequence[float], replacement: float) -> float:
+    """What a move of any shape costs the roster places it touches.
+
+    `leaving` and `arriving` are categories a week through the league-standard
+    lens (`Standard.value`), one entry per man; `replacement` is what the wire
+    would give a place back (`wire_replacement`). Negative means the move
+    improves the places. See the module docstring for the rule; in short, each
+    place vacated was worth the better of the man in it and re-streaming it,
+    each place filled is worth the better of the man arriving and the same,
+    and a place vacated without being refilled is worth exactly the wire.
+
+    A man arriving with nobody leaving therefore takes an empty place, worth
+    nothing until he fills it, and is credited in full -- which is the free
+    add and the injured-reserve move. Two men out for one in leaves a place
+    open, worth the wire. Neither is a special case in the code.
+    """
+    before = sum(max(value, replacement) for value in leaving)
+    after = sum(max(value, replacement) for value in arriving)
+    opened = len(leaving) - len(arriving)
+    if opened > 0:
+        after += replacement * opened
+    return before - after
+
+
 def season_cost(
     dropped_weekly: float, added_weekly: float, replacement: float, *, empty: bool = False
 ) -> float:
-    """What a swap costs the roster place over the rest of the season.
+    """What a one-for-one swap costs the roster place, the `places_cost` case.
 
     All three are categories a week through the league-standard lens
     (`Standard.value`): what the man leaving was worth, what the man arriving
     is worth, and what the wire would give the place back if he were streamed
-    away again (`wire_replacement`).
-
-    On both sides the place is worth the better of the man in it and
-    re-streaming it, so a keeper counts for what he is, a streamer is not
-    punished for being one, and a swap between two men below the wire is worth
-    nothing rather than the floor. The one place worth less than the wire is
-    an `empty` one: it yields nothing until it is filled, and the add that
-    fills it is the streaming, so it is credited the whole of what arrives.
-    Negative means the move improves the place.
+    away again (`wire_replacement`). `empty` says the place had nobody in it,
+    which is `places_cost` with nobody leaving.
     """
-    before = 0.0 if empty else max(dropped_weekly, replacement)
-    return before - max(added_weekly, replacement)
+    return places_cost([] if empty else [dropped_weekly], [added_weekly], replacement)
 
 
 def _best_available(values: Mapping[int, float], exclude: Collection[int], floor: float) -> float:
@@ -498,8 +532,12 @@ def judge(
 ) -> Judgement:
     """Judge one move: this week, the rest of the season, and the record.
 
-    `dropped` and `added` are player ids; a free add drops nobody and an
-    injured-reserve move drops nobody either, since the man keeps his place.
+    `dropped` and `added` are player ids, any number of each: a free add drops
+    nobody, an injured-reserve move drops nobody either (the man keeps his
+    place), and a trade moves several in both directions at once. The season
+    term is `places_cost` over their values, so every shape of move is the one
+    rule summed per place.
+
     `delta_season_per_week` overrides the season term for a caller that has
     measured it another way -- the rest-of-season report hands the optimizer's
     own change per week, which is a with-and-without over the whole roster and
@@ -507,11 +545,10 @@ def judge(
     """
     replacement = spots.replacement(exclude=added)
     if delta_season_per_week is None:
-        cost = season_cost(
-            sum(spots.value(player_id) for player_id in dropped),
-            sum(spots.value(player_id) for player_id in added),
-            replacement * max(1, len(added)) if added else 0.0,
-            empty=not dropped,
+        cost = places_cost(
+            [spots.value(player_id) for player_id in dropped],
+            [spots.value(player_id) for player_id in added],
+            replacement,
         )
         delta_season_per_week = -cost if spots.measured else 0.0
     weeks = spots.weeks_remaining
