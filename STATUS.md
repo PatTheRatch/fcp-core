@@ -20,20 +20,24 @@
   Migration 0016; `scripts/status_pass.py`; `deploy/fcp-core-status.timer`.
   **Running on the VPS since 2026-09-17.** Status history cannot be
   backfilled, so 2027 is the first season with any.
-- The morning digest (`app/digest.py`, `scripts/digest.py`): what changed on
-  the tracked roster, where that roster stands, which free agents are worth
-  a look, and the team's adds in a fortnight. Plain text, under forty lines,
-  no ESPN request. Delivered by one POST to `FCP_DIGEST_URL`, and an event
-  is marked notified only once that POST has succeeded. The later passes
-  send a one-line alert instead, and only for a player of yours being ruled
-  out. **Running on the VPS**, delivered to Telegram. Since 2026-09-18 it
-  also carries the day's plan ("THIS WEEK": the matchup, adds used of the
-  budget, the empty days and the moves worth a look), goes to email as well
-  when the six `FCP_SMTP_*`/`FCP_EMAIL_*` settings are set
-  (`scripts/notify_test.py --email` to check), and is followed by
-  `scripts/warm_pages.py`, which asks the API for our team's two reports so
-  the pages open at once. The full digest is the pass labelled morning,
-  15:00 UTC.
+- The morning digest (`app/digest.py`, `app/mail/`, `scripts/digest.py`):
+  today's lineup, the week's plan, the season, what changed on the tracked
+  roster and around the league, and where the team stands. No ESPN request.
+  **Running on the VPS.** The later passes send a one-line alert instead,
+  and only for a player of yours being ruled out; an event is marked
+  notified only once a delivery has succeeded. The full digest is the pass
+  labelled morning, 15:00 UTC, followed by `scripts/warm_pages.py`, which
+  asks the API for our team's reports so the pages open at once.
+
+  **Everything goes by email** (2026-09-22): the six
+  `FCP_SMTP_*`/`FCP_EMAIL_*` settings, and no other channel.
+  `FCP_DIGEST_URL`, `FCP_DIGEST_CHAT_ID` and `FCP_TELEGRAM_BOT_URL` are
+  gone, the Telegram and ntfy channel rows are disabled (migration `0024`),
+  and `scripts/notify_test.py` checks the mail settings. The message is an
+  HTML page in the house style with the plain text beside it as the
+  alternative part, and a member chooses which of its eight sections he
+  wants, per league (docs/jobs.md, "Subscriptions" and "The shape of the
+  message").
 - The pickup recommender (`app/pickups`, docs/pickups.md), deployed. Every
   move is judged in one currency, categories, over both horizons: this
   week's head-to-head change plus the rest-of-season change per week times
