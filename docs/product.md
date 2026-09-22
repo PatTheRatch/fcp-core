@@ -211,3 +211,35 @@ project of its own; nothing above closes that door.
 7. **Billing:** the entitlements table filled by a payment provider's
    webhook, the upgrade page, and `require_entitlement` switched on. After
    the price is decided and the ESPN and BBM terms are read.
+
+## Trades between managers (decided in outline, 2026-09-22; not built)
+
+The trade page judges a deal; the next step is sending one. In order, each
+standing on the last: the **finder** (name what you want -- "an even trade
+that nets threes" -- and it searches every other roster for deals that fit
+both sides), the **block** (put a man up; the league sees it; the finder runs
+from each other manager's side), and **proposals**.
+
+A proposal is a deal sent from one manager to another inside the site: the
+players, any fills and drops, and the deal's fit for BOTH sides as the page
+shows it. The other manager gets a notification (his own channels: email,
+Telegram) and a page where he sees it, counters, accepts or declines; a
+counter is a new proposal that points at the one it answers, so the whole
+negotiation is one thread. Nothing touches ESPN: when both agree, the page
+says "now submit it on ESPN" and links there. That keeps the tool read-only
+against ESPN and keeps the decision where it belongs.
+
+A manager who has not signed up gets a **temporary link** to that one
+proposal: it shows him the deal and his side's fit and nothing else about the
+league, expires, and is the invitation to sign up (the proposer's league is
+already connected, so joining is one email). Sending and receiving proposals
+is a league-scope thing and should be free; the deeper judgement on the page
+stays paid. What the temporary link must never show: the proposer's own plan,
+the other rosters, or anything a member could not see.
+
+Data: `trade_proposals` (league_season, from_team, to_team, the deal as the
+report route takes it, state: open / countered / accepted / declined /
+withdrawn, `answers` the proposal it counters, who made it, when, an expiry)
+and a share token per proposal; notifications through the channels that
+already exist. The reasons and the numbers on a proposal page are the trade
+route's, so the two can never disagree.
