@@ -507,6 +507,10 @@ def _the_old_way(session: Session, league_season: LeagueSeason, espn_team_id: in
         healthy=healthy,
         wire=on_the_wire[:WIRE_EVENT_LIMIT],
         wire_extra=max(0, len(on_the_wire) - WIRE_EVENT_LIMIT),
+        # The two sections this helper is not about are built the same way
+        # the real digest builds them, so the comparison below is of the
+        # roster and the wire and of nothing else.
+        today=digest_module.today_lines(session, league_season, espn_team_id, on=LATER.date()),
         plan=digest_module.week_plan(session, league_season, espn_team_id, on=LATER.date()),
         event_ids=reported,
     )
