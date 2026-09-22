@@ -206,8 +206,12 @@ class Occupancy:
         return sum(1 for day in self.first_day.values() if day == self.first)
 
     def held_men(self) -> list[int]:
-        """Men rostered on every day of the period."""
+        """Men rostered on every day of the period (starts are NOT required)."""
         return sorted(p for p in self.held_days if self.held_days[p] >= self.days)
+
+    def held_starters(self) -> list[int]:
+        """Held men who started at least one game: the 13th man's candidate set."""
+        return [man for man in self.held_men() if self.start_days.get(man, 0) >= 1]
 
     def streamed_men(self) -> list[int]:
         """Men rostered for only part of the period, ordered by arrival."""
@@ -281,6 +285,65 @@ class TeamPeriod:
     def lane_count(self, by_arrival: bool) -> int:
         return self.lanes_by_arrival if by_arrival else self.lanes_by_occupancy
 
+    def lanes_tight(self) -> list[Lane]:
+        """The lanes that count under the tight definition: a man who STARTED."""
+        return [lane for lane in self.lanes if lane.starts >= 1]
+
+    def tight_lane_count(self) -> int:
+        """Lanes under the tight definition: the loose count, less the men who
+        only sat (never started). At most the loose count, often less."""
+        return min(self.lane_count(False), len(self.lanes_tight()))
+
+    def lane_count_tight(self) -> int:
+        return self.tight_lane_count()
+
+    def lane_places(self, tight: bool) -> int:
+        """How many PLACES the lane spans, for the per-place divisor.
+
+        Men the lane used overlap in time, so the count of men is not the
+        count of places. A team starts at most ten men on a day (measured),
+        so the lane can never occupy more than the number of starting slots
+        less the places the held men already fill. The divisor is therefore
+        the peak non-held men on any one day, which is the loose lane count,
+        bounded by the men the lane actually started.
+        """
+        men = len(self.lanes_tight()) if tight else len(self.lanes)
+        if men == 0:
+            return 1
+        # Loose divides by every man the lane used (men overlap -> lower bound
+        # on places); tight divides by the men who actually started, which is
+        # what the brief's tightening asks for.
+        if tight:
+            return max(1, min(self.lane_count(False), men))
+        return max(1, self.lane_count(False))
+
+    def streamed_started_games(self) -> int:
+        """Started games the lane's men recorded, from the LINEUP table."""
+        return sum(self.occ.start_days.get(lane.player_id, 0) for lane in self.lanes)
+
+    def streamed_played_games(self) -> int:
+        """Games the lane's men were box-scored as playing, through the lens."""
+        return sum(lane.line.games for lane in self.lanes)
+
+    def held_started_games(self) -> int:
+        """Started games the held men recorded, from the LINEUP table."""
+        return sum(self.occ.start_days.get(man, 0) for man in self.held_men)
+
+    def streamed_per_place_games(self, tight: bool = True) -> float:
+        """Games a WEEK one lane place carried: the lane's starts / its places.
+
+        `occ.start_days` is a count of DAYS the man was in a starting slot, so
+        it is normalised to a week by `games_week` exactly like every other
+        games figure in this script, then divided by the places the lane spans.
+        """
+        return games_week(self.streamed_started_games(), self.occ.stored_days) / self.lane_places(
+            tight
+        )
+
+    def streamed_per_place_value(self, tight: bool = True) -> float:
+        """Categories a week ONE lane place returned: the lane / its places."""
+        return self.streamed_value() / self.lane_places(tight)
+
     def arrivals_order(self) -> list[Lane]:
         """The lanes in the order their men first arrived."""
         return sorted(self.lanes, key=lambda lane: (lane.first_day, lane.player_id))
@@ -300,10 +363,38 @@ class TeamPeriod:
         return marginal(self.week, line, self.opponents) * self.week_days
 
     def held_13th(self) -> int | None:
-        """The lowest-valued held man: the team's last held place."""
-        if not self.held_men:
+        """The lowest-valued held man: the team's last held place.
+
+        Ranked over held men who started at least one game. `held` itself
+        requires only that a man was rostered every day (the brief's
+        definition) -- but a man who never started returns 0.00 by
+        construction, so including him would make the comparison column read
+        0.00 for the wrong reason. Held-but-never-started men are counted and
+        reported instead of silently dominating the minimum.
+        """
+        candidates = self.occ.held_starters()
+        if not candidates:
             return None
-        return min(self.held_men, key=lambda man: (self.held_values[man], man))
+        return min(candidates, key=lambda man: (self.held_values[man], man))
+
+    def held_man_lineup_games(self) -> list[float]:
+        """Each held man's started games a week, read off the lineup table.
+
+        The same quantity `held_man_games` reports, but without the
+        `played = true` lens's haircut (Limitation 3). Reported so the games
+        comparison can be read on both bases.
+        """
+        return [
+            games_week(self.occ.start_days.get(man, 0), self.occ.stored_days)
+            for man in self.held_men
+        ]
+
+    def held_13th_games(self) -> float:
+        """Started games a week the held 13th man recorded, from the lineup."""
+        man = self.held_13th()
+        if man is None:
+            return 0.0
+        return games_week(self.occ.start_days.get(man, 0), self.occ.stored_days)
 
     def held_13th_value(self) -> float:
         man = self.held_13th()
@@ -313,10 +404,12 @@ class TeamPeriod:
         man = self.held_13th()
         return CategoryLine() if man is None else self.held_lines[man]
 
-    def held_started_games(self) -> int:
+    def held_games_lens(self) -> int:
+        """Games the held men recorded through the `played = true` lens."""
         return sum(self.held_lines[man].games for man in self.held_men)
 
-    def streamed_started_games(self) -> int:
+    def streamed_games_lens(self) -> int:
+        """Games the lane's men recorded through the `played = true` lens."""
         return sum(lane.line.games for lane in self.lanes)
 
 
@@ -581,8 +674,21 @@ class SeasonMeasure:
     held_games: list[float]
     #: Each held man's own started games a week, one entry per held man.
     held_man_games: list[float]
+    #: Held men who never started a game in the period (the 13th-man caveat).
+    held_never_started: list[int]
+    #: Each held man's started games a week from the lineup table (no lens cut).
+    held_man_lineup: list[float]
     streamed_games: list[float]
     held_13th_games: list[float]
+    #: Games per week for ONE lane place (the headline unit): the loose count.
+    lane_place_games: list[float]
+    #: Games per week for one lane place under the tight definition.
+    lane_tight_games: list[float]
+    #: Categories a week for ONE lane place, loose and tight.
+    lane_place_value: list[float]
+    lane_tight_value: list[float]
+    #: The same two for the held 13th man of the team-period.
+    held_13th_start_games: list[float]
     adds: list[int]
     #: Adds per team-period keyed by lane count, for step 4.
     adds_by_lanes: dict[int, list[int]]
@@ -613,8 +719,15 @@ def measure_season(session: Session, season: int) -> SeasonMeasure:
         lane_rest=[],
         held_games=[],
         held_man_games=[],
+        held_never_started=[],
+        held_man_lineup=[],
         streamed_games=[],
         held_13th_games=[],
+        lane_place_games=[],
+        lane_tight_games=[],
+        lane_place_value=[],
+        lane_tight_value=[],
+        held_13th_start_games=[],
         adds=[],
         adds_by_lanes=defaultdict(list),
         streamed_by_lanes=defaultdict(list),
@@ -632,11 +745,21 @@ def measure_season(session: Session, season: int) -> SeasonMeasure:
         found.held_man_games.extend(
             games_week(tp.held_lines[man].games, days) for man in tp.held_men
         )
+        found.held_man_lineup.extend(tp.held_man_lineup_games())
+        found.held_never_started.append(
+            sum(1 for man in tp.held_men if tp.occ.start_days.get(man, 0) == 0)
+        )
         thirteen = tp.held_13th()
         if thirteen is not None:
             found.held_13th.append(tp.held_13th_value())
             found.held_13th_games.append(games_week(tp.held_lines[thirteen].games, days))
+            found.held_13th_start_games.append(tp.held_13th_games())
         if tp.lanes:
+            found.lane_place_games.append(tp.streamed_per_place_games(tight=False))
+            found.lane_place_value.append(tp.streamed_per_place_value(tight=False))
+        if tp.lanes_tight():
+            found.lane_tight_games.append(tp.streamed_per_place_games())
+            found.lane_tight_value.append(tp.streamed_per_place_value())
             found.streamed.append(tp.streamed_value())
             found.streamed_games.append(games_week(tp.streamed_started_games(), days))
             found.lane_one.append(tp.lanes[0].value * tp.week_days)
@@ -738,6 +861,12 @@ def step_2(measured: Sequence[SeasonMeasure]) -> None:
     print(line_of("whole held roster, pooled", held))
     print(line_of("streamed place, pooled", streamed))
     print(line_of("held 13th man, pooled", thirteen))
+    print("\n  PER PLACE (the headline unit), started games a week:")
+    print(line_of("one held man (lens)", pooled(measured, "held_man_games")))
+    print(line_of("one held man (lineup table)", pooled(measured, "held_man_lineup")))
+    print(line_of("one streamed place (loose)", pooled(measured, "lane_place_games")))
+    print(line_of("one streamed place (tight)", pooled(measured, "lane_tight_games")))
+    print(line_of("held 13th man", pooled(measured, "held_13th_start_games")))
 
 
 def step_2_per_man(measured: Sequence[SeasonMeasure]) -> None:
@@ -777,6 +906,26 @@ def step_3(measured: Sequence[SeasonMeasure]) -> None:
         ("lanes 2+ (the rest)", pooled(measured, "lane_rest")),
     ):
         print(line_of(label, values))
+    print("\n  PER PLACE, categories a week (the headline unit):")
+    for label, values in (
+        ("streamed place (loose)", pooled(measured, "lane_place_value")),
+        ("streamed place (tight)", pooled(measured, "lane_tight_value")),
+        ("held 13th man", pooled(measured, "held_13th")),
+        ("every held man", pooled(measured, "held_all")),
+    ):
+        print(line_of(label, values))
+    print("\n  per place, by season:")
+    for found in measured:
+        p_point, p_low, p_high = quartiles(found.lane_place_value)
+        print(
+            f"  {found.season}: median {p_point:.2f} IQR {p_low:.2f}-{p_high:.2f} "
+            f"n {len(found.lane_place_value)}"
+        )
+    print("\n  held men who never started, by season (excluded from the 13th man):")
+    for found in measured:
+        never = sum(found.held_never_started)
+        total = len(found.held_man_games)
+        print(f"  {found.season}: {never} of {total} held men ({never / total:.1%}) never started")
     print(
         f"\n  share above the {TYPICAL_PICKUP:.2f} floor: "
         f"streamed {share_above(pooled(measured, 'streamed'), TYPICAL_PICKUP):.1%}, "

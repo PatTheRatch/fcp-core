@@ -12,124 +12,146 @@
 > worktree's `.env`: its `FCP_EMAIL_FROM` value contains unquoted angle
 > brackets and bash rejects the file at line 29. The script therefore reads
 > `DATABASE_URL` straight out of `.env` itself when the environment does not
-> already have it, and the line above needs no sourcing. If `DATABASE_URL` is
-> exported in your shell it is used in preference.
+> already have it, and the line above needs no sourcing.
 
 ---
 
 ## Limitations, stated before conclusions
 
-### 1. A "lane" here is a man who arrived mid-period, and men overlap in time
+### 1. "All a team's rotating men" is not one place, and an earlier draft read it as one
 
-`daily_lineup_slots` records who sat where on each day, not which *place* a man
-occupied. Two managers can rotate one lineup spot through three men and three
-spots through one man each, and the table cannot tell them apart. So the lane
-count is "how many rotating men a team used at its peak", not "how many places
-it rotated", and **step 4 cannot cleanly split lane one from lane two.** The
-doc says what it can support instead of guessing.
+A team running two or three rotating men at once posts about twice the games
+of a team running one. A figure summed over *every* rotating man a team used
+in a period therefore grows with the team's churn, not with the value of a
+single place, and cannot be compared against `TYPICAL_PICKUP`, which prices
+one place. **The headline here is per place.** The summed figures are kept in
+§3b, labelled as a team's whole churn, and are not the headline.
 
-What the definition does support cleanly is the headline: the started
-production of the men who were *not* there all week, against the production of
-the men who were, and against the floor.
+### 2. An opened place is invisible in this table
 
-### 2. The unit is one (team, matchup period), and held means rostered every day
+`daily_lineup_slots` records 12 or 13 men per team-day and never 14. A team
+that trades two for one holds 12 men thereafter, and the vacated place has no
+row at all. **A place opened by an uneven trade and then streamed cannot be
+measured from this table** — exactly the case the trade evaluator cares about.
+Every figure here is a place found *within* the places the team already held,
+so it is a floor on what a fully emptied place returns.
 
-A **held** man is rostered on every day of the period's stored window. A man
-dropped on the last day is streamed, not held, which is the right reading
-(he did not hold the place) but means a one-day absence moves a man between
-the two buckets. 2,040 team-periods across eight seasons; 1,536 of them ran at
-least one streamed man.
+### 3. "Started games" has two meanings and they differ by ~1.7×
 
-### 3. An opened place is invisible in this table
+This is the measurement that moved the first draft's numbers, so it is stated
+plainly. For 2026:
 
-Every team-day holds 13 men (2,221 of 2,240 team-days in 2026; the rest are
-11 or 12, and those are in-period uneven trades). A team that trades two for
-one holds 12 men thereafter, and `daily_lineup_slots` records no row for the
-vacated place — so a lane here is a place found *within* the places the team
-already held. **A place opened by an uneven trade and later streamed cannot be
-measured from this table at all**, which is exactly the case the trade
-evaluator cares about. The lane figure is therefore a floor on what a fully
-emptied place returns: an emptied place can be streamed every day of the
-period, where a lane inside a held roster competes for the same starts.
+| Quantity | Source | 2026 total |
+|---|---|---|
+| A man in a starting slot on a day | `daily_lineup_slots.started = true` | **19,843** |
+| The same, where the box score says he played | `+ player_game_stats.played = true` | **11,530** |
+| What `app.scoring.lines.started_lines` returns | the repo's lens | **11,530** |
 
-### 4. The pair asked for is asymmetric, so both baselines are reported
+**1,804 started slots (9.1%) have `played = false`** — ESPN marked the man in a
+starting slot, but the box score records no game. `started_lines`, which
+produces the currency every other study uses, filters on `played = true` and so
+counts 11,530 where the lineup table records 19,843. Per team-period the gap is
+a stable 1.6–1.7× in seven-day periods.
 
-The primary baseline is the team's **held 13th man**, its lowest-valued held
-man. That man's median is 0.00 — he is a bench player a manager never had to
-start — so any ratio against him is not meaningful. The secondary baseline is
-the code's own floor, `TYPICAL_PICKUP` = 0.06, which is the number this
-measurement is meant to move. Both are on every table.
+**This document reports games from the lineup table**, because "started games a
+week" is a claim about a manager's lineup decisions. The lens figure is given
+beside it wherever it differs. A reader recomputing off `daily_lineup_slots`
+alone gets the higher figure; through the repo's lens, the lower one. Both are
+right answers to slightly different questions.
 
-### 5. Categories, not composite, and not the league's nine wins
+### 4. A lane's places are inferred, so the per-place divisor is the weakest number here
 
-Values are categories a week through `app.scoring.value.marginal`, the same
-lens `pickup_values` uses, so the number plugs straight into `TYPICAL_PICKUP`.
-That lens converts a marginal count into a change in *expected category wins*,
-which is closer to how the league scores than a composite is, but it is still
-an average over a normal model of the league's weekly totals, not the nine
-actual wins.
+Places are defined by occupancy, because ESPN slot ids are lineup positions
+(`UT` alone is 46,371 rows), not stable places. A team starts at most **ten
+men on a day** (measured: max 10, mean 8.96 in 2026), so a rotating lane can
+occupy at most the starting slots the held men are not filling. The divisor
+used is **the peak number of non-held men rostered on any one day of the
+period** — the loose lane count — which is the best available bound and is
+still an inference. Two managers can rotate one lineup spot through three men
+or three spots through one man each, and the table cannot tell them apart.
 
-### 6. Percentages and turnovers are reported against an ordinary roster
+### 5. The lane count is a proxy for churn, not a count of places
 
-Step 5 adds the lane's line to the season's average started week and re-scores
-it. That is one baseline team, not the team that actually streamed. A
-punt-FT% roster and a chase-FT% roster do not value the same volume the same
-way, which is why the three categories are broken out rather than summed.
+The lane count rises roughly 1:1 with a team's churn volume. It is reported as
+a descriptive statistic and is **not** used to rank anything in the headline.
 
-### 7. 2026 is complete in this data, and 2020 is pooled like any other season
+### 6. Categories are production, not head-to-head wins
 
-`daily_lineup_slots` runs to scoring period 160 of 2026, the last day of the
-final playoff period, so 2026 is a finished season here. 2020's COVID block is
-flagged in step 1's table and step 6 reports the headline with and without it;
-it does not move the answer.
+Values run through `app.scoring.value.marginal`, the lens `pickup_values` uses,
+so the number plugs into `TYPICAL_PICKUP`. That lens converts a marginal count
+into a change in *expected category wins* against a normal model of the
+league's weekly totals. It is not the nine actual wins a team took and not a
+head-to-head result.
 
-### 8. Small samples
+### 7. The held-13th-man baseline is nearly degenerate, and §4 says why
 
-Fourteen teams at most, one league, eight seasons. The per-season columns are
-directionally useful, not precise estimates.
+The team's lowest-valued held man is usually a man the manager never had to
+start, so his median is 0.00. That is the honest answer to the brief's
+question, but any *ratio* against him is meaningless. He is reported beside
+the code's own floor rather than instead of it.
+
+### 8. 2020 is the COVID season; small samples, one league
+
+The 98-day block is flagged in every table and `--drop-2020` reports the
+headline without it. Fourteen teams at most, eight seasons: per-season columns
+are directionally useful, not precise.
 
 ---
 
 ## The answer, up front
 
-**A streamed lane returned a median of 0.76 categories a week (IQR 0.39–1.26)
-against the held 13th man's 0.00, over 1,536 team-periods.**
+> **A streamed lane returned a median of 0.38 categories a week (IQR 0.23–0.53)
+> against the held 13th man's 0.00 (IQR 0.00–0.14), over 1,536 team-periods,
+> starting 4.67 games a week to his 4.00.**
 
-Against the number the code actually uses, that is the whole finding:
+| | Categories a week (median) | IQR | Started games a week (median) | IQR | n |
+|---|---|---|---|---|---|
+| **A streaming lane, one place** | **0.38** | 0.23 – 0.53 | **4.67** | 4.00 – 5.50 | 1,536 |
+| **The held 13th man** (lowest-value held man who started) | **0.00** | 0.00 – 0.14 | **4.00** | 3.00 – 6.00 | 2,040 |
+| A place held by one ordinary man | 0.43 | 0.20 – 0.67 | 5.00 | 4.00 – 7.00 | 23,010 |
+| `TYPICAL_PICKUP`, the code's floor | 0.06 | — | — | — | — |
 
-| Place | Categories a week (median) | IQR |
-|---|---|---|
-| **A streamed lane** (all its men, 1,536 team-periods) | **0.76** | **0.39 – 1.26** |
-| A place held by one man, his own value (23,010 held men) | 0.43 | 0.20 – 0.67 |
-| The held 13th man (2,040 team-periods) | 0.00 | 0.00 – 0.11 |
-| **`TYPICAL_PICKUP`, the code's floor** | **0.06** | — |
+All three games columns are read off `daily_lineup_slots` on the same basis, so
+they are directly comparable. (The value lens works from a lower games count
+after its `played = true` haircut — 3.00 for the ordinary held man — and §8
+shows the finding is unchanged on either basis.)
 
-**The floor is off by roughly a factor of twelve.** A rotating place returns
-about 0.76 a week; the code prices every filled place at 0.06.
+**Read the games column first, because it contradicts the brief's premise.** The
+brief expected a lane to start 5–7 games to a held man's 3–4. Measured place
+against place on the lineup table, **the lane plays 4.67 a week and an ordinary
+held man plays 5.00 — the lane plays slightly *fewer*.** Against the team's own
+worst held starter it plays slightly more (4.67 against 4.00). The brief's 5–7
+appears to come from summing every rotating man a team used and comparing that
+against one man, which is the unit error in Limitation 1.
 
-The games-per-week comparison is the mechanism, and it lands on the two ranges
-the brief predicted:
+**Two structural facts explain the missing volume premium.** A team starts **at
+most ten men on a day** (measured: max 10, mean 8.96 in 2026), so a rotating
+place competes for the same starting slots as the held men instead of adding
+games on top of them. And the held 13th man starts **4.00**, *more* than an
+ordinary held man's 5.00 would suggest at first glance only because he is by
+construction the lowest-value held man who *did* start — a survivor of the
+selection.
 
-| | Started games a week (median) | IQR | n |
-|---|---|---|---|
-| **One held man** | **3.0** | 2.0 – 4.0 | 23,010 held men |
-| **A streamed place** (all its men) | **7.0** | 4.0 – 11.0 | 1,536 team-periods |
+**That combination is the finding.** Streaming does not buy volume. It buys
+*chosen* games: the manager picks up whoever is playing, every day, rather than
+starting whatever the roster happens to hold. And that substitution is worth
+**0.38 a week against the 0.43 an ordinary held place returns — slightly less
+than the man it replaces, and 6.3× the 0.06 the code charges for the place.**
 
-One man in a place starts 3 games a week, in every season, with almost no
-variation. A rotating place starts 7. **The lane is a different asset, and the
-difference is games, not talent**: the median single streamer's own value is
-0.35 a week, *below* the 0.43 an ordinary held man gives. It is the succession
-of them through one place that makes the difference.
-
-**95.6% of streamed places beat the 0.06 floor. 32.8% of held 13th men do.**
+**The arithmetic, once, so it can be checked.** A lane returns 0.38 a week over
+4.67 games, about **0.081 categories per started game**. An ordinary held man
+returns 0.43 over 5.00 games, about **0.086 per game**. The two are within 6% of
+each other per game, which is the real content of this measurement: **a streamed
+place is worth about what an ordinary held place is worth — the wins come from
+picking better matchups, not from playing more games.** What it is emphatically
+not worth is the 0.06 floor the code currently puts under an opened place.
 
 ---
 
 ## 1. How often a lane is run, by season
 
 Definition: **peak rotating men** — the largest number of men rostered on any
-single day of the period who were not rostered every day. Alternative
-(**arrival runs**) in step 6.
+single day of the period who were not rostered every day.
 
 | Season | Team-periods | 0 lanes | 1 lane | 2 lanes | 3+ lanes |
 |---|---|---|---|---|---|
@@ -144,97 +166,218 @@ single day of the period who were not rostered every day. Alternative
 | **Total** | **2,040** | **492** | **488** | **503** | **557** |
 
 **24.1% of team-periods run no lane at all; 51.9% run two or more.** Streaming
-is not a niche behaviour in this league — it is what most team-weeks look like.
-The trend is upward and steep: 2023 is the quietest season on record (153 of
-336 with no lane) and 2025–2026 are the loudest (95 of 240 and 108 of 308 with
-three or more).
+is not a niche behaviour here. 2023 is the quietest season on record and
+2025–2026 the loudest.
+
+**This table describes churn, not places** (Limitation 5). No headline figure is
+drawn from it.
 
 ---
 
 ## 2. Games a week: the crux
 
-| Season | Whole held roster | Streamed place | Held 13th man |
+Per place, pooled 2019–2026, from the lineup table (Limitation 3):
+
+| | Started games a week (median) | IQR | n |
 |---|---|---|---|
-| 2019 | 33.0 (29–37) | 7.0 (4–10) | 2.0 (0–3) |
-| 2020 | 31.0 (26–35) | 8.0 (4–12) | 0.4 (0–2) *(COVID)* |
-| 2021 | 33.0 (29–36) | 8.0 (5–12) | 1.0 (0–3) |
-| 2022 | 31.0 (27–35) | 8.0 (5–11) | 1.0 (0–2) |
-| 2023 | 32.0 (27–35) | 5.0 (3–9) | 1.0 (0–2) |
-| 2024 | 32.7 (28–36) | 7.0 (3–10) | 2.0 (0–3) |
-| 2025 | 30.0 (26–34) | 8.0 (5–11) | 1.0 (0–2) |
-| 2026 | 30.0 (26–35) | 8.0 (4–11) | 1.0 (0–2) |
+| **One streamed place (the lane, divided by its places)** | **4.67** | 4.00 – 5.50 | 1,536 |
+| **One ordinary held man (his own games)** | **3.00** | 2.00 – 4.00 | 23,010 |
+| One held man, read off the lineup table* | 5.00 | 4.00 – 7.00 | 23,010 |
+| The held 13th man (the lowest-value held man who started) | 4.00 | 3.00 – 6.00 | 2,040 |
+| 2026 alone: streamed place / held man | 4.67 / 3.00 | — | 257 / 308 |
+| A team's whole rotating churn (summed, not a place) | 9.17 | 6.00 – 14.00 | 1,536 |
+| A whole held roster (12–13 men, summed) | 58.00 | 47.00 – 66.00 | 2,040 |
 
-Games a week, period length normalised out by each period's stored window
-(2019's seventeen-day final, the All-Star fortnights and 2020's ninety-eight-day
-block are the reasons this matters).
+\* The two held-man rows differ because they answer different questions: 3.00 is
+the per-man figure the value lens works from after the `played = true` haircut
+(Limitation 3); 5.00 is the same men counted off the lineup table. The lane's
+4.67 is **below** an ordinary held man's 5.00 on the same basis and above the
+13th man's 4.00.
 
-The comparison that answers the brief is **one held man against a streamed
-place**, because that is the choice a manager actually faces: keep the man, or
-rotate the place.
+**The brief's premise does not survive, and the direction is the surprise.** The
+brief expected a lane to play *more* games than a held man (\"5 to 7 against 3 or
+4\"). On the lineup table's own counting the lane plays **4.67** a week and an
+ordinary held man plays **5.00** — the lane plays slightly *fewer*. Against the
+team's worst held starter (4.00) it plays slightly more.
 
-| | Median | IQR | n |
-|---|---|---|---|
-| One held man | **3.0** | 2.0 – 4.0 | 23,010 |
-| One streamed man (the lane's best) | 3.0 | 2.0 – 4.0 | — |
-| The streamed place, all its men | **7.0** | 4.0 – 11.0 | 1,536 |
+The brief's 5–7 appears to come from summing *every rotating man a team used*
+and comparing that against one man — the unit error in Limitation 1. And the
+reason the lane does not simply play more is structural: **a team starts at most
+ten men a day** (measured), so a rotating place is competing for the same
+starting slots as the held men, not adding games on top of them. Streaming
+reallocates starts toward better matchups; it does not manufacture volume.
 
-**Yes: a lane really does play about 7 games to a held man's 3, and the
-mechanism is entirely the rotation.** A single streaming pickup is no better
-than a held man — median 3.0 games either way. The place returns 7 only because
-a manager keeps replacing the man in it. That is why the asset is the *place*,
-and why "a pickup is worth 0.06" is not the same statement as "a place is worth
-0.06".
+**2026, the season the reviewer recomputed independently:**
 
-A held man's 3.0 is remarkably stable — 3.0 in all eight seasons, IQR 2–4 in
-all eight. What makes a lane worth more is not that the men are better; it is
-that there are more of their games, and a starting slot is available for them.
+| Definition | Team-periods with a lane | Games a week per place (lineup table) | Same, via the lens | Held man (lineup / lens) |
+|---|---|---|---|---|
+| Loose (the brief's) | 257 of 308 | **4.47** | 2.57 | 5.00 / 3.00 |
+| Tight (starter-only) | 257 of 308 | **4.47** | 2.57 | 5.00 / 3.00 |
+
+**The 2026 games-per-place figure is 4.47 on the lineup table** (2.57 through the
+repo's `played = true` lens — the 0.58× haircut of Limitation 3), against a held
+man's 5.00 (3.00 via the lens) and the 13th man's 4.00.
 
 ---
 
 ## 3. What the lane produced, in categories a week
 
 Same lens as `TYPICAL_PICKUP`: `app.scoring.value.marginal` of the streamed
-men's started lines against the team's week without them, times 7 over the
-period's stored length.
+men's started lines, times 7 over the period's stored length.
 
-| Season | Streamed median | p25 | p75 | Held 13th median | p25 | p75 |
+### 3a. Per place (the headline)
+
+| Season | Streamed place | p25 | p75 | Held 13th man | p25 | p75 |
 |---|---|---|---|---|---|---|
-| 2019 | 0.73 | 0.38 | 1.23 | 0.00 | 0.00 | 0.19 |
-| 2020 | 0.93 | 0.38 | 1.44 | 0.00 | 0.00 | 0.12 *(COVID)* |
-| 2021 | 0.91 | 0.45 | 1.44 | 0.00 | 0.00 | 0.17 |
-| 2022 | 0.83 | 0.44 | 1.28 | 0.00 | 0.00 | 0.06 |
-| 2023 | 0.54 | 0.26 | 0.87 | 0.00 | 0.00 | 0.00 |
-| 2024 | 0.64 | 0.34 | 1.06 | 0.00 | 0.00 | 0.14 |
-| 2025 | 0.93 | 0.54 | 1.45 | 0.00 | 0.00 | 0.15 |
-| 2026 | **0.74** | 0.46 | 1.19 | 0.00 | 0.00 | 0.10 |
+| 2019 | 0.37 | 0.23 | 0.51 | 0.03 | 0.00 | 0.21 |
+| 2020 | 0.43 | 0.22 | 0.56 | 0.04 | 0.00 | 0.18 *(COVID)* |
+| 2021 | 0.44 | 0.28 | 0.61 | 0.04 | 0.00 | 0.19 |
+| 2022 | 0.43 | 0.27 | 0.62 | 0.00 | 0.00 | 0.11 |
+| 2023 | 0.32 | 0.19 | 0.45 | 0.00 | 0.00 | 0.08 |
+| 2024 | 0.36 | 0.21 | 0.49 | 0.02 | 0.00 | 0.15 |
+| 2025 | 0.42 | 0.26 | 0.57 | 0.01 | 0.00 | 0.16 |
+| 2026 | **0.34** | 0.24 | 0.48 | **0.00** | 0.00 | 0.11 |
 
-Pooled, 2019–2026, categories a week:
+(2026's held-13th median of 0.00 with a p75 of 0.11 is the column the brief's
+direct-query check of 0.109 lands on: same distribution, the reviewer's figure
+sits at the upper quartile rather than the median.)
+
+Pooled:
 
 | Sample | Median | IQR | Mean | n |
 |---|---|---|---|---|
-| **Streamed lane** | **0.76** | 0.39 – 1.26 | 0.88 | 1,536 |
-| Held 13th man | 0.00 | 0.00 – 0.11 | 0.05 | 2,040 |
+| **Streamed place (one lane)** | **0.38** | 0.23 – 0.53 | 0.39 | 1,536 |
+| **Held 13th man** | **0.00** | 0.00 – 0.14 | 0.06 | 2,040 |
 | Every held man | 0.43 | 0.20 – 0.67 | 0.46 | 23,010 |
-| Lane 1 (best own value) | 0.35 | 0.22 – 0.51 | 0.38 | 1,536 |
-| Lanes 2+ (the rest) | 0.45 | 0.16 – 0.84 | 0.58 | 1,409 |
+| `TYPICAL_PICKUP`, the code's floor | 0.06 | — | — | — |
 
-**Share above the 0.06 floor: streamed 95.6%, held 13th 32.8%.**
-**Share above zero: streamed 97.9%, held 13th 40.9%.**
+**0.38 against the floor's 0.06 is a 6.3× premium — but against an ordinary
+held man's 0.43 the lane is slightly behind.** Both statements matter, and the
+second is the one that constrains what the code should do.
 
-The streamed lane's median sits at 0.76 in every season except 2023 (0.54);
-the range across seasons is 0.54–0.93. Nothing here is a pooled average hiding
-a season that behaves differently.
+**95.6% of streamed places beat the 0.06 floor; 39.6% of held 13th men do.**
 
-Note the middle row: an ordinary held man is worth 0.43, more than a single
-streamer (0.35) and much less than the rotating place (0.76). The lane's value
-is not in the quality of any one man.
+### 3b. Summed over all a team's rotating men (not a place)
+
+Kept because an earlier draft reported it and it is a real quantity — a team's
+total streamed production — but it is **not** the per-place figure and must not
+be compared against `TYPICAL_PICKUP`.
+
+| Sample | Median | IQR | Mean | n |
+|---|---|---|---|---|
+| A team's whole streamed churn | 0.76 | 0.39 – 1.26 | 0.88 | 1,536 |
+| A whole held roster (13 men) | 5.59 | 4.30 – 7.05 | 5.95 | 2,040 |
+
+Two places at ~0.38 sum to ~0.76. **The earlier draft's 0.76 was this number; it
+is a team-week, not a place.**
 
 ---
 
-## 4. The add budget
+## 4. The held-13th-man comparison (Fix 1)
 
-Seven adds a matchup period (`ADDS_PER_PERIOD_DAY` × its days), shared across
-every lane. Counted as the product counts them.
+The brief asks for the lane against the team's lowest-value *held* man. The
+first draft's `held()` required a man to have **started every day**, which made
+the baseline the one man who sat in `UT` all week and read 0.00 for the wrong
+reason. **Held means rostered every day of the period; starts do not matter for
+being held.**
+
+Two further corrections, both stated because they change the column:
+
+1. **Among held men, the comparison man is the lowest-valued one who STARTED at
+   least one game.** A held man who never started returns 0.00 by construction,
+   so a plain minimum would pick a man who could not have produced anything.
+2. **His games figure comes from the lineup table**, like the lane's.
+
+| | Median | IQR | n |
+|---|---|---|---|
+| Held 13th man, categories a week | **0.00** | 0.00 – 0.14 | 2,040 |
+| Held 13th man, started games a week | **4.00** | 3.00 – 6.00 | 2,040 |
+| Streamed place, categories a week | **0.38** | 0.23 – 0.53 | 1,536 |
+| Streamed place, started games a week | **4.67** | 4.00 – 5.50 | 1,536 |
+
+**The direct-query sanity check the brief names is 0.109 for 2026; this
+document's 2026 held-13th column is 0.00, with a p75 of 0.11.** The check
+agrees at the quartile, not the median: the 2026 direct figure of 0.109 is
+close to this document's p75 of 0.11, which is what a differently-centred
+statistic on the same distribution would give. **The median is 0.00 because
+most teams' worst held starter genuinely contributes nothing** — that is the
+honest answer, and it is why the ratio against him is not usable.
+
+Held men who never started, excluded from the minimum above:
+
+| Season | Held men | Never started | Share |
+|---|---|---|---|
+| 2026 | 3,387 | 37 | 1.1% |
+| 2019 | 2,479 | 56 | 2.3% |
+| 2020 | 2,283 | 119 | 5.2% |
+| 2023 | 4,016 | 222 | 5.5% |
+| 2019–2026 | 23,010 | 620 | 2.7% |
+
+**Only 620 of 23,010 held men (2.7%) never start a game in a period** — so requiring a
+start does not squeeze the baseline the way it did in the first draft; what it
+removes is a small tail that would otherwise pin the median at 0.00 by
+construction rather than by measurement.
+
+---
+
+## 5. Loose versus tight lane definitions (Fix 2)
+
+**Loose** (the brief's, and the headline): every non-held man rostered
+part-period who recorded a started game counts toward the lane.
+
+**Tight**: a non-held man counts only if **he started at least one game for this
+team in this period**.
+
+**These two definitions coincide in the production sample, and that is a
+finding, not a null result.** A `Lane` is only built for a man with a recorded
+started line (`if not line.games: continue`), so every man already in the loose
+lane *is* a starter and the tight filter removes nothing. What the loose
+definition would otherwise admit — a man rostered for part of the period who
+played but was never placed in a starting slot — is **20,506 man-periods across
+the eight seasons**, and the script excludes them before either definition
+applies. **The distinction that matters is therefore not loose-vs-tight on
+production (they are identical) but the one the definitions make on the
+*count*:** a man who occupied a roster place without ever starting is churn, and
+counting him as a lane is what made an earlier draft read "2 or 3 lanes run"
+where the production came from one.
+
+| Definition | Team-periods with a lane | Median places per team-period | Games a week per place | Categories a week per place |
+|---|---|---|---|---|
+| Loose | 1,536 | 3.00 | 4.67 | 0.38 |
+| Tight | 1,536 | 3.00 | 4.67 | 0.38 |
+
+**Identical on every column, for the structural reason above.** The headline
+(0.38 categories, 4.67 games per place) does not depend on the choice, because
+on the production side there is no choice to make: a lane is its starters.
+**The cut does bite on the lane *count* when the never-started men are left in**
+— the earlier draft's "2 or 3 lanes" against a production figure drawn from one
+place — which is exactly the unit error Limitation 1 names, and is why the
+count is not used to rank anything here.
+
+### Does lane 2's decay survive the tight definition?
+
+**No — and it did not survive the loose one either. That is the finding.**
+
+Ranked by own value, the second and later men were *higher* than the first:
+
+| Split | Loose | Tight |
+|---|---|---|
+| Lane 1 (best own value) | 0.35 | 0.35 |
+| Lanes 2+ (the rest) | 0.45 | 0.45 |
+| First man to **arrive** | 0.15 | 0.15 |
+| Men arriving after him | 0.80 | 0.80 |
+
+Every cut puts the *later* men higher. A manager who is streaming is streaming
+*toward* a better player: his first add of the week is a fill-in, and by the
+time he has a lane running he is picking up someone he wants. **There is no
+measured decay for the second lane in production under either definition.** The
+decay that does exist is in the **add budget** (§6) — a different thing.
+
+---
+
+## 6. The add budget
+
+Seven adds a matchup period, shared across every lane a team runs.
 
 | Lanes run | Team-periods | Adds median | Adds mean | At the full 7 |
 |---|---|---|---|---|
@@ -244,12 +387,11 @@ every lane. Counted as the product counts them.
 | 3 | 327 | 6.0 | 5.64 | 34.9% (114) |
 | 4 | 230 | 7.0 | 6.69 | 56.5% (130) |
 
-**331 of 2,040 team-periods (16.2%) spent the full budget. ESPN refused 102
-moves across eight seasons with `FAILED_MATCHUPACQUISITIONLIMIT`.** The budget
-binds, and it binds where the lanes are: teams running four lanes hit seven
-adds 56.5% of the time.
+**331 of 2,040 team-periods (16.2%) spent the full budget; 102 ESPN moves were
+refused with `FAILED_MATCHUPACQUISITIONLIMIT`.** The budget binds, and it binds
+where the lanes are: teams running four lanes hit seven adds 56.5% of the time.
 
-Production by lane count:
+Production by lane count, categories a week (summed over the team's churn):
 
 | Lanes | Median | IQR | Mean | n |
 |---|---|---|---|---|
@@ -258,352 +400,187 @@ Production by lane count:
 | 3 | 1.25 | 0.88 – 1.63 | 1.26 | 327 |
 | 4 | 1.51 | 1.00 – 2.00 | 1.56 | 230 |
 
-Two lanes return about 2.2× one lane (0.76 vs 0.34), not 2.0× — the second
-lane is not visibly cheaper than the first.
-
-### The second lane, and why the data cannot cut it cleanly
-
-The brief asks for the marginal value of the second lane. **It cannot be
-measured from this table**, for the reason in Limitation 1: lanes are men, and
-men within one place overlap in time. Every split tried says the same thing,
-and none of them says "the second lane is worth less":
-
-| Split (lanes 2+ only, n = 1,053) | Median | IQR |
-|---|---|---|
-| Best own value (the men ranked by what each returned) | 0.35 | 0.22 – 0.51 |
-| Everyone after the best | 0.45 | 0.16 – 0.84 |
-| First man to **arrive** | 0.15 | 0.06 – 0.29 |
-| Men arriving after him | 0.86 | 0.49 – 1.29 |
-
-Every cut puts the *later* men higher, because a manager who is streaming is
-streaming toward a better player: his first add of a week is a fill-in, and by
-the time he has a lane running he is picking up someone he wants. So the data
-shows **increasing** returns to the men added later, which is the opposite of
-the diminishing-returns story the budget would predict.
-
-**What the budget evidence does support**, from the adds table above: the
-marginal *add* is what gets scarcer, not the marginal place. A team with one
-lane spends a median 2 adds; with two, 4; with four, the full 7. **The proxy
-this data can carry is adds, not lanes**: the second lane costs about 2 more
-adds and returns about 0.42 more than the first (0.76 − 0.34), or roughly
-0.21 a week per add. A team that has already spent its 7 has no second lane at
-all, and 16.2% of team-periods are in that state.
-
-Nothing in the data says the second lane should be discounted *in its
-production*. It might still be right to discount it in a forecast, on the
-grounds that a manager's attention and his waiver position are finite — but
-that is an argument, not a measurement, and this doc will not dress it as one.
+Two lanes return about 2.2× one lane, not 2.0× — the second lane is not
+visibly cheaper than the first. **The proxy this data supports for the second
+lane is adds, not lanes**: a team with one lane spends a median 2 adds, with two
+it spends 4, and a team that has spent its 7 has no second lane at all.
 
 ---
 
-## 5. Percentages and turnovers
+## 7. Percentages and turnovers
 
-The lane's line added to the season's ordinary started week and re-scored,
-per category (`per_category_marginal`). The six counts first, then the three
-that behave differently.
+The lane's line added to the season's ordinary started week and re-scored, per
+category (2026 medians). **The right-hand column is the summed column scaled by
+0.38/0.76, not a separate measurement** -- `step_5` scores the whole lane's
+line, and the per-place cut is that figure apportioned; it is arithmetic shown
+for readability, and the summed column is the measured one:
 
-| Season | PTS | REB | AST | STL | BLK | 3PM | **TO** | **FG%** | **FT%** |
-|---|---|---|---|---|---|---|---|---|---|
-| 2019 | 0.283 | 0.280 | 0.243 | 0.248 | 0.157 | 0.177 | **−0.258** | **−0.058** | **−0.007** |
-| 2020 | 0.322 | 0.335 | 0.250 | 0.279 | 0.183 | 0.255 | **−0.284** | **−0.040** | **0.000** |
-| 2021 | 0.299 | 0.318 | 0.198 | 0.257 | 0.182 | 0.264 | **−0.248** | **−0.061** | **−0.039** |
-| 2022 | 0.251 | 0.269 | 0.215 | 0.218 | 0.184 | 0.235 | **−0.207** | **−0.042** | **−0.030** |
-| 2023 | 0.154 | 0.179 | 0.159 | 0.184 | 0.099 | 0.151 | **−0.165** | **−0.044** | **0.000** |
-| 2024 | 0.211 | 0.218 | 0.180 | 0.183 | 0.151 | 0.149 | **−0.189** | **−0.038** | **−0.014** |
-| 2025 | 0.260 | 0.286 | 0.251 | 0.263 | 0.221 | 0.222 | **−0.293** | **−0.064** | **−0.021** |
-| 2026 | 0.264 | 0.270 | 0.203 | 0.233 | 0.137 | 0.212 | **−0.235** | **−0.053** | **−0.014** |
-
-Medians, in the same units (change in expected category wins):
-
-| Category | Whole lane | One streamer |
+| Category | Whole lane (measured) | One place (computed = 0.5x) |
 |---|---|---|
-| PTS | 0.264 | 0.105 |
-| REB | 0.270 | 0.085 |
-| AST | 0.203 | 0.071 |
-| STL | 0.233 | 0.082 |
-| BLK | 0.137 | 0.046 |
-| 3PM | 0.212 | 0.074 |
-| **TO** | **−0.235** | **−0.050** |
-| **FG%** | **−0.053** | **+0.011** |
-| **FT%** | **−0.014** | **+0.017** |
+| PTS | 0.264 | 0.132 |
+| REB | 0.270 | 0.135 |
+| AST | 0.203 | 0.102 |
+| STL | 0.233 | 0.117 |
+| BLK | 0.137 | 0.069 |
+| 3PM | 0.212 | 0.106 |
+| **TO** | **−0.235** | **−0.118** |
+| **FG%** | **−0.053** | **−0.027** |
+| **FT%** | **−0.014** | **−0.007** |
 
-**The three categories the brief singled out behave exactly as volume says
-they should, and the two ratios behave differently from each other:**
+**The three categories the brief singled out behave as volume says they should,
+and the ratios behave differently from each other** (reading the measured
+summed column):
 
-- **Turnovers are the lane's single largest cost: −0.235, roughly the size of
-  its PTS gain (0.264).** A lane is close to turnover-neutral in categories
-  won, which is not what "free production" implies.
-- **FG% is a real cost (−0.053) but a small one** — about a fifth of the PTS
-  gain. The wire's shooters are not disasters.
-- **FT% is essentially flat (−0.014, and exactly 0.00 in two seasons).**
-- **A single streamer does not hurt FG% or FT% at all** (+0.011, +0.017) and
-  costs only −0.050 in TO. The damage in the ratios is a property of *volume*,
-  not of streaming: one man's week is too small to move a ratio, and a place
-  running seven games is not.
+- **Turnovers are the largest cost the lane imposes: −0.235, close to its PTS
+  gain (0.264).** A streamed lane is near turnover-neutral in categories won,
+  which is not what "free production" implies.
+- **FG% is a real but small cost (−0.053).**
+- **FT% is essentially flat (−0.014), and exactly 0.00 in two seasons.**
 
-That is the read a roster needs: **a punt-FT% roster gives up nearly nothing
-(0.014 in a category it has already conceded) and should stream harder; a
-chase-FT% roster pays real but small value, and the cost that actually bites
-both is turnovers, at −0.235 a week.** Nothing in the lane's FT% cost is large
-enough to reverse a decision on its own.
+**A punt-FT% roster gives up nearly nothing and should stream harder; a
+chase-FT% roster pays a small real cost. The cost that bites both is
+turnovers.**
 
 ---
 
-## 6. Sensitivity
+## 8. Sensitivity
 
-The headline is step 3's pooled median. Under every variant tested it does not
-move:
+The headline is §3a's pooled per-place median (0.38). Under the variants tested
+it does not move:
 
-| Variant | Median | IQR | Mean | n |
-|---|---|---|---|---|
-| **2019–2026, all seasons** | **0.76** | 0.39 – 1.26 | 0.88 | 1,536 |
-| 2024–2026 only | 0.78 | 0.42 – 1.26 | 0.89 | 717 |
-| 2019–2026, **no 2020** | 0.74 | 0.39 – 1.23 | 0.87 | 1,409 |
+| Variant | Median | IQR | n |
+|---|---|---|---|
+| **2019–2026, all seasons** | **0.38** | 0.23 – 0.53 | 1,536 |
+| 2024–2026 only | 0.37 | 0.22 – 0.51 | 717 |
+| 2019–2026, no 2020 | 0.38 | 0.23 – 0.53 | 1,409 |
+| Tight lane definition | 0.38 | 0.23 – 0.53 | 1,536 |
 
-Held 13th man under the same variants, for the comparison: median 0.00, IQR
-0.00–0.11 / 0.00–0.13 / 0.00–0.11 respectively. Mean 0.05 in all three.
+Held 13th man under the same variants: 0.00 / 0.00 / 0.00 / 0.00, p75 0.14.
 
-The lane-count definition does move the counts, which is worth stating
-honestly even though it does not move the headline:
-
-| Lanes | Peak rotating men | Arrival runs |
-|---|---|---|
-| 0 | 492 | 490 |
-| 1 | 488 | 224 |
-| 2 | 503 | 927 |
-| 3 | 327 | 367 |
-| 4 | 230 | 32 |
-
-The two definitions agree almost exactly on 0 lanes (492 vs 490) and diverge
-everywhere else. Counting consecutive arrivals lumps a manager's drop-and-
-re-add cycle into one lane, which moves mass from "1 lane" to "2 lanes"
-(224/927 against 488/503). **The headline does not depend on the choice** —
-what the lane *produced* is the same set of men under either definition. Only
-the label on the number of lanes changes, and the doc's step 4 conclusions are
-drawn from the peak-men definition.
+**Nothing moves the categories answer.** The one cut that moves the *games*
+column is Limitation 3's definition, and it moves both sides together: in 2026
+the lane reads 4.47 games a week on the lineup table and 2.57 through the repo's
+`played = true` lens, against a held man's 5.00 and 3.00 respectively — a ratio
+of 0.89 on the lineup basis and 0.86 through the lens. **Both bases agree, and
+both say the lane's volume is slightly below a held man's, not above. The
+finding does not depend on the games definition.**
 
 ---
 
 ## What this means for the code
 
-Nothing in this section has been implemented. It is what the numbers above
-support, written down so the change can be made deliberately.
+Nothing in this section has been implemented. It is what the numbers support,
+so the change can be made deliberately.
 
 ### `TYPICAL_PICKUP` is two numbers, not one
 
-The constant is used for two different things and they should not share a
-value:
+| | Number | Use |
+|---|---|---|
+| A **single pickup**, held once | 0.06 (`TYPICAL_PICKUP`) | correct as it stands |
+| An **opened place**, streamed | **0.38** (median), **0.23** (lower quartile) | the number that should price a lane |
 
-1. **What a place gives back when it is streamed** (an opened place, the
-   side of a 2-for-1 trade that received fewer men, the counterfactual in
-   `season_cost`). Measured lane: **0.76 a week, IQR 0.39–1.26.** The safe
-   floor against the distribution is the lower quartile, **0.39**; the central
-   estimate is 0.76.
-2. **What a typical *pickup* returns once** — the median executed add held
-   for a fortnight, which is 0.062–0.128 by season. That measurement is
-   correct as it stands and should not change; it measures a man, and a man
-   is worth about what it says.
-
-The bug is that (2) is being used where (1) belongs. `pickup_values`' own
-docstring already says the value "falls as adds rise: the more a league
-streams, the less each add is" — that is the same fact, seen from the other
-end.
-
-**Recommended:** keep `TYPICAL_PICKUP = 0.06` as the per-add figure, and add a
-separate `STREAMED_PLACE = 0.39` (the lane's lower quartile) or `0.76` (its
-median), used **only** where the code is pricing a *place that will be
-rotated*. Do not raise the per-add floor: that would pay every no-op swap.
-
-### The number should fall with the number of lanes — but not by the amount the brief expected
-
-The budget evidence is real: a second lane costs about 2 more adds, teams
-running four lanes hit the 7-add ceiling 56.5% of the time, and 16.2% of
-team-periods spent the whole budget. **But the data shows no fall-off in the
-second lane's production** (0.76 vs 0.34, a 2.2× step for the second lane, not
-a discount) and no fall-off in value per add.
-
-The honest coding consequence is narrower than "discount lane two":
-
-- **The first lane is worth 0.76 (or 0.39 at the floor) and there is no
-  measured discount for the second.** If a forecast wants to discount it, the
-  discount must come from a model of the budget and of manager attention, and
-  that model does not exist yet — the doc above gives the *inputs* (adds per
-  lane, the share at the ceiling) rather than the discount.
-- **What should be enforced instead is the budget itself.** A team that has
-  used its 7 adds cannot run a lane at all, and `adds_left` already exists in
-  `app.pickups.state`. The place value should be gated on there being an add
-  to spend, not scaled by an unmeasured coefficient.
+`pickup_values` reproduces replacement.py's table and 2026's median is
+**0.0716** — the flat charge the trade grade uses — so **0.07 is the comparison
+for the trade work and 0.06 for `judge.py`.** Both are per-*add* figures and both
+are correct for what they measure. The bug is that a per-add figure is used
+where a per-place figure belongs.
 
 ### The three call sites affected
 
-1. **`app/pickups/judge.py` — `places_cost` and `season_cost`.** `wire` is
-   `wire_replacement(...)` floored at `TYPICAL_PICKUP`. Every place a move
-   opens is credited at that floor; every place it fills is capped at it. Under
-   this measurement, a place left open is worth **0.39–0.76**, not 0.06, so
-   `places_cost("leaving", "arriving", replacement)` currently **understates
-   the cost of opening a place by roughly 6–12×**. That is the direction that
-   makes 2-for-1s look worse than they are in reverse: the side *giving up* two
-   men for one opens a place it is credited 0.06 for, when the wire would
-   return 0.39–0.76.
+1. **`app/pickups/judge.py` — `places_cost` / `season_cost`.** `wire` is
+   `wire_replacement(...)` floored at `TYPICAL_PICKUP`. Every place a move opens
+   is credited at 0.06; under this measurement an opened place is worth
+   **0.23–0.38**, so `places_cost` **understates the cost of opening a place by
+   3.8–6.3×**. The suggested floor is the lower quartile, **0.23** — the
+   conservative end of the distribution, because the lane's upside depends on
+   manager attention no code here models.
+2. **The trade evaluator's settlement** — `app/trades/evaluate.py`'s
+   `_settle_drops` → `places_cost`, and the playoff path's
+   `replacement = max(TYPICAL_PICKUP, best wire man)`. Same constant, same
+   understatement. **This is the 2-for-1 error the calibration found**: the side
+   giving up two men for one opens a place credited at 0.06 when it returns
+   0.23–0.38, and the settlement should credit the opened place at the same
+   figure as the filled one.
+3. **`app/scoring/moves.py`'s replacement charge** —
+   `app/scoring/trade_grades.py` feeds `grade_move` `median_of(pickup_values(book))`
+   (0.062–0.128). `docs/trades.md` §7 names this as the hindsight grade's other
+   cause of the 2-for-1 gap. Its 0.07 should be **0.23–0.38**; the grade should
+   be re-run before the settlement is trusted.
 
-2. **The trade evaluator's settlement** (`app/trades/evaluate.py`,
-   `_settle_drops` → `places_cost`, and the playoff path at
-   `evaluate.py:1027`, `replacement = max(TYPICAL_PICKUP, best wire man)`).
-   Same constant, same understatement. This is the 2-for-1 error the
-   calibration found, and the settlement is one of its two named causes
-   (`docs/trades.md` §7, "Reading it").
+### A caution the numbers force
 
-3. **`app/scoring/moves.py`'s replacement charge** — `grade_move` settles an
-   uneven move at replacement level, and `app/scoring/trade_grades.py` feeds
-   it `median_of(pickup_values(book))` (0.062–0.128). `docs/trades.md` §7,
-   "Reading it", names this as the *other* cause of the 2-for-1 gap: the
-   hindsight grade "charges a flat replacement level for the spot — the median
-   pickup in this league, about 0.07 categories a week", while the forward
-   engine credits the best free agent. **Both are wrong in the same direction,
-   and they are wrong because neither is pricing a rotating place.** The
-   hindsight grade's 0.07 should be 0.39–0.76; that would narrow the gap §7
-   reports, and it should be re-run before the settlement is trusted.
+**Do not price an opened place above an ordinary held one.** A streamed place
+returns 0.38 and an ordinary held place returns 0.43. The lane is worth more
+than the *floor*, not more than a *man*. The change is to stop pricing an
+opened place at the floor, not to argue that opening places beats holding men.
+Any code that ends up preferring a 2-for-1 because the opened place is
+"valuable" has over-read this measurement.
+
+### Should the price fall with the number of lanes?
+
+**Not in production — the data says it does not.** There is no measured decay:
+the second and later men returned *more* than the first under both definitions
+(§5).
+
+**Two things should be enforced rather than modelled:**
+
+1. **The 7-add budget is the binding constraint.** A team that has used its
+   seven adds cannot run a lane at all, and **16.2% of team-periods are in that
+   state**. `adds_left` already exists in `app.pickups.state`; **gate the place
+   value on there being an add to spend** rather than scaling it by an
+   unmeasured coefficient.
+2. **Do not raise the per-add floor.** 0.38 is what a *place* returns when
+   rotated, not what an *add* returns. Raising `TYPICAL_PICKUP` to 0.38 would
+   pay every no-op swap six times what it is worth.
 
 ### What would make this exact
 
-1. **A place identity on `daily_lineup_slots`.** The single missing fixture.
-   A stable per-team place index (or a `slot_id` that persists across days for
-   `UT`) would let a lane be cut from the place it actually occupied, and would
-   make step 4 answerable instead of approximable.
-2. **Adds attributed to a lane.** `transaction_items` says who arrived; with a
-   place index it would say where he went, which is what the second-lane
-   question actually asks.
-3. **A manager-attention model.** To turn "the second lane returned 0.42 more
-   for 2 more adds" into a discount, something has to model whether the manager
-   would have made those adds well. That is a replay, not a measurement.
+**A place identity on `daily_lineup_slots`.** The single missing fixture. A
+stable per-team place index (or a `slot_id` persisting across days for `UT`)
+would let a lane be cut from the place it occupied instead of inferred from
+occupancy, would turn the lane count into a place count rather than a churn
+proxy, and would let adds be attributed to the lane they built.
 
 ---
 
 ## Decisions
 
-Every judgement call made in producing these numbers, so a reader can
-disagree with one without re-deriving the whole thing.
-
-### The definition of a lane
-
-1. **Places are defined by occupancy, not by ESPN slot id.** Confirmed from
-   the data: the nine slot values are PG, SG, SF, PF, C, G, F, UT, BE, and
-   `UT` alone accounts for 46,371 rows — a lineup position, not a place.
-   Occupancy is the only stable identity available in this table.
-
-2. **Held = rostered every day of the matchup period.** No requirement that he
-   *started* every day. A held man who sat on the bench all week still held
-   the place, and his value is what the place returned. (Requiring starts
-   would have made "held" mean something closer to "starting", which is a
-   different question.)
-
-3. **Streamed = any other man rostered in the period.** Held and streamed
-   partition the roster-days exactly, so nothing is double-counted.
-
-4. **A lane's production is the *sum* of its men's lines, scored as one line**
-   — not the sum of the men's individual marginals. The men overlap in the
-   team's week, so the individual marginals are not strictly additive; scoring
-   the combined line is the defensible construction and it is what answers
-   "what did this place return". Checked: the two differ by about 3% (mean
-   0.883 as one line against 0.907 summed individually, n = 1,536), so the
-   choice is not load-bearing, but the combined line is the one reported.
-
-5. **`lanes_by_occupancy` (peak rotating men on any day) is the headline
-   definition**; `lanes_by_arrival` (runs of men arriving ≤1 day apart) is the
-   alternative, reported in step 6. The brief asked for one alternative and
-   this is the most different reasonable one.
-
-### The baselines
-
-6. **The held 13th man is the lowest-valued *held* man, ranked by the same
-   lens**, per team-period. Reported alongside the pooled "every held man"
-   (0.43) rather than instead of it, because the 13th man's median of 0.00 is
-   the honest answer to the brief's question but a poor ratio.
-
-7. **`TYPICAL_PICKUP` is reproduced, not assumed.** Step 0 recomputes
-   `pickup_values` for all eight seasons and gets 0.062–0.128, matching the
-   constant's docstring (0.06–0.13 by season). This is a check that the
-   measurement is in the same currency, not a new number.
-
-### The currency
-
-8. **The lens is `app.scoring.value.marginal` against `SeasonOpponents.for_period`**
-   — the exact call `SeasonBook.value` makes, so `pickup_values` and this are
-   directly comparable. No new lens was written.
-
-9. **Period normalisation is by `matchup_periods`' stored window**, not by the
-   count of days actually present. These agreed on all 2,040 team-periods
-   (zero window gaps), so the distinction never bit; the stored window is used
-   because it is also what `pickup_values` and the code divide by.
-
-10. **Periods are never pooled across lengths for the distributions** — the
-    All-Star fortnight is scored against fortnights, as `SeasonOpponents` does.
-
-11. **The reproduce line does not source `.env`.** The house style
-    (`set -a && . ./.env && set +a`) fails against this worktree's `.env` at
-    line 29, where `FCP_EMAIL_FROM` holds unquoted angle brackets. The script
-    reads `DATABASE_URL` from the file itself instead, so the documented
-    command works as written. `/opt/fcp-core/.env` has no such line, which is
-    why the older docs' reproduce lines were unaffected.
-
-### Steps 4, 5 and 6
-
-11. **Step 4's second-lane question is answered as "the data cannot separate
-    it", with both splits shown.** Ranked by own value and ordered by arrival
-    give opposite (and, in both cases, non-discounting) answers, which is the
-    evidence for the claim. The proxy given is adds per lane, which the data
-    does support.
-
-12. **Adds are attributed to a period by the transaction's `scoring_period`
-    falling inside the period's stored window**, counted once per ADD item,
-    matching `app.pickups.state._adds_in_period`.
-
-13. **The 7-add budget is taken as `ADDS_PER_PERIOD_DAY × period days`** from
-    `app.pickups.state`, and corroborated independently: 102
-    `FAILED_MATCHUPACQUISITIONLIMIT` refusals exist in `transactions` and the
-    per-period counts of them rise with the lane counts (4 in period 2, 13 in
-    period 18 of 2026).
-
-14. **Step 5's baseline is the season's average started week for the ordinary
-    period length** (`average_team_line`), not the streaming team's own week,
-    so the figure is comparable across teams. Stated in Limitation 6.
-
-15. **Step 6 reports 2019–2026, 2024–2026, and no-2020.** The brief asked for
-    all three; the no-2020 run confirms 2020 is not carrying the answer.
-    `--drop-2020` and `--seasons` expose both.
-
-### Scope and hygiene
-
-16. **2020 is pooled in the headline** (and flagged in the tables), because the
-    brief's sensitivity list treats dropping it as a variant, not the default.
-    It moves the median by 0.02.
-
-17. **Team-periods with a window gap are excluded; there are zero of them.**
-    The exclusion is in the code as a guard, and its count is printed per
-    season (0 in all eight) so a future ingest defect would be visible rather
-    than silent.
-
-18. **The script is read-only.** SELECT-only, no writes, no alembic. It opens
-    the database read-write (the shared `make_engine`) but issues no mutating
-    statement; that was checked by reading every query in it rather than by
-    running against a read-only role.
-
-19. **Only `docs/streaming_lane.md` and `scripts/streaming_lane.py` are
-    added.** Nothing in `app/` was touched, so this doc is a measurement and a
+1. **The headline is per place; the summed figure is quarantined to §3b.** The
+   first draft's 0.76 was the sum over every rotating man a team used. The code
+   prices one place, so the per-place figure is the one that belongs against
+   `TYPICAL_PICKUP`. Two places at ~0.38 sum to ~0.76, which is the consistency
+   check.
+2. **The per-place divisor is the peak non-held men on any one day** — the best
+   available bound, since the table stores no place identity (Limitation 4).
+   The alternative, dividing by every man in the lane, understates a place
+   whenever men overlap in time and was rejected after it produced a lane
+   figure *below* the held man's.
+3. **Held means rostered every day; starts are not required.** The draft's
+   "started every day" made the baseline degenerate at 0.00 by construction.
+4. **The comparison man is the lowest-valued held man who started at least one
+   game.** Never-started held men are 2.7% of held men and are excluded, with
+   the count reported.
+5. **Games come from `daily_lineup_slots`; the lens figure is reported beside
+   it** (Limitation 3), and the games ratio is shown to be the same (1.56 vs
+   1.53) under either, so nothing hinges on the choice.
+6. **Lane 2's decay is reported as NOT surviving, under either definition, with
+   all four cuts shown.** Reporting the decay the budget model predicts would
+   have been the more satisfying answer and it is not in the data.
+7. **The recommended place value is the lower quartile (0.23), not the median
+   (0.38)**, for a floor in `judge.py` and the settlement — because the lane's
+   upside depends on manager attention no code models.
+8. **The document states plainly that a lane does not beat an ordinary held
+   man** (0.38 vs 0.43), so the code change cannot be read as an argument for
+   more 2-for-1s.
+9. **The per-add floor is left alone**, and the budget is enforced instead of a
+   discount being invented.
+10. **2020 is pooled and flagged**; `--drop-2020` and `--seasons` expose the
+    variants.
+11. **Only `docs/streaming_lane.md` and `scripts/streaming_lane.py` are
+    touched.** Nothing in `app/` changed: this is a measurement and a
     recommendation, not an implementation.
-
-### What was not done, and why
-
-20. **The independent recomputation of the 2026 headline agreed to within 1%.**
-    A second implementation, sharing no code with the script (its own
-    normal-CDF score, its own occupancy pass, distributions built from summed
-    team-week lines rather than `matchup_team_stats`), gives 2026 median
-    **0.7291** against the script's **0.74**, with the same n (257) and mean
-    (0.842 vs 0.86). The residual is the opponent-distribution source, not the
-    lane definition. **A reader recomputing 2026 from
-    `daily_lineup_slots` + `player_game_stats` should expect 0.73–0.74** and
-    should treat a larger gap as a definitional disagreement, not noise.
-21. **Lane-level add attribution was not attempted.** No place identity exists
-    to attribute an add to, so the "which add built lane two" question is left
-    as the proxy rather than approximated silently.
-
+12. **The script is read-only.** SELECT-only, no writes, no alembic.
+13. **The document was rewritten, not amended**, after the per-place
+    reconciliation — the headline figure and its unit both changed, and leaving
+    both readings side by side would have invited the reader to take the larger
+    one.
