@@ -14,8 +14,10 @@
 #
 # The morning pass is followed by the digest (scripts/digest.py); the later
 # passes by an alert, which sends nothing unless a player on the tracked
-# roster has just been ruled out. Both need FCP_TRACKED_TEAM_ID and
-# FCP_DIGEST_URL to deliver anything; without them they print and exit 0.
+# roster has just been ruled out. Both need FCP_TRACKED_TEAM_ID and the mail
+# settings (FCP_SMTP_HOST, FCP_EMAIL_FROM, FCP_EMAIL_TO) to deliver
+# anything; without them they print and exit 0. Email is the only channel
+# there is: FCP_DIGEST_URL and the Telegram bot were retired 2026-09-22.
 #
 # Every attempt is appended to logs/scheduled-status.log, and the pass itself
 # to the ingest_runs table with mode "status".

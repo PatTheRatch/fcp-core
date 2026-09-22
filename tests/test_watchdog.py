@@ -3,10 +3,20 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
+from app import notify
+from app.config import get_settings
 from app.db.models import BBMCapture, IngestRun, ProTeamGame
-from app.watchdog import LISTENER_QUIET_HOURS, checks, message
+from app.watchdog import (
+    LISTENER_QUIET_HOURS,
+    Check,
+    StaleLeague,
+    checks,
+    message,
+    subject,
+)
 from tests.scoring_db import league_season
 
 NOW = datetime(2026, 11, 3, 11, 0, tzinfo=UTC)
@@ -125,3 +135,71 @@ def test_nothing_is_sent_when_every_job_is_running(scoring_session: Session) -> 
     run(session, "status", hours_ago=2)
     capture(session, days_ago=0)
     assert message(checks(session, now=NOW)) is None
+
+
+# ---------------------------------------------------------------------------
+# The notice itself: email, like everything else (2026-09-22).
+
+
+def test_the_subject_names_what_broke_rather_than_saying_something_did(
+    scoring_session: Session,
+) -> None:
+    """A phone shows the subject and little else, so the operator can tell a
+    quiet listener from a missed backup without opening anything."""
+    session = scoring_session
+    league_season(session, season=2027)
+    run(session, "recent", hours_ago=2)
+    capture(session, days_ago=0)
+
+    line = subject(checks(session, now=NOW))
+
+    assert line == "fcp-core: listener quiet"
+
+
+def test_a_long_list_is_counted_after_the_first_few() -> None:
+    many = [Check(f"job{n}", True, "") for n in range(6)]
+    assert subject(many) == "fcp-core: job0, job1, job2 and 3 more quiet"
+    assert subject([Check("ingest", False, "")]) == "fcp-core: everything is running"
+
+
+def test_stale_leagues_are_counted_in_the_subject_beside_the_quiet_jobs() -> None:
+    stale = [
+        StaleLeague(
+            connection_id=1, espn_league_id=7, name="Patriot Games", owner_user_id=1, last_ok=None
+        )
+    ]
+    assert subject([Check("bbm", True, "")], stale) == "fcp-core: bbm quiet; 1 league to reconnect"
+    assert subject([], stale) == "fcp-core: 1 league to reconnect"
+
+
+def test_the_notice_goes_by_smtp_and_nowhere_else(
+    scoring_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fake transport: no connection is opened, and what it records is one
+    plain-text email to `FCP_EMAIL_TO` with the subject that names the job."""
+    session = scoring_session
+    league_season(session, season=2027)
+    run(session, "recent", hours_ago=2)
+    capture(session, days_ago=0)
+    results = checks(session, now=NOW)
+
+    sent: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        notify, "send_email", lambda text, **kwargs: sent.append({"text": text, **kwargs})
+    )
+    settings = get_settings().model_copy(
+        update={
+            "fcp_smtp_host": "smtp.example.test",
+            "fcp_email_from": "fcp@example.test",
+            "fcp_email_to": "operator@example.test",
+        }
+    )
+
+    [delivered] = notify.notice(settings, message(results) or "", subject=subject(results))
+
+    assert delivered.sent is True and delivered.channel == "email"
+    [one] = sent
+    assert one["recipients"] == ["operator@example.test"]
+    assert one["subject"] == "fcp-core: listener quiet"
+    assert one["html"] is None, "the operator's notice is plain text"
+    assert "listener: never succeeded" in str(one["text"])

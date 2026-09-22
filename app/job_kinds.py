@@ -13,11 +13,13 @@ they are enqueued is `app.schedule`.
   (`run_wire_pass`, and "One listener league" in docs/jobs.md for why).
 * `precompute`: one team's day, week and season reports for today, stored
   in `team_reports` for the pages and routes to read (`app.reports`).
-* `digest`: one member's morning digest, or an alert between digests,
-  delivered to his verified channels. The server's owner also gets the
-  `.env` channels, and his digest of the tracked team marks the events it
-  reports as notified, as `scripts/digest.py` always has; everyone else's
-  reads the events since his own last digest and marks nothing.
+* `digest`: one member's morning digest, or an alert between digests, mailed
+  to his verified addresses. The server's owner also gets the `.env`
+  recipients, and his digest of the tracked team marks the events it reports
+  as notified, as `scripts/digest.py` always has; everyone else's reads the
+  events since his own last digest and marks nothing. A member whose only
+  channel was a Telegram chat or an ntfy topic has none now (migration
+  `0024`), and the job says so.
 * `injury_backfill`: a whole season of the NBA's official injury reports
   (`app.injury_backfill`, docs/injuries.md). Hours at the full cadence,
   which is why it is queued rather than held open in a terminal.
@@ -82,6 +84,11 @@ FIRST_WINDOW = {MORNING: timedelta(hours=24), ALERT: timedelta(hours=12)}
 #: The ingest_runs mode of a pass over a league the listener does not follow,
 #: so the watchdog's listener check (mode "status") stays the listener's own.
 WIRE_MODE = "wire"
+
+#: What a member with nowhere to send to hears. Named rather than written
+#: twice: a Telegram row the migration disabled is not a channel, so a member
+#: who only ever confirmed one lands here and the note has to say why.
+NO_ADDRESS = "no confirmed email address; nothing was sent"
 
 NO_LOGIN = "the league has no live connection to read it with"
 NO_KEY = "FCP_SECRETS_KEY is not set, so the league's login cannot be opened"
@@ -328,10 +335,10 @@ def _deliver(
     title: str,
     settings: Settings,
 ) -> list[notify.Delivery] | None:
-    """Send to his verified channels, and to the `.env` ones when he is the
-    server's owner. None when he has no channel at all."""
+    """Mail his verified addresses, and the `.env` ones when he is the
+    server's owner. None when he has no address at all."""
     mine = channels.verified(session, user.id)
-    env_set = to_env and (bool(settings.fcp_digest_url) or settings.email_configured)
+    env_set = to_env and settings.email_configured
     if not mine and not env_set:
         return None
     results = notify.deliver(settings, text, title=title) if env_set else []
@@ -406,7 +413,7 @@ def _owner_digest(
         title = DIGEST_TITLE
     results = _deliver(session, user, to_env=True, text=text, title=title, settings=settings)
     if results is None:
-        return f"no channel is set up; nothing was sent, {len(event_ids)} event(s) stay unnotified"
+        return f"{NO_ADDRESS}, {len(event_ids)} event(s) stay unnotified"
     note = _outcome(results)
     marked = mark_notified(session, event_ids, at)
     session.commit()
@@ -467,7 +474,7 @@ def _member_digest(
     title = ALERT_TITLE if mode == ALERT else DIGEST_TITLE
     results = _deliver(session, user, to_env=is_owner, text=text, title=title, settings=settings)
     if results is None:
-        return "no verified channel; nothing was sent"
+        return NO_ADDRESS
     return _outcome(results)
 
 

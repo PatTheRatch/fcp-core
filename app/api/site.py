@@ -224,8 +224,8 @@ def alerts_page() -> HTMLResponse:
 
 
 class AlertChannelOut(BaseModel):
-    kind: str = Field(description="'email', 'telegram' or 'ntfy'")
-    detail: str = Field(description="Where it goes, in words; never a URL, token or chat id")
+    kind: str = Field(description="'email'; there is no other channel")
+    detail: str = Field(description="Where it goes, in words")
 
 
 class AlertsOut(BaseModel):
@@ -240,13 +240,11 @@ class AlertsOut(BaseModel):
 
 @router.get("/me/alerts", summary="Where the digest and its alerts are delivered, read-only")
 def my_alerts(viewer: CurrentUser, settings: SettingsDep) -> AlertsOut:
-    """The server's own digest channels, shown only to the owner they are for.
+    """The server's own digest recipients, shown only to the owner they are for.
 
-    The owner's digest goes to the channels configured in the server's
-    environment (`app/notify.py`), as it always has. The owner sees which
-    channels those are and the addresses it is mailed to, which are his own;
-    the URL channel is named by its kind only, because its URL (an ntfy
-    topic, a Telegram bot token) is the credential. Anyone else has none of
+    The owner's digest goes to the addresses configured in the server's
+    environment (`FCP_EMAIL_TO`, `app/notify.py`), as it always has, and
+    those are his own so he is shown them in full. Anyone else has none of
     these. Every member, the owner too, also has his own channels
     (`/me/channels`, step 4), which the Alerts page lists beside these.
     """
@@ -255,11 +253,6 @@ def my_alerts(viewer: CurrentUser, settings: SettingsDep) -> AlertsOut:
     channels: list[AlertChannelOut] = []
     if settings.email_configured:
         channels.append(AlertChannelOut(kind="email", detail=", ".join(settings.email_recipients)))
-    if settings.fcp_digest_url:
-        if settings.fcp_digest_chat_id:
-            channels.append(AlertChannelOut(kind="telegram", detail="a Telegram chat"))
-        else:
-            channels.append(AlertChannelOut(kind="ntfy", detail="an ntfy topic"))
     return AlertsOut(yours=True, channels=channels, per_member=True)
 
 

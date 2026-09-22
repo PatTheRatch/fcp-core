@@ -1,78 +1,22 @@
-"""Delivery: one POST in whichever shape the manager's service wants, one
-plain-SMTP email, and both at once without either costing the other."""
+"""Delivery: one plain-SMTP email, and nothing else.
+
+Email is the only channel there is (2026-09-22): the push URL and the
+Telegram bot are gone, so this file is the SMTP transport, the two parts of
+a message, and what `deliver` says when a send fails or when nothing is set
+up at all.
+"""
 
 import smtplib
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
 import pytest
-import requests
 
 from app import notify
 from app.config import Settings
 
-
-class _Response:
-    def __init__(self, status: int = 200) -> None:
-        self.status = status
-
-    def raise_for_status(self) -> None:
-        if self.status >= 400:
-            raise requests.HTTPError(f"{self.status}")
-
-
-@pytest.fixture
-def posted(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    calls: list[dict[str, Any]] = []
-
-    def fake_post(url: str, **kwargs: Any) -> _Response:
-        calls.append({"url": url, **kwargs})
-        return _Response(kwargs.pop("_status", 200))
-
-    monkeypatch.setattr(requests, "post", fake_post)
-    return calls
-
-
-def test_the_default_shape_is_the_text_itself(posted: list[dict[str, Any]]) -> None:
-    """ntfy takes the body as the message and the title as a header."""
-    notify.send("https://ntfy.sh/fcp-core-secret", "two lines\nof news", title="FCP")
-
-    [call] = posted
-    assert call["url"] == "https://ntfy.sh/fcp-core-secret"
-    assert call["data"] == b"two lines\nof news"
-    assert call["headers"]["Title"] == "FCP"
-    assert call["headers"]["Content-Type"] == "text/plain; charset=utf-8"
-    assert call["timeout"] == notify.TIMEOUT_SECONDS
-    assert "json" not in call
-
-
-def test_no_title_sends_no_title_header(posted: list[dict[str, Any]]) -> None:
-    notify.send("https://ntfy.sh/topic", "bare")
-    assert "Title" not in posted[0]["headers"]
-
-
-def test_a_chat_id_switches_to_the_telegram_shape(posted: list[dict[str, Any]]) -> None:
-    notify.send("https://api.telegram.org/botX/sendMessage", "news", title="FCP", chat_id="42")
-
-    [call] = posted
-    assert call["json"] == {"chat_id": "42", "text": "FCP\n\nnews"}
-    assert "data" not in call
-
-
-def test_telegram_without_a_title_sends_the_text_alone(posted: list[dict[str, Any]]) -> None:
-    notify.send("https://api.telegram.org/botX/sendMessage", "news", chat_id="42")
-    assert posted[0]["json"] == {"chat_id": "42", "text": "news"}
-
-
-def test_a_refusal_is_raised_rather_than_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed send must leave the events unmarked, so it cannot be quiet."""
-    monkeypatch.setattr(requests, "post", lambda *a, **k: _Response(500))
-    with pytest.raises(requests.HTTPError):
-        notify.send("https://ntfy.sh/topic", "news")
-
-
 # ---------------------------------------------------------------------------
-# The email channel. Plain SMTP through the standard library, so the fake is
+# The transport. Plain SMTP through the standard library, so the fake is
 # a stand-in for `smtplib.SMTP` and `smtplib.SMTP_SSL` and the test reads the
 # calls it recorded. Nothing here opens a socket.
 
@@ -218,7 +162,7 @@ def test_no_recipient_is_refused_before_a_connection_is_opened(smtp: type[_FakeS
 
 
 # ---------------------------------------------------------------------------
-# Both channels at once.
+# What `deliver` and `notice` make of the settings.
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -253,43 +197,33 @@ def test_recipients_are_split_on_commas_and_blanks_dropped() -> None:
     assert many.email_recipients == ["a@x.com", "b@x.com"]
 
 
-def test_both_channels_are_delivered_to(
-    posted: list[dict[str, Any]], smtp: type[_FakeSMTP]
-) -> None:
-    settings = _settings(
-        fcp_digest_url="https://ntfy.sh/topic",
+def _configured(**overrides: Any) -> Settings:
+    return _settings(
         fcp_smtp_host="smtp.example.net",
         fcp_email_from="fcp@example.net",
         fcp_email_to="patrick@example.com",
+        **overrides,
     )
 
-    results = notify.deliver(settings, "news", title="FCP morning digest")
 
-    assert [(r.channel, r.sent) for r in results] == [("url", True), ("email", True)]
-    assert len(posted) == 1
+def test_delivery_is_one_email_and_nothing_else(smtp: type[_FakeSMTP]) -> None:
+    results = notify.deliver(_configured(), "news", title="FCP morning digest")
+
+    assert [(r.channel, r.sent) for r in results] == [("email", True)]
+    assert results[0].describe() == "email ok"
     assert smtp.made[0].sent[0][0]["Subject"] == "FCP morning digest"
 
 
-def test_one_channel_failing_does_not_stop_the_other(
-    monkeypatch: pytest.MonkeyPatch, smtp: type[_FakeSMTP]
-) -> None:
-    """The point of two channels: a refused push must not cost the manager
-    his email, and a broken SMTP login must not cost him his push."""
-    monkeypatch.setattr(requests, "post", lambda *a, **k: _Response(500))
-    settings = _settings(
-        fcp_digest_url="https://ntfy.sh/topic",
-        fcp_smtp_host="smtp.example.net",
-        fcp_email_from="fcp@example.net",
-        fcp_email_to="patrick@example.com",
-    )
+def test_the_operators_notice_says_what_broke_in_its_subject(smtp: type[_FakeSMTP]) -> None:
+    """The watchdog's message goes the same way as everything else; what is
+    different is that the subject names the quiet jobs, because a phone shows
+    the subject and little else."""
+    notify.notice(_configured(), "listener: never succeeded", subject="fcp-core: listener quiet")
 
-    results = notify.deliver(settings, "news", title="FCP")
-
-    assert [(r.channel, r.sent) for r in results] == [("url", False), ("email", True)]
-    assert "HTTPError" in results[0].error
-    assert smtp.made[0].sent, "the email still went"
-    assert results[0].describe().startswith("url FAILED: ")
-    assert results[1].describe() == "email ok"
+    message, _from, to_addrs = smtp.made[0].sent[0]
+    assert message["Subject"] == "fcp-core: listener quiet"
+    assert to_addrs == ["patrick@example.com"]
+    assert message.get_content_type() == "text/plain"
 
 
 def test_a_failed_email_never_carries_the_password(smtp: type[_FakeSMTP]) -> None:
@@ -309,5 +243,63 @@ def test_a_failed_email_never_carries_the_password(smtp: type[_FakeSMTP]) -> Non
     assert "SMTPAuthenticationError" in result.error
 
 
-def test_an_unconfigured_channel_is_not_reported_at_all() -> None:
+def test_mail_that_is_not_configured_is_not_reported_at_all() -> None:
     assert notify.deliver(_settings(), "news", title="FCP") == []
+    assert notify.notice(_settings(), "quiet", subject="fcp-core: bbm quiet") == []
+
+
+# ---------------------------------------------------------------------------
+# The two parts: what makes the message a page as well as a message.
+
+
+def test_html_rides_beside_the_text_as_the_alternative(smtp: type[_FakeSMTP]) -> None:
+    """`multipart/alternative`, text first and HTML second, so a client that
+    can draw the page draws it and everything else keeps the words."""
+    notify.send_email(
+        "two lines\nof news",
+        html="<html><body><p>two lines</p></body></html>",
+        host="smtp.example.net",
+        port=587,
+        sender="fcp@example.net",
+        recipients=["patrick@example.com"],
+        subject="FCP morning digest",
+    )
+
+    message, _from, _to = smtp.made[0].sent[0]
+    assert message.get_content_type() == "multipart/alternative"
+    parts = [part.get_content_type() for part in message.iter_parts()]  # type: ignore[union-attr]
+    assert parts == ["text/plain", "text/html"]
+    assert message.get_body(("plain",)).get_content() == "two lines\nof news\n"  # type: ignore[union-attr]
+    assert "<p>two lines</p>" in message.get_body(("html",)).get_content()  # type: ignore[union-attr]
+
+
+def test_headers_are_carried_and_nothing_is_added(smtp: type[_FakeSMTP]) -> None:
+    """`List-Unsubscribe` is the one a transactional mail owes its reader.
+    Nothing that tracks is added here or anywhere else."""
+    notify.send_email(
+        "news",
+        headers={"List-Unsubscribe": "<https://fcp.example/account/alerts>"},
+        host="smtp.example.net",
+        port=587,
+        sender="fcp@example.net",
+        recipients=["patrick@example.com"],
+        subject="FCP morning digest",
+    )
+
+    message, _from, _to = smtp.made[0].sent[0]
+    assert message["List-Unsubscribe"] == "<https://fcp.example/account/alerts>"
+
+
+def test_a_message_can_be_built_without_a_connection(smtp: type[_FakeSMTP]) -> None:
+    """A preview renders exactly what would go out and opens nothing."""
+    built = notify.build_email(
+        "news",
+        sender="fcp@example.net",
+        recipients=["patrick@example.com"],
+        subject="FCP morning digest",
+        html="<html><body>news</body></html>",
+    )
+
+    assert isinstance(built, EmailMessage)
+    assert built["Subject"] == "FCP morning digest"
+    assert smtp.made == [], "nothing connected"

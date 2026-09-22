@@ -1594,21 +1594,23 @@ class TeamReport(Base):
 
 
 class NotificationChannel(Base):
-    """Where one member's digest and alerts go: an email address, a Telegram
-    chat or an ntfy topic.
+    """Where one member's digest and alerts go: an email address.
 
     The target is sealed with `FCP_SECRETS_KEY` (app/secrets_box.py) and
     never returned; `masked_target` is the form shown back ("p•••@example.com").
-    Nothing is sent to a channel until `verified_at` is set: an email by the
-    link mailed to it, a chat or a topic by the code in the test message sent
-    to it. `verify_hash` is the sha256 of that link's token or that code, and
-    is cleared once spent. Disabling wipes the sealed target.
+    Nothing is sent to a channel until `verified_at` is set, by the link
+    mailed to it. `verify_hash` is the sha256 of that link's token, and is
+    cleared once spent. Disabling wipes the sealed target.
+
+    `telegram` and `ntfy` rows exist in the table and are all disabled
+    (migration `0024_email_only_channels`, 2026-09-22): the CHECK keeps them
+    readable, so a member can still see what stopped, and refuses a new one.
     """
 
     __tablename__ = "notification_channels"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('email', 'telegram', 'ntfy')", name="ck_notification_channels_kind"
+            "kind = 'email' OR disabled_at IS NOT NULL", name="ck_notification_channels_kind"
         ),
     )
 

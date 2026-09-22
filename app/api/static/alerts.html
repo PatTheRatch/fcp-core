@@ -21,9 +21,9 @@
 <header class="mast">
   <p class="eyebrow">Your account</p>
   <h1>Alerts</h1>
-  <p class="sub">Where the morning digest and its alerts go: the league's week, and for a team
-    you manage, what changed on your roster, the wire's movers worth a look, this week's plan
-    and your recent churn.</p>
+  <p class="sub">Where the morning digest and its alerts go, and what is in them: the league's
+    week, and for a team you manage, today's lineup, the moves worth a look, what changed on
+    your roster and what the league did.</p>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
@@ -35,27 +35,19 @@
 </section>
 
 <section>
-  <div class="shead"><h2>Add a channel</h2></div>
-  <p class="lede">An email address gets a link to confirm it. A Telegram chat or an ntfy topic
-    gets a test message with a code, which you type below. Nothing is sent to a channel
-    before it is confirmed.</p>
+  <div class="shead"><h2>Add an address</h2></div>
+  <p class="lede">Everything goes by email. Give an address and it gets a link to confirm it;
+    nothing is sent there before you open the link.</p>
   <form class="signin" id="add" autocomplete="off">
-    <label class="eyebrow" for="kind">Kind</label>
-    <select id="kind"></select>
-    <label class="eyebrow" for="target" id="target-label">Address</label>
-    <input id="target" required spellcheck="false" autocapitalize="off">
+    <label class="eyebrow" for="target">Address</label>
+    <input id="target" type="email" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Add</button>
   </form>
   <p class="lede" id="added" hidden></p>
-  <form class="signin" id="code-form" autocomplete="off">
-    <label class="eyebrow" for="code">The code from the test message</label>
-    <input id="code" required spellcheck="false" autocapitalize="characters">
-    <button class="btn" type="submit">Confirm</button>
-  </form>
 </section>
 
 <section id="server" hidden>
-  <div class="shead"><h2>The server's channels</h2><span class="tag">yours, as its owner</span></div>
+  <div class="shead"><h2>The server's own recipients</h2><span class="tag">yours, as its owner</span></div>
   <div id="channels"></div>
 </section>
 
@@ -69,17 +61,13 @@
 "use strict";
 
 /* Alerts, an account page. GET /me/channels (his own, masked), POST to add
-   one, POST /me/channels/verify with the emailed link's token (it lands here
-   as ?token=) or the typed code, DELETE to disable. GET /me/alerts for the
-   server's own channels, which only its owner is shown. Everything written
-   is text, never markup. `$`, `get` and `escape` are pages.js's. */
+   an address, POST /me/channels/verify with the emailed link's token (it
+   lands here as ?token=), DELETE to disable. GET /me/alerts for the server's
+   own recipients, which only its owner is shown. Everything written is text,
+   never markup. `$`, `get` and `escape` are pages.js's. */
 
 const KIND = { email: "Email", telegram: "Telegram", ntfy: "Phone push (ntfy)" };
-const PROMPT = {
-  email: "Address",
-  telegram: "Telegram chat id (message the league's bot first)",
-  ntfy: "ntfy.sh topic",
-};
+const RETIRED = "stopped: this kind of channel was retired";
 
 async function call(method, url, body) {
   const response = await fetch(url, {
@@ -112,24 +100,17 @@ async function loadMine() {
   const got = await call("GET", "/me/channels");
   box.replaceChildren();
   if (!got.ok) return box.append(el("p", `Your channels cannot be read: ${got.detail}`, "lede"));
-  const kinds = Object.entries(got.data.available).filter(([, ok]) => ok).map(([k]) => k);
-  $("kind").replaceChildren(...kinds.map((k) => {
-    const option = el("option", KIND[k] || k);
-    option.value = k;
-    return option;
-  }));
   // .signin is display:flex, which a hidden attribute would not override.
-  $("add").style.display = kinds.length ? "" : "none";
-  if (!kinds.length) {
-    say("added", "Adding a channel is not set up on this server yet.");
-  }
-  $("target-label").textContent = PROMPT[$("kind").value] || "Address";
+  const canAdd = Boolean(got.data.available.email);
+  $("add").style.display = canAdd ? "" : "none";
+  if (!canAdd) say("added", "Adding an address is not set up on this server yet.");
   const live = got.data.channels.filter((c) => !c.disabled_at);
-  // The code form is for a test message's code: shown only while one waits.
-  const waiting = live.some((c) => !c.verified && c.kind !== "email");
-  $("code-form").style.display = waiting ? "" : "none";
+  // A channel of a retired kind is disabled, so it is not in `live`: it is
+  // listed all the same, once, so a member whose Telegram chat stopped is
+  // told rather than left wondering why nothing arrives.
+  const stopped = got.data.channels.filter((c) => c.retired);
   if (!live.length) {
-    return box.append(el("p", "None yet: nothing is sent to you until you add one.", "empty"));
+    box.append(el("p", "None yet: nothing is sent to you until you add an address.", "empty"));
   }
   for (const c of live) {
     const line = el("p", "", "lede");
@@ -138,17 +119,22 @@ async function loadMine() {
     const off = el("button", "Disable", "btn");
     off.type = "button";
     off.onclick = async () => {
-      if (!window.confirm("Stop sending to this channel? It is forgotten.")) return;
+      if (!window.confirm("Stop sending to this address? It is forgotten.")) return;
       await call("DELETE", `/me/channels/${c.id}`);
       loadMine();
     };
     line.append(off);
     box.append(line);
   }
+  for (const c of stopped) {
+    const line = el("p", "", "lede faint");
+    line.append(el("b", KIND[c.kind] || c.kind), ` ${c.masked} · ${RETIRED}`);
+    box.append(line);
+  }
 }
 
-async function spend(secret) {
-  const got = await call("POST", "/me/channels/verify", { token: secret });
+async function spend(token) {
+  const got = await call("POST", "/me/channels/verify", { token });
   say("confirmed", got.ok ? `Confirmed: ${got.data.masked}. The digest goes there now.` : got.detail);
   loadMine();
 }
@@ -170,29 +156,17 @@ async function loadServer() {
         .join("") +
       `</tbody></table></div>`
     : `<p class="lede">None is set up in the server's <span class="mono">.env</span>, ` +
-      `so only the channels above receive your digest.</p>`;
+      `so only the addresses above receive your digest.</p>`;
 }
 
 async function start() {
   startTheme();
-  $("kind").onchange = () => {
-    $("target-label").textContent = PROMPT[$("kind").value] || "Address";
-  };
   $("add").onsubmit = async (event) => {
     event.preventDefault();
-    const got = await call("POST", "/me/channels", {
-      kind: $("kind").value,
-      target: $("target").value,
-    });
+    const got = await call("POST", "/me/channels", { target: $("target").value });
     $("target").value = "";
     say("added", got.ok ? `Added. We sent ${got.data.sent}.` : got.detail);
     loadMine();
-  };
-  $("code-form").onsubmit = async (event) => {
-    event.preventDefault();
-    const code = $("code").value;
-    $("code").value = "";
-    await spend(code);
   };
   // An emailed link lands here with its token; spend it, then take it out
   // of the address bar so it is not bookmarked or shared.

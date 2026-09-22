@@ -33,6 +33,7 @@ to the ingest's when no NBA game is within `IN_SEASON_DAYS`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -189,6 +190,35 @@ def offsite_check(marker: Path, now: datetime) -> Check:
         if age is not None
         else "off-site copy: unreadable",
     )
+
+
+#: The operator's notice goes by email like everything else (2026-09-22), so
+#: it needs a subject line rather than a push title. A phone shows the
+#: subject and little else, so it names what broke instead of saying that
+#: something did: "fcp-core: listener, bbm quiet".
+SUBJECT_JOBS = 3
+
+
+def subject(results: list[Check], stale: Sequence[StaleLeague] = ()) -> str:
+    """What the operator reads before he opens anything.
+
+    The quiet jobs by name, the first `SUBJECT_JOBS` of them and then a
+    count, and the leagues that need reconnecting counted after them. Never
+    an error's text, for the reason nothing else here carries one.
+    """
+    parts: list[str] = []
+    quiet = [check.name for check in results if check.quiet]
+    if quiet:
+        named = ", ".join(quiet[:SUBJECT_JOBS])
+        rest = len(quiet) - SUBJECT_JOBS
+        parts.append(f"{named} and {rest} more quiet" if rest > 0 else f"{named} quiet")
+    if stale:
+        parts.append(f"{_plural(len(stale), 'league')} to reconnect")
+    return "fcp-core: " + ("; ".join(parts) if parts else "everything is running")
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def message(results: list[Check], *, today: date | None = None) -> str | None:

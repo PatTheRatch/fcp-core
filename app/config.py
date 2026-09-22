@@ -31,24 +31,17 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str
 
-    #: Where the digest and its alerts are delivered (app/notify.py). Unset
-    #: means print and deliver nothing. Read here rather than from the
-    #: environment alone so a scheduled run picks it up from `.env`, which is
-    #: where every other secret on the VPS lives.
-    fcp_digest_url: str | None = None
-    #: Set as well for Telegram's shape; unset posts ntfy's.
-    fcp_digest_chat_id: str | None = None
-    #: The Telegram bot's `sendMessage` URL that members' own chats are
-    #: reached through (app/channels.py). Optional: unset, the digest's own
-    #: URL is used when it is Telegram's (a chat id is set beside it), and
-    #: with neither a member cannot add a Telegram channel. The URL carries
-    #: the bot's token, so it is never logged, printed or returned.
-    fcp_telegram_bot_url: str | None = None
-
-    #: The email channel (app/notify.py). Plain SMTP, so any transactional
+    #: Where everything goes (app/notify.py): a member's digest and alerts,
+    #: and the operator's own notices. Plain SMTP, so any transactional
     #: provider's endpoint will do. Configured when the host, the sender and
     #: at least one recipient are all set; anything less delivers no mail.
-    #: `fcp_email_to` is one address or several, comma separated.
+    #: `fcp_email_to` is one address or several, comma separated, and is the
+    #: operator's own inbox: the watchdog's notices go there.
+    #:
+    #: `FCP_DIGEST_URL`, `FCP_DIGEST_CHAT_ID` and `FCP_TELEGRAM_BOT_URL` were
+    #: here until 2026-09-22 and are gone: there is no push channel and no
+    #: bot. A `.env` that still sets them is not an error — `extra="ignore"`
+    #: — and they do nothing.
     fcp_email_to: str | None = None
     fcp_email_from: str | None = None
     fcp_smtp_host: str | None = None
@@ -111,9 +104,6 @@ class Settings(BaseSettings):
     fcp_tracked_team_id: int | None = None
 
     @field_validator(
-        "fcp_digest_url",
-        "fcp_digest_chat_id",
-        "fcp_telegram_bot_url",
         "fcp_email_to",
         "fcp_email_from",
         "fcp_smtp_host",

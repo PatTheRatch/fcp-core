@@ -38,13 +38,22 @@ from app.db.models import (
     Job,
     League,
     LeagueConnection,
+    NotificationChannel,
     PlayerStatusSnapshot,
     Team,
     TeamManager,
     TeamReport,
 )
 from app.espn import ESPNSettings
-from app.job_kinds import BAD_CLOCK, REFUSED, handlers, run_digest, run_pass, run_precompute
+from app.job_kinds import (
+    BAD_CLOCK,
+    NO_ADDRESS,
+    REFUSED,
+    handlers,
+    run_digest,
+    run_pass,
+    run_precompute,
+)
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from app.pickups.state import season_calendar
@@ -87,9 +96,7 @@ def settings_for(**changes: Any) -> Settings:
         "fcp_owner_email": "owner@example.com",
         "espn_league_id": None,
         "fcp_tracked_team_id": None,
-        "fcp_digest_url": None,
         "fcp_digest_chat_id": None,
-        "fcp_telegram_bot_url": None,
         "fcp_smtp_host": None,
         "fcp_email_from": None,
         "fcp_email_to": None,
@@ -670,34 +677,43 @@ class Outbox:
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.sent: list[tuple[str, str]] = []
-        monkeypatch.setattr(notify, "send", self.post)
         monkeypatch.setattr(notify, "send_email", self.mail)
-
-    def post(
-        self, url: str, text: str, *, title: str | None = None, chat_id: str | None = None
-    ) -> None:
-        self.sent.append((f"post {url} {chat_id or ''}".strip(), text))
 
     def mail(self, text: str, *, recipients: Any, **_: Any) -> None:
         self.sent.append((f"mail {','.join(recipients)}", text))
 
 
 def _channel(
-    session: Session, user_id: int, kind: str, target: str, settings: Settings, *, verified: bool
+    session: Session, user_id: int, target: str, settings: Settings, *, verified: bool
 ) -> None:
-    added = channels.add(session, user_id, kind, target, settings)
+    added = channels.add(session, user_id, channels.EMAIL, target, settings)
     if verified:
         channels.verify(session, user_id, added.secret)
     session.commit()
 
 
-def test_a_members_digest_goes_to_each_verified_channel_and_skips_the_rest(
+def _retired_channel(session: Session, user_id: int) -> None:
+    """A row as migration 0023 leaves a Telegram channel: kept, disabled,
+    its target wiped. The member has nowhere to be sent."""
+    session.add(
+        NotificationChannel(
+            user_id=user_id,
+            kind="telegram",
+            sealed_target=None,
+            masked_target="chat •••4321",
+            verified_at=NOW,
+            disabled_at=NOW,
+        )
+    )
+    session.commit()
+
+
+def test_a_members_digest_goes_to_each_confirmed_address_and_skips_the_rest(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = settings_for(
         fcp_smtp_host="smtp.example.test",
         fcp_email_from="fcp@example.test",
-        fcp_telegram_bot_url="https://api.telegram.test/botTOKEN/sendMessage",
     )
     outbox = Outbox(monkeypatch)
     with factory() as session:
@@ -705,9 +721,9 @@ def test_a_members_digest_goes_to_each_verified_channel_and_skips_the_rest(
         ls, _, _ = league_season(session, season=SEASON)
         ls.league_id = league.id
         session.flush()
-        _channel(session, member, "email", "member@example.com", settings, verified=True)
-        _channel(session, member, "telegram", "123456789", settings, verified=True)
-        _channel(session, member, "ntfy", "unconfirmed-topic", settings, verified=False)
+        _channel(session, member, "member@example.com", settings, verified=True)
+        _channel(session, member, "second@example.com", settings, verified=True)
+        _channel(session, member, "unconfirmed@example.com", settings, verified=False)
         outbox.sent.clear()  # the verification messages
         job = jobs.enqueue(
             session,
@@ -723,15 +739,12 @@ def test_a_members_digest_goes_to_each_verified_channel_and_skips_the_rest(
     note = run_digest(factory, ref, settings, now=NOW)
     assert note == "sent to 2 of 2 channel(s)"
     where = sorted(target for target, _ in outbox.sent)
-    assert where == [
-        "mail member@example.com",
-        "post https://api.telegram.test/botTOKEN/sendMessage 123456789",
-    ]
+    assert where == ["mail member@example.com", "mail second@example.com"]
     assert all("THE LEAGUE" in body for _, body in outbox.sent)
-    assert not any("ntfy" in target for target, _ in outbox.sent), "unconfirmed: skipped"
+    assert not any("unconfirmed" in target for target, _ in outbox.sent), "unconfirmed: skipped"
 
 
-def test_a_member_with_no_verified_channel_is_sent_nothing(
+def test_a_member_with_no_confirmed_address_is_sent_nothing(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     outbox = Outbox(monkeypatch)
@@ -741,13 +754,28 @@ def test_a_member_with_no_verified_channel_is_sent_nothing(
         ls.league_id = league.id
         session.commit()
     ref = jobs.JobRef(1, jobs.DIGEST, league.id, None, member, 1, {"mode": "morning"})
-    assert (
-        run_digest(factory, ref, settings_for(), now=NOW) == "no verified channel; nothing was sent"
-    )
+    assert run_digest(factory, ref, settings_for(), now=NOW) == NO_ADDRESS
     assert outbox.sent == []
 
 
-def test_the_owners_digest_in_single_mode_goes_to_the_env_channels_and_marks(
+def test_a_member_left_with_only_a_telegram_row_has_nowhere_to_be_sent(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Migration 0023 disabled it. He is not silently skipped: the job note
+    says he has no confirmed address, which is what the operator reads."""
+    outbox = Outbox(monkeypatch)
+    with factory() as session:
+        league, _, member = _connect(session)
+        ls, _, _ = league_season(session, season=SEASON)
+        ls.league_id = league.id
+        session.flush()
+        _retired_channel(session, member)
+    ref = jobs.JobRef(1, jobs.DIGEST, league.id, None, member, 1, {"mode": "morning"})
+    assert run_digest(factory, ref, settings_for(), now=NOW) == NO_ADDRESS
+    assert outbox.sent == []
+
+
+def test_the_owners_digest_in_single_mode_goes_to_the_env_recipients_and_marks(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.db.models import PlayerStatusEvent
@@ -756,7 +784,9 @@ def test_the_owners_digest_in_single_mode_goes_to_the_env_channels_and_marks(
         fcp_auth_mode="single",
         espn_league_id=LEAGUE_ID,
         fcp_tracked_team_id=1,
-        fcp_digest_url="https://ntfy.sh/owners-topic",
+        fcp_smtp_host="smtp.example.test",
+        fcp_email_from="fcp@example.test",
+        fcp_email_to="owner@example.com",
     )
     outbox = Outbox(monkeypatch)
     with factory() as session:
@@ -779,7 +809,7 @@ def test_the_owners_digest_in_single_mode_goes_to_the_env_channels_and_marks(
         session.commit()
     note = run_digest(factory, ref, settings, now=NOW)
     assert note == "sent to 1 of 1 channel(s); marked 1 event(s) notified"
-    assert [target for target, _ in outbox.sent] == ["post https://ntfy.sh/owners-topic"]
+    assert [target for target, _ in outbox.sent] == ["mail owner@example.com"]
     body = outbox.sent[0][1]
     assert "YOUR ROSTER" in body and "Hurt" in body and "THE LEAGUE" in body
     with factory() as session:
@@ -923,7 +953,7 @@ def test_a_connected_league_gone_stale_is_named_and_its_owner_told_to_reconnect(
         _, connection, owner = _connect(session)
         connection.created_at = now - timedelta(days=3)
         connection.last_error = "ESPN said: espn_s2=" + ESPN_S2  # the worst case
-        _channel(session, owner, "email", "connector@example.com", settings, verified=True)
+        _channel(session, owner, "connector@example.com", settings, verified=True)
         session.commit()
         stale = stale_connections(session, now=now)
     assert [league.espn_league_id for league in stale] == [OTHER_LEAGUE]

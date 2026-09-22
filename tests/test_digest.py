@@ -701,22 +701,39 @@ def test_delivery_settings_come_from_the_env_file_too(monkeypatch: pytest.Monkey
     """The VPS keeps its secrets in .env; a scheduled run reads no environment."""
     from app.config import Settings
 
-    monkeypatch.delenv("FCP_DIGEST_URL", raising=False)
-    monkeypatch.delenv("FCP_DIGEST_CHAT_ID", raising=False)
+    monkeypatch.delenv("FCP_SMTP_HOST", raising=False)
+    monkeypatch.delenv("FCP_EMAIL_TO", raising=False)
     blank = Settings(
         database_url="postgresql+psycopg://x/y",
         test_database_url="postgresql+psycopg://x/y_test",
-        fcp_digest_url="   ",
-        fcp_digest_chat_id="",
+        fcp_smtp_host="   ",
+        fcp_email_to="",
     )
-    assert blank.fcp_digest_url is None and blank.fcp_digest_chat_id is None
+    assert blank.fcp_smtp_host is None and blank.fcp_email_to is None
+    assert blank.email_configured is False
     set_up = Settings(
         database_url="postgresql+psycopg://x/y",
         test_database_url="postgresql+psycopg://x/y_test",
-        fcp_digest_url="https://api.telegram.org/botX/sendMessage",
-        fcp_digest_chat_id="12345",
+        fcp_smtp_host="smtp.example.net",
+        fcp_email_from="fcp@example.net",
+        fcp_email_to="patrick@example.com",
     )
-    assert set_up.fcp_digest_chat_id == "12345"
+    assert set_up.email_configured is True
+
+
+def test_a_retired_setting_is_ignored_rather_than_refused() -> None:
+    """A VPS `.env` that still names the push URL is not an error: the key
+    does nothing, and the deploy step says to delete it (docs/jobs.md)."""
+    from app.config import Settings
+
+    still_there = Settings(
+        database_url="postgresql+psycopg://x/y",
+        test_database_url="postgresql+psycopg://x/y_test",
+        fcp_digest_url="https://ntfy.sh/topic",
+        fcp_digest_chat_id="12345",
+        fcp_telegram_bot_url="https://api.telegram.org/botX/sendMessage",
+    )
+    assert not hasattr(still_there, "fcp_digest_url")
 
 
 # ---------------------------------------------------------------------------
@@ -898,16 +915,14 @@ def test_the_later_passes_alert_carries_no_plan(session: Session) -> None:
     assert text.startswith("Kawhi Leonard: ")
 
 
-def test_the_script_attempts_every_configured_channel_and_marks_nothing_when_all_fail(
+def test_the_script_reports_a_failed_send_and_marks_nothing(
     session: Session, test_database_url: str, tmp_path: Path
 ) -> None:
-    """Both channels are tried, both are reported, and an event nobody
-    received stays unsent.
+    """A send that fails is reported, and an event nobody received stays
+    unsent.
 
-    Both are pointed at a closed port on the loopback, so each refuses at
-    once and no packet leaves the machine. What is under test is that the
-    second channel is attempted after the first has failed, and that the
-    log line names them both.
+    The mail server is a closed port on the loopback, so it refuses at once
+    and no packet leaves the machine.
     """
     _pass(session, _baseline(), FIRST)
     out = _baseline()
@@ -926,7 +941,6 @@ def test_the_script_attempts_every_configured_channel_and_marks_nothing_when_all
             "FCP_TRACKED_TEAM_ID": str(MINE),
             "PYTHONPATH": str(REPO_ROOT),
             "ESPN_SEASON": "",
-            "FCP_DIGEST_URL": "http://127.0.0.1:1/nothing-listens-here",
             "FCP_SMTP_HOST": "127.0.0.1",
             "FCP_SMTP_PORT": "1",
             "FCP_EMAIL_FROM": "fcp@example.net",
@@ -939,11 +953,9 @@ def test_the_script_attempts_every_configured_channel_and_marks_nothing_when_all
         cwd=tmp_path,
     )
 
-    assert completed.returncode == 1, "a failed channel is visible in the unit"
+    assert completed.returncode == 1, "a failed send is visible in the unit"
     assert "Sent" in completed.stdout
-    assert "0 of 2 channel(s)" in completed.stdout
-    assert "url FAILED: " in completed.stdout, "the push was attempted"
-    assert "email FAILED: " in completed.stdout, "and so was the email, after it"
+    assert "email FAILED: " in completed.stdout
     assert "marked 0 event(s) notified" in completed.stdout
 
     # Nobody received it, so it is still to send.

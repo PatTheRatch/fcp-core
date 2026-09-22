@@ -288,28 +288,21 @@ def test_the_leagues_carry_their_names_for_the_switcher(sign_in: SignIn) -> None
     ]
 
 
-def test_the_alerts_are_the_owners_alone_and_never_a_url(app: FastAPI, sign_in: SignIn) -> None:
+def test_the_alerts_are_the_owners_alone(app: FastAPI, sign_in: SignIn) -> None:
     owner = sign_in(OWNER)
     alice = sign_in("alice@example.com")
-    secret_url = "https://api.telegram.org/bot123:SECRET/sendMessage"
     app.dependency_overrides[get_settings] = lambda: accounts_settings(
         fcp_smtp_host="smtp.example.com",
         fcp_email_from="fcp@example.com",
         fcp_email_to="owner@example.com, second@example.com",
-        fcp_digest_url=secret_url,
-        fcp_digest_chat_id="42",
     )
     mine = owner.get("/me/alerts")
     assert mine.status_code == 200
     assert mine.json() == {
         "yours": True,
-        "channels": [
-            {"kind": "email", "detail": "owner@example.com, second@example.com"},
-            {"kind": "telegram", "detail": "a Telegram chat"},
-        ],
+        "channels": [{"kind": "email", "detail": "owner@example.com, second@example.com"}],
         "per_member": True,
     }
-    assert "SECRET" not in mine.text and "42" not in mine.text
     theirs = alice.get("/me/alerts").json()
     assert theirs == {"yours": False, "channels": [], "per_member": True}
 

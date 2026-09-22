@@ -1,11 +1,13 @@
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.db.base import Base
 from app.db.session import make_engine
@@ -80,4 +82,51 @@ def test_the_injury_reports_migration_goes_down_and_up_again(test_database_url: 
     with engine.connect() as connection:
         assert added <= set(inspect(connection).get_table_names())
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    engine.dispose()
+
+
+def test_0024_disables_the_retired_channels_rather_than_deleting_them(
+    test_database_url: str,
+) -> None:
+    """A member who confirmed a Telegram chat keeps his row, so the Alerts
+    page can tell him it has stopped; its sealed chat id is wiped, so nothing
+    can be sent to it; and no new row of a retired kind can be written."""
+    _reset_public_schema(test_database_url)
+    config = _alembic_config(test_database_url)
+    command.upgrade(config, "0023")
+
+    engine = make_engine(test_database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO users (email, created_at) VALUES ('m@example.com', now())")
+        )
+        for kind, target in (("email", "sealed-address"), ("telegram", "sealed-chat-id")):
+            connection.execute(
+                text(
+                    "INSERT INTO notification_channels "
+                    "(user_id, kind, sealed_target, masked_target, verified_at) "
+                    "VALUES (1, :kind, :target, 'x', now())"
+                ),
+                {"kind": kind, "target": target},
+            )
+    engine.dispose()
+
+    command.upgrade(config, "0024")
+
+    engine = make_engine(test_database_url)
+    with engine.begin() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT kind, sealed_target, disabled_at IS NOT NULL "
+                "FROM notification_channels ORDER BY kind"
+            )
+        ).all()
+        assert rows == [("email", "sealed-address", False), ("telegram", None, True)]
+    with engine.begin() as connection, pytest.raises(IntegrityError, match="channels_kind"):
+        connection.execute(
+            text(
+                "INSERT INTO notification_channels (user_id, kind, masked_target) "
+                "VALUES (1, 'ntfy', 'x')"
+            )
+        )
     engine.dispose()
