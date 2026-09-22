@@ -415,7 +415,7 @@ def test_a_job_that_names_a_day_is_built_for_that_day_not_for_today(
     assert wanted != today, "the fixture's calendar would not tell the two apart"
 
     note = handlers(settings_for())[jobs.PRECOMPUTE](factory, job)
-    assert note == f"stored stream and season for day {wanted}"
+    assert note == f"stored stream, season, today for day {wanted}"
     with factory() as session:
         stored = {int(row.scoring_period) for row in session.scalars(select(TeamReport)).all()}
         assert stored == {wanted}
@@ -592,7 +592,13 @@ def _url(which: str, today: int | None = None) -> str:
     return f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams/1/pickups/{which}{tail}"
 
 
-def test_precompute_stores_both_reports_and_the_routes_read_them(
+def _today_url(today: int | None = None) -> str:
+    """The day's lineup, which is not under /pickups/ but stores beside them."""
+    tail = f"?today={today}" if today is not None else ""
+    return f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams/1/today{tail}"
+
+
+def test_precompute_stores_all_three_reports_and_the_routes_read_them(
     factory: sessionmaker[Session], client: TestClient
 ) -> None:
     with factory() as session:
@@ -602,22 +608,25 @@ def test_precompute_stores_both_reports_and_the_routes_read_them(
         assert calendar is not None
         today = calendar.scoring_period_on(date.today())
     live_stream = client.get(_url("stream", today)).json()
+    live_today = client.get(_today_url(today)).json()
     job = jobs.JobRef(1, jobs.PRECOMPUTE, None, home_id, None, 1, {})
     note = run_precompute(factory, job)
-    assert note == f"stored stream and season for day {today}"
+    assert note == f"stored stream, season, today for day {today}"
 
     with factory() as session:
         rows = {row.kind: row for row in session.scalars(select(TeamReport)).all()}
-        assert set(rows) == {"stream", "season"}
+        assert set(rows) == {"stream", "season", "today"}
         assert rows["stream"].scoring_period == today
         assert rows["stream"].payload == live_stream, "what is stored is what the route says"
+        assert rows["today"].payload == live_today
         # Mark the stored rows, so an answer from them is unmistakable.
         for row in rows.values():
-            row.payload = {**row.payload, "expected_wins": 99.0}
+            row.payload = {**row.payload, "expected_wins": 99.0, "edge": 99.0}
         session.commit()
 
     assert client.get(_url("stream")).json()["expected_wins"] == 99.0
     assert client.get(_url("season")).json()["expected_wins"] == 99.0
+    assert client.get(_today_url()).json()["edge"] == 99.0
     glance = client.get(_url("glance")).json()
     assert glance["stored"] is True and glance["expected_wins"] == 99.0
     assert glance["record_without"] == live_stream["outlook"]["record_without"]
@@ -626,6 +635,7 @@ def test_precompute_stores_both_reports_and_the_routes_read_them(
     assert client.get(_url("stream", other_day)).json()["expected_wins"] != 99.0, (
         "another day is built live"
     )
+    assert client.get(_today_url(other_day)).json()["edge"] != 99.0
 
 
 def test_a_stored_report_from_an_earlier_day_is_not_served(

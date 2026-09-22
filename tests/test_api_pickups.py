@@ -1,10 +1,10 @@
-"""The recommender's two routes, over a seeded league.
+"""The recommender's routes, over a seeded league: the day, the week, the season.
 
 One small season is built once for the module: a four-man roster on a
 three-slot lineup, two men on the wire, and an NBA schedule every one of
-them plays every day. The routes are then asked the same questions the CLI
-asks, plus the two refusals that matter -- a team that does not exist, and
-a season the listener has never run for.
+them plays every day. The routes are then asked the same questions the CLIs
+ask, plus the two refusals that matter -- a team that does not exist, and a
+season the listener has never run for.
 """
 
 from collections.abc import Iterator
@@ -127,6 +127,11 @@ def url(team: int = HOME, season: int = SEASON, which: str = "stream") -> str:
     return f"/leagues/{LEAGUE_ID}/seasons/{season}/teams/{team}/pickups/{which}"
 
 
+def today_url(team: int = HOME, season: int = SEASON) -> str:
+    """The day's lineup. Not under /pickups/: it is not a pickup."""
+    return f"/leagues/{LEAGUE_ID}/seasons/{season}/teams/{team}/today"
+
+
 def test_the_stream_route_reports_the_week_and_the_moves(client: TestClient) -> None:
     body = client.get(url(), params={"today": 1}).json()
 
@@ -204,11 +209,46 @@ def test_the_day_defaults_to_the_calendars_own(client: TestClient) -> None:
     assert body["last_scoring_period"] == 14
 
 
+def test_the_today_route_reports_the_lineup_and_says_where_it_came_from(
+    client: TestClient,
+) -> None:
+    """The morning question, as the page and the CLI ask it.
+
+    The seeded roster is four men on a three-place lineup, all playing every
+    day, so the lineup is full, the fourth is outranked, and the team's own
+    stored lineup for the day is the same men -- nothing to fix.
+    """
+    body = client.get(today_url(), params={"today": 1}).json()
+
+    assert body["espn_team_id"] == HOME
+    assert body["today"] == 1 and body["matchup_period"] == 1
+    assert body["teams_playing"] == 3, "the three NBA teams the seeded men play for"
+    assert [place["slot"] for place in body["lineup"]] == ["G", "F", "UT"]
+    assert body["starts"] == 3
+    seated = [place["player"]["name"] for place in body["lineup"]]
+    assert set(seated) < {"A", "B", "C", "Weak"}
+    assert "Weak" not in seated, "the worst of four for three places"
+    for place in body["lineup"]:
+        assert place["player"]["game"]["opponent_pro_team_id"] == 99
+        assert place["player"]["status"] == "healthy"
+        assert place["player"]["plays"] is True
+        assert place["player"]["espn_player_id"] > 0, "ESPN ids, as everywhere"
+    assert [man["player"]["name"] for man in body["benched"]] == ["Weak"]
+    assert body["benched"][0]["reason"] == "outranked"
+    assert body["idle"] == [] and body["injured_reserve"] == []
+    assert body["actual_known"] is True
+    assert body["fix"] == [], "what they set fills as much of the lineup as anything could"
+    assert body["projected"]["PTS"] > 0
+    assert "ESPN" in body["source_note"]
+
+
 def test_an_unknown_team_is_404(client: TestClient) -> None:
     for which in ("stream", "season"):
         response = client.get(url(team=NOBODY, which=which), params={"today": 1})
         assert response.status_code == 404
         assert "team 99" in response.json()["detail"]
+    unknown = client.get(today_url(team=NOBODY), params={"today": 1})
+    assert unknown.status_code == 404 and "team 99" in unknown.json()["detail"]
 
 
 def test_a_season_with_nothing_to_report_on_is_409(client: TestClient) -> None:
@@ -218,8 +258,10 @@ def test_a_season_with_nothing_to_report_on_is_409(client: TestClient) -> None:
     every played season and now reports perfectly well off its lineup days
     (`tests/test_api_pages.py`). The refusal names both things it wanted.
     """
-    for which in ("stream", "season"):
-        response = client.get(url(season=QUIET_SEASON, which=which), params={"today": 1})
+    asked = [url(season=QUIET_SEASON, which="stream"), url(season=QUIET_SEASON, which="season")]
+    asked.append(today_url(season=QUIET_SEASON))
+    for where in asked:
+        response = client.get(where, params={"today": 1})
         assert response.status_code == 409
         detail = response.json()["detail"]
         assert f"season {QUIET_SEASON} has nothing to build a pickup report from" in detail

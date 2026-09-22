@@ -30,7 +30,7 @@ by replaying the matchup that actually happened with the swap in it.
   period -- once with the swap and once without it. On each day the roster is
   what `daily_lineup_slots` says the team held, the swap is applied to it, and
   the ten starting slots are filled by the recommender's own seating rule
-  (`app.pickups.stream._seat`: take the men with a game in order of value and
+  (`app.pickups.stream.seat`: take the men with a game in order of value and
   keep each one the matching can still seat). The day's line is the seated men's
   real box scores. Rebuild the nine totals of each side, count the categories
   each beats the opponent's real period totals in (`matchup_team_stats`), and
@@ -721,7 +721,7 @@ class Replay:
     def seat(self, roster: Collection[int], day: int) -> tuple[int, ...]:
         """The men a lineup would start from `roster` on `day`.
 
-        The recommender's own seating (`app.pickups.stream._seat`): take the
+        The recommender's own seating (`app.pickups.stream.seat`): take the
         men with a game in order of value and keep each one the matching can
         still seat, which is exact for a transversal matroid rather than an
         approximation of it. The order is `form` -- what each man had averaged

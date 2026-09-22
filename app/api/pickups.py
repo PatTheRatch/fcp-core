@@ -1,9 +1,16 @@
-"""The recommender's two reports, for one team on one day.
+"""The recommender's reports, for one team on one day.
 
-Read-only, like the rest of the API, and keyed on ESPN ids: a caller who
-knows the league, the year and the team id can ask both questions without
-knowing anything about this database's own keys, so player ids go out as
-ESPN's too.
+Three of them now: who starts today (`/today`), who to stream this week
+(`/pickups/stream`) and who to hold for the rest of it
+(`/pickups/season`). Read-only, like the rest of the API, and keyed on ESPN
+ids: a caller who knows the league, the year and the team id can ask every
+one of them without knowing anything about this database's own keys, so
+player ids go out as ESPN's too.
+
+`/today` is the morning question and the smallest of the three: one day's
+lineup, the same seating the week report solves each of its days with
+(`app.pickups.today`), with the places named. It reads nothing after the day
+it is asked about.
 
 Both reports generate ideas; the manager decides. `recommended` on either
 one is the moves **worth a look**, in the order they are worth making, and
@@ -22,7 +29,7 @@ season's first day (`app.pickups.state.SeasonCalendar`).
 
 STORED REPORTS
 
-The morning precompute (app/job_kinds.py) builds each claimed team's two
+The morning precompute (app/job_kinds.py) builds each claimed team's three
 reports and stores them (`team_reports`, app/reports.py). When the report
 asked for is today's and a row built today is there, it is answered from the
 row, at once; otherwise it is built live, as it always was. Nothing here
@@ -60,6 +67,12 @@ from app.api.schemas import (
     StashCandidateOut,
     StreamMoveOut,
     StreamReportOut,
+    TodayBenchedOut,
+    TodayFixOut,
+    TodayGameOut,
+    TodayPlayerOut,
+    TodayReportOut,
+    TodaySeatOut,
     VolumeGuardOut,
 )
 from app.db.models import (
@@ -77,6 +90,9 @@ from app.pickups.season import season_recommendations as build_season
 from app.pickups.state import RosteredPlayer, SeasonCalendar, season_calendar
 from app.pickups.stream import CategoryShift, Move, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
+from app.pickups.today import Benched, DayPlayer, Misstart, Seat, TodayReport
+from app.pickups.today import today_lineup as build_today
+from app.projections.sources import ESPN, describe
 
 router = APIRouter(tags=["pickups"])
 
@@ -164,16 +180,30 @@ def build_payload(
     one cannot drift apart.
     """
     espn_team_id = int(team.espn_team_id)
-    out: StreamReportOut | SeasonReportOut
+    out: StreamReportOut | SeasonReportOut | TodayReportOut
     if kind == reports.STREAM:
         stream = build_stream(session, league_season, espn_team_id, day)
         out = _stream_out(stream, _espn_ids(session, _stream_players(stream)))
     elif kind == reports.SEASON:
         season = build_season(session, league_season, espn_team_id, day)
         out = _season_out(season, _espn_ids(session, _season_players(season)))
+    elif kind == reports.TODAY:
+        lineup = build_today(session, league_season, espn_team_id, day)
+        out = _today_out(lineup, _espn_ids(session, _today_players(lineup)), _source(league_season))
     else:
         raise ValueError(f"unknown report kind {kind!r}")
     return out.model_dump(mode="json")
+
+
+def _source(league_season: LeagueSeason) -> str:
+    """Where the numbers came from, in the words the pages use.
+
+    The same line `app.api.pages.page_context` carries, written the same
+    way: every figure on the day's report is a game, a start or a knowable
+    line off this season's own box scores and ESPN's, and ESPN's are ours to
+    show (`app.projections.sources`, docs/projection_sources.md).
+    """
+    return describe(ESPN, f"{int(league_season.season)} season, from the stored box scores")
 
 
 def stored_report(
@@ -238,6 +268,29 @@ def season_report(
 
 
 @router.get(
+    "/leagues/{league_id}/seasons/{season}/teams/{team_id}/today",
+    summary="Who starts today, and who is on the bench with a game",
+    dependencies=[TEAM_PLAN],
+)
+def today_report(
+    league_season: LeagueSeasonDep,
+    team: TeamDep,
+    session: SessionDep,
+    today: TodayQuery = None,
+) -> TodayReportOut:
+    """The day's lineup: the proposed starters by place, each man's game or
+    "no game", the bench men with a game and why they are not in it, and the
+    places the team has actually set with a man who is not playing while its
+    bench has one who is.
+
+    The week report's own seating for one day (`app.pickups.today`), so the
+    two can never disagree about who starts. A proposal, not an instruction:
+    the reasons travel with it and the manager sets the lineup."""
+    body, _ = _report(session, league_season, team, reports.TODAY, today)
+    return TodayReportOut.model_validate(body)
+
+
+@router.get(
     "/leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance",
     summary="This week at a glance, for the team's manager: categories and the record",
     dependencies=[TEAM_MANAGER],
@@ -286,6 +339,18 @@ def _stream_players(report: StreamReport) -> list[RosteredPlayer]:
     for day in report.empty_days:
         found.extend(day.fillers)
     return found
+
+
+def _today_players(report: TodayReport) -> list[RosteredPlayer]:
+    found = [*report.idle, *report.injured_reserve]
+    for place in (*report.lineup, *report.actual):
+        if place.player is not None:
+            found.append(place.player)
+    for benched in report.benched:
+        found.extend([benched.player, *benched.behind])
+    for misstart in report.fix:
+        found.extend(misstart.instead)
+    return [day.player for day in found]
 
 
 def _season_players(report: SeasonReport) -> list[RosteredPlayer]:
@@ -410,6 +475,66 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
         adds_used=report.adds_used,
         adds_budget=report.adds_budget,
         adds_left=report.adds_left,
+    )
+
+
+def _day_out(player: DayPlayer, espn: dict[int, int]) -> TodayPlayerOut:
+    return TodayPlayerOut(
+        **_player_out(player.player, espn).model_dump(),
+        game=(
+            None
+            if player.game is None
+            else TodayGameOut(
+                opponent_pro_team_id=player.game.opponent_pro_team_id, home=player.game.home
+            )
+        ),
+        status=player.status,
+        plays=player.plays,
+    )
+
+
+def _seat_out(place: Seat, espn: dict[int, int]) -> TodaySeatOut:
+    return TodaySeatOut(
+        slot=place.slot,
+        player=None if place.player is None else _day_out(place.player, espn),
+    )
+
+
+def _benched_out(benched: Benched, espn: dict[int, int]) -> TodayBenchedOut:
+    return TodayBenchedOut(
+        player=_day_out(benched.player, espn),
+        reason=benched.reason,
+        behind=[_day_out(player, espn) for player in benched.behind],
+    )
+
+
+def _fix_out(misstart: Misstart, espn: dict[int, int]) -> TodayFixOut:
+    return TodayFixOut(
+        seat=_seat_out(misstart.seat, espn),
+        instead=[_day_out(player, espn) for player in misstart.instead],
+    )
+
+
+def _today_out(report: TodayReport, espn: dict[int, int], source_note: str) -> TodayReportOut:
+    return TodayReportOut(
+        espn_team_id=report.team_id,
+        today=report.today,
+        calendar_date=report.calendar_date,
+        matchup_period=report.matchup_period,
+        teams_playing=report.teams_playing,
+        lineup=[_seat_out(place, espn) for place in report.lineup],
+        starts=report.starts,
+        actual_starts=report.actual_starts,
+        benched=[_benched_out(benched, espn) for benched in report.benched],
+        idle=[_day_out(player, espn) for player in report.idle],
+        injured_reserve=[_day_out(player, espn) for player in report.injured_reserve],
+        actual_known=report.actual_known,
+        actual=[_seat_out(place, espn) for place in report.actual],
+        fix=[_fix_out(misstart, espn) for misstart in report.fix],
+        projected=dict(report.projected.counts),
+        actual_projected=dict(report.actual_projected.counts),
+        edge=report.edge,
+        source_note=source_note,
     )
 
 

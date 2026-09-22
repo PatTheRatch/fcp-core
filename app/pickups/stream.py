@@ -375,7 +375,7 @@ class _Week:
             key = (day, tuple(c.player_id for c in available))
             seated = self._seated.get(key)
             if seated is None:
-                seated = _seat(available, self._lineup)
+                seated = seat(available, self._lineup)
                 self._seated[key] = seated
             for player_id in seated:
                 starts[player_id] = starts.get(player_id, 0) + 1
@@ -386,11 +386,18 @@ class _Week:
         return _Projection(line=line, starts=starts, empty_slot_days=empty)
 
 
-def _seat(available: Sequence[Contender], lineup: Sequence[str]) -> tuple[int, ...]:
+def seat(available: Sequence[Contender], lineup: Sequence[str]) -> tuple[int, ...]:
     """The best-weighted set of `available` the lineup can seat at once.
 
     Greedy in weight order, keeping a player only when he raises the
-    matching; exact for a transversal matroid (module docstring).
+    matching; exact for a transversal matroid (module docstring). `available`
+    is expected in weight order, which is the order the week projects in and
+    the order a day's report reads back as "who beat whom to a place".
+
+    Public because the day's own report (`app.pickups.today`) is this rule
+    applied to a single day and must be the same rule: a second seating
+    would be a second thing to be wrong, and the week page and the morning
+    page would then disagree about who starts.
     """
     chosen: dict[int, frozenset[str]] = {}
     seated: list[int] = []

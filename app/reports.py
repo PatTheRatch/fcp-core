@@ -1,7 +1,7 @@
-"""Stored reports: a team's week and season plans, built once in the morning.
+"""Stored reports: a team's day, week and season plans, built in the morning.
 
 A cold report takes twenty to forty seconds. The morning precompute (the
-`precompute` job, app/job_kinds.py) builds each claimed team's two reports
+`precompute` job, app/job_kinds.py) builds each claimed team's three reports
 for the day and keeps them here; the pickup routes and the pages read the
 stored row when it is fresh and build live only when it is not
 (app/api/pickups.py). This is `scripts/warm_pages.py` grown up: the answer
@@ -33,7 +33,12 @@ from app.db.models import TeamReport
 
 STREAM = "stream"
 SEASON = "season"
-KINDS = (STREAM, SEASON)
+#: Who starts today (`app.pickups.today`). A third kind beside the two, and
+#: the cheapest of them -- one day rather than a whole wire -- but it is read
+#: on every load of the week page and by the morning digest, so it is built
+#: once with the others rather than on each reader's clock.
+TODAY = "today"
+KINDS = (STREAM, SEASON, TODAY)
 
 
 def store(

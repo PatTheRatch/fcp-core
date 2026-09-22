@@ -1569,17 +1569,17 @@ class Job(Base):
 
 
 class TeamReport(Base):
-    """A team's streaming or rest-of-season report for one scoring period,
+    """A team's day, week or rest-of-season report for one scoring period,
     built by the morning precompute and read by the pages and the routes.
 
-    `payload` is exactly what the route would answer (`StreamReportOut` or
-    `SeasonReportOut`, as JSON). One row per team, kind and scoring period;
-    a rebuild the same day replaces it.
+    `payload` is exactly what the route would answer (`TodayReportOut`,
+    `StreamReportOut` or `SeasonReportOut`, as JSON). One row per team, kind
+    and scoring period; a rebuild the same day replaces it.
     """
 
     __tablename__ = "team_reports"
     __table_args__ = (
-        CheckConstraint("kind IN ('stream', 'season')", name="ck_team_reports_kind"),
+        CheckConstraint("kind IN ('stream', 'season', 'today')", name="ck_team_reports_kind"),
         UniqueConstraint(
             "team_id", "kind", "scoring_period", name="uq_team_reports_team_kind_period"
         ),

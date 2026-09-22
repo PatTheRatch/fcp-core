@@ -233,6 +233,10 @@ def pickups(team: int, league: int = LEAGUE_A) -> str:
     return f"/leagues/{league}/seasons/{SEASON}/teams/{team}/pickups/stream"
 
 
+def today(team: int, league: int = LEAGUE_A) -> str:
+    return f"/leagues/{league}/seasons/{SEASON}/teams/{team}/today"
+
+
 def trades(team: int, which: str = "rosters", league: int = LEAGUE_A) -> str:
     return f"/leagues/{league}/seasons/{SEASON}/teams/{team}/trades/{which}"
 
@@ -257,6 +261,7 @@ def test_signed_out_is_401_on_a_league_route(anon: TestClient) -> None:
     assert refused.status_code == 401
     assert refused.headers["www-authenticate"] == "Bearer"
     assert anon.get(pickups(3)).status_code == 401
+    assert anon.get(today(3)).status_code == 401
     assert anon.get(trades(3)).status_code == 401
     assert anon.get(trades(3, "report")).status_code == 401
     assert anon.get("/leagues").status_code == 401
@@ -305,6 +310,11 @@ def test_a_manager_of_team_5_is_refused_team_3s_plan(sign_in: SignIn) -> None:
     assert refused.status_code == 403
     assert refused.json()["detail"] == "This team's plan is its manager's."
     assert bob.get(pickups(5)).status_code == THROUGH
+    # The day's lineup is the same paid team layer as the week's plan.
+    shut_today = bob.get(today(3))
+    assert shut_today.status_code == 403
+    assert shut_today.json()["detail"] == "This team's plan is its manager's."
+    assert bob.get(today(5)).status_code == THROUGH
     # The trade routes are the same paid team layer, both of them.
     for which in ("rosters", "report"):
         shut = bob.get(trades(3, which))

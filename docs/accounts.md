@@ -186,6 +186,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /l/{league_id}/{season}/draft` | league member (page) | Draft |
 | `GET /l/{league_id}/{season}/history` | league member (page) | History |
 | `GET /pages/teams/{league_id}/{season}` | league member (page) | the old index: a 308 to `/l/.../standings`, keeping its check |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/today` | team manager + entitled | who starts today, the bench men with a game, and the places set with a man who is not playing |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream` | team manager + entitled | the week plan |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season` | team manager + entitled | the season plan, drops and bids |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance` | team manager | the free This week page's look at his own week: expected categories and the projected record, not the plan (step 4) |

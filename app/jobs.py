@@ -8,7 +8,7 @@ A job is one of four kinds, each about one thing:
 
 * `ingest`: one league, the trailing days and next season's settings.
 * `status_pass`: the listener, for one league.
-* `precompute`: one team's week and season reports, stored for the day.
+* `precompute`: one team's day, week and season reports, stored for the day.
 * `digest`: one member's morning digest, or an alert between digests.
 
 What each does is `app.job_kinds`; when they are enqueued is `app.schedule`.

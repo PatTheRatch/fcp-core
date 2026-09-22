@@ -11,8 +11,8 @@ they are enqueued is `app.schedule`.
   follows (`ESPN_LEAGUE_ID`) gets the whole pass, exactly as
   `scripts/status_pass.py` runs it; any other league gets its own wire only
   (`run_wire_pass`, and "One listener league" in docs/jobs.md for why).
-* `precompute`: one team's week and season reports for today, stored in
-  `team_reports` for the pages and routes to read (`app.reports`).
+* `precompute`: one team's day, week and season reports for today, stored
+  in `team_reports` for the pages and routes to read (`app.reports`).
 * `digest`: one member's morning digest, or an alert between digests,
   delivered to his verified channels. The server's owner also gets the
   `.env` channels, and his digest of the tracked team marks the events it
@@ -236,7 +236,7 @@ def run_pass(
 def run_precompute(
     factory: sessionmaker[Session], job: JobRef, today: date | None = None
 ) -> str | None:
-    """Build and store one team's two reports for today. A season with
+    """Build and store one team's three reports for today. A season with
     nothing to build from yet (no schedule, no roster) is not a failure:
     the note says so, and the routes build live as before."""
     from app.api.pickups import build_payload, readiness
@@ -264,7 +264,7 @@ def run_precompute(
         session.commit()
     if not built:
         return f"day {day} is in no matchup period; nothing stored"
-    return f"stored {' and '.join(built)} for day {day}"
+    return f"stored {', '.join(built)} for day {day}"
 
 
 # ---------------------------------------------------------------------------

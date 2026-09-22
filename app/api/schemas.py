@@ -760,6 +760,107 @@ class SeasonReportOut(BaseModel):
     adds_left: int
 
 
+class TodayGameOut(BaseModel):
+    """The game a player's NBA team plays today, from the stored schedule."""
+
+    opponent_pro_team_id: int
+    home: bool
+
+
+class TodayPlayerOut(PickupPlayerOut):
+    """One man the team holds, as today sees him.
+
+    The pickup shape with the day's three extra facts on it, rather than the
+    pickup shape nested inside a wrapper: a lineup grid reads a name once
+    per place, and `place.player.player.name` is a sentence nobody should
+    have to write.
+    """
+
+    game: TodayGameOut | None = Field(description="Null when his NBA team does not play today")
+    status: str = Field(description="healthy, injured (with the return date when ESPN gives one)")
+    plays: bool = Field(
+        description="A game today ESPN has not ruled him out of, so he can be started"
+    )
+
+
+class TodaySeatOut(BaseModel):
+    """One place in the lineup and the man in it."""
+
+    slot: str
+    player: TodayPlayerOut | None = Field(description="Null when nobody can fill the place")
+
+
+class TodayBenchedOut(BaseModel):
+    """A man with a game the proposed lineup has no room for, and why."""
+
+    player: TodayPlayerOut
+    reason: str = Field(description="no_slot (he fits no starting place) or outranked")
+    behind: list[TodayPlayerOut] = Field(
+        description="The men seated in the places he fits, best first; empty for no_slot"
+    )
+
+
+class TodayFixOut(BaseModel):
+    """A place in the set lineup that will produce nothing tonight: the man
+    in it has no game, or (`seat.player` null) it was left unset."""
+
+    seat: TodaySeatOut
+    instead: list[TodayPlayerOut] = Field(
+        description="Men on its bench with a game who fit that very place, best first"
+    )
+
+
+class TodayReportOut(BaseModel):
+    """Who starts today, against who the team is actually set to start.
+
+    The week report's own seating for one day (`app.pickups.today`), with the
+    places named. It reads nothing after `today`: a man's games remaining is
+    0 or 1, and no row of the schedule for a later day reaches the answer.
+    """
+
+    espn_team_id: int
+    today: int = Field(description="The scoring period reported on")
+    calendar_date: date | None = Field(
+        description="The day it falls on; null with no stored schedule. Not `date`, which\n"
+        " would shadow the type the fields beside it are annotated with"
+    )
+    matchup_period: int
+    teams_playing: int = Field(
+        description="NBA teams with a game today. Zero on a day like the All-Star break"
+    )
+    lineup: list[TodaySeatOut] = Field(
+        description="The proposed lineup, one entry per place, in the league's slot order"
+    )
+    starts: int = Field(
+        description="Places the proposal fills, which is the most the roster can fill today"
+    )
+    actual_starts: int = Field(
+        description="Places the set lineup fills with a man who is playing; 0 when unknown"
+    )
+    benched: list[TodayBenchedOut]
+    idle: list[TodayPlayerOut] = Field(description="Men held who cannot be started today")
+    injured_reserve: list[TodayPlayerOut]
+    actual_known: bool = Field(
+        description="Whether the stored lineup days carry today's lineup yet"
+    )
+    actual: list[TodaySeatOut] = Field(description="What the team has set; empty when unknown")
+    fix: list[TodayFixOut] = Field(
+        description="Places set with a man who is not playing while the bench has one who is"
+    )
+    projected: dict[str, float] = Field(
+        description="Raw counts the proposed lineup projects to add today"
+    )
+    actual_projected: dict[str, float] = Field(description="The same for the lineup that is set")
+    edge: float = Field(
+        description=(
+            "What the proposal is worth over what is set, in the currency the seating orders "
+            "by: each count over its category's weekly spread, turnovers against. Zero when "
+            "the two lineups agree and when today's is not stored"
+        )
+    )
+    source_note: str = Field(description="Where the numbers came from, in the page's words")
+
+
 class TradeReadinessOut(BaseModel):
     """Whether the season has anything to judge a trade from, and what is missing.
 

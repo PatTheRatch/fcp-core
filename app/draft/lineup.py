@@ -83,14 +83,32 @@ def max_matching(
     player who could sit in UT covers any UT slot, so the three UT slots are
     simply three copies of the same requirement.
 
-    Standard augmenting-path matching: slots are distinguished by position in
-    `lineup`, so two UT slots are two slots. Returns the size of the largest
-    assignment, which is at most `len(lineup)`.
+    Returns the size of the largest assignment, which is at most
+    `len(lineup)`. It is the size of `assign`'s answer and nothing else, so
+    the count and the lineup it counts can never disagree.
+    """
+    return len(assign(eligibilities, lineup))
 
+
+def assign(
+    eligibilities: Mapping[int, Iterable[str]],
+    lineup: Sequence[str] = DEFAULT_LINEUP,
+) -> dict[int, int]:
+    """Who sits where: the index of a place in `lineup` -> the player in it.
+
+    The matching itself, which the draft only ever needed the size of and a
+    daily lineup needs by name: "who starts today" is a grid, not a count
+    (`app.pickups.today`).
+
+    Standard augmenting-path matching: places are distinguished by position
+    in `lineup`, so two UT places are two places. The answer is *a* largest
+    assignment and not the only one -- two men who fit the same two places
+    can be swapped between them -- so a caller who wants a stable grid hands
+    the players in a stable order, which is the order they are tried in.
     """
     players = list(eligibilities)
     if not players or not lineup:
-        return 0
+        return {}
 
     slot_ids = list(range(len(lineup)))
     eligible = {player: _usable(eligibilities[player]) for player in players}
@@ -110,7 +128,9 @@ def max_matching(
                 return True
         return False
 
-    return sum(1 for player in players if try_assign(player, set()))
+    for player in players:
+        try_assign(player, set())
+    return assigned
 
 
 def _usable(slots: Iterable[str]) -> set[str]:
