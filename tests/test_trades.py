@@ -31,7 +31,7 @@ from app.pickups.judge import TYPICAL_PICKUP
 from app.pickups.projection import clear_cache as clear_lines
 from app.scoring.replacement import OPENED_PLACE
 from app.trades import CALIBRATION_NOTE, PUBLISHED, TRADE_HURDLE, TeamOffer, evaluate_trade
-from app.trades.calibration import COIN_RANGE, DEALS, WINDOW_DAYS
+from app.trades.calibration import COIN_RANGE, DEALS, UNEVEN_ERROR, WINDOW_DAYS
 from app.trades.summary import WORDS, join, words
 from scripts.trade import AmbiguousNameError, player_by_name, render
 from tests.pickups_db import (
@@ -638,12 +638,18 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     """
     first = PUBLISHED[0]
     assert first.horizon == f"next {WINDOW_DAYS} days", "the cell declared primary before the run"
+    assert first.yardstick == "the streamed lane", "and the settlement declared with it"
     assert f"{first.picked} of them" in CALIBRATION_NOTE
     assert f"{DEALS} trades" in CALIBRATION_NOTE
     assert f"between {COIN_RANGE[0]} and {COIN_RANGE[1]} of {DEALS}" in CALIBRATION_NOTE
     assert COIN_RANGE[0] <= first.picked <= COIN_RANGE[1], "which is why it says it is a coin"
-    for jargon in ("Spearman", "correlation", "R1", "per-week"):
+    for jargon in ("Spearman", "correlation", "R1", "R2", "per-week"):
         assert jargon not in CALIBRATION_NOTE
+    # The one claim the note makes beyond the headline: the consolidation gap.
+    assert UNEVEN_ERROR["R1, the old yardstick"] == pytest.approx(0.389)
+    assert "about four tenths of a category a week" in CALIBRATION_NOTE
+    assert UNEVEN_ERROR["R2, the streamed lane"] == pytest.approx(0.103)
+    assert "the gap is about a tenth" in CALIBRATION_NOTE
 
 
 def test_the_summary_joins_names_the_way_a_sentence_does() -> None:

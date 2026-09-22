@@ -584,3 +584,40 @@ proxy, and would let adds be attributed to the lane they built.
     reconciliation — the headline figure and its unit both changed, and leaving
     both readings side by side would have invited the reader to take the larger
     one.
+
+---
+
+## Applied
+
+**2026-09-22, `f603775`.** The headline was taken into the code as revision R2
+(`docs/trades.md` §7b, declared before the change was written). `OPENED_PLACE
+= 0.38` now sits beside `TYPICAL_PICKUP` in `app/scoring/replacement.py`, with
+the lower quartile recorded as `OPENED_PLACE_LOWER`, and
+`app.scoring.replacement.opened_places` is the one rule three call sites read:
+`app/pickups/judge.py`'s `places_cost` (so `season_cost`, `judge` and the
+trade evaluator's per-man number all follow), the trade evaluator's own
+headline in `app/trades/evaluate.py` (a scalar top-up over the best free
+agent's week, which is zero whenever that man already clears the lane), and
+`app/scoring/moves.py`'s `grade_move`, which had been charging a flat ~0.07 in
+hindsight. An opened place is priced at the better of the man and the lane —
+never their sum, per the caution above — and the **median** was taken rather
+than Decision 7's conservative lower quartile, because the number is used as a
+floor under the best free agent rather than as a forecast (`docs/trades.md`
+§8). The second opened place takes Decision 6's finding at its word: no decay
+is measured, so it is priced at a single ordinary add rather than at a second
+lane.
+
+**What it was worth.** The trade calibration re-ran once, the same day
+(`docs/trades.md` §7). The error it was aimed at — consolidating deals
+over-rated by +0.389 categories a week — is **+0.103** with this figure in
+both engines, and re-pricing the forecast alone left it at +0.404, so the
+over-rating was mostly the hindsight grade charging 0.07 for a place the
+forecast filled with a real man. §2's limitation stands and is now load
+bearing: an opened place is invisible in `daily_lineup_slots`, so 0.38 is a
+floor measured on places found *within* a roster, applied to places that are
+genuinely empty.
+
+**Not taken.** The recommendation in "Should the price fall with the number of
+lanes?" to **gate the place value on `adds_left`** is not built. 16.2% of
+team-periods have spent the budget and can run no lane at all, and the code
+still prices their opened places as though they could.
