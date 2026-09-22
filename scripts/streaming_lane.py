@@ -87,8 +87,12 @@ read differently.
 REPRODUCE
 
     cd /home/aisha/fcp-core-lane
-    set -a && . ./.env && set +a
     PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/streaming_lane.py
+
+(`DATABASE_URL` is read from the environment, or from `.env` in the worktree
+root when it is not set. The house style sources `.env` first; this worktree's
+`.env` cannot be sourced -- its `FCP_EMAIL_FROM` has unquoted angle brackets --
+so the script reads the file itself.)
 
     --seasons 2024 2025 2026   run a subset of seasons only
     --days-definition          the alternative lane count (see above)

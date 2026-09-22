@@ -4,8 +4,16 @@
 **Seasons:** 2019–2026 (eight seasons; 2020 suspended by COVID)
 **Script:** `scripts/streaming_lane.py` — passes `ruff check`, `ruff format --check` and `mypy`
 **Companions:** [`waiver_value.md`](waiver_value.md) (what was available), [`acquirable_value.md`](acquirable_value.md) (what was acquired), [`roster_churn.md`](roster_churn.md) (how fast a roster turns over)
-**Reproduce:** `cd /home/aisha/fcp-core-lane && set -a && . ./.env && set +a && PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/streaming_lane.py`
+**Reproduce:** `cd /home/aisha/fcp-core-lane && PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/streaming_lane.py`
 **Read-only:** every query is a SELECT. Nothing is written to the database.
+
+> **Note on the reproduce line.** The house style sources `.env` before
+> running (`set -a && . ./.env && set +a`). That does not work against this
+> worktree's `.env`: its `FCP_EMAIL_FROM` value contains unquoted angle
+> brackets and bash rejects the file at line 29. The script therefore reads
+> `DATABASE_URL` straight out of `.env` itself when the environment does not
+> already have it, and the line above needs no sourcing. If `DATABASE_URL` is
+> exported in your shell it is used in preference.
 
 ---
 
@@ -530,6 +538,13 @@ disagree with one without re-deriving the whole thing.
 
 10. **Periods are never pooled across lengths for the distributions** — the
     All-Star fortnight is scored against fortnights, as `SeasonOpponents` does.
+
+11. **The reproduce line does not source `.env`.** The house style
+    (`set -a && . ./.env && set +a`) fails against this worktree's `.env` at
+    line 29, where `FCP_EMAIL_FROM` holds unquoted angle brackets. The script
+    reads `DATABASE_URL` from the file itself instead, so the documented
+    command works as written. `/opt/fcp-core/.env` has no such line, which is
+    why the older docs' reproduce lines were unaffected.
 
 ### Steps 4, 5 and 6
 
