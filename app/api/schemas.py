@@ -835,6 +835,10 @@ class PlayerCardOut(BaseModel):
     projection, an ordinary week of it from here on, the games he has left and
     the games he has in the playoff weeks, whether he is hurt and when he is
     back, and how many games of his own stand behind the rate.
+
+    What he is worth a week is deliberately not here: it needs the league's
+    measured category spreads, which take about two seconds to build, and a
+    card is a hover. The pages that show that number show it beside the name.
     """
 
     espn_player_id: int
@@ -857,7 +861,6 @@ class PlayerCardOut(BaseModel):
     thin: bool = Field(description="Fewer games of his own than a rate can be trusted on")
     per_game: dict[str, float] = Field(description="The nine per game, percentages as rates")
     weekly: dict[str, float] = Field(description="The same over an ordinary week from here on")
-    value: float = Field(description="Categories a week his roster place is worth, league standard")
 
 
 class TradeCategoryOut(BaseModel):

@@ -13,12 +13,20 @@ WHY IT IS THE SAME NUMBERS AND NOT NEW ONES
 
 Nothing here computes anything a report does not. `per_game` is
 `app.pickups.projection.per_game_line`, the rate every weekly line is scaled
-from; `weekly` is `rest_of_season_line` over the same horizon the plans use,
-divided by the weeks in it; `value` is the league standard
-(`app.pickups.judge.Standard`), the currency a pickup and a trade are both
-judged in. So a card opened from the trade page says exactly what the trade
-page's own table says, to the last decimal, and a card that disagreed with
-the page it was opened from would be worse than no card.
+from, and `weekly` is `rest_of_season_line` over the same horizon the plans
+use, divided by the weeks in it. So a card opened from the trade page says
+exactly what the trade page's own table says, to the last decimal, and a card
+that disagreed with the page it was opened from would be worse than no card.
+
+WHAT IT DOES NOT CARRY, AND WHY
+
+What a man is worth a week -- the league-standard number every report leads
+with -- is not on the card. It needs the league's measured category spreads
+(`app.draft.targets.category_distributions`), which take about two seconds to
+build and are not cached: a price a report pays once and a hover cannot. The
+pages that print that number print it in their own tables, beside the name
+the card hangs off, so nothing is hidden by leaving it off. Everything here
+is a handful of indexed reads and comes back in about fifty milliseconds.
 
 `games_so_far`, `had_projection` and `projection_source` are
 `app.scoring.knowable`'s, and `thin` is the trade report's own threshold
@@ -44,7 +52,7 @@ from espn_api.basketball.constant import PRO_TEAM_MAP
 from sqlalchemy.orm import Session
 
 from app.db.models import LeagueSeason
-from app.pickups.judge import horizon, standard_lens, weeks_between
+from app.pickups.judge import horizon, weeks_between
 from app.pickups.projection import per_game_line, rest_of_season_line
 from app.pickups.state import build_players, season_calendar
 from app.scoring.knowable import knowable
@@ -84,8 +92,6 @@ class Card:
     #: His line per game, and the same over an ordinary week from here on.
     per_game: CategoryLine
     weekly: CategoryLine
-    #: Categories a week his roster place is worth, league standard.
-    value: float
 
     @property
     def thin(self) -> bool:
@@ -151,7 +157,6 @@ def player_card(
         projection_source=known.source,
         per_game=per_game_line(session, season, player_id, today, tilt=tilt, as_of=as_of),
         weekly=weekly,
-        value=standard_lens(session, league_season, today).value(weekly),
     )
 
 

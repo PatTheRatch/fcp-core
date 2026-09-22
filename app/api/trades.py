@@ -496,9 +496,8 @@ def _fills(
 
 def _one_wire(ours: Sequence[tuple[int, str]], theirs: Sequence[tuple[int, str]]) -> None:
     """One man cannot be added by both sides of the same deal."""
-    both = {player_id: name for player_id, name in ours}.keys() & {
-        player_id for player_id, _name in theirs
-    }
+    over_there = {player_id for player_id, _name in theirs}
+    both = {player_id for player_id, _name in ours} & over_there
     if both:
         name = next(name for player_id, name in ours if player_id in both)
         raise _bad(FILLS_BOTH_SIDES.format(name=name))

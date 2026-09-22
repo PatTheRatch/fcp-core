@@ -123,7 +123,6 @@ def _card_out(card: Card, espn_player_id: int) -> PlayerCardOut:
         thin=card.thin,
         per_game=card.per_game.totals(list(NINE)),
         weekly=card.weekly.totals(list(NINE)),
-        value=card.value,
     )
 
 
