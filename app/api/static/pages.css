@@ -295,9 +295,9 @@ section{margin-top:56px}
   color:var(--faint);margin:2px 0 0}
 .side .hint{color:var(--muted);font-size:14px;margin:6px 0 0}
 .roster{list-style:none;margin:10px 0 0;padding:0}
-.roster li{border-bottom:1px solid var(--rule)}
-.pick{display:flex;width:100%;align-items:baseline;gap:8px;text-align:left;background:none;
-  border:0;border-radius:0;padding:7px 4px;cursor:pointer;font-size:15px}
+.roster li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
+.pick{display:flex;flex:1 1 auto;min-width:0;align-items:baseline;gap:8px;text-align:left;
+  background:none;border:0;border-radius:0;padding:7px 4px;cursor:pointer;font-size:15px}
 .pick:hover{background:var(--sunk)}
 .pick[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
 .pick[aria-pressed="true"] .who::before{content:"\2713\00a0"}
@@ -323,6 +323,90 @@ section{margin-top:56px}
 @media (max-width:860px){
   .two{grid-template-columns:1fr;gap:0}
   .two > .side{margin-top:28px}
+}
+
+/* ---- who fills the place a deal opens -----------------------------------
+   The wire as a list of choices, best for this roster first, with "leave it
+   open" at the top because that is what the report does when nobody is
+   named. One row is a man: his name and his status, what he is worth to us
+   in the accent's own ink, what he is, and his week in the nine. The list
+   scrolls in its own frame, never the page. */
+.wire{list-style:none;margin:12px 0 0;padding:0;max-height:440px;overflow-y:auto;
+  border-top:1px solid var(--rule-strong)}
+.wire li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
+.fill{flex:1 1 auto;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;
+  gap:2px 12px;align-items:baseline;text-align:left;background:none;border:0;border-radius:0;
+  padding:9px 4px;cursor:pointer;font-size:15px}
+.fill:hover{background:var(--sunk)}
+.fill[aria-pressed="true"]{background:var(--accent-soft)}
+.fill[aria-pressed="true"] .who::before{content:"\2713\00a0"}
+.fill .who{font-weight:600;overflow-wrap:anywhere}
+.fill .worth{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+.fill .worth.up{color:var(--good)} .fill .worth.down{color:var(--stop)}
+/* The "leave it open" row's figure is in the league's lens and not in this
+   roster's, so it is drawn as a different kind of number and its own row
+   says which (docs/trades.md, "Filling the opened place"). */
+.fill .worth.faint{color:var(--faint)}
+.fill .meta{grid-column:1/-1;font-family:var(--mono);font-size:11px;color:var(--faint)}
+/* The strip stays nine across in a row of this list at every width: it is
+   there to be glanced at beside the name, and three rows of three would make
+   a list of forty men unreadable on a phone. */
+.fill .strip{grid-column:1/-1;margin:6px 0 2px;grid-template-columns:repeat(9,minmax(0,1fr));
+  border-width:1px 0 1px 1px}
+.fill .strip div{padding:3px 5px;border-bottom:0}
+.fill .strip .lab{font-size:8.5px} .fill .strip b{font-size:11.5px}
+.badge{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+  font-size:10px;margin-left:8px;color:var(--muted);white-space:nowrap}
+.badge.hurt{color:var(--stop)} .badge.waivers{color:var(--warn)}
+/* The card's own control on a row that is already a button: a word in the
+   mono face at the end of the row, never an icon in a circle. */
+.info{align-self:stretch;background:none;border:0;border-left:1px solid var(--rule);
+  border-radius:0;padding:0 10px;cursor:pointer;font-family:var(--mono);font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.info:hover{color:var(--accent)}
+
+/* ---- a player's card: a popover on a desktop, a sheet on a phone --------
+   Drawn by shell.js on any name (`.pname`) and on any `.info` beside one.
+   The house's rules: a rule round it, no radius and no shadow, the nine in
+   the same strip every other screen draws. */
+.pname{background:none;border:0;border-radius:0;padding:0;font:inherit;text-align:left;
+  cursor:pointer;border-bottom:1px dotted var(--rule)}
+.pname:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.pcard{position:fixed;z-index:40;width:320px;max-width:calc(100vw - 24px);
+  background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);
+  padding:12px 14px 14px;opacity:0;pointer-events:none;transition:opacity .08s}
+.pcard.on{opacity:1}
+.pcard.pinned{pointer-events:auto}
+.pcard .cx{position:absolute;top:0;right:0;width:44px;height:44px;display:none;
+  align-items:center;justify-content:center;background:none;border:0;border-left:1px solid
+  var(--rule);border-bottom:1px solid var(--rule);color:var(--ink);font-size:22px;
+  line-height:1;cursor:pointer;padding:0}
+.pcard.pinned .cx{display:flex}
+.pcard.pinned .cn{padding-right:46px}
+.pcard .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05;
+  text-transform:uppercase;letter-spacing:.01em}
+.pcard .cm{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:4px 0 10px}
+.pcard .strip{margin:0 0 10px;grid-template-columns:repeat(9,minmax(0,1fr));
+  border-width:1px 0 1px 1px}
+.pcard .strip div{padding:3px 4px;border-bottom:0}
+.pcard .strip .lab{font-size:8.5px;letter-spacing:.04em} .pcard .strip b{font-size:11.5px}
+.pcard .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;margin:0;
+  font-size:13.5px}
+.pcard .facts dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint);padding-top:3px;white-space:nowrap}
+.pcard .facts dd{margin:0;font-variant-numeric:tabular-nums}
+.pcard .flag{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:11px;color:var(--warn)}
+@media (max-width:700px){
+  /* A thumb cannot hover and cannot reach the top of a tall screen: the card
+     comes up along the bottom instead, full width, and stays until it is
+     dismissed. The inline position the popover set is overridden outright. */
+  .pcard{left:0 !important;right:0;top:auto !important;bottom:0;width:auto;
+    max-width:none;border-width:2px 0 0;padding:14px 16px 26px;pointer-events:auto}
+  .pcard .strip{grid-template-columns:repeat(9,minmax(0,1fr));border-width:1px 0 1px 1px}
+  .pcard .strip div{border-bottom:0}
 }
 
 /* ---- the landing page --------------------------------------------------- */

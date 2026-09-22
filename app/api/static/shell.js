@@ -21,6 +21,8 @@
      arrow keys open one, the arrows move through it, Escape closes it and
      puts the focus back on its button, and it closes when the focus or a
      click goes elsewhere.
+   * Every page's player card is here too (`cardName`, `wireCards`): the same
+     card on every name, on whichever page prints it.
 
    `SHELL` is a promise of what the shell found ({me, league, season,
    myTeam, ...}), for a page that wants to know whose team is whose. */
@@ -342,6 +344,198 @@ function seasonLinks(ctx, where) {
 /** The league's name for a masthead, or its id when none is stored yet. */
 const leagueName = (ctx, id) =>
   ctx && ctx.league && ctx.league.name ? ctx.league.name : `League ${id}`;
+
+/* ---- the player card ----------------------------------------------------
+   Every page that prints a name can hang a card off it: hover on a desktop,
+   tap on a phone, where it comes up as a sheet along the bottom. It lives
+   here rather than in one page because the week, the season and the moves
+   pages all want the same one, and a second copy of it would drift.
+
+   The card is `GET .../players/{id}/card`, which is the reports' own numbers
+   (`app/inseason/card.py`) -- so what it says about a man is what the table
+   it was opened from says about him, and the page works nothing out.
+
+   Two triggers, because a roster row is already a button that puts a man in
+   a deal and cannot also be the button that opens his card:
+
+     data-card="ESPN id"        hover, focus and tap all open it
+     data-card-hover="ESPN id"  hover and focus only, for a control of its own
+
+   `cardName(id, text)` is the markup for a name that opens one; call
+   `wireCards(root)` after any innerHTML that writes some. */
+
+/** One fetch per player per page, kept for as long as the page is open. */
+const CARDS = new Map();
+
+let cardBox = null;
+let cardFor = null; // the trigger the card is open for
+let cardPinned = false; // opened by a tap: it stays until it is dismissed
+
+const phoneWidth = () => window.matchMedia("(max-width: 700px)").matches;
+
+/** A name that opens a card. `text` defaults to nothing, for a caller that
+ *  writes its own markup inside (a badge, a meta line). */
+const cardName = (id, text, cls) =>
+  `<button type="button" class="pname${cls ? ` ${cls}` : ""}" data-card="${Number(id)}">` +
+  `${text === undefined ? "" : text}</button>`;
+
+function cardFrame() {
+  if (cardBox) return cardBox;
+  cardBox = document.createElement("div");
+  cardBox.className = "pcard";
+  cardBox.id = "pcard";
+  cardBox.setAttribute("role", "dialog");
+  cardBox.setAttribute("aria-label", "Player card");
+  document.body.appendChild(cardBox);
+  cardBox.addEventListener("click", (event) => {
+    if (event.target.closest(".cx")) hideCard(true);
+  });
+  return cardBox;
+}
+
+/** The nine per game, in the shared strip, plus what the line rests on. */
+function cardHtml(card) {
+  if (card === null) return `<div class="cn">Not found</div>`;
+  if (card.loading) return `<div class="cn">${escape(card.name || "…")}</div>` +
+    `<p class="cm">reading his line…</p>`;
+  const what = [card.position, card.pro_team].filter(Boolean).join(" · ");
+  const flags = [];
+  if (card.hurt) {
+    flags.push(
+      escape(String(card.injury_status || "hurt").toLowerCase()) +
+        (card.expected_return_date ? `, back ${dayName(card.expected_return_date)}` : ""),
+    );
+  }
+  if (card.thin) flags.push(`thin: ${count(card.games_so_far, "game")} of his own`);
+  const strip = stripHtml(
+    Object.fromEntries(CATS.map((cat) => [cat, { text: showCat(cat, card.per_game[cat]) }])),
+  );
+  const facts = [
+    ["Games left", `${card.games_left} through day ${card.last_scoring_period}`],
+    [
+      "Playoff games",
+      card.playoff_first === null
+        ? "no playoff weeks stored"
+        : `${card.playoff_games} in days ${card.playoff_first}–${card.playoff_last}`,
+    ],
+    [
+      "Rests on",
+      `${count(card.games_so_far, "game")} of his own and ` +
+        `${card.had_projection ? "a preseason projection" : "no projection"} ` +
+        `(${escape(card.projection_source)})`,
+    ],
+  ];
+  return (
+    `<button class="cx" type="button" aria-label="Close">&times;</button>` +
+    `<div class="cn">${escape(card.name)}</div>` +
+    `<p class="cm">${escape(what || "no team stored")} · per game, day ${card.today}</p>` +
+    `<div class="strip">${strip}</div>` +
+    `<dl class="facts">` +
+    facts.map(([label, value]) => `<dt>${escape(label)}</dt><dd>${value}</dd>`).join("") +
+    `</dl>` +
+    (flags.length ? `<p class="flag">${flags.join(" · ")}</p>` : "")
+  );
+}
+
+/** Below the name, flipped above it when there is no room, never off an
+ *  edge. A phone ignores all of it: the stylesheet puts the card along the
+ *  bottom, where a thumb can reach it. */
+function placeCard(trigger) {
+  if (phoneWidth()) {
+    cardBox.style.left = "";
+    cardBox.style.top = "";
+    return;
+  }
+  const at = trigger.getBoundingClientRect();
+  const width = 320;
+  const height = cardBox.offsetHeight || 200;
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, at.left));
+  let top = at.bottom + 6;
+  if (top + height > window.innerHeight - 8) top = at.top - height - 6;
+  cardBox.style.left = `${left}px`;
+  cardBox.style.top = `${Math.max(8, top)}px`;
+}
+
+async function showCard(trigger, pinned) {
+  const id = Number(trigger.dataset.card || trigger.dataset.cardHover);
+  if (!Number.isFinite(id) || id <= 0) return;
+  const where = place();
+  if (where.league === null || where.season === null) return;
+  const box = cardFrame();
+  cardFor = trigger;
+  cardPinned = Boolean(pinned) || phoneWidth();
+  box.classList.toggle("pinned", cardPinned);
+  box.classList.add("on");
+  if (!CARDS.has(id)) {
+    box.innerHTML = cardHtml({ loading: true, name: trigger.dataset.cardName });
+    placeCard(trigger);
+    const query = new URLSearchParams();
+    if (where.today !== null) query.set("today", where.today);
+    const answer = await get(
+      `/leagues/${where.league}/seasons/${where.season}/players/${id}/card?${query.toString()}`,
+      { quiet: true },
+    );
+    CARDS.set(id, answer.ok ? answer.body : null);
+    if (cardFor !== trigger) return; // the reader moved on while it loaded
+  }
+  box.innerHTML = cardHtml(CARDS.get(id));
+  placeCard(trigger);
+  if (cardPinned) {
+    const close = box.querySelector(".cx");
+    if (close) close.focus();
+  }
+}
+
+function hideCard(refocus) {
+  if (!cardBox) return;
+  cardBox.classList.remove("on", "pinned");
+  if (refocus && cardFor && cardFor.focus) cardFor.focus();
+  cardFor = null;
+  cardPinned = false;
+}
+
+/** Attach the card to every name in `root`. Safe to call again: the handlers
+ *  are set as properties, so a redraw replaces them rather than stacking. */
+function wireCards(root) {
+  (root || document).querySelectorAll("[data-card],[data-card-hover]").forEach((trigger) => {
+    const tappable = trigger.dataset.card !== undefined;
+    trigger.onmouseenter = () => {
+      if (!cardPinned && !phoneWidth()) showCard(trigger, false);
+    };
+    trigger.onmouseleave = () => {
+      if (!cardPinned && cardFor === trigger) hideCard(false);
+    };
+    trigger.onfocus = () => {
+      if (!cardPinned) showCard(trigger, false);
+    };
+    trigger.onblur = () => {
+      if (!cardPinned && cardFor === trigger) hideCard(false);
+    };
+    if (!tappable) return;
+    trigger.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (cardPinned && cardFor === trigger) {
+        hideCard(false);
+        return;
+      }
+      showCard(trigger, true);
+    };
+  });
+}
+
+document.addEventListener("click", (event) => {
+  if (!cardPinned) return;
+  if (event.target.closest && (event.target.closest("#pcard") || event.target.closest("[data-card]")))
+    return;
+  hideCard(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && cardFor) hideCard(true);
+});
+window.addEventListener("scroll", () => {
+  if (!cardPinned) hideCard(false);
+}, { passive: true });
 
 async function startShell() {
   const where = place();

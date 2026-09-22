@@ -712,9 +712,14 @@ def test_the_card_says_what_the_page_it_was_opened_from_says(
 ) -> None:
     """The card is the report's own numbers, not a second reading of them.
 
-    So the one thing worth pinning is that they agree: what the report says
-    a man is worth a week, and what stands behind his projection, is what the
-    card says when a reader hovers his name in the same table.
+    So the one thing worth pinning is that they agree: the games he has left,
+    the games he has in the playoff weeks and what stands behind his
+    projection are the same whether they are read off the report's table or
+    off the card hanging on the name in it.
+
+    What he is worth a week is the one number the report has and the card does
+    not: it needs the league's measured spreads, which take about two seconds
+    to build, and a card is a hover (`app/inseason/card.py`).
     """
     body = card(client, session, "Star")
     report = client.get(
@@ -729,12 +734,12 @@ def test_the_card_says_what_the_page_it_was_opened_from_says(
     in_the_deal = report["sides"][0]["receives"][0]
 
     assert body["name"] == "Star"
-    assert body["value"] == pytest.approx(in_the_deal["value"])
     assert body["games_left"] == in_the_deal["games_left"]
     assert body["playoff_games"] == in_the_deal["playoff_games"]
     assert body["games_so_far"] == in_the_deal["games_so_far"]
     assert body["projection_source"] == in_the_deal["projection_source"]
     assert (body["thin"], body["hurt"]) == (in_the_deal["thin"], in_the_deal["hurt"])
+    assert "value" not in body, "the one number a hover cannot afford to measure"
 
 
 def test_the_card_carries_his_line_his_games_and_what_he_is(
@@ -813,6 +818,38 @@ def test_the_page_is_served_under_the_shell(client: TestClient) -> None:
     assert '<div id="shell"></div>' in page.text
     assert "/pages/static/pages.css" in page.text
     assert "/pages/static/shell.js" in page.text
+
+
+def test_the_page_draws_the_chooser_and_mirrors_the_man_named_into_the_url(
+    client: TestClient,
+) -> None:
+    """The three things the page has to do with the pool: draw it for a side
+    that opens a place, ask the route for it rather than working it out, and
+    put the choice in the address bar so a judged deal comes back on a
+    refresh, exactly as the drops already do."""
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{HOME}/trades").text
+
+    assert "Who fills it" in page
+    assert "Leave it open" in page, "the default, said in words"
+    assert "trades/pool" in page, "the pool is a route's answer, never the page's arithmetic"
+    assert 'query.set("fill"' in page and 'query.set("theirfill"' in page
+    assert 'query.append("their_fill"' in page, "and the route's own spelling going out"
+    assert "opensOurs" in page and "opensTheirs" in page
+
+
+def test_every_name_on_the_page_opens_a_card(client: TestClient) -> None:
+    """The card is the shell's, drawn on a name wherever one is printed: the
+    rosters, the deal, the pool, the settlement and what it rests on."""
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{HOME}/trades").text
+    shell = client.get("/pages/static/shell.js").text
+    style = client.get("/pages/static/pages.css").text
+
+    assert page.count("wireCards(") >= 5, "after every redraw that writes a name"
+    assert "data-card-hover" in page, "a roster row's own tap belongs to the deal"
+    assert "cardName(" in page
+    assert "players/${id}/card" in shell, "the card is a route's answer"
+    assert "max-width: 700px" in shell and "Escape" in shell
+    assert ".pcard" in style and "bottom:0" in style, "a popover, and a sheet on a phone"
 
 
 def test_the_page_prints_the_published_record_and_keeps_no_copy_of_it(

@@ -52,6 +52,12 @@
     </p>
   </section>
 
+  <section id="fills" hidden>
+    <div class="shead"><h2>Who fills it</h2><span class="tag" id="fills-tag"></span></div>
+    <p class="lede" id="fills-lede"></p>
+    <div id="fills-sides"></div>
+  </section>
+
   <section id="fit" hidden>
     <div class="shead"><h2>What it does to the nine</h2><span class="tag" id="fit-tag"></span></div>
     <p class="lede" id="fit-lede"></p>
@@ -106,18 +112,25 @@
 const WHERE = place();
 const QUERY = new URLSearchParams(window.location.search);
 
-/** The deal being built: the other team, who moves, and who is dropped. */
+/** The deal being built: the other team, who moves, who is dropped, and who
+ *  comes off the wire into a place the deal opens. */
 const DEAL = {
   other: numberOr(QUERY.get("with")),
   give: idList(QUERY.get("give")),
   take: idList(QUERY.get("get")),
   drop: idList(QUERY.get("drop")),
   theirDrop: idList(QUERY.get("theirdrop")),
+  fill: idList(QUERY.get("fill")),
+  theirFill: idList(QUERY.get("theirfill")),
 };
 
 let CONTEXT = null;
 let ROSTERS = null;
 let JUDGING = false;
+/** The pool answered for each side, and the deal it was answered for, so a
+ *  tap that does not change who is leaving does not read the wire again. */
+const POOLS = { ours: null, theirs: null };
+let POOL_KEY = "";
 
 function numberOr(text) {
   const value = Number(text);
@@ -152,12 +165,15 @@ function mirror() {
   if (DEAL.take.length) query.set("get", DEAL.take.join(","));
   if (DEAL.drop.length) query.set("drop", DEAL.drop.join(","));
   if (DEAL.theirDrop.length) query.set("theirdrop", DEAL.theirDrop.join(","));
+  if (DEAL.fill.length) query.set("fill", DEAL.fill.join(","));
+  if (DEAL.theirFill.length) query.set("theirfill", DEAL.theirFill.join(","));
   const text = query.toString();
   window.history.replaceState(null, "", window.location.pathname + (text ? `?${text}` : ""));
 }
 
-/** The query the report route is asked with, from the same state. */
-function askedWith() {
+/** The deal as the routes are asked for it. `extra` adds the pool route's
+ *  own two, so the two queries cannot drift apart. */
+function askedWith(extra) {
   const query = new URLSearchParams();
   if (WHERE.today !== null) query.set("today", WHERE.today);
   query.set("with_team", DEAL.other);
@@ -165,6 +181,11 @@ function askedWith() {
   DEAL.take.forEach((id) => query.append("get", id));
   DEAL.drop.forEach((id) => query.append("drop", id));
   DEAL.theirDrop.forEach((id) => query.append("their_drop", id));
+  Object.entries(extra || {}).forEach(([key, value]) => query.set(key, value));
+  if (!extra) {
+    DEAL.fill.forEach((id) => query.append("fill", id));
+    DEAL.theirFill.forEach((id) => query.append("their_fill", id));
+  }
   return `?${query.toString()}`;
 }
 
@@ -190,7 +211,10 @@ function drawTeamPicker() {
   };
 }
 
-/** One man, as a button that puts him in the deal or takes him out. */
+/** One man, as a button that puts him in the deal or takes him out, with his
+ *  card beside it: the row's own tap belongs to the deal, so on a phone the
+ *  card needs a control of its own, and on a desktop hovering the row is
+ *  enough (`data-card-hover`). */
 function pickHtml(player, chosen) {
   const flags = [];
   if (player.on_ir) flags.push("on IR");
@@ -202,9 +226,12 @@ function pickHtml(player, chosen) {
     .join(" · ");
   return (
     `<li><button type="button" class="pick" data-id="${player.espn_player_id}" ` +
+    `data-card-hover="${player.espn_player_id}" ` +
     `aria-pressed="${chosen ? "true" : "false"}"${player.on_ir ? " disabled" : ""}>` +
     `<span class="who">${escape(player.name)}</span>` +
-    `<span class="meta${player.on_ir ? " out" : ""}">${escape(meta)}</span></button></li>`
+    `<span class="meta${player.on_ir ? " out" : ""}">${escape(meta)}</span></button>` +
+    `<button type="button" class="info" data-card="${player.espn_player_id}" ` +
+    `aria-label="Card for ${escape(player.name)}">card</button></li>`
   );
 }
 
@@ -218,6 +245,7 @@ function drawRoster(where, roster, chosen) {
   host.querySelectorAll(".pick").forEach((button) => {
     button.onclick = () => toggle(chosen, Number(button.dataset.id));
   });
+  wireCards(host);
 }
 
 function toggle(chosen, id) {
@@ -235,14 +263,18 @@ function toggle(chosen, id) {
 const named = (roster, ids) =>
   roster ? roster.players.filter((p) => ids.includes(p.espn_player_id)) : [];
 
+/** A name in a sentence, with its card on it. */
+const withCard = (id, name) => cardName(id, `<b>${escape(name)}</b>`);
+
 function drawDeal() {
   const ours = rosterOf(WHERE.team);
   const theirs = DEAL.other === null ? null : rosterOf(DEAL.other);
-  const give = named(ours, DEAL.give).map((p) => `<b>${escape(p.name)}</b>`);
-  const take = named(theirs, DEAL.take).map((p) => `<b>${escape(p.name)}</b>`);
+  const give = named(ours, DEAL.give).map((p) => withCard(p.espn_player_id, p.name));
+  const take = named(theirs, DEAL.take).map((p) => withCard(p.espn_player_id, p.name));
   $("deal").innerHTML =
     `<p>We give: ${give.length ? give.join(", ") : `<span class="none">nobody yet</span>`}</p>` +
     `<p>We get: ${take.length ? take.join(", ") : `<span class="none">nobody yet</span>`}</p>`;
+  wireCards($("deal"));
 }
 
 /** Places a side needs that its roster does not already have. */
@@ -317,6 +349,179 @@ function drawBuilder() {
   const ready = DEAL.other !== null && (DEAL.give.length > 0 || DEAL.take.length > 0);
   $("judge").disabled = JUDGING || !ready;
   $("builder-tag").textContent = ready ? "ready to judge" : "name a deal";
+  refreshFills();
+}
+
+/* ---- who fills the place the deal opens ---------------------------------
+   A side that gives more men than it gets has a place to fill, and the
+   manager usually knows who is going into it. The pool is that side's wire,
+   ranked by what each man would be worth to the roster *this deal leaves* --
+   not by the league standard, which is what the report falls back to when
+   nobody is named. "Leave it open" is the top row and the default, and it
+   says what the report values it at. */
+
+/** Places each side's deal opens, counted the way the report counts them. */
+const opensOurs = () => Math.max(0, DEAL.give.length + DEAL.drop.length - DEAL.take.length);
+const opensTheirs = () => Math.max(0, DEAL.take.length + DEAL.theirDrop.length - DEAL.give.length);
+
+const openedBy = (side) => (side === "ours" ? opensOurs() : opensTheirs());
+const chosenFor = (side) => (side === "ours" ? DEAL.fill : DEAL.theirFill);
+
+/** The deal the pools were read for: who leaves decides what a man is worth,
+ *  so a change to either side's men is a new question for the wire. */
+const poolKey = () =>
+  [DEAL.other, DEAL.give.join("."), DEAL.take.join("."), DEAL.drop.join("."),
+    DEAL.theirDrop.join(".")].join("|");
+
+/** A row: one free agent, what he is worth to us, what he is, and his week. */
+function fillRow(side, man, chosen) {
+  const flags = [];
+  if (man.hurt) {
+    flags.push(
+      `<span class="badge hurt">${escape(String(man.injury_status || "hurt").toLowerCase())}` +
+      `${man.expected_return_date ? `, back ${escape(dayName(man.expected_return_date))}` : ""}` +
+      `</span>`,
+    );
+  }
+  if (man.on_waivers) {
+    flags.push(
+      `<span class="badge waivers">on waivers` +
+      `${man.waiver_clears_at ? `, clears ${escape(weekday(man.waiver_clears_at))}` : ""}` +
+      `</span>`,
+    );
+  }
+  const meta = [man.position || "", man.pro_team || "", `${man.games_left}g`,
+    `${fixed(man.value, 2)} a week to an average team`]
+    .filter(Boolean)
+    .join(" · ");
+  const strip = stripHtml(
+    Object.fromEntries(CATS.map((cat) => [cat, { text: showCat(cat, man.weekly[cat]) }])),
+  );
+  return (
+    `<li><button type="button" class="fill" data-side="${side}" ` +
+    `data-id="${man.espn_player_id}" aria-pressed="${chosen ? "true" : "false"}">` +
+    `<span class="who">${escape(man.name)}${flags.join("")}</span>` +
+    `<span class="worth ${man.worth >= 0 ? "up" : "down"}">${signed(man.worth, 3)}</span>` +
+    `<span class="meta">${escape(meta)}</span>` +
+    `<span class="strip">${strip}</span></button>` +
+    `<button type="button" class="info" data-card="${man.espn_player_id}" ` +
+    `aria-label="Card for ${escape(man.name)}">card</button></li>`
+  );
+}
+
+/** The top row: what the report does when nobody is named.
+ *
+ *  Its number is not in the same currency as a man's, and the row says so.
+ *  What a place left open is worth is a figure in the league's own lens --
+ *  the better of the wire's best man and a streamed lane -- and what a named
+ *  man is worth is the change in *this* roster's week. The comparable figure
+ *  for a man is the one in his meta line, "a week to an average team". */
+function leaveOpenRow(side, pool, chosen) {
+  const best = (pool.candidates || []).find(
+    (man) => man.espn_player_id === pool.replacement_espn_player_id,
+  );
+  const meta =
+    `what the report settles the place at, in the league's own lens: ` +
+    (best
+      ? `the better of a streamed place and ${best.name}, the best man on the wire by that ` +
+        `lens, whose week then fills the place in the table`
+      : `a streamed place, because nobody on the wire beats the floor`);
+  return (
+    `<li><button type="button" class="fill" data-side="${side}" data-id="" ` +
+    `aria-pressed="${chosen ? "true" : "false"}">` +
+    `<span class="who">Leave it open</span>` +
+    `<span class="worth faint">${fixed(pool.opened_value, 3)}</span>` +
+    `<span class="meta">${escape(meta)}</span></button></li>`
+  );
+}
+
+function fillsSideHtml(side, pool) {
+  const chosen = chosenFor(side);
+  const whose = side === "ours" ? "our side" : "our estimate of their side, not what they think";
+  const rows = (pool.candidates || []).map((man) =>
+    fillRow(side, man, chosen.includes(man.espn_player_id)),
+  );
+  return (
+    `<div class="side">` +
+    `<h3>${escape(pool.team_name)}</h3>` +
+    `<p class="whose">${whose} · ${count(pool.places_opened, "place")} open</p>` +
+    `<p class="hint">${pool.pool_size} free agents on the wire` +
+    `${pool.historical_wire ? ", historical wire (no snapshots)" : ""}. ` +
+    `Ranked by what each would be worth to this roster once the deal is done.</p>` +
+    `<ul class="wire">${leaveOpenRow(side, pool, chosen.length === 0)}${rows.join("")}</ul>` +
+    `</div>`
+  );
+}
+
+function drawFills() {
+  const sides = ["ours", "theirs"].filter((side) => openedBy(side) > 0 && POOLS[side]);
+  if (!sides.length) {
+    $("fills").hidden = true;
+    return;
+  }
+  $("fills-tag").textContent = "the wire on this day";
+  $("fills-lede").innerHTML =
+    "This deal leaves a roster place open. Name the man going into it and the whole deal is " +
+    "judged again with his line in it; leave it open and the report settles it as it always " +
+    "has. The figure beside a man is what he is worth to <b>this</b> roster after the deal; " +
+    "the one under his name is what he is worth to an average team, which is the lens the " +
+    "report falls back on when nobody is named.";
+  $("fills-sides").className = sides.length > 1 ? "two" : "";
+  $("fills-sides").innerHTML = sides.map((side) => fillsSideHtml(side, POOLS[side])).join("");
+  $("fills").hidden = false;
+  $("fills-sides").querySelectorAll(".fill").forEach((button) => {
+    button.onclick = () => {
+      const id = numberOr(button.dataset.id);
+      const chosen = id === null ? [] : [id];
+      if (button.dataset.side === "ours") DEAL.fill = chosen;
+      else DEAL.theirFill = chosen;
+      mirror();
+      drawFills();
+      judge();
+    };
+  });
+  wireCards($("fills-sides"));
+}
+
+/** Read the wire for whichever side opens a place, when the deal changes. */
+async function refreshFills() {
+  let dropped = false;
+  ["ours", "theirs"].forEach((side) => {
+    if (openedBy(side) > 0 || !chosenFor(side).length) return;
+    // Nothing is open on that side any more, so nobody can be named for it,
+    // and the address bar must not keep a man the deal has no place for.
+    if (side === "ours") DEAL.fill = [];
+    else DEAL.theirFill = [];
+    dropped = true;
+  });
+  if (dropped) mirror();
+  const key = poolKey();
+  const wanted = ["ours", "theirs"].filter((side) => openedBy(side) > 0);
+  if (!wanted.length || DEAL.other === null) {
+    POOL_KEY = key;
+    POOLS.ours = POOLS.theirs = null;
+    $("fills").hidden = true;
+    return;
+  }
+  if (key === POOL_KEY) {
+    drawFills();
+    return;
+  }
+  POOL_KEY = key;
+  POOLS.ours = POOLS.theirs = null;
+  $("fills-tag").textContent = "reading the wire…";
+  $("fills-lede").textContent = "Reading who is available on this day, and what each would be " +
+    "worth to the roster this deal leaves.";
+  $("fills-sides").innerHTML = "";
+  $("fills").hidden = false;
+  const answers = await Promise.all(
+    wanted.map((side) => get(`${base()}/teams/${WHERE.team}/trades/pool${askedWith({ side })}`)),
+  );
+  if (poolKey() !== key) return; // the deal moved on while the wire was read
+  answers.forEach((answer, at) => {
+    POOLS[wanted[at]] = answer.ok && answer.body.readiness.ready ? answer.body : null;
+  });
+  drawFills();
 }
 
 /* ---- the result: the nine first ----------------------------------------- */
@@ -404,13 +609,25 @@ function judgementHtml(side, report, ours) {
       : `not counted — ${escape(playoffs.note || "")}`) +
     `</p>`,
   );
-  if (side.places_opened) {
+  if (side.fills && side.fills.length) {
     bits.push(
-      `<p class="why">It leaves ${count(side.places_opened, "roster place")} open, worth ` +
+      `<p class="why">The place it opens is filled by ` +
+      side.fills
+        .map(
+          (card) =>
+            `${withCard(card.espn_player_id, card.name)} (${fixed(card.value, 3)} a week)`,
+        )
+        .join(", ") +
+      `, named by us — his week is in the table above, not the wire's best man's.</p>`,
+    );
+  }
+  if (side.places_left_open) {
+    bits.push(
+      `<p class="why">It leaves ${count(side.places_left_open, "roster place")} open, worth ` +
       `<b>${fixed(side.opened_value, 3)}</b> a week streamed` +
       (side.replacement_player
-        ? ` — the best free agent is <b>${escape(side.replacement_player.name)}</b>, ` +
-          `whose week fills the place in the table above.`
+        ? ` — the best free agent is ${withCard(side.replacement_player.espn_player_id,
+            side.replacement_player.name)}, whose week fills the place in the table above.`
         : `; nobody on the wire beats the floor.`) +
       `</p>`,
     );
@@ -426,7 +643,10 @@ function judgementHtml(side, report, ours) {
     bits.push(
       `<p class="why">To make room: ` +
       side.drops
-        .map((card) => `<b>${escape(card.name)}</b> (${fixed(card.value, 3)} a week)`)
+        .map(
+          (card) =>
+            `${withCard(card.espn_player_id, card.name)} (${fixed(card.value, 3)} a week)`,
+        )
         .join(", ") +
       ` — ${how}.</p>`,
     );
@@ -447,6 +667,7 @@ function restsRows(report) {
       ...side.receives.map((card) => [card, "in"]),
       ...side.gives.map((card) => [card, "out"]),
       ...side.drops.map((card) => [card, "dropped"]),
+      ...(side.fills || []).map((card) => [card, "off the wire"]),
     ];
     seen.forEach(([card, which]) => {
       const flags = [];
@@ -458,7 +679,7 @@ function restsRows(report) {
         );
       }
       rows.push(
-        `<tr><td class="name">${escape(card.name)}</td>` +
+        `<tr><td class="name">${cardName(card.espn_player_id, escape(card.name))}</td>` +
         `<td class="name small">${escape(side.team_name)}, ${which}</td>` +
         `<td>${signed(card.value, 3)}</td>` +
         `<td>${card.games_so_far}</td>` +
@@ -541,6 +762,9 @@ function drawReport(report) {
   $("rests-tag").textContent = `${report.pool_size} free agents on the wire`;
   $("rests-rows").innerHTML = restsRows(report);
   $("rests").hidden = false;
+  // Every name on the page opens his card: the deal, the tables and this list.
+  wireCards($("number"));
+  wireCards($("rests"));
 
   const notes = report.notes || [];
   $("foot").innerHTML =
@@ -634,8 +858,10 @@ async function start() {
     DEAL.take = [];
     DEAL.drop = [];
     DEAL.theirDrop = [];
+    DEAL.fill = [];
+    DEAL.theirFill = [];
     mirror();
-    ["fit", "number", "rests"].forEach((id) => ($(id).hidden = true));
+    ["fit", "number", "rests", "fills"].forEach((id) => ($(id).hidden = true));
     $("readout").hidden = true;
     $("failed").hidden = true;
     drawBuilder();
