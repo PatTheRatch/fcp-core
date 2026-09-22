@@ -195,6 +195,7 @@ section{margin-top:56px}
 .grid.lineup td.slot{font-family:var(--display);font-weight:600;font-size:13px;
   letter-spacing:.08em;color:var(--muted);width:3.5em}
 .grid.lineup td.name{font-size:16px;overflow-wrap:anywhere}
+.grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
 .grid.lineup td.small{font-family:var(--mono);font-size:12px;width:7em;white-space:nowrap}
 .grid.lineup td.flags,.grid.lineup td.why{font-size:13px;color:var(--muted)}
 /* The reason takes the slack, so the game a man has stays beside his name
@@ -204,9 +205,6 @@ section{margin-top:56px}
 .grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
 .grid.lineup tr.has-game td.name{font-weight:600}
 .flag{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--warn)}
-/* The hook the shared player card attaches to. Until it lands this is a
-   name and nothing else, which is why it carries no cursor and no colour. */
-.player{overflow-wrap:anywhere}
 #today-section .two{gap:0 32px}
 #today-section .side h3{font-size:15px}
 #today-section .shead{margin-top:28px}

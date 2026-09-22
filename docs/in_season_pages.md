@@ -74,9 +74,9 @@ the masthead stops saying "Loading..." while the plan is still being built.
 A day that cannot be built hides its own section and leaves the week
 standing (`quiet` in `pages.js`'s `get`).
 
-Every player name is wrapped in the hook the shared player card will attach
-to, `.player[data-espn-id]`. Until that card exists it is a bold name and no
-behaviour, and when it lands nothing on this page has to change.
+Every player name opens the **shared player card** (`cardName` and
+`wireCards` in `shell.js`), the same one the trade page hangs off a name, so
+what the card says about a man here is what it says about him there.
 
 **The masthead.** The team, the season, the matchup period, the opponent,
 the day and its date, the days left, and where the numbers came from

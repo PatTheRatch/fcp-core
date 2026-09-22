@@ -118,14 +118,14 @@ let CONTEXT = null;
    named. It is the first thing on the page because it is the first thing
    the manager does.
 
-   A player's name goes through `playerName`, which is the hook for the
-   shared player card: when `pages.css`/`shell.js` grow one, it attaches to
-   `.player[data-espn-id]` and nothing here has to change. Until then it is
-   a bold name and no behaviour. */
+   Every name is a trigger for the shared player card (`cardName` and
+   `wireCards`, shell.js): the same card the trades page hangs off a name,
+   so what it says about a man here is what it says about him there. Each
+   block calls `wireCards` after its own innerHTML, because the card is
+   attached to elements and not delegated from the document. */
 
 const playerName = (player) =>
-  `<span class="player" data-espn-id="${player ? player.espn_player_id : ""}">` +
-  `<b>${escape(player ? player.name : dash)}</b></span>`;
+  player ? cardName(player.espn_player_id, `<b>${escape(player.name)}</b>`) : dash;
 
 /** "at MIL", or "no game" in the muted style. */
 const gameCell = (player) =>
@@ -184,16 +184,11 @@ function benchHtml(report) {
   });
   // No reason beside a man with no game: the middle column has already
   // said it, and eight rows of the same sentence is eight rows of noise.
-  (report.idle || []).forEach((player) => {
+  // He still opens a card, because "should I have held him" is the next
+  // question after "he is not playing".
+  [...(report.idle || []), ...(report.injured_reserve || [])].forEach((player) => {
     rows.push(
-      `<tr><td class="name"><span class="faint">${escape(player.name)}</span></td>` +
-        `<td class="small">${gameCell(player)}</td>` +
-        `<td class="why">${statusCell(player)}</td></tr>`,
-    );
-  });
-  (report.injured_reserve || []).forEach((player) => {
-    rows.push(
-      `<tr><td class="name"><span class="faint">${escape(player.name)}</span></td>` +
+      `<tr><td class="name">${cardName(player.espn_player_id, escape(player.name), "faint")}</td>` +
         `<td class="small">${gameCell(player)}</td>` +
         `<td class="why">${statusCell(player)}</td></tr>`,
     );
@@ -252,6 +247,7 @@ function drawToday(report) {
     `the manager sets the lineup.`;
   $("today-ours").textContent = `${report.starts} of ${report.lineup.length} places`;
   $("today-lineup").innerHTML = lineupHtml(report.lineup, "nobody can fill it");
+  wireCards($("today-lineup"));
 
   if (!report.actual_known) {
     $("today-theirs").textContent = "not stored yet";
@@ -262,6 +258,7 @@ function drawToday(report) {
     $("today-theirs").textContent =
       `${report.actual_starts} of ${report.lineup.length} places with a man playing`;
     $("today-actual").innerHTML = lineupHtml(report.actual, "left unset");
+    wireCards($("today-actual"));
   }
 
   const fix = fixHtml(report);
@@ -270,6 +267,7 @@ function drawToday(report) {
     $("today-fix").hidden = false;
   }
   $("today-rest").innerHTML = benchHtml(report);
+  wireCards($("today-rest"));
 }
 
 /** A bye: the schema carries no `on_bye`, only an opponent that is null. */

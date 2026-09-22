@@ -259,7 +259,7 @@ def test_the_week_page_draws_todays_lineup_above_the_week(client: TestClient) ->
     assert page.index("today-section") < page.index("tape-section"), "above the week"
     assert 'id="today-fix"' in page and 'class="warnline" id="today-fix"' in page
     assert "/today${params(WHERE)}" in page, "the day's own route, with the same ?today="
-    assert 'class="player" data-espn-id=' in page, "the shared player card's hook"
+    assert "cardName(" in page and "wireCards(" in page, "every name opens the shared card"
     assert "As we would set it" in page and "As it is set" in page
 
     body = client.get(
@@ -277,7 +277,7 @@ def test_the_lineup_grid_is_styled_in_both_themes_and_at_phone_width(
     in one theme: the grid is the house's plain table with widths on it."""
     css = client.get("/pages/static/pages.css").text
 
-    assert ".grid.lineup" in css and ".player{" in css
+    assert ".grid.lineup" in css and ".grid.lineup td.name .pname" in css
     lineup = css.split("/* ---- the day's lineup")[1].split("/* ---- the schedule strip")[0]
     assert not re.search(r"#[0-9a-fA-F]{3}", lineup), "no colour outside the token block"
     assert "var(--accent)" in lineup, "the man with a game carries the accent"
