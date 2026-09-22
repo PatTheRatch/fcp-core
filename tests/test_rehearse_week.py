@@ -10,8 +10,8 @@ a rehearsal job is told apart from a real one. Those are the parts a wrong
 answer would come from, and they are pure, so they are cheap to hold still.
 
 The one impure thing tested here is `forbid_delivery`, because the whole
-rehearsal rests on it: this machine has `FCP_DIGEST_URL` and the SMTP
-settings set, so "nothing is configured" would not have stopped a send.
+rehearsal rests on it: this machine has the SMTP settings set, so "nothing
+is configured" would not have stopped a send.
 """
 
 from __future__ import annotations
@@ -128,9 +128,9 @@ def test_a_rehearsal_job_is_marked_in_its_label_and_in_its_payload() -> None:
 def test_delivery_is_taken_away_rather_than_left_unconfigured() -> None:
     """The one guard that cannot be allowed to be a setting.
 
-    `FCP_DIGEST_URL` and `FCP_SMTP_HOST` are set on the machine this runs
-    on, so an unsent digest cannot rest on their being empty. Both senders
-    are replaced outright, and a caller that reaches one raises."""
+    `FCP_SMTP_HOST` is set on the machine this runs on, so an unsent digest
+    cannot rest on its being empty. Both senders are replaced outright, and a
+    caller that reaches one raises."""
     was = (notify.deliver, channels.deliver)
     try:
         rehearsal.forbid_delivery()

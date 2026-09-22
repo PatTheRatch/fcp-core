@@ -153,8 +153,8 @@ def _refuse_to_deliver(*args: Any, **kwargs: Any) -> Any:
 def forbid_delivery() -> None:
     """Make this process unable to send, whatever the environment says.
 
-    `FCP_DIGEST_URL` and the SMTP settings are set on this machine, so
-    "nothing is configured" is not a guard. Both senders are replaced
+    The SMTP settings are set on this machine, so "nothing is configured" is
+    not a guard. Both senders are replaced
     through `__dict__` because a module's function cannot be rebound in a
     type-checked assignment, and the point is that it is rebound.
     """

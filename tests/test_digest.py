@@ -655,8 +655,7 @@ def test_the_script_prints_and_marks_nothing_without_a_delivery_url(
             "FCP_TRACKED_TEAM_ID": str(MINE),
             "PYTHONPATH": str(REPO_ROOT),
         }
-        | {"ESPN_SEASON": ""}
-        | {"FCP_DIGEST_URL": ""},
+        | {"ESPN_SEASON": "", "FCP_SMTP_HOST": ""},
         capture_output=True,
         text=True,
         timeout=120,
