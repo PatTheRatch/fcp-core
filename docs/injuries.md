@@ -5,7 +5,7 @@ except its own tests — rewiring the consumers is the next job, deliberately
 separate so each number's movement can be seen ("What this unblinds", last
 section).
 
-Code: migration `0022_injury_reports`, the models `InjuryReport` and
+Code: migration `0023_injury_reports`, the models `InjuryReport` and
 `InjuryReportRun` in `app/db/models.py`, the reader `app/injury_reports.py`,
 the season walk `app/injury_backfill.py`, the accessor `app/injuries.py`, the
 shared name matcher `app/player_names.py`, the CLI

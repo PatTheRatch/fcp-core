@@ -4,12 +4,14 @@ Step 4 of docs/product.md; docs/jobs.md is the whole story. Postgres is the
 queue (`SELECT ... FOR UPDATE SKIP LOCKED`), which is enough at this size and
 needs no broker.
 
-A job is one of four kinds, each about one thing:
+A job is one of six kinds, each about one thing:
 
 * `ingest`: one league, the trailing days and next season's settings.
 * `status_pass`: the listener, for one league.
 * `precompute`: one team's day, week and season reports, stored for the day.
 * `digest`: one member's morning digest, or an alert between digests.
+* `injury_backfill`: one season of the NBA's own injury reports.
+* `injury_pass`: the same for today (docs/injuries.md).
 
 What each does is `app.job_kinds`; when they are enqueued is `app.schedule`.
 This module only moves rows.
