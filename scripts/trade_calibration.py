@@ -26,7 +26,8 @@ happened.
 WHAT IS COMPARED
 
 Two headline numbers against two horizons, the 2x2 declared in
-`docs/trades.md` section 7a before any of it was run.
+`docs/trades.md` section 7a before any of it was run, and since the
+declaration of section 7b a third row pair beside it.
 
 The two predictions, both categories a week, both from one evaluation:
 
@@ -36,6 +37,10 @@ The two predictions, both categories a week, both from one evaluation:
 - **the per-man number** (`SideReport.season_independent`): each man valued
   on his own inside a league-average team, summed over the places the deal
   touches. The headline the calibration of 2026-09-21 ran on.
+
+Both of them now price a place the deal *empties* at what a streamed place
+returns (revision R2, `docs/trades.md` section 7b): 0.38 categories a week
+rather than the 0.06 floor under a single add.
 
 The two horizons, both `MoveGrade.result` -- what the team actually posted
 with the incoming players against the same team with them taken out and the
@@ -48,6 +53,17 @@ outgoing ones put back:
   `grade_move` a `within` day. Whole matchup periods, the ones that *begin*
   inside the window, because the grade compares a period's totals with the
   opponent's and half a matchup has no opponent.
+
+THE YARDSTICK, BOTH WAYS
+
+Revision R2 changed the hindsight grade as well as the forecast: `grade_move`
+now credits a spot the move opened at the streamed lane rather than at the
+flat median pickup. Two changes at once cannot be read from one number, so
+every deal is graded twice -- once under R2 and once with `opened_place` set
+back to the flat level, which is exactly what the grade did before -- and the
+run prints the R2 prediction against both. The difference between those two
+row pairs is the yardstick; the difference between R2 and the run of
+2026-09-21 is the yardstick and the forecast together.
 
 `MoveGrade.decision`, the knowable-at-the-time grade, is reported beside them:
 the evaluator and the decision lens see the same day's data through different
@@ -67,10 +83,12 @@ who was day-to-day when the deal was made is projected as healthy on both
 sides -- and neither can be fixed from stored rows. The sample is also small,
 and the write-up says so in its first sentence.
 
-The two engines also settle an uneven trade differently: this one forces a
-drop and charges what that place was worth, while `grade_move` charges a flat
-replacement level per spot. Both are honest; they are not identical, and the
-uneven rows are reported separately for that reason.
+The two engines still settle an uneven trade differently, though less than
+they did: both now price a place the deal empties at the streamed lane, but
+this one also forces a drop and charges what that place was worth, and it
+fills the opened place with the named best free agent's whole week rather than
+with a scalar. Both are honest; they are not identical, and the uneven rows
+are reported separately for that reason.
 """
 
 from __future__ import annotations
@@ -97,7 +115,7 @@ from app.pickups.judge import standard_lens
 from app.pickups.state import build_players
 from app.scoring.lines import COUNTS, CategoryLine
 from app.scoring.moves import MoveGrade, grade_move
-from app.scoring.replacement import pickup_values
+from app.scoring.replacement import OPENED_PLACE, pickup_values
 from app.scoring.season import SeasonBook
 from app.scoring.trade_grades import TradeGrade, trade_grades
 from app.scoring.trades import Trade, reconstruct_trades
@@ -161,6 +179,12 @@ class Row:
     #: period begins inside the window.
     delivered_season: float
     delivered_short: float | None
+    #: The same two, graded with the settlement the hindsight engine used
+    #: before revision R2: a spot the move opened worth the flat median
+    #: pickup. Identical to the pair above on every even-count side, because
+    #: an even deal opens no spot.
+    delivered_season_old: float
+    delivered_short_old: float | None
     decision: float
     #: Periods each hindsight grade covered.
     periods: int
@@ -353,34 +377,61 @@ def pair_up(scored: Sequence[Scored]) -> list[Deal]:
     return [Deal((pair[0], pair[1])) for pair in by_event.values() if len(pair) == 2]
 
 
-#: The 2x2, and the primary cell, exactly as declared.
+#: The 2x2 and the old-yardstick pair, and the primary cell, exactly as
+#: declared in `docs/trades.md` section 7b.
 CELLS: tuple[Cell, ...] = (
     Cell(
-        "R1 (the roster)",
+        "R2 (the roster)",
         "next 30 days",
         lambda row: row.roster,
         lambda row: row.delivered_short,
         primary=True,
     ),
     Cell(
-        "R1 (the roster)",
+        "R2 (the roster)",
         "rest of season",
         lambda row: row.roster,
         lambda row: row.delivered_season,
     ),
     Cell(
-        "per man (the old one)",
+        "per man (the old headline)",
         "next 30 days",
         lambda row: row.independent,
         lambda row: row.delivered_short,
     ),
     Cell(
-        "per man (the old one)",
+        "per man (the old headline)",
         "rest of season",
         lambda row: row.independent,
         lambda row: row.delivered_season,
     ),
+    Cell(
+        "R2 (the roster)",
+        "next 30 days, old yardstick",
+        lambda row: row.roster,
+        lambda row: row.delivered_short_old,
+    ),
+    Cell(
+        "R2 (the roster)",
+        "rest of season, old yardstick",
+        lambda row: row.roster,
+        lambda row: row.delivered_season_old,
+    ),
 )
+
+#: The cells whose yardstick is the one the hindsight engine used before R2,
+#: named so the write-up can separate them without matching on strings.
+OLD_YARDSTICK = tuple(cell for cell in CELLS if cell.horizon.endswith("old yardstick"))
+
+#: What the run of 2026-09-21 reported, so this one can be read against it
+#: without a reader having to open the document: the uneven sides' mean error
+#: under R1 on each horizon, and the per-man number's on the rest of season.
+R1_UNEVEN = {"next 30 days": 0.389, "rest of season": 0.355}
+R1_UNEVEN_PER_MAN = 0.265
+
+#: R1's even-count row on the primary cell, the one that must not have moved:
+#: sides, sign agreement, Spearman, mean error, mean absolute error.
+R1_EVEN = (85, 0.54, 0.10, -0.020, 0.279)
 
 
 def primary() -> Cell:
@@ -647,17 +698,32 @@ def _score(
         if grade is None:
             skipped.no_grade += 1
             continue
-        short = grade_move(
-            book,
-            grade.team_id,
-            grade.day,
-            grade.players_in,
-            grade.players_out,
-            replacement=replacement,
-            within=trade.day + SHORT_WINDOW,
-        )
+
+        def graded(
+            *, within: int | None, opened_place: float, grade: MoveGrade = grade
+        ) -> MoveGrade | None:
+            return grade_move(
+                book,
+                grade.team_id,
+                grade.day,
+                grade.players_in,
+                grade.players_out,
+                replacement=replacement,
+                within=within,
+                opened_place=opened_place,
+            )
+
+        short_day = trade.day + SHORT_WINDOW
+        short = graded(within=short_day, opened_place=OPENED_PLACE)
+        # The same move through the settlement the grade used before R2: a
+        # spot the deal opened worth the flat median pickup. `grade` itself is
+        # already the R2 rest-of-season grade, so only the other three are run.
+        short_old = graded(within=short_day, opened_place=replacement)
+        season_old = graded(within=None, opened_place=replacement)
         if short is None:
             skipped.no_short_grade += 1
+        if season_old is None:  # pragma: no cover - the R2 grade exists, so this does
+            continue
         side: SideReport = report.side(int(owner.espn_team_id))
         first, last = _window(grade, book)
         incoming = side.receives
@@ -675,6 +741,8 @@ def _score(
                 independent=side.season_independent,
                 delivered_season=grade.result,
                 delivered_short=None if short is None else short.result,
+                delivered_season_old=season_old.result,
+                delivered_short_old=None if short_old is None else short_old.result,
                 decision=grade.decision,
                 periods=len(grade.periods),
                 short_periods=0 if short is None else len(short.periods),
@@ -788,6 +856,62 @@ def _confidence(cell: Cell, rows: Sequence[Row]) -> list[str]:
     ]
 
 
+def _mean_error(cell: Cell, rows: Sequence[Row]) -> tuple[float, int]:
+    scored = cell.scored(rows)
+    if not scored:
+        return 0.0, 0
+    return statistics.fmean([side.error for side in scored]), len(scored)
+
+
+def _settlement(rows: Sequence[Row], cell: Cell) -> list[str]:
+    """The number this revision exists for, and the check that it moved nothing else.
+
+    The uneven sides are the ones an opened place is settled on, read under
+    both yardsticks so that re-pricing the forecast and re-pricing the grade
+    can be told apart; and the even sides, where no place opens, are printed
+    beside what they were on 2026-09-21 because they must not have moved at
+    all.
+    """
+    uneven = [row for row in rows if row.uneven]
+    even = [row for row in rows if not row.uneven]
+    out = [
+        "### The settlement of an opened place, isolated",
+        "",
+        "| prediction | yardstick | horizon | uneven sides | mean error |",
+        "|---|---|---|---|---|",
+    ]
+    for each in CELLS:
+        if each.headline != cell.headline:
+            continue
+        error, n = _mean_error(each, uneven)
+        old = each in OLD_YARDSTICK
+        horizon = each.horizon.removesuffix(", old yardstick")
+        out.append(
+            f"| R2 | {'the old flat level' if old else 'R2'} | {horizon} | {n} | {error:+.3f} |"
+        )
+    for horizon, was in R1_UNEVEN.items():
+        out.append(f"| R1, on 2026-09-21 | the old flat level | {horizon} | 25 | +{was:.3f} |")
+    out.extend(
+        [
+            "",
+            f"The per-man headline gave +{R1_UNEVEN_PER_MAN:.3f} over 25 sides against the rest "
+            "of the season on 2026-09-21, which is the number R1 was meant to fix and did not.",
+            "",
+            "**The check: the even-count sides must not have moved.** No place opens on them, "
+            "so neither the forecast nor the grade can have been re-priced, and the run of "
+            f"2026-09-21 reported {R1_EVEN[0]} sides, sign agreement {R1_EVEN[1]:.0%}, Spearman "
+            f"{R1_EVEN[2]:+.2f}, mean error {R1_EVEN[3]:+.3f}, mean absolute error "
+            f"{R1_EVEN[4]:.3f}. This run:",
+            "",
+            "| | sides | sign agreement | Spearman | mean error | mean abs error |",
+            "|---|---|---|---|---|---|",
+            _split("even counts, R2 yardstick", cell, even),
+            _split("even counts, old yardstick", OLD_YARDSTICK[0], even),
+        ]
+    )
+    return out
+
+
 def _player_diagnostic(players: Sequence[PlayerRow]) -> list[str]:
     """Is it the projections, or is it differencing two of them?"""
     if len(players) < 3:
@@ -850,7 +974,7 @@ def summarise(
         f"being predicted."
     )
     add("")
-    add("### The 2x2, all four cells from one run")
+    add("### The 2x2 and the old yardstick beside it, every cell from one run")
     add("")
     add(
         "| headline | horizon | deals | picked the better side | sides | Spearman | "
@@ -882,18 +1006,7 @@ def summarise(
         )
     )
     add("")
-    uneven = [row for row in rows if row.uneven]
-    add(
-        "The uneven sides are the ones R1 was written for. Under R1 their mean error is "
-        + "; ".join(
-            f"{statistics.fmean([side.error for side in each.scored(uneven)]):+.3f} over "
-            f"{len(each.scored(uneven))} sides against the {each.horizon}"
-            for each in CELLS
-            if each.headline == cell.headline and each.scored(uneven)
-        )
-        + ". The per-man headline gave +0.265 over 25 sides against the rest of the season "
-        "on 2026-09-21, which is the number R1 was meant to fix."
-    )
+    out.extend(_settlement(rows, cell))
     add("")
     add("### How sure it was, decided on the prediction")
     add("")
@@ -907,7 +1020,7 @@ def summarise(
         f"Against the decision lens (`MoveGrade.decision`, the same day's data through the "
         f"hindsight engine's own arithmetic): Spearman "
         f"{spearman([row.roster for row in rows], [row.decision for row in rows]):+.2f} for "
-        f"the R1 headline and "
+        f"the roster headline and "
         f"{spearman([row.independent for row in rows], [row.decision for row in rows]):+.2f} "
         f"for the per-man one."
     )
