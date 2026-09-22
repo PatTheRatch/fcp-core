@@ -827,6 +827,39 @@ class TradePlayerOut(BaseModel):
     hurt: bool
 
 
+class PlayerCardOut(BaseModel):
+    """One player's card: what every in-season page shows on his name.
+
+    The same numbers the page it was opened from is drawn from, never a second
+    computation of them (`app.inseason.card`): the per-game line under his
+    projection, an ordinary week of it from here on, the games he has left and
+    the games he has in the playoff weeks, whether he is hurt and when he is
+    back, and how many games of his own stand behind the rate.
+    """
+
+    espn_player_id: int
+    name: str
+    position: str | None
+    pro_team_id: int
+    pro_team: str | None = Field(description='ESPN\'s abbreviation ("DET"); null when unknown')
+    injury_status: str | None
+    expected_return_date: date | None
+    hurt: bool
+    today: int = Field(description="The day it is read as of; nothing after it is read")
+    last_scoring_period: int
+    games_left: int = Field(description="Games he is not ruled out of, through the last day")
+    playoff_games: int
+    playoff_first: int | None
+    playoff_last: int | None
+    games_so_far: int = Field(description="Games of his own behind the knowable line")
+    had_projection: bool
+    projection_source: str = Field(description='"blend" or "snapshot"')
+    thin: bool = Field(description="Fewer games of his own than a rate can be trusted on")
+    per_game: dict[str, float] = Field(description="The nine per game, percentages as rates")
+    weekly: dict[str, float] = Field(description="The same over an ordinary week from here on")
+    value: float = Field(description="Categories a week his roster place is worth, league standard")
+
+
 class TradeCategoryOut(BaseModel):
     """One category before and after, in counts and in the chance of winning it."""
 
@@ -866,8 +899,16 @@ class TradeSideOut(BaseModel):
     receives: list[TradePlayerOut]
     gives: list[TradePlayerOut]
     drops: list[TradePlayerOut] = Field(description="Men dropped to make room for the arrivals")
+    fills: list[TradePlayerOut] = Field(
+        description=(
+            "Free agents named by the caller for the places this deal opens. Each one is "
+            "judged as a man arriving: his line is in the categories and in the judgement"
+        )
+    )
     drop_source: str = Field(description='"named", "cheapest", "named and cheapest" or ""')
     places_opened: int
+    places_filled: int = Field(description="Opened places a named free agent goes into")
+    places_left_open: int = Field(description="Opened places valued as a streamed lane")
     places_used: int
     judgement: JudgementOut = Field(
         description="The deal in one currency; its season term is the roster with-and-without"
@@ -915,6 +956,63 @@ class TradeOut(BaseModel):
     pool_size: int = Field(description="Free agents the wire replacement was taken over")
     historical_wire: bool
     notes: list[str]
+
+
+class TradeFillCandidateOut(BaseModel):
+    """One free agent who could fill the place a deal opens for one side."""
+
+    espn_player_id: int
+    name: str
+    position: str | None
+    pro_team_id: int
+    pro_team: str | None = Field(description='ESPN\'s abbreviation ("DET"); null when unknown')
+    injury_status: str | None
+    expected_return_date: date | None
+    hurt: bool
+    on_waivers: bool = Field(description="He cannot play for us until he clears")
+    waiver_clears_at: date | None
+    waiver_clears_on: int | None = Field(description="That day as a scoring period")
+    games_left: int
+    worth: float = Field(
+        description=(
+            "Change in this side's expected category wins in a week with him in the opened "
+            "place, against the place left open. What the list is sorted by"
+        )
+    )
+    value: float = Field(
+        description="Categories a week he gives an ordinary place, league standard"
+    )
+    weekly: dict[str, float] = Field(description="His week in the nine, percentages as rates")
+
+
+class TradeFillPoolOut(BaseModel):
+    """The wire as one side of one deal sees it, on one day.
+
+    `worth` is what the list is ranked by and it is deliberately not the
+    league standard: the question is what this roster is short of once these
+    men have left it, which is the same lens the nine-category table uses
+    (docs/trades.md, "Filling the opened place").
+    """
+
+    season: int
+    today: int
+    espn_team_id: int = Field(description="The side the places are opened on")
+    team_name: str
+    ours: bool = Field(description="Whether that side is the team whose page asked")
+    readiness: TradeReadinessOut
+    places_opened: int = Field(description="Zero means there is nothing to fill")
+    opened_value: float = Field(
+        description="What those places are worth left open and streamed: the other choice"
+    )
+    replacement: float
+    replacement_espn_player_id: int | None = Field(
+        description="The man the report stands in an opened place when nobody is named"
+    )
+    pool_size: int
+    historical_wire: bool
+    measured: bool = Field(description="False when no league standard is measurable yet")
+    candidates: list[TradeFillCandidateOut] = Field(description="Best first, by `worth`")
+    calibration_note: str
 
 
 class TradeReportOut(BaseModel):

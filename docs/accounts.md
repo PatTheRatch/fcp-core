@@ -179,6 +179,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/bench` | league member | a narrative about one team |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/scorecard` | league member | "every team's scorecard" is league scope (docs/product.md) |
 | `GET /leagues/{league_id}/seasons/{season}/pages/context` | league member | names and the day, for the pages |
+| `GET /leagues/{league_id}/seasons/{season}/players/{player_id}/card` | league member | one player's card, as every in-season page shows it on a name: his line, his games, his status and what the projection rests on |
 | `GET /l/{league_id}/{season}/week` | league member (page) | This week, the free tier (docs/site.md) |
 | `GET /l/{league_id}/{season}/standings` | league member (page) | Standings |
 | `GET /l/{league_id}/{season}/draft` | league member (page) | Draft |
@@ -188,6 +189,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season` | team manager + entitled | the season plan, drops and bids |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance` | team manager | the free This week page's look at his own week: expected categories and the projected record, not the plan (step 4) |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/rosters` | team manager + entitled | both rosters as they stood on the day, for the trade builder's pickers |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/pool` | team manager + entitled | the wire on the day, ranked by what each man would be worth in the place this deal opens |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/report` | team manager + entitled | a proposed trade judged from both sides (docs/trades.md) |
 | `GET /l/{league_id}/{season}/team/{team_id}/week` | team manager + entitled (page) | the week page |
 | `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |

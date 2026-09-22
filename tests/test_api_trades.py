@@ -1,27 +1,33 @@
-"""The two trade routes and the page over them, on a league checkable by hand.
+"""The trade routes, the card, and the page over them, on a checkable league.
 
 One small season for the module: Home with four men on a five-place roster,
-Away with six, everybody playing every day, and a wire with one man on it.
+Away with six, everybody playing every day, and a wire with two men on it.
 Away is deliberately over-rostered, because that is the only shape in which a
 deal cannot be made to fit at all -- with equal roster sizes there is always
 somebody to drop, which is why the report's default is to drop him rather
-than to refuse.
+than to refuse. The wire holds two because the man a manager names for an
+opened place is interesting only when it is not the man the report would have
+stood there by itself.
 
 What is pinned here: that the report route answers with the engine's own
 numbers and not a second computation; that every refusal is a sentence a
 manager can act on; that a season with no schedule is answered rather than
-refused; that a roster read as of a day is that day's and never a later
-one's; and that the page is on the menu and prints the calibration note
-verbatim from `app.trades.calibration`.
+refused; that a roster read as of a day is that day's and never a later one's;
+that the pool ranks the wire by what a man is worth to the roster the deal
+leaves; that the card says what the page it was opened from says; and that the
+page is on the menu and prints the calibration note verbatim from
+`app.trades.calibration`.
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api import access
 from app.api import trades as routes
 from app.api.deps import get_session
 from app.db.models import LeagueSeason, Player, Team
@@ -152,11 +158,15 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
         rostered(away, "AwayWeak", scaled(0.2), held_days)
         rostered(away, "Star", scaled(1.6), held_days)
 
-        wire = player(session, "Wire")
-        eligible(session, wire, ANY, "PG")
-        snapshot(session, wire, pro_team_id=20, on_team_id=0)
-        projected(session, wire, 70, scaled(0.9), season=SEASON)
-        on_the_wire(session, ls, wire)
+        # Two men on the wire: the one the report stands in an opened place by
+        # itself, and a lesser one, so that "the manager named the other man"
+        # is a case this fixture can ask at all.
+        for name, factor in (("Wire", 0.9), ("Spare", 0.35)):
+            free = player(session, name)
+            eligible(session, free, ANY, "PG")
+            snapshot(session, free, pro_team_id=20, on_team_id=0)
+            projected(session, free, 70, scaled(factor), season=SEASON)
+            on_the_wire(session, ls, free)
 
         league_season(session, season=UNDRAFTED, periods=1, days_per_period=7)
         session.commit()
@@ -404,6 +414,174 @@ def test_an_uneven_deal_names_the_drop_it_chose_and_the_one_it_was_given(
 
 
 # ---------------------------------------------------------------------------
+# the wire, and the man named off it
+# ---------------------------------------------------------------------------
+
+
+def test_the_pool_answers_with_the_wire_ranked_by_what_it_is_worth_to_us(
+    client: TestClient, session: Session
+) -> None:
+    """The chooser's own route: the free agents on the day, best first, with
+    everything the row shows and nothing the page has to work out for itself."""
+    body = client.get(
+        url("pool"),
+        params={
+            "with_team": AWAY,
+            "give": list(espn(session, "HomeWeak", "HomeC")),
+            "get": list(espn(session, "Star")),
+            "today": TODAY,
+        },
+    ).json()
+
+    assert body["readiness"]["ready"] is True
+    assert (body["espn_team_id"], body["ours"]) == (HOME, True)
+    assert body["places_opened"] == 1, "two men out for one in"
+    assert body["opened_value"] > 0, "what leaving it open is worth, for the other choice"
+    assert body["calibration_note"] == CALIBRATION_NOTE
+    assert [man["name"] for man in body["candidates"]] == ["Wire", "Spare"], "best first"
+    man = body["candidates"][0]
+    assert man["espn_player_id"] == espn(session, "Wire")[0]
+    assert body["replacement_espn_player_id"] == man["espn_player_id"]
+    assert (man["position"], man["pro_team_id"]) == ("PG", 20)
+    assert man["pro_team"] == "PHL", "ESPN's own abbreviation for the NBA team id"
+    assert man["hurt"] is False and man["on_waivers"] is False
+    assert man["games_left"] > 0
+    assert set(man["weekly"]) == {"FG%", "FT%", "3PM", "PTS", "REB", "AST", "STL", "BLK", "TO"}
+    assert man["worth"] > 0, "this roster is short a man, so any man is worth something"
+
+
+def test_the_pool_can_be_asked_for_the_other_sides_opened_place(
+    client: TestClient, session: Session
+) -> None:
+    """`side=theirs` is the same question about the other roster, which is
+    what the page draws when the deal opens a place over there."""
+    two_for_one = {
+        "with_team": AWAY,
+        "give": list(espn(session, "HomeC")),
+        "get": list(espn(session, "Star", "AwayA")),
+        "today": TODAY,
+    }
+    ours = client.get(url("pool"), params=two_for_one).json()
+    theirs = client.get(url("pool"), params={**two_for_one, "side": "theirs"}).json()
+
+    assert ours["places_opened"] == 0, "we receive two for one: we open nothing"
+    assert (theirs["espn_team_id"], theirs["ours"]) == (AWAY, False)
+    assert theirs["places_opened"] == 1
+    assert theirs["team_name"] == "Away"
+
+
+def test_a_named_fill_is_in_the_after_roster_and_the_settlement_names_him(
+    client: TestClient, session: Session
+) -> None:
+    """What the page is for: the deal re-judged with the man's own line in it.
+
+    The report is the engine's, so this holds the route to the engine rather
+    than to a number: the same deal with `fill=` must be the same object
+    `evaluate_trade` builds with `fills=`, and it must differ from the deal
+    without him. The man named is the lesser of the two on the wire -- naming
+    the better one is naming what the report would have stood there anyway,
+    and nothing would move.
+    """
+    ls = stored_season(session, SEASON)
+    (weak, home_c) = ids(session, "HomeWeak", "HomeC")
+    (star,) = ids(session, "Star")
+    (spare,) = ids(session, "Spare")
+    built = evaluate_trade(
+        session,
+        ls,
+        TODAY,
+        TeamOffer(HOME, (weak, home_c)),
+        TeamOffer(AWAY, (star,)),
+        fills={HOME: (spare,)},
+    )
+
+    deal = {
+        "with_team": AWAY,
+        "give": list(espn(session, "HomeWeak", "HomeC")),
+        "get": list(espn(session, "Star")),
+        "today": TODAY,
+    }
+    left = client.get(url("report"), params=deal).json()["trade"]["sides"][0]
+    filled = client.get(
+        url("report"), params={**deal, "fill": list(espn(session, "Spare"))}
+    ).json()["trade"]["sides"][0]
+
+    assert [card["name"] for card in filled["fills"]] == ["Spare"]
+    assert (filled["places_opened"], filled["places_filled"], filled["places_left_open"]) == (
+        1,
+        1,
+        0,
+    )
+    assert filled["opened_value"] == 0.0
+    assert filled["fills"][0]["espn_player_id"] == espn(session, "Spare")[0]
+    assert filled["fills"][0]["value"] == pytest.approx(built.side(HOME).fills[0].value)
+    assert filled["net"] == pytest.approx(built.side(HOME).net)
+    assert filled["summary"] == built.side(HOME).summary
+    assert "Spare comes off the wire into the place it opens" in filled["summary"]
+    assert left["places_left_open"] == 1 and left["fills"] == []
+    assert filled["net"] < left["net"], "the lesser man was named, and the number says so"
+    points = next(view for view in filled["categories"] if view["abbreviation"] == "PTS")
+    was = next(view for view in left["categories"] if view["abbreviation"] == "PTS")
+    assert points["after"] < was["after"], "his line, not the wire's best man's"
+
+
+def test_every_refusal_about_a_fill_is_a_sentence_a_manager_can_act_on(
+    client: TestClient, session: Session
+) -> None:
+    two_for_one = {
+        "with_team": AWAY,
+        "give": list(espn(session, "HomeWeak", "HomeC")),
+        "get": list(espn(session, "Star")),
+    }
+    (wire,) = espn(session, "Wire")
+
+    assert refused(client, session, **two_for_one, fill=list(espn(session, "HomeA"))) == (
+        f"HomeA is not a free agent on day {TODAY}: only a man on the wire that morning "
+        "can fill the place this deal opens."
+    )
+    assert refused(
+        client,
+        session,
+        with_team=AWAY,
+        give=list(espn(session, "HomeC")),
+        get=list(espn(session, "Star")),
+        fill=[wire],
+    ) == (
+        "Home opens no roster place in this deal, so there is nowhere for Wire to go. "
+        "Take a player back from it, or leave the wire alone."
+    )
+    assert refused(
+        client,
+        session,
+        with_team=AWAY,
+        give=list(espn(session, "HomeA", "HomeB", "HomeC")),
+        get=list(espn(session, "Star")),
+        fill=[wire],
+        their_fill=[wire],
+    ) == routes.FILLS_BOTH_SIDES.format(name="Wire")
+    assert refused(client, session, **two_for_one, fill=[wire, 123456789]) == (
+        f"player 123456789 is not a free agent on day {TODAY}: only a man on the wire "
+        "that morning can fill the place this deal opens."
+    )
+
+
+def test_more_men_than_places_is_refused_with_both_counts(
+    client: TestClient, session: Session
+) -> None:
+    """One man for one place: a deal that opens one and names two is refused
+    with both numbers in it, because which of the two to drop is the manager's
+    decision and not the report's."""
+    assert refused(
+        client,
+        session,
+        with_team=AWAY,
+        give=list(espn(session, "HomeWeak", "HomeC")),
+        get=list(espn(session, "Star")),
+        fill=list(espn(session, "Wire", "Spare")),
+    ) == routes.TOO_MANY_FILLS.format(team="Home", opened=1, named=2)
+
+
+# ---------------------------------------------------------------------------
 # bad input: a sentence a manager can act on
 # ---------------------------------------------------------------------------
 
@@ -511,6 +689,113 @@ def test_a_roster_that_cannot_hold_the_deal_says_who_it_could_still_drop(
         get=everybody,
     )
     assert nobody_left == routes.NO_ROOM_AT_ALL.format(team="Home", arriving=6)
+
+
+# ---------------------------------------------------------------------------
+# the card, which every in-season page will hang off a name
+# ---------------------------------------------------------------------------
+
+
+def card(client: TestClient, session: Session, name: str, **params: object) -> dict[str, object]:
+    (player_id,) = espn(session, name)
+    answer = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/players/{player_id}/card",
+        params={"today": TODAY, **params},
+    )
+    assert answer.status_code == 200, answer.text
+    body: dict[str, object] = answer.json()
+    return body
+
+
+def test_the_card_says_what_the_page_it_was_opened_from_says(
+    client: TestClient, session: Session
+) -> None:
+    """The card is the report's own numbers, not a second reading of them.
+
+    So the one thing worth pinning is that they agree: what the report says
+    a man is worth a week, and what stands behind his projection, is what the
+    card says when a reader hovers his name in the same table.
+    """
+    body = card(client, session, "Star")
+    report = client.get(
+        url("report"),
+        params={
+            "with_team": AWAY,
+            "give": list(espn(session, "HomeC")),
+            "get": list(espn(session, "Star")),
+            "today": TODAY,
+        },
+    ).json()["trade"]
+    in_the_deal = report["sides"][0]["receives"][0]
+
+    assert body["name"] == "Star"
+    assert body["value"] == pytest.approx(in_the_deal["value"])
+    assert body["games_left"] == in_the_deal["games_left"]
+    assert body["playoff_games"] == in_the_deal["playoff_games"]
+    assert body["games_so_far"] == in_the_deal["games_so_far"]
+    assert body["projection_source"] == in_the_deal["projection_source"]
+    assert (body["thin"], body["hurt"]) == (in_the_deal["thin"], in_the_deal["hurt"])
+
+
+def test_the_card_carries_his_line_his_games_and_what_he_is(
+    client: TestClient, session: Session
+) -> None:
+    body = card(client, session, "Star")
+
+    assert (body["position"], body["pro_team_id"], body["pro_team"]) == ("PG", 20, "PHL")
+    assert body["today"] == TODAY
+    assert set(body["per_game"]) == {"FG%", "FT%", "3PM", "PTS", "REB", "AST", "STL", "BLK", "TO"}
+    assert body["per_game"]["PTS"] == pytest.approx(STARTER["PTS"] * 1.6, rel=0.05)
+    assert body["per_game"]["FT%"] == pytest.approx(STARTER["FTM"] / STARTER["FTA"], abs=0.01)
+    assert body["weekly"]["PTS"] > body["per_game"]["PTS"], "a week is several games"
+    assert body["games_left"] == 14, "day 8 through day 21, the last of the regular season"
+    assert body["last_scoring_period"] == 21
+    assert (body["playoff_first"], body["playoff_last"]) == (22, 28)
+    assert body["playoff_games"] == 7
+    assert body["had_projection"] is True and body["thin"] is True, "no games of his own yet"
+    assert body["injury_status"] is None or body["hurt"] is False
+
+
+def test_a_card_on_a_replayed_day_reads_nothing_after_it(
+    client: TestClient, session: Session
+) -> None:
+    """The same claim the reports make, on the route the pages will hang off
+    every name: a later day has one fewer day of games left in it."""
+    on_the_day = card(client, session, "Star")
+    afterwards = card(client, session, "Star", today=LATER)
+
+    assert afterwards["games_left"] == int(on_the_day["games_left"]) - 1
+    assert afterwards["today"] == LATER
+
+
+def test_a_card_for_a_player_this_database_does_not_hold_is_a_404(client: TestClient) -> None:
+    answer = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/players/123456789/card")
+
+    assert answer.status_code == 404
+    assert "123456789" in answer.json()["detail"]
+
+
+def test_the_card_is_a_league_members_and_not_the_paid_layers(client: TestClient) -> None:
+    """It is opened from the team pages and from the league's own, so it is
+    scoped like the league pages: the same check `pages/context` declares."""
+    wanted = "/leagues/{league_id}/seasons/{season}/players/{player_id}/card"
+
+    def walk(routes: Iterable[object]) -> Iterator[APIRoute]:
+        for route in routes:
+            if isinstance(route, APIRoute):
+                yield route
+            elif hasattr(route, "original_router"):
+                yield from walk(route.original_router.routes)
+            elif hasattr(route, "routes"):
+                yield from walk(route.routes)
+
+    found = next(route for route in walk(client.app.routes) if route.path == wanted)  # type: ignore[attr-defined]
+    declared = [
+        dependency.call
+        for dependency in found.dependant.dependencies
+        if dependency.call in access.CHECKS
+    ]
+    assert declared == [access.require_league_member]
 
 
 # ---------------------------------------------------------------------------
