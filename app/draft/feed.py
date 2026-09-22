@@ -44,10 +44,14 @@ runner decides.
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+
+# Re-exported: the typing matcher below and every caller of this module have
+# always taken `normalise` from here. It lives in `app.player_names` now,
+# beside the strict matcher that shares its definition of a name.
+from app.player_names import normalise
 
 
 @dataclass(frozen=True)
@@ -105,14 +109,6 @@ _PICK_COUNTER = re.compile(r"\bPK\s+(\d+)\s+OF\s+(\d+)\b", re.IGNORECASE)
 _CARD = re.compile(
     r"^(.+?[a-z.'])([A-Z]{2,3})([A-Z]{1,2}(?:,\s*[A-Z]{1,2})*)\s+\d{4}\s+STATS", re.ASCII
 )
-
-
-def normalise(name: str) -> str:
-    """Lowercase ASCII with punctuation dropped, so `Jokić`, `Jokic` and
-    `jokic.` are one name. ESPN's own names are already ASCII."""
-    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    text = re.sub(r"[^a-z0-9 ]+", " ", text.lower())
-    return " ".join(text.split())
 
 
 def _split_player_team(body: str, teams: Sequence[str]) -> tuple[str, str] | None:

@@ -38,7 +38,6 @@ BBM's position.
 from __future__ import annotations
 
 import re
-import zlib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,8 +46,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Player, PlayerSeasonStat
-from app.draft.feed import normalise
 from app.draft.valuation import PlayerProjection
+
+# Re-exported: `app.draft.bbm_store`, `app.draft.live` and
+# `app.projections.upload` have always taken the matcher from here. It lives
+# in `app.player_names` now, because the NBA's injury reports place a name on
+# a player by exactly the same rule (docs/injuries.md).
+from app.player_names import match_player, name_key, synthetic_id
 from app.projections import sources
 
 #: Per-game columns in BBM's export, and the season-total keys they become.
@@ -254,48 +258,6 @@ def to_projection(
         position=position,
         source=sources.BBM,
     )
-
-
-_SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b")
-
-
-def name_key(name: str) -> str:
-    """A name with case, accents, joining punctuation and suffixes gone."""
-    joined = re.sub(r"[.'\u2019]", "", name)
-    return " ".join(_SUFFIX.sub(" ", normalise(joined)).split())
-
-
-def synthetic_id(name: str) -> int:
-    """A stable negative id for a player we hold no ESPN id for."""
-    return -(zlib.crc32(name_key(name).encode()) % 1_000_000_000 + 1)
-
-
-def match_player(name: str, known: Mapping[int, str], recency: Mapping[int, int]) -> int | None:
-    """Our id for a BBM name, or None when there is no safe match.
-
-    Exact on `name_key` first; among several exact matches the one with the
-    most recent season line wins, and a tie is no match. Failing that, the
-    same surname and the rest of the name equal, with one first name the
-    start of the other, if exactly one player fits.
-    """
-    wanted = name_key(name)
-    if not wanted:
-        return None
-    exact = [pid for pid, known_name in known.items() if name_key(known_name) == wanted]
-    if exact:
-        exact.sort(key=lambda pid: -recency.get(pid, 0))
-        if len(exact) > 1 and recency.get(exact[0], 0) == recency.get(exact[1], 0):
-            return None
-        return exact[0]
-    first, _, rest = wanted.partition(" ")
-    if not rest or len(first) < 2:
-        return None
-    loose = []
-    for pid, known_name in known.items():
-        other_first, _, other_rest = name_key(known_name).partition(" ")
-        if other_rest == rest and (other_first.startswith(first) or first.startswith(other_first)):
-            loose.append(pid)
-    return loose[0] if len(loose) == 1 else None
 
 
 @dataclass(frozen=True)
