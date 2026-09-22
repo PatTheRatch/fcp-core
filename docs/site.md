@@ -184,11 +184,22 @@ owners, set to the reader's own, and his record against everyone he has
 met, with the seasons. Reads `/category-profiles`, `/notable-matchups`,
 `/leagues/{id}/owners` and `/leagues/{id}/head-to-head`.
 
-**My team: Week and Season.** The streaming and rest-of-season reports,
-unchanged in content (docs/in_season_pages.md): the same masthead, readout,
-tale of the tape, plan and moves. Only the frame changed: the shell is over
-them, and their old "Rest of season" and "Every team" buttons are gone,
-because My team and the sections are those links now.
+**My team: Week and Season.** The streaming and rest-of-season reports
+(docs/in_season_pages.md): the same masthead, readout, tale of the tape,
+plan and moves. The shell is over them, and their old "Rest of season" and
+"Every team" buttons are gone, because My team and the sections are those
+links now.
+
+The Week page opens with **Today** (`app.pickups.today`, added 2026-09-22):
+the lineup as the recommender would set it, place by place, with each man's
+game or "no game"; the lineup the team has actually set beside it; in the
+warn style, the places that will produce nothing tonight while somebody on
+the bench would have; and under them everyone held who is not in the
+lineup, a man with a game carrying the accent. It reads a route of its own,
+`teams/{team_id}/today`, and is drawn as soon as that answers rather than
+with the rest of the page: the week searches the whole wire and takes the
+better part of half a minute, and the lineup is what the reader came for.
+A day no NBA team plays says so in one line and draws no grid.
 
 **My team: Moves.** The team's name; "The season's moves, graded in
 categories a week. The league's median pickup was worth 0.072 categories a

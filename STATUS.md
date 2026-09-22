@@ -209,6 +209,7 @@ names a scoring period and defaults to the calendar day turned into one:
 
 | Route | What it gives |
 |---|---|
+| `.../teams/{tid}/today` | who starts today, place by place, with each man's game; who has a game and no place, and why; and the places the set lineup gives away |
 | `.../teams/{tid}/pickups/stream` | who to stream this week, the empty days, and whether anything clears the hurdle |
 | `.../teams/{tid}/pickups/season` | the best add, swap and two-swap for the rest of the year, the drops, the stashes, the churn guard and what to bid |
 | `.../teams/{tid}/trades/rosters` | both rosters as they stood on the day, for the builder's pickers |
@@ -216,7 +217,7 @@ names a scoring period and defaults to the calendar day turned into one:
 | `.../teams/{tid}/trades/report` | a proposed trade judged from both sides, with the man named for an opened place in it |
 | `.../players/{pid}/card` | one player's card: his line per game, his games left and his playoff games, his status, what the projection rests on |
 
-The first two are a 409, not an empty report, for a season with no stored
+The first three are a 409, not an empty report, for a season with no stored
 schedule or no roster: there is nothing to decide from. The three trade
 routes answer 200 with `readiness` instead, because a trade page has a
 builder to draw before any deal exists (docs/trades.md section 10). A played

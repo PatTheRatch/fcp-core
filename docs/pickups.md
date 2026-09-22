@@ -2,7 +2,7 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H, auction draft, FAAB
 **Written:** 2026-09-16, five weeks before the 2027 season tips off (ESPN labels a season by the year it ends in)
-**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and running on the VPS since 2026-09-17; since 2026-09-18 the digest also carries the day's plan and can go by email. Phase 2 is built (2026-09-18: `app/pickups/state.py`, `projection.py`, `stream.py`, `season.py`, `bids.py`, `app/api/pickups.py`, `scripts/stream.py`, `scripts/season.py`); the backtest (§4.6) is built too (2026-09-18, `scripts/pickups_backtest.py`), scoring in categories, and both halves of the recommender now judge a move in one currency over both horizons (`app/pickups/judge.py`); both reports are served as pages too (2026-09-18: `app/api/pages.py`, `app/api/static/`, `docs/in_season_pages.md`); the digest's sections 3 and 4, the free-agent and week routes and phases 3 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
+**Status:** phase 1, the listener, and phase 1b, the digest, are built (2026-09-17: `app/listener/`, `app/digest.py`, `app/notify.py`, migration `0016`, `scripts/status_pass.py`, `scripts/digest.py`, `deploy/fcp-core-status.*`) and running on the VPS since 2026-09-17; since 2026-09-18 the digest also carries the day's plan and can go by email. Phase 2 is built (2026-09-18: `app/pickups/state.py`, `projection.py`, `stream.py`, `season.py`, `bids.py`, `app/api/pickups.py`, `scripts/stream.py`, `scripts/season.py`); the backtest (§4.6) is built too (2026-09-18, `scripts/pickups_backtest.py`), scoring in categories, and both halves of the recommender now judge a move in one currency over both horizons (`app/pickups/judge.py`); both reports are served as pages too (2026-09-18: `app/api/pages.py`, `app/api/static/`, `docs/in_season_pages.md`); the day's own lineup is built, routed, paged, printed and in the digest (2026-09-22: `app/pickups/today.py`, `scripts/today.py`, section 4.3's last as-built note); the digest's sections 3 and 4, the free-agent and week routes and phases 3 to 4 are still design. Where the build departed from this note, the note says so in place, marked **as built**.
 **Companions:** [`waiver_value.md`](waiver_value.md) (what the wire offered), [`acquirable_value.md`](acquirable_value.md) (what real moves returned), [`stars_and_waivers.md`](stars_and_waivers.md) (whether pickups rescue a draft)
 
 ---
@@ -319,6 +319,50 @@ Answer: *which swap most improves my expected category wins in the current match
 **As built, third pass** (2026-09-18, `app/pickups/state.py`, `app/pickups/stream.py`): two league rules the reports had been ignoring, and the plan they make possible. **The add budget.** ESPN's raw `acquisitionSettings` for this league, read 2026-09-18 and confirmed in the 2026 transactions, are `matchupAcquisitionLimit` 1.0 with `matchupLimitPerScoringPeriod` true and no season limit: one add for each day of the matchup period, spendable on any of its days, so a seven-day period allows seven and the six-day opening week six. It is not one add a day — 204 of the 920 2026 team-days with an add on them had two or more. The setting is in no table (`league_seasons.raw_settings` holds the schedule and the scoring only), so `ADDS_PER_PERIOD_DAY = 1` carries it with its provenance and the budget is that times the period's days. What has been spent is this team's executed WAIVER or FREEAGENT transactions with an ADD item on the period's days **up to and including `today`** (`app/scoring/replacement.py`'s `ADD_TYPES`, counted as `season._adds_in_window` counts a fortnight's; the day bound is `_faab_spent`'s, and the two must agree because an add and its bid are one transaction — it was the period's whole span until 2026-09-21, which on a replayed day read the adds a team had not made yet and, on a third of the mornings the in-season rehearsal replayed, silenced the recommendation entirely), and `adds_used`, `adds_budget` and `adds_left` ride on `TeamWeek`, on both reports, on both CLI headers and on both API schemas. **The plan.** `StreamReport.recommended` is no longer one move or none but a short ordered plan of independent moves, because more than one add in a day is often right: one man will not play again this week and another is a bum, and both places are worth changing — a recommender whose only other answer is "no move" is not reading the week. Each move in the plan is a distinct pickup and a distinct drop, and each clears the hurdle on its own; the second is found by searching the wire again from the roster the first one leaves behind, not by reading the next row of the list, so two moves can never both be paid for filling the same empty day. (The test that pins this is the case where they would: two free agents who each fill the one empty slot both clear the hurdle on the list, and exactly one is planned.) `PLAN_MOVES` is 2, `adds_left` caps it as well, and with no adds left the report says so and plans nothing while still listing what the wire offers. With one or two adds left the render says so beside the recommendation — a note about scarcity, not a second hurdle. **Waivers.** A dropped player sits on waivers for 48 hours, and a free agent whose latest `free_agent_snapshots` row is WAIVERS with a `waiver_clears_at` cannot play for us before the scoring period that day falls in (`waiver_clears`, mapped through `season_calendar`). He is still worth claiming — the claim is a FAAB bid that resolves when he clears — so he stays in the pool and is simply not seated on the days before then: in `_Week.project`, and so in the starts, the empty-day check and the season report's week half (`week_deltas`) alike. The move render says "on waivers, clears Thursday". `load_free_agents` carries the status and the clearing day from the latest snapshot per player, while a pool named by id (`pool=`, which is the backtest's path) is taken as men who are free agents now, so the historical replay is untouched.
 
 **As built, fourth pass** (2026-09-22, `app/scoring/replacement.py`, `app/pickups/judge.py`): one number was doing two jobs and is now two. `TYPICAL_PICKUP` (0.06) is unchanged and still means what it always meant — what a man picked up and *kept* returns, and the floor under a place somebody holds — so every number this recommender prints is the number it printed yesterday. What changed is a place a move **empties**. `docs/streaming_lane.md` measured a roster place that is left open and streamed at **0.38 categories a week** (IQR 0.23–0.53, 1,536 team-periods, 2019–2026) against the held 13th man's 0.00, because a streamed place has a live body in it every day while a 13th man mostly produces nothing. So `places_cost` credits a place the move leaves open at `OPENED_PLACE` — strictly, at the better of the man the wire offers and the lane, because the same measurement says an ordinary *held* place returns 0.43 and an opened place must never be priced above a man. A second opened place is credited at a single ordinary pickup, not a second lane: the lane study looked for a decay in what a second lane produces and reported none (the later men are worth *more*, because a manager who is streaming is streaming toward somebody he wants), and said the binding constraint is the seven-add budget rather than a coefficient nobody has measured, so the conservative fallback declared in `docs/trades.md` §7b was taken. **A one-for-one swap opens no place, and neither does a free add or an injured-reserve move, so none of the recommender's arithmetic moved** — `test_pickups_judge.py`, `test_pickups_season.py` and `test_pickups_stream.py` pass untouched, which is the proof rather than the claim. What does move is a drop with no add, a two-for-one trade, and the hindsight grade of either (`app/scoring/moves.py`). The still-open piece, written down in `docs/trades.md` §7 rather than built: a team with no adds left cannot stream an opened place at all, and the price does not yet know it.
+
+**As built, the day on its own** (2026-09-22, `app/pickups/today.py`,
+`app/api/pickups.py`, `scripts/today.py`, `app/api/static/week.html`,
+`app/digest.py`): the seating above solves every remaining day of the period
+and then throws the daily answer away, because what this section reports is
+the week those days add up to. The most-used thing in a daily-lineup league
+is the day, so it is now kept. `today_lineup` is the same solve for one
+scoring period, with the places named: `stream._seat` became `stream.seat`,
+and `app.draft.lineup.assign` is `max_matching` read back as "who sits
+where" (`max_matching` is now the length of what `assign` returns, so the
+count and the grid cannot disagree). **The week's numbers did not move**, and
+the untouched `tests/test_pickups_stream.py` is the proof rather than the
+claim.
+
+It reports the proposed lineup place by place with each man's game (the
+opponent's abbreviation travels with its id, so no reader needs ESPN's team
+table), his status and whether he is on injured reserve; every man with a
+game the lineup left out, and why -- no starting place he fits, or the
+better men who took the ones he does, by name; and, against the lineup the
+team has actually set (`daily_lineup_slots` for the day), the places that
+will produce nothing tonight while a man on the bench would have. That last
+one is the only thing stated as a mistake, and it is stated carefully: both
+halves have to be true, the bench man has to fit **that** place, and only
+the places the bench can fill *at once* are named, which is the same
+matching again. `starts` against `actual_starts` is the whole comparison in
+two numbers.
+
+**Nothing after the day is read.** The roster is rebuilt over the single day
+rather than over the days the period has left, so a man's games remaining is
+0 or 1 and no row of the schedule for a later day can reach the answer. That
+is a structural guarantee rather than a promise, and it is what the
+rehearsal's first check (docs/inseason_rehearsal.md, finding 1) asks of
+anything new: the test builds a week with later days in it, takes the
+answer, deletes every row the season went on to write, and takes it again.
+The week's posted totals, FAAB and add budget are read off `TeamWeek` and
+not used -- this is a lineup, not a matchup.
+
+The route is `GET .../teams/{team_id}/today?today=N`, the same scope as the
+two plans, and `today` is a third kind in `app.reports.KINDS` (migration
+`0022`, which only widens a CHECK), so the morning precompute stores it
+beside them. The week page opens with it and draws it before the rest;
+`scripts/today.py` prints the same lineup; the digest opens the team's part
+with the starters and the fix-this line. On a day no NBA team plays -- the
+All-Star break -- every one of them says so in a line and draws no grid.
 
 ### 4.4 Long term, rest of season: `app/pickups/season.py`
 

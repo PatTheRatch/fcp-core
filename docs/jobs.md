@@ -33,7 +33,7 @@ and each member's alerts on his own channels.
 |---|---|---|
 | `ingest` | a league | the trailing ten days and next season's settings, what `scheduled_ingest.sh` does, with the league's own login; a league never ingested is backfilled, every season ESPN holds |
 | `status_pass` | a league | the listener's pass (below, "One listener league") |
-| `precompute` | a team | its week and season reports for today, stored in `team_reports` |
+| `precompute` | a team | its day, week and season reports for today, stored in `team_reports` |
 | `digest` | a member (and his team) | the morning digest, or an alert between digests, to his verified channels |
 
 `state` goes `queued`, `running`, `done`; a failure goes back to `queued`
@@ -125,13 +125,21 @@ needed before a second league's managers are told their roster news.
 
 ## Stored reports
 
-`team_reports` holds a team's `stream` and `season` report for one scoring
-period, as exactly the JSON the route answers (`build_payload` in
+`team_reports` holds a team's `today`, `stream` and `season` report for one
+scoring period, as exactly the JSON the route answers (`build_payload` in
 `app/api/pickups.py`, shared by the route and the job). The pickups routes
 answer from the stored row when the report asked for is today's and the row
 was built today; otherwise they build live, as before. Nothing but the job
 writes a row. "Built today" matters before opening night and after the last
 game, when every day maps to the same scoring period.
+
+**`today` is the third kind** (2026-09-22, migration `0022`, which only
+widens the `kind` CHECK). The day's lineup (`app/pickups/today.py`) is much
+the cheapest of the three -- one day's seating rather than a whole wire --
+and it needs no precompute to be quick. It is stored beside the other two
+anyway, because it is read on every load of the week page and by every
+morning digest, and because a report built once is a report that cannot
+disagree with itself between the page and the message.
 
 `GET .../pickups/glance` is new: the free This week page's look at the
 reader's own week (expected categories, their chances, the projected
@@ -305,9 +313,10 @@ live, as before. The migration need not be undone; if it must be,
   `app/league_ingest.py` narrows against this league's own stored season
   (the script matches the season in any league), and nothing the timers run
   tonight moved. Once the switch is made the script can call it.
-- **The digest's plan section is still built by the digest**, not read from
-  the stored report: it renders the recommender's own objects, and it runs
-  in the worker, off anyone's page. Reading the stored row is a follow-up.
+- **The digest's plan and lineup sections are still built by the digest**,
+  not read from the stored reports: they render the recommender's own
+  objects, and they run in the worker, off anyone's page. Reading the
+  stored rows is a follow-up.
 - **A member's digest does not mark events notified**; the owner's still
   does (above).
 - **Email is offered without SMTP** (the link is logged), as sign-in is.

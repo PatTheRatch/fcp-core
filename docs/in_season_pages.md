@@ -8,9 +8,10 @@ step, for the reason the draft screen has none — a page that has to come up
 on a tailnet from a file on disk should not need a toolchain. Each file is
 read per request, so an edit shows on a refresh.
 
-They are the two CLI reports as a screen. `scripts/stream.py` and
-`scripts/season.py` are the content spec: everything those two print, the
-pages show, in the same words and the same order. Nothing is computed in the
+They are the CLI reports as a screen. `scripts/today.py`,
+`scripts/stream.py` and `scripts/season.py` are the content spec:
+everything those three print, the pages show, in the same words and the
+same order. Nothing is computed in the
 browser that the API has not already decided, with one exception noted under
 *The tale of the tape*.
 
@@ -34,6 +35,48 @@ the stored schedule. `?me=` names whose team is ours, for anyone who is not
 the manager the constant is written for.
 
 ## What is on the week page, top to bottom
+
+**Today** (added 2026-09-22, `app/pickups/today.py`). The morning question,
+and the first thing on the page, because it is the first thing the manager
+does. The date and the scoring period; how many NBA teams play and how many
+of the ten places this roster can fill; then two lineups side by side (one
+above the other on a phone):
+
+* **As we would set it** — a place a line, in the league's own slot order,
+  with the man's name, the game his NBA team plays ("at MIL"), and a flag
+  when ESPN carries a status. A place nobody on the roster can fill says so
+  in the muted style rather than being left blank.
+* **As it is set** — the same grid from `daily_lineup_slots` for the day.
+  On a day the ingest has not reached there is no such row, and the page
+  says the lineup has not been read from ESPN yet rather than comparing
+  against an empty one.
+
+Between the lede and the grids, in the warn style, **the one thing this page
+calls a mistake**: a place in the set lineup that will produce nothing
+tonight — the man in it has no game, or it was left unset — while a man on
+the bench has a game and fits that very place. It names who could take it
+and says how many places each lineup fills. Only the places the bench can
+fill *at once* are listed, which is the same matching again, so one man
+eligible for two open utility places is one place to fix and not two.
+
+Under them, **Not in the lineup**: everyone held who is not starting. A man
+with a game carries a rule in the accent and says why he is not in it (no
+place he is eligible for, or the better men who took the ones he fits); a
+man with no game is faint, and the middle column has already said why.
+
+On a day no NBA team plays — the All-Star break — it says so in one line and
+draws no grid. Ten rows of "nobody" would be ten rows of noise.
+
+It is the **only** part of the page drawn before the rest. The week searches
+the whole wire for every possible move and takes the better part of half a
+minute; one day's seating comes back at once, and the names come with it, so
+the masthead stops saying "Loading..." while the plan is still being built.
+A day that cannot be built hides its own section and leaves the week
+standing (`quiet` in `pages.js`'s `get`).
+
+Every player name is wrapped in the hook the shared player card will attach
+to, `.player[data-espn-id]`. Until that card exists it is a bold name and no
+behaviour, and when it lands nothing on this page has to change.
 
 **The masthead.** The team, the season, the matchup period, the opponent,
 the day and its date, the days left, and where the numbers came from
@@ -146,10 +189,16 @@ the shade it is handed and does not know the difference.
 
 ## What the pages fetch
 
-The two reports come from the routes that already existed, unchanged:
+The reports come from the routes that already existed, unchanged, plus the
+day's own:
 
+    /leagues/{league_id}/seasons/{season}/teams/{team_id}/today
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season
+
+`/today` is the same scope as the other two (the team's verified manager,
+entitled) and carries its own `source_note`, so the Today section can say
+where its numbers came from without waiting on `pages/context`.
 
 Everything else comes from one small route added with the pages:
 
