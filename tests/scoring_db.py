@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import zlib
 from collections.abc import Mapping
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -215,12 +216,16 @@ def transaction(
     items: list[tuple[str, Player, Team | None, Team | None]],
     *,
     status: str = "EXECUTED",
+    processed: datetime | None = None,
+    bid: int | None = None,
 ) -> None:
     """A transaction on `day`: items are (item type, player, from team, to team).
 
     A None team is ESPN's team 0, meaning free agency. `kind` is ESPN's type
     string, so the same helper builds a waiver claim, a TRADE_ACCEPT or an
-    items-less TRADE_UPHOLD (pass `items=[]`).
+    items-less TRADE_UPHOLD (pass `items=[]`). `processed` is when ESPN did
+    it, which every trailing window is bounded on and which the scoring
+    package never needed.
     """
     row = Transaction(
         league_season_id=team.league_season_id,
@@ -239,6 +244,8 @@ def transaction(
         type=kind,
         status=status,
         scoring_period=day,
+        processed_at=processed,
+        bid_amount=bid,
     )
     session.add(row)
     session.flush()
