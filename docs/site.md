@@ -200,6 +200,17 @@ choice for whichever side has no room (left alone, the cheapest place, chosen
 for you), and one button, **Judge this trade**. The deal is written into the
 address bar, so a judged trade is bookmarkable and comes back on a refresh.
 
+When a side gives more men than it gets, the deal leaves a roster place open,
+and **Who fills it** appears under the builder for that side: the day's wire
+as a list, ranked by what each man would be worth to the roster *this deal
+leaves* rather than to an average team, each row with his status (healthy,
+injured with a return when it is known, on waivers), his position and NBA
+team, and his week in the nine as the strip. "Leave it open" is the first row
+and the default, and it says what the report settles the place at. Picking a
+man re-judges the deal with his line in it and goes into the address bar like
+everything else (`fill`, `theirfill`). It reads `trades/pool`
+(docs/trades.md §11).
+
 The answer is **fit first**: each side's nine categories in the fixed order —
 what the roster posts in an ordinary week before and after, the change, and
 the change in the chance of winning it — ours on the left and theirs on the
@@ -216,13 +227,23 @@ number**, `app.trades.calibration.CALIBRATION_NOTE`, printed verbatim: the
 headline picks the better side of a trade about as often as a coin, and the
 page says so under the number rather than beside it.
 
-It reads two routes of its own, both the paid team layer: `trades/rosters`
-(both rosters as of the day, so the pickers are never hard-coded) and
-`trades/report` (the deal, judged). A season with nothing to judge from yet —
-2027 before its draft — is not an error: the routes answer with `readiness`
-and the page says so in a sentence and draws no broken pickers. An
-evaluation is a couple of seconds, so the button disables itself and says
-what it is doing while the builder stays usable.
+**Every name on it opens a card** — hover on a desktop, a sheet along the
+bottom on a phone — with his line in the nine per game, the games he has left
+and the games he has in the playoff weeks, whether he is hurt and when he is
+back, and what the projection rests on. The card lives in `pages.css` and
+`shell.js` (`cardName`, `wireCards`) and reads one route of its own, so the
+week, season and moves pages can hang it off their own names next
+(docs/trades.md §12).
+
+It reads three routes of its own, all the paid team layer: `trades/rosters`
+(both rosters as of the day, so the pickers are never hard-coded),
+`trades/pool` (the wire for an opened place) and `trades/report` (the deal,
+judged); and the card's, which is league scope like the pages it will be
+drawn on next. A season with nothing to judge from yet — 2027 before its
+draft — is not an error: the routes answer with `readiness` and the page says
+so in a sentence and draws no broken pickers. An evaluation is a couple of
+seconds, and so is the pool, so the button disables itself and the chooser
+says it is reading the wire while the builder stays usable.
 
 **Connections.** Step 2's page, restyled into the shell with section rules:
 connect a league, your connections, leagues you own (invites, claims to
@@ -298,6 +319,16 @@ or an ntfy topic by kind, never its URL). Reads `GET /me/channels` and
   been wrong on any replayed day. `trades/rosters` answers with the roster
   stored on or before the day asked for, which is the same reading every
   other number on the site is made from.
+- **The wire for an opened place is ranked by what a man is worth to *this*
+  roster**, not by the league standard the report falls back on. Both numbers
+  are on every row, because the two disagreeing is the reason the manager is
+  being asked at all (docs/trades.md §11).
+- **The card is league scope and lives in the shell.** It is opened from a
+  team page today and from three more tomorrow, the numbers it shows are a
+  league season's, and a second copy of it per page would drift. What a man
+  is worth a week is not on it: that number costs two seconds to measure and
+  a hover cannot pay it, and every page that shows it shows it beside the
+  name (docs/trades.md §12).
 - **A season with nothing to judge from is a 200, not a 409.** The two
   pickup routes refuse an unlistened season, because a plan with no wire is
   not a plan. A trade page has a builder to draw and a record to print before

@@ -305,11 +305,11 @@ TradeReport
   hurdle, pool_size, historical_wire, notes[]
   sides[2]:
     team_id, team_name
-    receives[] / gives[] / drops[]:        PlayerCard
+    receives[] / gives[] / drops[] / fills[]:   PlayerCard
       player_id, name, value, games_left, playoff_games,
       injury_status, expected_return_date,
       games_so_far, had_projection, projection_source, thin, hurt
-    drop_source, places_opened, places_used
+    drop_source, places_opened, places_filled, places_left_open, places_used
     replacement, opened_value, replacement_player
     judgement:                             Judgement (as the pickup routes already send it)
       delta_week, delta_season_per_week, weeks_remaining, replacement,
@@ -342,6 +342,11 @@ Four things a page should draw and not hide:
    and what a coin does on the same sample — and that the category table does
    not depend on it. A forecast printed without its record is the one thing
    §7 says we must not ship.
+5. **`fills`, and the two counts beside `places_opened`.** A place with a man
+   in it and a place left open are settled by different arithmetic and the
+   payload says which is which: `places_filled` is how many the caller named
+   somebody for, `places_left_open` how many are still valued as a lane, and
+   `opened_value` is about the second kind alone. §11 is the rule.
 
 The report is bounded, so the route returns an object rather than a `Page`,
 like both pickup routes. It makes no ESPN request. A season with no schedule
@@ -881,18 +886,21 @@ Top to bottom:
 - **How much to trust the number**: `CALIBRATION_NOTE`, verbatim, and no link
   off the page.
 
-**Two routes**, beside the pickup routes and named like them
+**Three routes**, beside the pickup routes and named like them
 (`app/api/trades.py`):
 
     GET .../teams/{team_id}/trades/rosters ?with_team= &today=
-    GET .../teams/{team_id}/trades/report  ?with_team= &give= &get= &drop= &their_drop= &today=
+    GET .../teams/{team_id}/trades/pool    ?with_team= &give= &get= &drop= &their_drop=
+                                           &side=ours|theirs &limit= &today=
+    GET .../teams/{team_id}/trades/report  ?with_team= &give= &get= &drop= &their_drop=
+                                           &fill= &their_fill= &today=
 
-Both are the paid team layer (`require_team_manager` and
+All three are the paid team layer (`require_team_manager` and
 `require_entitlement`, the one check the week, season and moves routes
 declare). Player ids go in and out as ESPN's, as everywhere else. The report
 route answers `evaluate_trade`'s own payload (§6) and computes nothing of its
-own; both routes carry `calibration_note`, so the page never keeps a copy of
-a record that a re-run would make stale.
+own; all three carry `calibration_note`, so the page never keeps a copy of
+a record that a re-run would make stale. The pool is §11 and the card §12.
 
 The rosters route is what the pickers are drawn from, so the page hard-codes
 no roster and guesses none. It reads the roster stored on or before the day
@@ -926,8 +934,21 @@ them, in `app/api/trades.py`:
   player, or take one back.
 - {team} needs {n} more roster place(s) for this deal and can free {m}: it
   could still drop {names}. Give it one fewer player, or take one back.
+- {names} is not a free agent on day {day}: only a man on the wire that
+  morning can fill the place this deal opens.
+- {team} opens no roster place in this deal, so there is nowhere for {names}
+  to go. Take a player back from it, or leave the wire alone.
+- {name} cannot fill a place on both sides of this deal: there is one wire,
+  and one of him. Name him for one side or the other.
+- {team} opens {n} roster place(s) and {m} men are named off the wire for it:
+  name one man for each place, or fewer.
 
-The last two are guards rather than a common path. With the equal roster
+The last four are the fill's, and the first of them is the one a manager will
+actually meet: a reconstructed wire cannot see a free agent who did not play
+that day (§7, "What a played season costs the measurement"), so a man who is
+on the real wire and hurt is refused by name on a replayed season.
+
+The two before them are guards rather than a common path. With the equal roster
 sizes ESPN gives every team there is always somebody to drop, and the report
 drops him rather than refusing; only a roster holding more men than the other
 side has places can produce them, which is what the fixture builds.
@@ -941,3 +962,111 @@ disables itself and says what it is doing in words, the builder stays usable,
 and the result replaces itself when it arrives. **The morning precompute is
 not worth extending to it** — there is no deal to precompute until a manager
 names one, and two seconds is not a wait worth caching for.
+
+The pool is the same shape and the same price: **2.5 seconds cold in a fresh
+process and 2.3 warm**, on the stored 2026 season, day 21, the Morant and
+Markkanen for Cunningham deal, 51 free agents priced. It reads the same
+rosters, the same wire and the same weekly lines the report does (`_context`,
+shared by the two so they cannot answer from two readings of one day), and
+skips only the playoff lines, which the pool has no use for. Nearly all of
+both numbers is one query: the league's measured category spreads
+(`category_distributions`) take about two seconds and are not cached. That is
+also why the card in §12 does not carry what a man is worth a week.
+
+---
+
+## 11. Filling the opened place
+
+The settlement in §3 answers a manager who has not decided what to do with
+the place his deal empties. Most of the time he has decided. Patrick's real
+deal of 11 November 2025 is the case: Ja Morant and Lauri Markkanen to Ben's
+Need Some VC for Cade Cunningham, and Brandon Miller — dropped by another
+team three days before, hurt, and claimed by Through The Wire the following
+morning — going straight into the place it opened. The deal he was weighing
+was two men for one **and Miller**, and until now the page could not be asked
+that question.
+
+**The rule.** `evaluate_trade(..., fills={team_id: (player_id, ...)})` names
+one free agent per place a side opens, and that man is then treated as
+exactly what he is: a player arriving. His weekly line goes into the
+after-roster the nine categories are drawn from, into the season term's
+with-and-without, into `places_cost`, and into `delta_week` — which an opened
+place never was, because nobody knows who would be in it day by day and a man
+the manager has named is on the roster from the day the deal lands. Only the
+places nobody is named for keep the §3 settlement, at `OPENED_PLACE` or the
+wire's best man, whichever is better.
+
+Naming the man the report would have stood there anyway changes nothing in
+the season term, which is the check that this is one rule read two ways
+rather than two rules (`tests/test_trades.py`). Naming a lesser man — the one
+who is hurt today and plays the rest of the season, or the one whose
+categories this roster is short of — moves every number the right way.
+
+**The pool is the other half.** `fill_pool` answers with the day's wire, each
+man priced by **what he would be worth to this roster after this deal**: the
+expected category wins a week of the side's post-trade roster with him in the
+opened place, less the same roster with the place left open. That is the
+nine-category table's own arithmetic, so it ranks the wire differently from
+the league standard, and the difference is the whole reason the choice
+belongs to the manager: a roster that has given up on free-throw percentage
+should take the big who cannot shoot them over the guard who can, and the
+league lens — a man dropped into an average team — says the opposite. Both
+numbers are on every candidate, `worth` and `value`, because a ranking a
+reader cannot argue with is worse than one he can.
+
+The deal is a parameter of the pool for the same reason: who is leaving
+decides what the roster is short of. The wire is read exactly as the report
+reads it, `historical_wire` and all, so a man the pool offered cannot be a man
+the report refuses.
+
+**What it does not do.** It does not pick. "Leave it open" is the first row
+and the default, it says what the report values it at, and no row says take
+him. And on a season the listener never ran for, the pool is the
+reconstructed wire — the men who played that day and were in nobody's lineup
+— so the man a manager actually claimed, if he was hurt and did not play, is
+not in it. The refusal names him (§10) and the page says which wire it is
+looking at. That is the same handicap §7 measures the calibration under, and
+the one thing a listened season would fix on its own.
+
+---
+
+## 12. The card
+
+Every name on the trade page opens a card: hover on a desktop, tap on a
+phone, where it comes up as a sheet along the bottom. It carries his line in
+the nine **per game**, the games he has left over the stretch the report
+plans for and the games he has in the playoff weeks, his injury status and
+expected return when the listener has them, how many games of his own stand
+behind the projection and what stood behind the rest of it, and his position
+and NBA team.
+
+It is `app/inseason/card.py` and `GET .../players/{player_id}/card?today=`,
+and it is deliberately not the trade page's. The week, the season and the
+moves pages all print names and all want the same card, so it is built once,
+drawn once (`pages.css`, `shell.js`: `cardName`, `wireCards`), and hangs off
+the league and the season rather than off a team — the games are counted over
+one season's calendar, and it is a league member's to read, like the pages it
+is opened from. Wiring the other three pages to it is a follow-up; nothing
+here makes that harder.
+
+**It says what the page it was opened from says.** `per_game` is
+`per_game_line`, the rate every weekly line is scaled from, and the games and
+the provenance are the report's own `PlayerCard` fields. A card that
+disagreed with the table it was opened from would be worse than no card, and
+the test holds the two to each other.
+
+**What it does not carry, and why.** What a man is worth a week — the
+league-standard number the reports lead with — is not on it. That needs the
+league's measured category spreads, about two seconds of query, and a card is
+a hover: with them it answered in 2.2 seconds and without them in about
+fifty milliseconds. Every page that shows that number shows it in its own
+table, beside the name the card hangs off, so nothing is hidden by leaving it
+off.
+
+**Two triggers, because a roster row is already a button.** A row in the
+builder puts a man into the deal when it is tapped, so it cannot also open
+his card: it carries `data-card-hover` (hover and focus, which a phone never
+fires) and a small "card" control of its own beside it carries `data-card`.
+Every other name is a `data-card` button: reachable from the keyboard,
+dismissed by Escape with the focus put back where it was, by a tap outside,
+or by scrolling away.

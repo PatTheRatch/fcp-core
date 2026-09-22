@@ -68,8 +68,17 @@
   streamed place returns, 0.38 categories a week, in the forecast and in the
   hindsight grade alike, and the over-rating of consolidating deals fell from
   +0.389 to +0.103 categories a week. Nothing was tuned to improve the
-  headline. Two routes and the page, since 2026-09-21
-  (`app/api/trades.py`, docs/trades.md section 10).
+  headline. Three routes and the page, since 2026-09-21
+  (`app/api/trades.py`, docs/trades.md section 10). Since 2026-09-22 the
+  manager can also **name the man who goes into the place a deal opens**
+  rather than taking the wire's best by the league lens: the deal is then
+  judged with that man's own line in it, and the chooser ranks the wire by
+  what each man would be worth to the roster the deal leaves, which is a
+  different order from the league's (docs/trades.md section 11). Every name
+  on the page opens a **card** — his line per game, his games left and his
+  playoff games, his status, what the projection rests on — built once in
+  `app/inseason/card.py` and drawn once in the shell, for the week, season
+  and moves pages to use next (section 12).
 - The recommender backtest (`scripts/pickups_backtest.py`,
   docs/pickups_backtest.md): every 2026 team, 616 decision points, scored in
   categories by replaying the real matchup with the lineup re-solved both
@@ -202,11 +211,17 @@ names a scoring period and defaults to the calendar day turned into one:
 |---|---|
 | `.../teams/{tid}/pickups/stream` | who to stream this week, the empty days, and whether anything clears the hurdle |
 | `.../teams/{tid}/pickups/season` | the best add, swap and two-swap for the rest of the year, the drops, the stashes, the churn guard and what to bid |
+| `.../teams/{tid}/trades/rosters` | both rosters as they stood on the day, for the builder's pickers |
+| `.../teams/{tid}/trades/pool` | the wire on the day, ranked by what each man would be worth in the place this deal opens |
+| `.../teams/{tid}/trades/report` | a proposed trade judged from both sides, with the man named for an opened place in it |
+| `.../players/{pid}/card` | one player's card: his line per game, his games left and his playoff games, his status, what the projection rests on |
 
-Both are a 409, not an empty report, for a season with no stored schedule
-or no roster: there is nothing to decide from. A played season with no
-listener snapshots uses the historical wire (a player with a line that
-period and no lineup row) and says so.
+The first two are a 409, not an empty report, for a season with no stored
+schedule or no roster: there is nothing to decide from. The three trade
+routes answer 200 with `readiness` instead, because a trade page has a
+builder to draw before any deal exists (docs/trades.md section 10). A played
+season with no listener snapshots uses the historical wire (a player with a
+line that period and no lineup row) and says so.
 
 Projection uploads, the one write this API accepts (docs/projection_sources.md):
 
