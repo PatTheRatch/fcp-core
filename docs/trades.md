@@ -603,6 +603,78 @@ exactly yesterday's.
 
 ---
 
+## 7b. Declared before the re-run, 2026-09-22
+
+The same discipline as §7a, for the same reason: one revision, declared here
+before it was built, then exactly one re-run of the calibration, published
+whichever way it falls. Everything below this line was written **before** any
+code changed and before any number came back; §7 above is the "before" it will
+be read against.
+
+**Why there is a revision at all.** Every roster place this code prices is
+priced as if one man held it: `TYPICAL_PICKUP = 0.06` categories a week, the
+median return of a single executed add. `docs/streaming_lane.md`, merged today,
+measured what an *opened* place actually returns when it is streamed: **0.38
+categories a week per place (IQR 0.23–0.53), against the held 13th man's
+0.00**, over 1,536 team-periods of 2019–2026. It is not a volume effect — a
+lane starts 4.67 games a week to a held man's 5.00, because a team starts at
+most ten men on a day — it is that a team's 13th man mostly produces nothing
+while a streamed place has a live body in it every day. §7 finding 3 named the
+two engines' different settlements of an opened place as part of the
+consolidation error, and the lane value is the same size as that error.
+
+**Revision R2 — an opened place is priced at what a streamed place returns.**
+Two numbers where there was one:
+
+- `TYPICAL_PICKUP` (0.06) stays as the floor under a single ADD — what a man
+  picked up and kept returns. Unchanged everywhere it already means that.
+- A new constant, `OPENED_PLACE = 0.38` categories a week
+  (`docs/streaming_lane.md`, pooled median per place, 2019–2026; the lower
+  quartile 0.23 is recorded beside it as the conservative figure), is what a
+  roster place returns when it is left open and streamed. It applies wherever
+  the code values a place that a move EMPTIES: `places_cost` / `season_cost`
+  when a move opens a place (the `empty=` path and the N-for-M generalisation),
+  the trade evaluator's 2-for-1 settlement (the side that receives fewer men
+  than it gives), and `grade_move`'s replacement charge for an opened place in
+  `app/scoring/moves.py`, which today charges a flat per-season median of
+  `pickup_values`, about 0.07.
+- **The add budget caps it.** An opened place is only worth streaming while
+  adds remain, so the k-th opened place on a roster is priced at `OPENED_PLACE`
+  for the first and at the measured decay for the second and after — read off
+  `docs/streaming_lane.md` §6/§5 (lane 2 against lane 1 under the tight
+  definition). If the document says the decay could not be measured cleanly,
+  the first-lane value is used for one place and `TYPICAL_PICKUP` for every
+  further place, and the write-up says so. A 2-for-1 opens exactly one place,
+  so the calibration is not sensitive to this choice; the pickup path can be.
+- **The pickup path's existing numbers must not move for any one-for-one swap**
+  (no place is opened): proved by the existing pickup, judge, season and stream
+  suites passing untouched. Only moves that OPEN a place change, and
+  `docs/pickups.md` gets one as-built paragraph saying so.
+
+**What will be measured, from one run of `scripts/trade_calibration.py`, all of
+it reported:**
+
+- The same 2×2 as R1 (the R1 headline against the per-man number; T30 against
+  the rest of the season), now with **both** the prediction and the hindsight
+  yardstick priced under R2, plus a third row pair: the R2 prediction against
+  the **old** yardstick, so that the two effects — fixing the prediction and
+  fixing the yardstick — are separable.
+- **Primary cell, named now: R2 prediction × R2 yardstick, T30, deal-level
+  "picked the side that did better" (n of 55)**, with the coin's 95% interval
+  beside it.
+- **Uneven sides' mean error** under R2/R2, under R2/old, and the R1 figure
+  (+0.389 on T30) for reference. This is the number the job exists for.
+- **The even-count sides must be identical to R1's** — no place opens on them —
+  stated as a check and reported.
+- The player-level diagnostic unchanged (Spearman about +0.39) as a regression
+  check.
+
+**What will not be done after the run:** no change to `OPENED_PLACE`, the decay
+rule, the window, the sample or the bar. Seasons, exclusions and
+`review_days=1` exactly as before.
+
+---
+
 ## 8. Decisions a reader could reasonably have made differently
 
 - **One day of review, not two or zero.** The ledger says the deal seats the
