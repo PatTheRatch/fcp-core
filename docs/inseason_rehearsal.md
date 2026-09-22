@@ -259,6 +259,13 @@ The one that comes closest to saying nothing useful is the All-Star break
 (day 116), and it says so honestly rather than failing: "nothing clears the
 bar (0.20 categories, or an empty day filled); 0 free agents were weighed".
 
+**Re-measured 2026-09-22**, with the digest rebuilt on
+`app/inseason/changes.py` and the league section naming the moves rather
+than counting them: 1,523 to 1,783 characters on the days that had news in
+them, and 3,354 in the worst case the caps allow, which was 4,392 — over the
+limit — before the league section was given a budget in characters. Finding
+7 below has the whole measurement and what is still not measurable.
+
 ### 4. Served from the store — **PASS**
 
 Every page fetch through the `TestClient` for a replayed day came back 200,
@@ -394,7 +401,8 @@ question that matters this month: **would this have hurt on a live morning
 in October?** Nothing was fixed in the pass that wrote this — no finding
 stopped the replay completing, and the brief was that the owner decides.
 He decided the same day: 1, 2, 3 and 10 are fixed, and each says below what
-it became. 4 to 9 stand as written.
+it became. 4 to 9 stand as written, except 7, which the "what changed" feed
+answered as far as a played season can (2026-09-22).
 
 ### 1. The week's posted totals are the whole matchup period's — **FIXED** (`6acd33e`)
 
@@ -519,17 +527,44 @@ the digest and the page can disagree if anything moves between them.
 **Proposed fix:** read the stored row, falling back to a live build when
 there is none — which is what the routes already do.
 
-### 7. The rehearsal cannot say anything about a digest with news in it
+### 7. The rehearsal cannot say anything about a digest with news in it — **PARTLY ANSWERED** (2026-09-22)
 
-**Opening night: unknown, which is the finding.** Every digest measured had
+**Opening night: unknown, which was the finding.** Every digest measured had
 an empty roster section and an empty wire section, because a played season
 has no listener data. Those are the two sections that grow with the news,
 and they are the reason there is a limit to worry about at all
 (`ROSTER_EVENT_LIMIT` and `WIRE_EVENT_LIMIT` exist for it). 934 characters
 of a 4096 budget is reassuring but it is not the measurement.
 
-**Proposed check:** once the listener has a week of 2027 data, render the
-owner's digest on the busiest night of it and measure again.
+**What could be measured, once the digest was rebuilt on
+`app/inseason/changes.py`.** The league section is now the league's actual
+news — who got whom and for how much, and the trades — and that section a
+played season *can* exercise, because it reads the transaction ledger and
+the rosters rather than the listener. Measured on the stored 2026 season,
+the owner's digest built at 15:00 UTC:
+
+    day 107 (4 Feb, the season's busiest: 14 wire moves)   1,783 characters, 45 lines
+    day  53 (12 Dec, four claims and the Turner/Queta deal) 1,523 characters, 39 lines
+
+**And the worst case the caps allow, which is the number that matters.**
+Filling the roster and wire sections to `ROSTER_EVENT_LIMIT` and
+`WIRE_EVENT_LIMIT` with the longest lines the renderer makes, the standing
+list to its own cap, and the league section with the longest sentence the
+2026 feed actually produced — a four-player, two-team trade at 196
+characters — came to **4,392 characters, past Telegram's 4,096**, which
+would have meant no message at all rather than a long one. The league
+section was given a budget in characters as well as in lines
+(`LEAGUE_NEWS_CHARS`, 700) and the same worst case now comes to **3,354**.
+`tests/test_digest.py` pins the budget.
+
+**Still not measured, and cannot be on a played season:** the status events
+themselves. `player_status_events` is the listener's, the listener has never
+run for 2026, and no amount of reconstruction from `transactions` produces
+an injury. The roster section's real length — a night when four of your
+players are downgraded and two are ruled out — waits on a week of 2027 data,
+exactly as this finding first said. What has changed is that the sections
+either side of it are now measured, and the message as a whole has a
+demonstrated ceiling.
 
 ### 8. The morning's job *ordering* was never exercised
 
