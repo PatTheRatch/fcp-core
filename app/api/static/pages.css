@@ -280,13 +280,19 @@ section{margin-top:56px}
 .feed li:first-child{border-top:1px solid var(--rule-strong)}
 .feed .when{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap;
   font-variant-numeric:tabular-nums}
-.feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:anywhere;font-size:16px}
+/* `break-word` and not `anywhere`: a name in a sentence is a button, and
+   `anywhere` let a line break between the button and the comma after it, so
+   a clause began with a comma of its own. This breaks a word only when the
+   word itself will not fit. */
+.feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:break-word;font-size:16px}
 .feed .kind{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
   font-size:10.5px;color:var(--muted);white-space:nowrap;margin-left:auto}
 .feed li.ours{border-left:2px solid var(--accent);padding-left:12px}
 .feed li.theirs{border-left:2px solid var(--rule-strong);padding-left:12px}
 .feed li.urgent .kind{color:var(--stop)}
-.feed .player{font-weight:600}
+/* A name inside a sentence: the card's trigger, set in the body face so it
+   reads as part of the line rather than as a control in it. */
+.feed .pname.inline{font-weight:600;display:inline}
 .filter{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:-8px 0 18px;
   font-size:15px}
 .filter label{cursor:pointer;margin-right:8px}

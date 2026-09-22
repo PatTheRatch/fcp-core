@@ -99,11 +99,13 @@ stamped, hides the ones the filter is not asking for, and prints times in
 UTC, which is also how the feed is bounded and grouped, so a line never
 lands on the wrong day.
 
-**The player card is a hook, not a card.** Each player's name is wrapped in
-`<span class="player" data-espn-player-id="…">`. The shared card being added
-to `pages.css` and `shell.js` had not landed when this was written, so
-nothing attaches to it yet; when it does, the names on this page are already
-marked up for it and only the styling is missing.
+**Every name in a sentence opens the shared player card.** The name is found
+inside the API's sentence and only that run of characters is replaced by
+`cardName` (shell.js), so the words the reader sees are still the API's and
+a name in the feed opens the same card a name in a table does. A player the
+feed has no ESPN id for — a leg of a trade recovered from the rosters rather
+than from the ledger — is left as plain text rather than given a trigger
+that would answer nothing.
 
 ## What is on the season page
 

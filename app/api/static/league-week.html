@@ -293,19 +293,22 @@ function utcTime(iso) {
   });
 }
 
-/** The API's sentence with each player's name marked up, so the shared
- *  player card can attach to it. The card itself has not landed yet; until
- *  it does this is a hook and nothing else (docs/in_season_pages.md). */
+/** The API's sentence with each player's name turned into the shared card's
+ *  trigger (`cardName` in shell.js), so a name in the feed opens the same
+ *  card a name in a table does. The sentence itself is never rebuilt: the
+ *  name is found in it and only that run of characters is replaced, so what
+ *  the reader sees is still the API's words. A name the API did not put in
+ *  the sentence, or a player it has no ESPN id for, is simply left alone. */
 function withPlayers(change) {
   let html = escape(change.text);
   for (const person of change.players || []) {
     const mark = escape(person.name || "");
-    if (!mark) continue;
+    if (!mark || !person.espn_player_id) continue;
     const at = html.indexOf(mark);
     if (at < 0) continue;
     html =
       html.slice(0, at) +
-      `<span class="player" data-espn-player-id="${person.espn_player_id}">${mark}</span>` +
+      cardName(person.espn_player_id, mark, "inline") +
       html.slice(at + mark.length);
   }
   return html;
@@ -377,6 +380,7 @@ async function drawChanged(context, ours, asked) {
             ? "Nothing on your team or your opponent's."
             : "Nothing changed in this league over these days."
         }</p>`;
+    wireCards($("changed-body"));
   };
   asked.addEventListener("change", draw);
   draw();

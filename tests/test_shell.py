@@ -433,5 +433,6 @@ def test_what_changed_prints_the_api_sentence_and_leaves_the_card_a_hook() -> No
     assert "/changes?" in page, "the feed comes from the route, not from the page"
     assert 'id="changed-mine"' in page and 'for="changed-mine"' in page, "the filter, labelled"
     assert "change.mine || change.opponent" in page, "the flags are the API's, not the page's"
-    assert 'class="player" data-espn-player-id=' in page, "the player card's hook"
+    assert "cardName(person.espn_player_id" in page, "a name in a sentence opens the card"
+    assert 'wireCards($("changed-body"))' in page, "and is wired again on every redraw"
     assert "escape(change.text)" in page, "the sentence is printed, never rebuilt"
