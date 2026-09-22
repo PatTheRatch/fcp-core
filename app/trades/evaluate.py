@@ -79,11 +79,18 @@ A two-for-one opens a roster place on one side and fills one on the other. The
 place left open is filled, in the before-and-after and in the table both, by
 the best man on the wire (`wire_replacement` names the value, `_best_wire` the
 man), so the same roster is counted either way and nothing is quietly worth
-zero. When a side receives more men than it gives and has no open slot,
-somebody is dropped -- the caller may name him, and by default it is the
-cheapest man on the active roster by what his place is worth. The report
-names him and what he cost either way. Men on injured reserve are never
-chosen: dropping one frees no active place.
+zero. Since revision R2 (`docs/trades.md` section 7b) that place is worth the
+better of the man and *streaming* it -- `OPENED_PLACE`, 0.38 categories a
+week, measured in `docs/streaming_lane.md` -- because a place a deal empties
+is not held by anybody: it has a different body in it every day. Both the
+headline and the per-man number settle it at that one figure, and
+`SideReport.opened_value` is what the page prints.
+
+When a side receives more men than it gives and has no open slot, somebody is
+dropped -- the caller may name him, and by default it is the cheapest man on
+the active roster by what his place is worth. The report names him and what he
+cost either way. Men on injured reserve are never chosen: dropping one frees
+no active place.
 
 WHAT IT CANNOT KNOW
 
@@ -146,6 +153,7 @@ from app.pickups.state import (
 from app.pickups.stream import week_deltas
 from app.scoring.knowable import knowable
 from app.scoring.lines import CategoryLine, sum_lines
+from app.scoring.replacement import opened_places
 from app.scoring.value import category_wins
 from app.trades.summary import summarise
 
@@ -332,6 +340,18 @@ class SideReport:
     summary: str
     #: Honest caveats: a thin projection, an injury, a missing schedule.
     notes: tuple[str, ...] = ()
+
+    @property
+    def opened_value(self) -> float:
+        """Categories a week the places this deal leaves open are worth.
+
+        The better of the man the wire offers and streaming the place, summed
+        over the places opened (`app.scoring.replacement.opened_places`,
+        revision R2). Zero when the deal opens none. It is on the payload
+        because `replacement` alone stopped being the answer to "what is that
+        empty place worth" the day an opened place was re-priced.
+        """
+        return opened_places(self.places_opened, self.replacement)
 
     @property
     def net(self) -> float:
@@ -730,7 +750,15 @@ def _judge_side(
         delta_week=delta_week,
         dropped=leaving,
         added=receiving,
-        delta_season_per_week=_roster_season(spots, lens, before_line, after_line),
+        delta_season_per_week=_roster_season(
+            spots,
+            lens,
+            before_line,
+            after_line,
+            opened=opened,
+            replacement=spots.replacement(exclude=receiving),
+            filled=filler is not None,
+        ),
     )
     replacement = judgement.replacement
 
@@ -783,7 +811,14 @@ def _judge_side(
 
 
 def _roster_season(
-    spots: SpotBook, lens: Standard, before: CategoryLine, after: CategoryLine
+    spots: SpotBook,
+    lens: Standard,
+    before: CategoryLine,
+    after: CategoryLine,
+    *,
+    opened: int,
+    replacement: float,
+    filled: bool,
 ) -> float:
     """The season term: this roster's ordinary week, with the deal and without.
 
@@ -803,10 +838,25 @@ def _roster_season(
     Zero when the season has posted nothing to measure a league standard
     against, exactly as the per-man term was: a number with no basis is worse
     than no number.
+
+    A PLACE THE DEAL LEAVES OPEN
+
+    `after` already shows each opened place filled by the best man on the wire,
+    which is what the nine-category table draws. Revision R2 says that place is
+    worth the better of that man and *streaming* it -- 0.38 categories a week,
+    `docs/streaming_lane.md` -- so whatever the lane is worth over and above
+    the man standing in for it is added here, once, in the same currency. It is
+    zero whenever the wire's best man already clears the lane, which is most
+    days of a played season, and it is the one term in this number that is a
+    scalar rather than a line: a lane is a different man every day and has no
+    weekly line to put on a roster. `opened_places` is the rule, so the
+    headline and the per-man number settle an opened place at the same figure.
     """
     if not spots.measured:
         return 0.0
-    return lens.week_wins(after) - lens.week_wins(before)
+    carried = replacement * opened if filled else 0.0
+    lane = opened_places(opened, replacement) - carried
+    return lens.week_wins(after) - lens.week_wins(before) + lane
 
 
 def _independent_season(
@@ -926,8 +976,8 @@ def _side_notes(side: _Side, weeks: float, opened: int, used: int) -> tuple[str,
         out.append(f"{used} of the men arriving take open roster places rather than a drop")
     if opened:
         out.append(
-            f"the deal leaves {opened} roster place(s) open, valued at what the wire gives "
-            "a place back"
+            f"the deal leaves {opened} roster place(s) open, valued at the better of the man "
+            "the wire offers and what a streamed place returns"
         )
     if side.week.on_bye:
         out.append("this side is on a bye, so the week half of its judgement is zero")

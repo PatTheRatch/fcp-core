@@ -493,6 +493,7 @@ def _side_out(side: SideReport, espn: dict[int, int]) -> TradeSideOut:
         categories=[_category_out(view) for view in side.categories],
         playoffs=_playoffs_out(side.playoffs),
         replacement=side.replacement,
+        opened_value=side.opened_value,
         replacement_player=(
             None if side.replacement_player is None else _card_out(side.replacement_player, espn)
         ),

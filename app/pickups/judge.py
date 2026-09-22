@@ -62,6 +62,21 @@ is why a free add and a two-for-one are the same arithmetic here. Every
 pickup the recommender makes goes through `places_cost` with one man on each
 side, and the numbers are the ones it always gave.
 
+AN OPENED PLACE IS NOT AN ORDINARY PICKUP
+
+"Worth the wire" was `TYPICAL_PICKUP` until revision R2 (`docs/trades.md`
+section 7b), and that was one number doing two jobs. `TYPICAL_PICKUP` is what
+a single executed ADD returns -- one man, kept. A place left OPEN is streamed:
+a live body in it every day, which `docs/streaming_lane.md` measured at 0.38
+categories a week per place against the held 13th man's 0.00. So an opened
+place is priced at `app.scoring.replacement.opened_places`, the better of the
+man the wire offers and the lane, and `TYPICAL_PICKUP` stays exactly where it
+was as the floor under a place a man holds.
+
+Nothing about a one-for-one swap moves: it opens no place, so the two sums
+are the ones they always were. Only a move that empties a place is charged
+differently, which is a trade that consolidates, or a drop with no add.
+
 VALUE MEANS THE LEAGUE STANDARD
 
 `value()` here is `app.scoring.value.marginal` of a player's rest-of-season
@@ -99,15 +114,35 @@ from app.pickups.projection import rest_of_season_line
 from app.pickups.state import build_players, team_row
 from app.scoring.league import average_team_line
 from app.scoring.lines import CategoryLine
+from app.scoring.replacement import TYPICAL_PICKUP, opened_places
 from app.scoring.value import expected_wins, marginal
 
-#: Categories a week a typical waiver pickup has returned in this league, the
-#: floor under what the wire gives back for a roster place. Measured by
-#: `app.scoring.replacement` over every executed add of every season: the
-#: median ran 0.062 (2025) to 0.128 (2020), and 0.072 in 2026. The lowest
-#: recent season is taken rather than the mean, because a floor that is too
-#: high would charge nothing for dropping an ordinary player.
-TYPICAL_PICKUP = 0.06
+#: `TYPICAL_PICKUP` is imported rather than defined here: it is a measurement
+#: of the wire (`app.scoring.replacement`, over every executed add of every
+#: season), it now sits beside the other measurement of the wire
+#: (`OPENED_PLACE`), and the whole codebase goes on reading it off this module
+#: as it always has -- which is what `__all__` says out loud.
+__all__ = [
+    "CONTESTED_CATEGORIES",
+    "DAYS_A_WEEK",
+    "TIE",
+    "TYPICAL_PICKUP",
+    "WIN",
+    "Judgement",
+    "SpotBook",
+    "Standard",
+    "banked_record",
+    "horizon",
+    "judge",
+    "load_spots",
+    "places_cost",
+    "season_cost",
+    "standard_lens",
+    "weekly_lines",
+    "weeks_after_this_period",
+    "weeks_between",
+    "wire_replacement",
+]
 
 #: Days in a matchup period, the unit the opponent distributions are measured
 #: over and so the unit a rest-of-season line is divided into.
@@ -299,13 +334,13 @@ def places_cost(leaving: Sequence[float], arriving: Sequence[float], replacement
     A man arriving with nobody leaving therefore takes an empty place, worth
     nothing until he fills it, and is credited in full -- which is the free
     add and the injured-reserve move. Two men out for one in leaves a place
-    open, worth the wire. Neither is a special case in the code.
+    open, worth the better of the man the wire offers and streaming it
+    (`app.scoring.replacement.opened_places`, revision R2). Neither is a
+    special case in the code.
     """
     before = sum(max(value, replacement) for value in leaving)
     after = sum(max(value, replacement) for value in arriving)
-    opened = len(leaving) - len(arriving)
-    if opened > 0:
-        after += replacement * opened
+    after += opened_places(len(leaving) - len(arriving), replacement)
     return before - after
 
 

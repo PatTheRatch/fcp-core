@@ -881,6 +881,12 @@ class TradeSideOut(BaseModel):
     categories: list[TradeCategoryOut]
     playoffs: TradePlayoffsOut
     replacement: float = Field(description="What the wire gives a roster place back, a week")
+    opened_value: float = Field(
+        description=(
+            "Categories a week the places this deal leaves open are worth: the better of "
+            "the man the wire offers and streaming the place. Zero when it opens none"
+        )
+    )
     replacement_player: TradePlayerOut | None = Field(
         description="The free agent whose line fills a place the deal opens; null when none does"
     )

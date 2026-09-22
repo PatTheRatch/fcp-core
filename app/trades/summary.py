@@ -181,8 +181,8 @@ def _cost(side: SideReport) -> str:
         parts.append(f"{who} goes to make room ({how}, {cost:.2f} categories a week)")
     if side.places_opened:
         parts.append(
-            f"it leaves {side.places_opened} place(s) open, worth {side.replacement:.2f} a "
-            "week on the wire"
+            f"it leaves {side.places_opened} place(s) open, worth "
+            f"{side.opened_value:.2f} a week streamed"
         )
     if not parts:
         return ""

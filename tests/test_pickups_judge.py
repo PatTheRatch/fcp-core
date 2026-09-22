@@ -29,6 +29,7 @@ from app.pickups.judge import (
     wire_replacement,
 )
 from app.scoring.lines import CategoryLine
+from app.scoring.replacement import OPENED_PLACE, opened_places
 from tests.pickups_db import WEEK, clear_schedule, configure
 from tests.scoring_db import league_season, matchup
 
@@ -303,21 +304,65 @@ def test_one_place_is_the_case_of_many_and_not_a_second_formula() -> None:
     )
 
 
-def test_two_men_out_for_one_leaves_a_place_worth_the_wire() -> None:
-    """The brief's uneven trade, from the side that consolidates. Both men
-    leaving are charged; one place is refilled by the man arriving and the
-    other by whoever the wire offers, because it will not stay empty."""
+def test_two_men_out_for_one_leaves_a_place_worth_a_streamed_lane() -> None:
+    """The brief's uneven trade, from the side that consolidates, at revision
+    R2's price. Both men leaving are charged; one place is refilled by the man
+    arriving and the other is left open -- and an open place is not an ordinary
+    pickup. It is streamed, which `docs/streaming_lane.md` measured at
+    `OPENED_PLACE` a week against the 0.06 a single add returns."""
     cost = places_cost([GOOD, STREAMER], [KEEPER], TYPICAL_PICKUP)
 
     assert cost == pytest.approx(
         max(GOOD, TYPICAL_PICKUP)
         + max(STREAMER, TYPICAL_PICKUP)
         - max(KEEPER, TYPICAL_PICKUP)
+        - OPENED_PLACE
+    )
+    before_r2 = (
+        max(GOOD, TYPICAL_PICKUP)
+        + max(STREAMER, TYPICAL_PICKUP)
+        - max(KEEPER, TYPICAL_PICKUP)
         - TYPICAL_PICKUP
     )
-    # And with a real free agent to be had, the opened place is worth more and
-    # the deal costs less.
-    assert places_cost([GOOD, STREAMER], [KEEPER], 0.30) < cost
+    assert before_r2 - cost == pytest.approx(OPENED_PLACE - TYPICAL_PICKUP), (
+        "the whole of the change, and it falls on the one opened place"
+    )
+    # A free agent worth more than the lane is what the place is worth: the
+    # rule takes the better of the man and streaming, never their sum.
+    assert places_cost([GOOD, STREAMER], [KEEPER], 0.50) == pytest.approx(
+        max(GOOD, 0.50) + max(STREAMER, 0.50) - max(KEEPER, 0.50) - 0.50
+    )
+
+
+def test_the_second_place_a_move_opens_is_priced_at_a_single_add() -> None:
+    """The add budget caps a lane, and the second lane's decay is not measured.
+
+    `docs/streaming_lane.md` section 5 looked for a decay in what a second lane
+    produces and found none -- the later men are worth more, because a manager
+    who is streaming is streaming toward somebody he wants -- and section 6
+    says the binding constraint is the seven adds a period, which 16.2% of
+    team-periods spend in full. So the declared fallback is taken: one place at
+    the lane, every further place at what a single add returns.
+    """
+    assert opened_places(0, TYPICAL_PICKUP) == 0.0
+    assert opened_places(1, TYPICAL_PICKUP) == pytest.approx(OPENED_PLACE)
+    assert opened_places(2, TYPICAL_PICKUP) == pytest.approx(OPENED_PLACE + TYPICAL_PICKUP)
+    assert places_cost([GOOD, STREAMER, STREAMER], [KEEPER], TYPICAL_PICKUP) == pytest.approx(
+        GOOD + STREAMER + STREAMER - KEEPER - OPENED_PLACE - TYPICAL_PICKUP
+    )
+
+
+def test_a_move_that_opens_no_place_is_not_touched_by_the_lane_price() -> None:
+    """Revision R2's whole footprint: a place a move *empties*, and nothing
+    else. A one-for-one swap, an add into an empty place and a two-for-one the
+    other way round are the arithmetic they always were, at any wire."""
+    for wire in (TYPICAL_PICKUP, 0.30):
+        assert places_cost([GOOD], [STREAMER], wire) == pytest.approx(
+            max(GOOD, wire) - max(STREAMER, wire)
+        )
+    assert places_cost([], [STREAMER], TYPICAL_PICKUP) == pytest.approx(-STREAMER)
+    assert places_cost([GOOD], [GOOD, STREAMER], TYPICAL_PICKUP) == pytest.approx(-STREAMER)
+    assert season_cost(FRINGE, STREAMER, TYPICAL_PICKUP) == pytest.approx(-0.02)
 
 
 def test_two_men_in_for_one_fills_a_place_that_was_worth_nothing() -> None:
@@ -336,14 +381,14 @@ def test_two_men_in_for_one_fills_a_place_that_was_worth_nothing() -> None:
 
 def test_the_judgement_charges_every_place_a_trade_touches() -> None:
     """A three-for-two through `judge`: the same net whichever way it is
-    written down, and the wire replacement is charged once for the place the
-    deal leaves open."""
+    written down, and the one place the deal leaves open is credited at what a
+    streamed place returns."""
     spots = book({1: KEEPER, 2: GOOD, 3: STREAMER, 4: GOOD, 5: GOOD}, wire=frozenset(), weeks=10.0)
 
     judgement = judge(spots, delta_week=0.0, dropped=[1, 2, 3], added=[4, 5])
 
     assert judgement.replacement == pytest.approx(TYPICAL_PICKUP), "a bare wire is the floor"
     assert judgement.delta_season_per_week == pytest.approx(
-        -(KEEPER + GOOD + STREAMER - GOOD - GOOD - TYPICAL_PICKUP)
+        -(KEEPER + GOOD + STREAMER - GOOD - GOOD - OPENED_PLACE)
     )
     assert judgement.delta_total == pytest.approx(judgement.delta_season_per_week * 10.0)

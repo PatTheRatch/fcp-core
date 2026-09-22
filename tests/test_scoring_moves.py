@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import MatchupPeriod, Player, Team
 from app.scoring.moves import grade_move, start_share
+from app.scoring.replacement import OPENED_PLACE
 from app.scoring.season import SeasonBook
 from app.scoring.trade_grades import trade_grades
 from app.scoring.wire import wire_grades
@@ -22,6 +23,11 @@ MONSTROUS = {"PTS": 90, "REB": 30, "AST": 20, "STL": 8, "BLK": 6, "3PM": 12, "TO
 #: calibration grades over (`scripts/trade_calibration.py`).
 MOVED_ON = 7
 SHORT_WINDOW = 30
+
+#: A flat replacement level, near the median add this league has measured:
+#: what a spot the move *used* costs, and what an opened spot was worth before
+#: revision R2.
+FLAT = 0.07
 
 
 def season(session: Session, periods: int = 4) -> tuple[Team, Team, list[MatchupPeriod]]:
@@ -84,6 +90,35 @@ def test_an_add_without_a_drop_costs_a_spot_at_replacement(scoring_session: Sess
     assert grade is not None
     # Never started: added nothing, and used a spot worth a typical pickup.
     assert grade.result == pytest.approx(-0.1)
+
+
+def test_a_spot_the_move_opens_is_worth_a_streamed_lane_not_a_pickup(
+    scoring_session: Session,
+) -> None:
+    """The other direction, and the one revision R2 changed.
+
+    A man sent away with nobody coming back leaves a spot the manager streams,
+    and `docs/streaming_lane.md` measured that at `OPENED_PLACE` a week rather
+    than the flat median add this charged before. The old settlement is still
+    reachable by name -- passing the flat level as `opened_place` -- which is
+    how the calibration tells a change in the yardstick from a change in the
+    forecast, and the two must differ by exactly the re-pricing.
+    """
+    session = scoring_session
+    home, _, periods = season(session)
+    core, gone = player(session, "Core"), player(session, "Gone")
+    for index, period in enumerate(periods):
+        held(session, home, period, core, index * 7 + 1, stats=CORE)
+    held(session, home, periods[0], gone, 1, stats=POOR)
+    book = SeasonBook.load(session, 2026)
+
+    lane = grade_move(book, home.id, 7, [], [gone.id], replacement=FLAT)
+    old = grade_move(book, home.id, 7, [], [gone.id], replacement=FLAT, opened_place=FLAT)
+
+    assert lane is not None and old is not None
+    assert lane.result - old.result == pytest.approx(OPENED_PLACE - FLAT)
+    assert old.result == pytest.approx(FLAT), "he posts nothing after the move; the spot is all"
+    assert lane.result == pytest.approx(OPENED_PLACE)
 
 
 def test_the_window_ends_when_the_pickup_is_gone(scoring_session: Session) -> None:

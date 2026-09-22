@@ -29,6 +29,7 @@ from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
 from app.pickups.bids import clear_cache
 from app.pickups.judge import TYPICAL_PICKUP
 from app.pickups.projection import clear_cache as clear_lines
+from app.scoring.replacement import OPENED_PLACE
 from app.trades import CALIBRATION_NOTE, PUBLISHED, TRADE_HURDLE, TeamOffer, evaluate_trade
 from app.trades.calibration import COIN_RANGE, DEALS, WINDOW_DAYS
 from app.trades.summary import WORDS, join, words
@@ -318,10 +319,63 @@ def test_a_two_for_one_opens_a_place_here_and_forces_a_drop_there(session: Sessi
     assert ours.replacement >= TYPICAL_PICKUP
     assert ours.replacement_player is not None
     assert ours.replacement_player.name == "Wire", "the best man still on the wire"
+    assert ours.opened_value == pytest.approx(max(ours.replacement, OPENED_PLACE))
+    assert "a week streamed" in ours.summary, "the page says what the place is worth"
     assert theirs.places_opened == 0
+    assert theirs.opened_value == 0.0, "the side that receives opens nothing"
     assert [card.name for card in theirs.drops] == ["AwayWeak"], "the cheapest place"
     assert theirs.drop_source == "cheapest"
     assert theirs.drops[0].value < min(card.value for card in theirs.receives)
+
+
+def test_the_place_a_two_for_one_opens_is_priced_at_a_streamed_lane(session: Session) -> None:
+    """Revision R2 (docs/trades.md section 7b), on a deal built to isolate it.
+
+    Home gives two ordinary men and receives one worth exactly the two of them
+    together, so its ordinary week is the same line before and after and the
+    roster with-and-without is exactly zero. The wire is empty, so no free
+    agent's week stands in for the place the deal leaves open. Everything left
+    in the season term is therefore the price of that one open place -- and
+    under R2 it is what a streamed place returns (0.38 a week,
+    `docs/streaming_lane.md`), not the 0.06 a single add returns.
+
+    The per-man number is charged at the same figure, which is the point of
+    having one rule: the two lenses may disagree about a man, but they cannot
+    disagree about what an empty place is worth.
+    """
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    # Away's man is worth precisely the two Home gives up: same schedule, twice
+    # the per-game line, so the after-roster's week is the before-roster's.
+    twice = rostered(session, away, periods[1], "Twice", scaled(2.0), pro_team=20)
+
+    report = evaluate_trade(
+        session,
+        ls,
+        TODAY,
+        TeamOffer(HOME, (who["HomeB"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (twice.id,)),
+        distributions=WEEK,
+        pool=(),
+    )
+
+    ours = report.side(HOME)
+    assert ours.places_opened == 1
+    assert ours.replacement == pytest.approx(TYPICAL_PICKUP), "a bare wire is the floor"
+    assert ours.replacement_player is None
+    assert ours.opened_value == pytest.approx(OPENED_PLACE)
+
+    for view in ours.categories:
+        assert view.after == pytest.approx(view.before), "the same week, before and after"
+    assert ours.judgement.delta_season_per_week == pytest.approx(OPENED_PLACE, abs=0.01), (
+        "nothing else is left in the season term but the open place"
+    )
+    # The per-man number is not zero on the same deal -- two ordinary men are
+    # worth more apart than one man of twice the line, because expected wins
+    # saturates -- but the place it opens is credited at the same 0.38.
+    leaves = sum(max(card.value, TYPICAL_PICKUP) for card in ours.gives)
+    arrives = sum(max(card.value, TYPICAL_PICKUP) for card in ours.receives)
+    assert ours.season_independent == pytest.approx(arrives + OPENED_PLACE - leaves)
 
 
 def test_a_named_drop_is_honoured_and_said_to_be_the_callers(session: Session) -> None:

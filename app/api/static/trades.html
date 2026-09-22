@@ -407,7 +407,7 @@ function judgementHtml(side, report, ours) {
   if (side.places_opened) {
     bits.push(
       `<p class="why">It leaves ${count(side.places_opened, "roster place")} open, worth ` +
-      `<b>${fixed(side.replacement, 3)}</b> a week on the wire` +
+      `<b>${fixed(side.opened_value, 3)}</b> a week streamed` +
       (side.replacement_player
         ? ` — the best free agent is <b>${escape(side.replacement_player.name)}</b>, ` +
           `whose week fills the place in the table above.`

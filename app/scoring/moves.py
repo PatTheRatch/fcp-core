@@ -41,9 +41,19 @@ would not have started, and a streamer held two days is weighed against two
 days of the player he replaced, not the rest of the week, when the next
 pickup had the spot.
 
-Uneven counts are settled at replacement level (`app.scoring.replacement`):
-each spot the move opened is worth a typical pickup, each spot it used costs
-one. Averaged over the window's periods, in categories a week.
+Uneven counts are settled at replacement level (`app.scoring.replacement`),
+and the two directions are not the same number. Each spot the move *used*
+costs a typical pickup, because a man was added to it. Each spot the move
+*opened* is worth what an opened spot returns when it is streamed --
+`OPENED_PLACE`, 0.38 categories a week, measured in `docs/streaming_lane.md`
+and adopted as revision R2 (`docs/trades.md` section 7b) -- rather than the
+0.07 flat median this charged until then. Averaged over the window's periods,
+in categories a week.
+
+`opened_place` is a parameter so that the old settlement can be asked for by
+name: passing the flat replacement level reproduces exactly what this function
+graded before R2, which is how the calibration separates a change in the
+yardstick from a change in the forecast.
 
 DECISION (what was knowable)
 
@@ -70,6 +80,7 @@ from app.scoring.knowable import knowable
 from app.scoring.league import average_team_line
 from app.scoring.lines import COUNTS, CategoryLine, sum_lines
 from app.scoring.players import held_weeks
+from app.scoring.replacement import OPENED_PLACE, opened_places
 from app.scoring.season import SeasonBook
 from app.scoring.value import expected_wins, period_length
 from app.scoring.verdicts import Verdict, verdict
@@ -235,17 +246,27 @@ def grade_move(
     playoffs: bool = False,
     band: float | None = None,
     within: int | None = None,
+    opened_place: float = OPENED_PLACE,
 ) -> MoveGrade | None:
     """Both lenses for one move, or None when no period of the stretch follows it.
 
     `within` is the last scoring period a graded matchup period may *begin*
     on: the short-window grade (see WINDOW above). Everything else is
     unchanged, so the same arithmetic answers both horizons.
+
+    `opened_place` is what the first spot the move empties is worth (see
+    WINDOW above): the streamed lane by default, and the flat `replacement`
+    level when a caller wants the settlement this used before revision R2.
     """
     periods = _window(book, team_id, day, players_in, playoffs, within)
     if not periods:
         return None
-    spots = (len(players_out) - len(players_in)) * replacement
+    emptied = len(players_out) - len(players_in)
+    spots = (
+        opened_places(emptied, replacement, first=opened_place)
+        if emptied > 0
+        else emptied * replacement
+    )
 
     results = []
     shares = {pid: start_share(book, team_id, pid, day) for pid in players_out}
