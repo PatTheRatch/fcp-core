@@ -59,10 +59,17 @@
   league's trade review window is in no table, so one day is carried in the
   code with its evidence (the four 2026 `TRADE_ACCEPT` rows all moved their
   players the next day). **The calibration says it does not predict the
-  outcome:** on 55 reconstructed deals it picked the side that did better 27
-  times, 49%, rank correlation +0.05 (`scripts/trade_calibration.py`,
-  docs/trades.md section 7). Nothing was tuned to improve that. No route and
-  no page yet.
+  outcome:** on 55 reconstructed deals it picked the side that did better 25
+  times, 45%, where a coin gives 20 to 35 of 55
+  (`scripts/trade_calibration.py`, docs/trades.md section 7). Two revisions
+  have been declared in advance and published whichever way they fell, and
+  neither moved that. The second of them (R2, 2026-09-22) did fix the one
+  measured model defect: a roster place a deal empties is priced at what a
+  streamed place returns, 0.38 categories a week, in the forecast and in the
+  hindsight grade alike, and the over-rating of consolidating deals fell from
+  +0.389 to +0.103 categories a week. Nothing was tuned to improve the
+  headline. Two routes and the page, since 2026-09-21
+  (`app/api/trades.py`, docs/trades.md section 10).
 - The recommender backtest (`scripts/pickups_backtest.py`,
   docs/pickups_backtest.md): every 2026 team, 616 decision points, scored in
   categories by replaying the real matchup with the lineup re-solved both
@@ -1347,6 +1354,14 @@ reconstruct at or under ESPN's count every season (157 of 204). A
 league-wide check caught a counterfactual that charged every wire move
 for games already played; fixed, 1-for-1 moves average +0.07 a week and
 trades net to zero.
+
+Since 2026-09-22 the grade settles an uneven move at two prices rather than
+one (`app/scoring/replacement.py`, docs/streaming_lane.md): a spot the move
+*used* still costs a typical pickup, 0.06, and a spot it *opened* is credited
+at what an opened spot returns when it is streamed, 0.38 a week measured over
+1,536 team-periods. Only moves with a different number of men each way are
+affected — a two-for-one, or a drop with no add — and 1-for-1 moves are the
+numbers they were.
 
 S10 (daily projection snapshots) is on main with migration 0014. The nightly
 ingest refuses to run behind the latest migration, so pulling main on the VPS
