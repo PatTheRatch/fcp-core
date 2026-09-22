@@ -17,9 +17,9 @@ from app.draft.feed import (
     match_name,
     match_team,
     new_picks,
-    normalise,
     parse_board,
 )
+from app.player_names import normalise
 
 TEAMS = [
     "Fast and Curryous",

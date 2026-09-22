@@ -38,7 +38,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import BBMCapture, BBMProjection, Player, PlayerSeasonStat
-from app.draft.bbm import match_player, name_key
+from app.player_names import match_player, name_key
 
 
 def read_export(body: bytes) -> list[dict[str, Any]]:

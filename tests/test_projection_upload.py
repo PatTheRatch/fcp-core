@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import PlayerSeasonStat, ProjectionRow, ProjectionSet
-from app.draft.bbm import synthetic_id
+from app.player_names import synthetic_id
 from app.projections import sources
 from app.projections.upload import (
     detect_basis,

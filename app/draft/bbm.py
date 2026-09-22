@@ -48,10 +48,9 @@ from sqlalchemy.orm import Session
 from app.db.models import Player, PlayerSeasonStat
 from app.draft.valuation import PlayerProjection
 
-# Re-exported: `app.draft.bbm_store`, `app.draft.live` and
-# `app.projections.upload` have always taken the matcher from here. It lives
-# in `app.player_names` now, because the NBA's injury reports place a name on
-# a player by exactly the same rule (docs/injuries.md).
+# The strict matcher this loader used to define. It lives in
+# `app.player_names` now, because the NBA's injury reports place a name on a
+# player by exactly the same rule (docs/injuries.md).
 from app.player_names import match_player, name_key, synthetic_id
 from app.projections import sources
 

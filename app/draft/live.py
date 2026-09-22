@@ -19,7 +19,7 @@ from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
 from app.draft import pool
 from app.draft.availability import measured_availability
-from app.draft.bbm import BBMRow, load_bbm, name_key, read_bbm
+from app.draft.bbm import BBMRow, load_bbm, read_bbm
 from app.draft.feed import match_team
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
@@ -32,6 +32,7 @@ from app.draft.shape import winning_shape
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.draft.tiers import LEAGUE_TIER_CURVE, apply_tier_curve
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection, value_players
+from app.player_names import name_key
 from app.projections import sources
 from app.projections.upload import load_projection_set, set_headline, set_note
 

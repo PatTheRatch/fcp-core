@@ -5,7 +5,8 @@ it put Caleb Wilson's projection on Jalen Wilson. These pin the stricter
 rule: the same name, or the same surname with a short first name.
 """
 
-from app.draft.bbm import match_player, name_key, split_list, split_note, synthetic_id
+from app.draft.bbm import split_list, split_note
+from app.player_names import match_player, name_key, synthetic_id
 
 KNOWN = {
     1: "Jalen Wilson",

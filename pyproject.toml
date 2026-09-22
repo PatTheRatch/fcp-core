@@ -45,6 +45,13 @@ projections = [
 opt = [
     "scipy>=1.11",
 ]
+# Reading the NBA's official injury reports (app/injury_reports.py,
+# docs/injuries.md), which are PDFs. Pure Python, so the server needs no Java
+# runtime; imported inside the parser, so the accessor `app/injuries.py` and
+# everything that reads the stored rows works without it.
+injuries = [
+    "pdfplumber>=0.11",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",

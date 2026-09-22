@@ -56,8 +56,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import ProjectionRow, ProjectionSet
-from app.draft.bbm import espn_lookup, match_player, name_key, synthetic_id
+from app.draft.bbm import espn_lookup
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
+from app.player_names import match_player, name_key, synthetic_id
 from app.projections.sources import upload_source
 
 #: The counting stats a projection set carries, mapped to the column each is

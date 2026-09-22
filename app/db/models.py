@@ -1626,3 +1626,104 @@ class NotificationChannel(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InjuryReport(Base):
+    """One player line from one NBA official injury report snapshot.
+
+    Point-in-time by construction (docs/injuries.md): a row is what the
+    league said at `reported_at` about a player for `game_date`, and nothing
+    is ever collapsed to a final status. Rows are only ever inserted, never
+    updated, so a later snapshot correcting an earlier one leaves both on
+    record and a backtest can read either.
+
+    `reported_at` is the stamp printed inside the PDF, Eastern time converted
+    to UTC. It is the moment the league compiled the report, and it is not
+    the time in the URL: the hourly reports were published at `_09AM` and
+    stamped `09:30 AM`.
+
+    A team that has not filed gets a row too, with no player and no status,
+    so "not yet submitted" is distinguishable from "nobody is hurt".
+
+    `player_name_raw` is the league's own `Last, First`, kept whether or not
+    it matched one of ours; a miss stays visible rather than vanishing.
+    `player_id` is nulled rather than cascaded if a player row ever goes,
+    because the league's line is still a fact about that night.
+    """
+
+    __tablename__ = "injury_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "reported_at",
+            "game_date",
+            "team",
+            "player_name_raw",
+            name="uq_injury_reports_key",
+        ),
+        # The accessor's query: this man, latest report at or before a moment.
+        Index("ix_injury_reports_player_reported", "player_id", "reported_at"),
+        # The backfill's resume: which snapshots of this date are already in.
+        Index("ix_injury_reports_game_date_reported", "game_date", "reported_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: The snapshot's own timestamp, as the league labelled it.
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: The game this line is about, which may be tomorrow's, not the
+    #: report's own date: a report lists today's games and the next day's.
+    game_date: Mapped[date] = mapped_column(Date, nullable=False)
+    #: Tip-off as printed, e.g. "07:30 (ET)". Text, because the league
+    #: sometimes prints "TBD" and always prints the zone with it.
+    game_time: Mapped[str | None] = mapped_column(String)
+    #: e.g. "MEM@NYK".
+    matchup: Mapped[str | None] = mapped_column(String)
+    #: The NBA team as the report names it, e.g. "Memphis Grizzlies".
+    team: Mapped[str] = mapped_column(String, nullable=False)
+    #: ESPN's pro team id for it, where the name places one.
+    pro_team_id: Mapped[int | None] = mapped_column(Integer)
+    #: "Last, First" as printed; empty for a not-yet-submitted line.
+    player_name_raw: Mapped[str] = mapped_column(String, nullable=False)
+    player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), nullable=True
+    )
+    #: Out, Doubtful, Questionable, Probable or Available; NULL when the
+    #: team had not filed.
+    status: Mapped[str | None] = mapped_column(String)
+    #: The league's own words, e.g. "Injury/Illness - Right Knee; Surgery
+    #: Recovery", "G League - Two-Way", "NOT YET SUBMITTED".
+    reason: Mapped[str | None] = mapped_column(Text)
+    #: Who published it. Only "nba_official" today.
+    source: Mapped[str] = mapped_column(String, nullable=False, server_default="nba_official")
+    #: When we fetched it, which is not when it was published.
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class InjuryReportRun(Base):
+    """One execution of the injury backfill or the daily pass.
+
+    A sibling of `ingest_runs` rather than a row in it: that table is keyed
+    on an ESPN league, and these reports belong to no league at all. Opened
+    before the league's CDN is touched and closed whatever happens, for the
+    same reason: a crashed run should leave a row saying "running" rather
+    than no trace.
+    """
+
+    __tablename__ = "injury_report_runs"
+    __table_args__ = (Index("ix_injury_report_runs_season_started", "season", "started_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: "backfill" walks a season's game dates; "pass" fetches today's.
+    mode: Mapped[str] = mapped_column(String, nullable=False)
+    #: "running", "succeeded" or "failed".
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    #: Counts: snapshots, lines, matched, unmatched, inserted, dates.
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)

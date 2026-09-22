@@ -48,9 +48,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-# Re-exported: the typing matcher below and every caller of this module have
-# always taken `normalise` from here. It lives in `app.player_names` now,
-# beside the strict matcher that shares its definition of a name.
+# The typing matcher below normalises a name the same way the strict matcher
+# does, so both take it from `app.player_names`.
 from app.player_names import normalise
 
 

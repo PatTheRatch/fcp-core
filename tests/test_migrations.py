@@ -51,3 +51,33 @@ def test_migrations_match_orm_metadata(test_database_url: str) -> None:
         diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
     engine.dispose()
     assert diff == []
+
+
+def test_the_injury_reports_migration_goes_down_and_up_again(test_database_url: str) -> None:
+    """0022 is reversible: it drops exactly what it adds, and re-adds it."""
+    _reset_public_schema(test_database_url)
+    config = _alembic_config(test_database_url)
+    command.upgrade(config, "head")
+    added = {"injury_reports", "injury_report_runs"}
+
+    engine = make_engine(test_database_url)
+    with engine.connect() as connection:
+        assert added <= set(inspect(connection).get_table_names())
+    engine.dispose()
+
+    command.downgrade(config, "0021")
+    engine = make_engine(test_database_url)
+    with engine.connect() as connection:
+        remaining = set(inspect(connection).get_table_names())
+        assert not (added & remaining)
+        # Everything 0021 built is untouched.
+        assert "player_platform_ids" in remaining
+        assert MigrationContext.configure(connection).get_current_revision() == "0021"
+    engine.dispose()
+
+    command.upgrade(config, "head")
+    engine = make_engine(test_database_url)
+    with engine.connect() as connection:
+        assert added <= set(inspect(connection).get_table_names())
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    engine.dispose()
