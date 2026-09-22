@@ -764,7 +764,9 @@ class TodayGameOut(BaseModel):
     """The game a player's NBA team plays today, from the stored schedule."""
 
     opponent_pro_team_id: int
+    opponent: str = Field(description="The opponent's abbreviation, e.g. MIL")
     home: bool
+    describe: str = Field(description='The whole thing in three words: "at MIL"')
 
 
 class TodayPlayerOut(PickupPlayerOut):

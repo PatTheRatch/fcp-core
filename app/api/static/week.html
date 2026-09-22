@@ -21,6 +21,29 @@
 
 <p class="warnline" id="failed" hidden></p>
 
+<!-- The morning question, above the week it belongs to, and outside the
+     body: one day's seating comes back at once, while the week below has
+     to search the whole wire, and the thing the manager acts on first
+     should not wait on the thing he reads afterwards. -->
+<section id="today-section" hidden>
+  <div class="shead"><h2>Today</h2><span class="tag" id="today-tag"></span></div>
+  <p class="lede" id="today-lede"></p>
+  <p class="warnline" id="today-fix" hidden></p>
+  <div class="two" id="today-grids">
+    <div class="side">
+      <h3>As we would set it</h3>
+      <p class="whose" id="today-ours"></p>
+      <div id="today-lineup"></div>
+    </div>
+    <div class="side">
+      <h3>As it is set</h3>
+      <p class="whose" id="today-theirs"></p>
+      <div id="today-actual"></div>
+    </div>
+  </div>
+  <div id="today-rest"></div>
+</section>
+
 <dl class="line" id="readout"></dl>
 
 <main id="body" hidden>
@@ -88,6 +111,166 @@
 
 const WHERE = place();
 let CONTEXT = null;
+
+/* ---- Today: the day's lineup -------------------------------------------
+   `app/pickups/today.py` through /teams/{id}/today, which is the same
+   seating the week below is projected from, for one day, with the places
+   named. It is the first thing on the page because it is the first thing
+   the manager does.
+
+   A player's name goes through `playerName`, which is the hook for the
+   shared player card: when `pages.css`/`shell.js` grow one, it attaches to
+   `.player[data-espn-id]` and nothing here has to change. Until then it is
+   a bold name and no behaviour. */
+
+const playerName = (player) =>
+  `<span class="player" data-espn-id="${player ? player.espn_player_id : ""}">` +
+  `<b>${escape(player ? player.name : dash)}</b></span>`;
+
+/** "at MIL", or "no game" in the muted style. */
+const gameCell = (player) =>
+  player && player.game
+    ? `<span class="mono">${escape(player.game.describe)}</span>`
+    : `<span class="faint">no game</span>`;
+
+/** A flag beside a name: injured, on injured reserve, and the return date. */
+function statusCell(player) {
+  if (!player) return "";
+  if (player.status === "ir") return `<span class="flag">injured reserve</span>`;
+  if (player.status !== "injured") return "";
+  const back = player.expected_return_date;
+  return (
+    `<span class="flag">${escape(player.injury_status || "injured")}` +
+    `${back ? `, back ${dayName(back)}` : ""}</span>`
+  );
+}
+
+/** One lineup, place by place. `empty` is what an unfilled place says. */
+function lineupHtml(seats, empty) {
+  if (!seats.length) return `<p class="empty">${escape(empty)}</p>`;
+  return (
+    `<table class="grid lineup"><tbody>` +
+    seats
+      .map((seat) => {
+        const player = seat.player;
+        const out = player === null || player === undefined;
+        return (
+          `<tr class="${out ? "gone" : ""}">` +
+          `<td class="slot">${escape(seat.slot)}</td>` +
+          `<td class="name">${out ? `<span class="faint">${escape(empty)}</span>` : playerName(player)}</td>` +
+          `<td class="small">${out ? "" : gameCell(player)}</td>` +
+          `<td class="flags">${out ? "" : statusCell(player)}</td>` +
+          `</tr>`
+        );
+      })
+      .join("") +
+    `</tbody></table>`
+  );
+}
+
+/** The bench: who has a game and no place, who has no game, who is on IR. */
+function benchHtml(report) {
+  const rows = [];
+  (report.benched || []).forEach((benched) => {
+    const why =
+      benched.reason === "no_slot"
+        ? "no starting place he is eligible for"
+        : `behind ${(benched.behind || []).map((m) => escape(m.name)).join(", ")} in every place he fits`;
+    rows.push(
+      `<tr class="has-game"><td class="name">${playerName(benched.player)}</td>` +
+        `<td class="small">${gameCell(benched.player)}</td>` +
+        `<td class="why">${why}</td></tr>`,
+    );
+  });
+  // No reason beside a man with no game: the middle column has already
+  // said it, and eight rows of the same sentence is eight rows of noise.
+  (report.idle || []).forEach((player) => {
+    rows.push(
+      `<tr><td class="name"><span class="faint">${escape(player.name)}</span></td>` +
+        `<td class="small">${gameCell(player)}</td>` +
+        `<td class="why">${statusCell(player)}</td></tr>`,
+    );
+  });
+  (report.injured_reserve || []).forEach((player) => {
+    rows.push(
+      `<tr><td class="name"><span class="faint">${escape(player.name)}</span></td>` +
+        `<td class="small">${gameCell(player)}</td>` +
+        `<td class="why">${statusCell(player)}</td></tr>`,
+    );
+  });
+  if (!rows.length) return `<p class="empty">Nobody is held who is not in the lineup.</p>`;
+  return (
+    `<div class="shead"><h3>Not in the lineup</h3>` +
+    `<span class="tag">a man with a game is flagged</span></div>` +
+    `<table class="grid lineup"><tbody>${rows.join("")}</tbody></table>`
+  );
+}
+
+/** The one thing here stated as a mistake. */
+function fixHtml(report) {
+  const fix = report.fix || [];
+  if (!fix.length) return "";
+  const parts = fix.map((one) => {
+    const seat = one.seat;
+    const where =
+      seat.player === null || seat.player === undefined
+        ? `<b>${escape(seat.slot)}</b> is empty`
+        : `<b>${escape(seat.player.name)}</b> has no game at ${escape(seat.slot)}`;
+    const who = (one.instead || []).map((m) => escape(m.name)).join(" or ");
+    return `${where} — ${who} could take it`;
+  });
+  return (
+    `Worth fixing: ${parts.join("; ")}. ` +
+    `Your lineup fills ${count(report.actual_starts, "place")} tonight; ` +
+    `this roster can fill ${report.starts}.`
+  );
+}
+
+function drawToday(report) {
+  const section = $("today-section");
+  if (!report) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const when = report.calendar_date ? dayName(report.calendar_date) : `day ${report.today}`;
+  $("today-tag").textContent = `day ${report.today}`;
+  $("today-fix").hidden = true;
+
+  if (report.teams_playing === 0) {
+    // The All-Star break. Ten rows of "nobody" would be ten rows of noise.
+    $("today-lede").innerHTML =
+      `<b>${escape(when)}</b>: no NBA team plays, so there is no lineup to set.`;
+    $("today-grids").hidden = true;
+    $("today-rest").innerHTML = "";
+    return;
+  }
+  $("today-grids").hidden = false;
+  $("today-lede").innerHTML =
+    `<b>${escape(when)}</b>. ${count(report.teams_playing, "NBA team")} play; this roster can ` +
+    `fill <b>${report.starts}</b> of ${report.lineup.length} places. Ideas, not instructions — ` +
+    `the manager sets the lineup.`;
+  $("today-ours").textContent = `${report.starts} of ${report.lineup.length} places`;
+  $("today-lineup").innerHTML = lineupHtml(report.lineup, "nobody can fill it");
+
+  if (!report.actual_known) {
+    $("today-theirs").textContent = "not stored yet";
+    $("today-actual").innerHTML =
+      `<p class="empty">Today's lineup has not been read from ESPN yet, so there is nothing
+       to compare with.</p>`;
+  } else {
+    $("today-theirs").textContent =
+      `${report.actual_starts} of ${report.lineup.length} places with a man playing`;
+    $("today-actual").innerHTML = lineupHtml(report.actual, "left unset");
+  }
+
+  const fix = fixHtml(report);
+  if (fix) {
+    $("today-fix").innerHTML = fix;
+    $("today-fix").hidden = false;
+  }
+  $("today-rest").innerHTML = benchHtml(report);
+}
 
 /** A bye: the schema carries no `on_bye`, only an opponent that is null. */
 const onBye = (report) => report.opponent_espn_team_id === null;
@@ -320,7 +503,8 @@ function drawFoot(report) {
         `caps at the budget; the feed is a reconstruction (app/pickups/state.py).`
       : "") +
     `<br>The week: <span class="mono">scripts/stream.py</span>, ` +
-    `<span class="mono">docs/pickups.md</span> section 4.3.`;
+    `<span class="mono">docs/pickups.md</span> section 4.3. ` +
+    `Today: <span class="mono">scripts/today.py</span>, which prints the same lineup.`;
 }
 
 async function start() {
@@ -329,11 +513,22 @@ async function start() {
   const query = params(WHERE);
   $("title").textContent = "Loading…";
 
-  const [context, report] = await Promise.all([
-    get(`${base}/pages/context${query}`),
-    get(`${base}/teams/${WHERE.team}/pickups/stream${params(WHERE)}`),
-  ]);
+  // Three fetches, all started at once and not all waited on together. The
+  // week is the slow one, because it searches the whole wire for every
+  // possible move; the names and the day's seating come back in a moment,
+  // so they are drawn first and the week fills in under them. A day that
+  // cannot be built hides its own section and leaves the week standing.
+  const asked = {
+    context: get(`${base}/pages/context${query}`),
+    report: get(`${base}/teams/${WHERE.team}/pickups/stream${params(WHERE)}`),
+    today: get(`${base}/teams/${WHERE.team}/today${params(WHERE)}`, { quiet: true }),
+  };
+  const [context, today] = await Promise.all([asked.context, asked.today]);
   if (context.ok) CONTEXT = context.body;
+  if (CONTEXT) $("title").textContent = nameOf(Number(WHERE.team));
+  drawToday(today.ok ? today.body : null);
+
+  const report = await asked.report;
   if (!report.ok) {
     $("title").textContent = "No report";
     fail(`This week cannot be reported on: ${report.detail}`);

@@ -485,7 +485,10 @@ def _day_out(player: DayPlayer, espn: dict[int, int]) -> TodayPlayerOut:
             None
             if player.game is None
             else TodayGameOut(
-                opponent_pro_team_id=player.game.opponent_pro_team_id, home=player.game.home
+                opponent_pro_team_id=player.game.opponent_pro_team_id,
+                opponent=player.game.opponent,
+                home=player.game.home,
+                describe=player.game.describe(),
             )
         ),
         status=player.status,

@@ -59,6 +59,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from espn_api.basketball.constant import PRO_TEAM_MAP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -101,10 +102,19 @@ _NOT_A_PLACE = frozenset({"BE", IR_SLOT, GONE_SLOT})
 
 @dataclass(frozen=True)
 class Game:
-    """The game a player's NBA team plays today."""
+    """The game a player's NBA team plays today.
+
+    The opponent's abbreviation travels with its id, because every reader of
+    this -- a page, a phone message, a terminal -- wants "at MIL" and none of
+    them should have to carry ESPN's team table to write it.
+    """
 
     opponent_pro_team_id: int
+    opponent: str
     home: bool
+
+    def describe(self) -> str:
+        return f"{'vs' if self.home else 'at'} {self.opponent}"
 
 
 @dataclass(frozen=True)
@@ -528,7 +538,11 @@ def _games_today(
         )
     ).all()
     return {
-        int(pro_team_id): Game(opponent_pro_team_id=int(opponent), home=bool(home))
+        int(pro_team_id): Game(
+            opponent_pro_team_id=int(opponent),
+            opponent=str(PRO_TEAM_MAP.get(int(opponent), "?")),
+            home=bool(home),
+        )
         for pro_team_id, opponent, home in rows
     }
 

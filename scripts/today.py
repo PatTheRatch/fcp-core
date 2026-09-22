@@ -27,7 +27,6 @@ from pathlib import Path
 # which is the production one when a worktree borrows /opt/fcp-core/.venv.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from espn_api.basketball.constant import PRO_TEAM_MAP
 from sqlalchemy import inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -65,10 +64,7 @@ def _missing_tables(engine: Engine) -> list[str]:
 
 def _opponent(player: DayPlayer) -> str:
     """Who his team plays tonight, in the three words a column has room for."""
-    if player.game is None:
-        return "no game"
-    other = PRO_TEAM_MAP.get(player.game.opponent_pro_team_id, "?")
-    return f"{'vs' if player.game.home else 'at'} {other}"
+    return "no game" if player.game is None else player.game.describe()
 
 
 def _flag(player: DayPlayer) -> str:

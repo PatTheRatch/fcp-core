@@ -244,6 +244,45 @@ def test_a_page_never_tells_anyone_what_to_do(client: TestClient) -> None:
         assert "you should" not in visible
 
 
+def test_the_week_page_draws_todays_lineup_above_the_week(client: TestClient) -> None:
+    """The Today section, and the route it reads.
+
+    The markup is checked for the section and the script for the fetch and
+    the player-card hook, because the page draws itself in the browser and
+    there is nothing else here to assert it against; the route it calls is
+    then asked the same question and has to answer the same day. A place a
+    man with a game could take is wired to the warn style, which is the one
+    thing on this page stated as a mistake.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+
+    assert page.index("today-section") < page.index("tape-section"), "above the week"
+    assert 'id="today-fix"' in page and 'class="warnline" id="today-fix"' in page
+    assert "/today${params(WHERE)}" in page, "the day's own route, with the same ?today="
+    assert 'class="player" data-espn-id=' in page, "the shared player card's hook"
+    assert "As we would set it" in page and "As it is set" in page
+
+    body = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams/{OURS}/today", params={"today": 1}
+    ).json()
+    assert body["today"] == 1
+    assert [seat["slot"] for seat in body["lineup"]] == ["G", "F", "UT"]
+    assert body["source_note"], "the page's footnote says where the numbers came from"
+
+
+def test_the_lineup_grid_is_styled_in_both_themes_and_at_phone_width(
+    client: TestClient,
+) -> None:
+    """No colour outside the token block, and nothing new that only works
+    in one theme: the grid is the house's plain table with widths on it."""
+    css = client.get("/pages/static/pages.css").text
+
+    assert ".grid.lineup" in css and ".player{" in css
+    lineup = css.split("/* ---- the day's lineup")[1].split("/* ---- the schedule strip")[0]
+    assert not re.search(r"#[0-9a-fA-F]{3}", lineup), "no colour outside the token block"
+    assert "var(--accent)" in lineup, "the man with a game carries the accent"
+
+
 def test_the_shared_stylesheet_and_script_are_served(client: TestClient) -> None:
     css = client.get("/pages/static/pages.css")
     js = client.get("/pages/static/pages.js")
