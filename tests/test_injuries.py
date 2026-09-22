@@ -278,16 +278,57 @@ def test_absences_are_runs_of_out_days_and_a_gap_breaks_one(session: Session) ->
     assert absences(session, miller.id, 2025) == []
 
 
-def test_a_line_filed_the_day_before_covers_both_mornings(session: Session) -> None:
+def test_absences_count_mornings_not_evenings(session: Session) -> None:
     miller = player(session, 4432816, "Brandon Miller")
     session.commit()
     monday, tuesday = date(2025, 11, 10), date(2025, 11, 11)
     store_report(session, report(et(monday, 17, 30), line(game_date=tuesday)), name_index(session))
     session.commit()
-    # Published Monday evening about Tuesday's game: it is the current line
-    # on Monday night and still on Tuesday morning.
+    # Published Monday evening about Tuesday's game. It is the current line
+    # by Monday night, but `absences` counts mornings, and at ten on Monday
+    # it did not exist yet -- so Monday is not an Out morning and Tuesday is.
+    assert status_as_of(session, miller.id, et(monday, 18)) is not None
+    assert status_as_of(session, miller.id, morning_of(monday)) is None
     assert [(run.first, run.last) for run in absences(session, miller.id, SEASON)] == [
-        (monday, tuesday)
+        (tuesday, tuesday)
+    ]
+
+
+def test_a_day_his_team_did_not_play_carries_an_absence_across(session: Session) -> None:
+    """The Brandon Miller case: Charlotte played every other day."""
+    miller = player(session, 4432816, "Brandon Miller")
+    session.commit()
+    index = name_index(session)
+    for day in (date(2025, 11, 10), date(2025, 11, 12), date(2025, 11, 14)):
+        store_report(session, report(et(day, 9, 30), line(game_date=day)), index)
+    session.commit()
+    # The 11th and the 13th carry no line for him and none for his team
+    # either, so the league said nothing rather than said he was fit.
+    assert status_as_of(session, miller.id, morning_of(date(2025, 11, 11))) is None
+    assert [(run.first, run.last, run.days) for run in absences(session, miller.id, SEASON)] == [
+        (date(2025, 11, 10), date(2025, 11, 14), 5)
+    ]
+    assert out_mornings(session, miller.id, SEASON) == 5
+
+
+def test_a_day_his_team_filed_without_naming_him_ends_the_absence(session: Session) -> None:
+    miller = player(session, 4432816, "Brandon Miller")
+    team_mate = player(session, 9999, "Miles Bridges")
+    session.commit()
+    index = name_index(session)
+    for day in (date(2025, 11, 10), date(2025, 11, 12)):
+        store_report(session, report(et(day, 9, 30), line(game_date=day)), index)
+    # The 14th: Charlotte filed, and Miller is not on it. He is back.
+    back = date(2025, 11, 14)
+    store_report(
+        session,
+        report(et(back, 9, 30), line(game_date=back, name="Bridges, Miles", status="Probable")),
+        index,
+    )
+    session.commit()
+    assert team_mate.id is not None
+    assert [(run.first, run.last, run.days) for run in absences(session, miller.id, SEASON)] == [
+        (date(2025, 11, 10), date(2025, 11, 12), 3)
     ]
 
 

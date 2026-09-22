@@ -40,7 +40,7 @@ compared.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -193,69 +193,144 @@ class Absence:
         return self.first <= day <= self.last
 
 
+#: A day's standing for one player: named and Out, named and not Out, or
+#: not named at all -- and for the last, whether his team had filed.
+OUT = "out"
+NOT_OUT = "not_out"
+#: Silent, and the league had said nothing about his team either: his team
+#: was not playing, or had not filed yet. This says nothing, so it carries
+#: an absence across rather than ending it.
+UNSAID = "unsaid"
+
+
+def _newest_visible(
+    rows: Sequence[tuple[datetime, date, Any]], day: date
+) -> tuple[datetime, date, Any] | None:
+    """The newest of these lines visible on `day`'s morning, or None.
+
+    The same bound as `status_as_of`: published by then, about that day or
+    later, with the nearer game winning a tie on the instant.
+    """
+    at = morning_of(day)
+    best: tuple[datetime, date, Any] | None = None
+    for row in rows:
+        reported_at, game_date, _payload = row
+        if reported_at > at or game_date < day:
+            continue
+        if best is None or (reported_at, -(game_date - day).days) > (
+            best[0],
+            -(best[1] - day).days,
+        ):
+            best = row
+    return best
+
+
 def absences(
     session: Session, player_id: int, season: int, *, source: str = NBA_OFFICIAL
 ) -> list[Absence]:
     """The runs of days this player was Out, for the beneficiary work.
 
-    A day counts when the morning's visible line (the same rule
-    `status_as_of` uses, read at `morning_of`) has him Out. Days the league
-    said nothing about him break a run: a man off the report is not "still
-    out", and a beneficiary's minutes should stop being credited to his
-    absence the moment the league stops naming him.
+    A day is an Out day when the morning's visible line (the same rule
+    `status_as_of` uses, read at `morning_of`) has him Out. The interesting
+    part is what happens on a day with no line for him at all, because the
+    league's silence means two different things:
 
-    A season runs from October of the year before to September of the season
-    year, which is how the rest of the code numbers them (2026 is 2025-26).
+    * **his team had filed and did not name him** -- he is fit, and the run
+      ends. A beneficiary's minutes should stop being credited to an absence
+      the moment the league stops naming the absent man;
+    * **the league had said nothing about his team either** -- his team was
+      not playing that day, or had not filed by the morning. That is not
+      evidence of anything, so the run carries across it.
+
+    Both happen constantly and telling them apart is what makes the answer
+    usable. Brandon Miller's shoulder in 2025-26 is the worked example: with
+    the second case treated as a return he comes back as eleven separate
+    one-day absences, because Charlotte played every other day and twice
+    filed nothing before ten; read properly it is one run of twenty-three
+    days and a single later night.
+
+    A run begins and ends on an Out day, so a trailing silence never extends
+    one. A season runs from October of the year before to September of the
+    season year, which is how the rest of the code numbers them.
     """
     first_day = date(season - 1, 10, 1)
     last_day = date(season, 9, 30)
-    rows = session.execute(
-        select(InjuryReport.game_date, InjuryReport.reported_at, InjuryReport.status)
-        .where(
-            InjuryReport.player_id == player_id,
-            InjuryReport.source == source,
-            InjuryReport.status.is_not(None),
-            InjuryReport.game_date >= first_day,
-            InjuryReport.game_date <= last_day,
-        )
-        .order_by(InjuryReport.reported_at.asc())
-    ).all()
-    if not rows:
+    window = (
+        InjuryReport.source == source,
+        InjuryReport.status.is_not(None),
+        InjuryReport.game_date >= first_day,
+        InjuryReport.game_date <= last_day,
+    )
+    his = [
+        (reported_at, game_date, (str(status), str(team)))
+        for reported_at, game_date, status, team in session.execute(
+            select(
+                InjuryReport.reported_at,
+                InjuryReport.game_date,
+                InjuryReport.status,
+                InjuryReport.team,
+            ).where(InjuryReport.player_id == player_id, *window)
+        ).all()
+    ]
+    if not his:
         return []
 
-    # For each date, the status of the newest line visible that morning.
-    by_morning: dict[date, tuple[datetime, str]] = {}
-    for game_date, reported_at, status in rows:
-        for day in _days_the_line_speaks_for(reported_at, game_date):
-            held = by_morning.get(day)
-            if held is None or reported_at >= held[0]:
-                by_morning[day] = (reported_at, str(status))
+    # One row per (snapshot, team) is enough to know a team had filed.
+    teams = {team for _at, _game, (_status, team) in his}
+    filed: dict[str, list[tuple[datetime, date, Any]]] = {team: [] for team in teams}
+    for reported_at, game_date, team in session.execute(
+        select(InjuryReport.reported_at, InjuryReport.game_date, InjuryReport.team)
+        .where(InjuryReport.team.in_(teams), *window)
+        .distinct()
+    ).all():
+        filed[str(team)].append((reported_at, game_date, None))
 
-    out_days = sorted(day for day, (_, status) in by_morning.items() if status in RULED_OUT)
-    return _runs(out_days)
-
-
-def _days_the_line_speaks_for(reported_at: datetime, game_date: date) -> list[date]:
-    """The mornings this line is the newest visible one for.
-
-    A line published before its game's date is visible from the morning it
-    was published through the game's own date, which is exactly the window
-    `status_as_of` would find it in.
-    """
-    published = reported_at.astimezone(ET).date()
-    if game_date < published:
-        return []
-    span = (game_date - published).days
-    return [published + timedelta(days=offset) for offset in range(span + 1)]
+    days = sorted({game_date for _at, game_date, _payload in his})
+    standing: list[tuple[date, str]] = []
+    for day in _every_day(days[0], days[-1]):
+        mine = _newest_visible(his, day)
+        if mine is not None:
+            standing.append((day, OUT if mine[2][0] in RULED_OUT else NOT_OUT))
+            continue
+        team = _his_team_on(his, day)
+        said = team is not None and _newest_visible(filed[team], day) is not None
+        standing.append((day, NOT_OUT if said else UNSAID))
+    return _runs(standing)
 
 
-def _runs(days: Sequence[date]) -> list[Absence]:
+def _every_day(first: date, last: date) -> Iterator[date]:
+    day = first
+    while day <= last:
+        yield day
+        day += timedelta(days=1)
+
+
+def _his_team_on(rows: Sequence[tuple[datetime, date, Any]], day: date) -> str | None:
+    """The team his newest line up to this day put him on, for a trade."""
+    at = morning_of(day)
+    best: tuple[datetime, str] | None = None
+    for reported_at, _game_date, (_status, team) in rows:
+        if reported_at <= at and (best is None or reported_at > best[0]):
+            best = (reported_at, str(team))
+    return best[1] if best is not None else None
+
+
+def _runs(standing: Sequence[tuple[date, str]]) -> list[Absence]:
+    """Maximal runs that open and close on an Out day, carried over silence."""
     out: list[Absence] = []
-    for day in days:
-        if out and day == out[-1].last + timedelta(days=1):
-            out[-1] = Absence(first=out[-1].first, last=day)
-        else:
-            out.append(Absence(first=day, last=day))
+    open_from: date | None = None
+    last_out: date | None = None
+    for day, kind in standing:
+        if kind == OUT:
+            if open_from is None:
+                open_from = day
+            last_out = day
+        elif kind == NOT_OUT:
+            if open_from is not None and last_out is not None:
+                out.append(Absence(first=open_from, last=last_out))
+            open_from = last_out = None
+    if open_from is not None and last_out is not None:
+        out.append(Absence(first=open_from, last=last_out))
     return out
 
 

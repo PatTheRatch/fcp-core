@@ -26,11 +26,11 @@ The PDF's own first line reads `Injury Report: 11/11/25 09:30 AM`. That is
 Eastern time, and it is the moment the league compiled the report, not a
 deadline or a tip-off. It is what `reported_at` stores, converted to UTC.
 
-It is not the same as the time in the URL. Through 19 December 2025 the URL
+It is not the same as the time in the URL. Until 22 December 2025 the URL
 named the hour (`..._09AM.pdf`) while the report inside was stamped at half
-past it (`09:30 AM`); from 22 December 2025 the URL names the quarter hour
-(`..._09_00AM.pdf`) and the stamp matches it. The label inside the file is
-what we believe, because it is the one the league wrote.
+past it (`09:30 AM`); from that morning at nine the URL names the quarter
+hour (`..._09_00AM.pdf`) and the stamp matches it. The label inside the file
+is what we believe, because it is the one the league wrote.
 
 READING THE PDF
 
@@ -89,11 +89,14 @@ ET = ZoneInfo("America/New_York")
 #: beat writer's) would have to be told apart from the league's own.
 NBA_OFFICIAL = "nba_official"
 
-#: The last hourly snapshot, and the first quarter-hourly one. Between them
-#: the league changed both its cadence and its URL format; the two days in
-#: the gap published nothing we can name.
-LAST_HOURLY = datetime(2025, 12, 19, 15, 30, tzinfo=ET)
-FIRST_QUARTER_HOURLY = datetime(2025, 12, 22, 9, 0, tzinfo=ET)
+#: When the league went from hourly snapshots to quarter-hourly ones, and
+#: changed the URL format with them. One clean cutover, checked against the
+#: CDN rather than taken on trust: `..._08AM` is the last hourly URL that
+#: answers and `..._09_00AM` the first quarter-hourly one, with nothing
+#: missing on either side. (`nbainjuries` models a two-and-a-half day hole
+#: here; the reports for 20 and 21 December are there under the hourly
+#: URLs, and skipping them would lose two game dates of a season.)
+QUARTER_HOURLY_FROM = datetime(2025, 12, 22, 9, 0, tzinfo=ET)
 
 #: The seven columns, in the order the header prints them.
 COLUMNS = (
@@ -182,63 +185,52 @@ def _as_et(at: datetime) -> datetime:
 def report_url(at: datetime) -> str:
     """The URL of the snapshot published at this Eastern time.
 
-    Through `LAST_HOURLY` the URL names only the hour, so a `09:30` report
-    lives at `_09AM`; from `FIRST_QUARTER_HOURLY` it names the quarter hour
-    exactly. A time in the gap between them has no URL and is refused.
+    Before the cutover the URL names only the hour, so the report stamped
+    `09:30` lives at `_09AM`; from the cutover it names the quarter hour
+    exactly and the stamp matches it.
     """
     eastern = _as_et(at)
-    if eastern <= LAST_HOURLY:
+    if eastern < QUARTER_HOURLY_FROM:
         slug = eastern.replace(minute=0).strftime("%I%p")
-    elif eastern >= FIRST_QUARTER_HOURLY:
-        slug = eastern.strftime("%I_%M%p")
     else:
-        raise ValueError(
-            f"no injury report URL for {eastern:%Y-%m-%d %H:%M %Z}: the league published "
-            f"none between {LAST_HOURLY:%Y-%m-%d %H:%M} and {FIRST_QUARTER_HOURLY:%Y-%m-%d %H:%M}"
-        )
+        slug = eastern.strftime("%I_%M%p")
     return URL_STEM.format(slug=f"{eastern:%Y-%m-%d}_{slug}")
+
+
+def _midnight(day: date) -> datetime:
+    return datetime.combine(day, datetime.min.time(), tzinfo=ET)
 
 
 def snapshot_times(day: date, *, which: str = "all") -> list[datetime]:
     """The Eastern times the league published on this date.
 
-    `all` is every one of them -- twenty-four an hourly day, ninety-six a
-    quarter-hourly one. `morning` is the one the backtests read, the snapshot
-    at `MORNING_HOUR`; `last` is the final snapshot of the day, which is the
-    most settled view of that night's games.
+    `all` is every one of them: twenty-four before the cutover, ninety-six
+    after, and sixty-nine on the day itself, which begins hourly and turns
+    quarter-hourly at nine. `morning` is the one the backtests read, the
+    snapshot at `MORNING_HOUR`; `last` is the final snapshot of the day,
+    the most settled view of that night's games.
     """
-    quarter_hourly = datetime.combine(day, datetime.min.time(), tzinfo=ET) >= (
-        FIRST_QUARTER_HOURLY - timedelta(days=1)
-    )
-    step = timedelta(minutes=15) if quarter_hourly else timedelta(hours=1)
-    if not quarter_hourly:
-        # The hourly URLs name the hour; the reports inside are stamped at
-        # half past, which is what `reported_at` will hold.
-        start = datetime.combine(day, datetime.min.time(), tzinfo=ET) + timedelta(minutes=30)
-    else:
-        start = datetime.combine(day, datetime.min.time(), tzinfo=ET)
-    times = []
-    at = start
-    while at.date() == day:
+    times: list[datetime] = []
+    # The hourly stretch. The URLs name the hour; the reports inside are
+    # stamped at half past, which is what `reported_at` will hold.
+    at = _midnight(day) + timedelta(minutes=30)
+    while at.date() == day and at < QUARTER_HOURLY_FROM:
         times.append(at)
-        at += step
+        at += timedelta(hours=1)
+    # The quarter-hourly stretch.
+    at = max(_midnight(day), QUARTER_HOURLY_FROM)
+    while at.date() == day and at >= QUARTER_HOURLY_FROM:
+        times.append(at)
+        at += timedelta(minutes=15)
+
     if which == "all":
-        return [at for at in times if _has_url(at)]
+        return times
     if which == "morning":
         wanted = [at for at in times if at.hour == MORNING_HOUR]
-        return [at for at in (wanted[:1] if wanted else []) if _has_url(at)]
+        return wanted[:1]
     if which == "last":
-        available = [at for at in times if _has_url(at)]
-        return available[-1:]
+        return times[-1:]
     raise ValueError(f"unknown snapshot selection {which!r}")
-
-
-def _has_url(at: datetime) -> bool:
-    try:
-        report_url(at)
-    except ValueError:
-        return False
-    return True
 
 
 #: The snapshot `--snapshots morning` fetches: the nine o'clock Eastern one,

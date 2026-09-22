@@ -13,9 +13,8 @@ import pytest
 
 from app.injury_reports import (
     ET,
-    FIRST_QUARTER_HOURLY,
-    LAST_HOURLY,
     NOT_SUBMITTED,
+    QUARTER_HOURLY_FROM,
     STATUSES,
     Report,
     ReportLayoutError,
@@ -64,25 +63,39 @@ def test_an_hourly_url_names_the_hour_and_a_quarter_hourly_one_the_quarter() -> 
     assert report_url(datetime(2026, 1, 15, 10, 30, tzinfo=ET)).endswith("2026-01-15_10_30AM.pdf")
 
 
-def test_the_gap_between_the_two_cadences_has_no_url() -> None:
-    with pytest.raises(ValueError, match="no injury report URL"):
-        report_url(datetime(2025, 12, 20, 9, 30, tzinfo=ET))
-    assert report_url(LAST_HOURLY)
-    assert report_url(FIRST_QUARTER_HOURLY)
+def test_the_cutover_is_one_moment_with_no_days_missing_around_it() -> None:
+    """`nbainjuries` models a two-and-a-half day hole here. There is none:
+    20 and 21 December answer under the hourly URLs, and skipping them
+    would lose two game dates of the season."""
+    before = datetime(2025, 12, 22, 8, 30, tzinfo=ET)
+    assert report_url(before).endswith("2025-12-22_08AM.pdf")
+    assert report_url(QUARTER_HOURLY_FROM).endswith("2025-12-22_09_00AM.pdf")
+    for day in (date(2025, 12, 19), date(2025, 12, 20), date(2025, 12, 21)):
+        assert len(snapshot_times(day)) == 24
+        assert report_url(snapshot_times(day, which="morning")[0]).endswith(f"{day}_09AM.pdf")
 
 
 def test_a_day_offers_twenty_four_snapshots_hourly_and_ninety_six_after() -> None:
     assert len(snapshot_times(date(2025, 11, 11))) == 24
     assert len(snapshot_times(date(2026, 1, 15))) == 96
+    # The cutover day itself begins hourly and turns quarter-hourly at nine:
+    # 00:30 to 08:30, then 09:00 to 23:45.
+    assert len(snapshot_times(date(2025, 12, 22))) == 9 + 60
     assert snapshot_times(date(2025, 11, 11), which="morning") == [
         datetime(2025, 11, 11, 9, 30, tzinfo=ET)
     ]
     assert snapshot_times(date(2026, 1, 15), which="morning") == [
         datetime(2026, 1, 15, 9, 0, tzinfo=ET)
     ]
+    assert snapshot_times(date(2025, 12, 22), which="morning") == [QUARTER_HOURLY_FROM]
     assert snapshot_times(date(2025, 11, 11), which="last") == [
         datetime(2025, 11, 11, 23, 30, tzinfo=ET)
     ]
+    assert snapshot_times(date(2026, 1, 15), which="last") == [
+        datetime(2026, 1, 15, 23, 45, tzinfo=ET)
+    ]
+    with pytest.raises(ValueError, match="unknown snapshot selection"):
+        snapshot_times(date(2026, 1, 15), which="noon")
 
 
 def test_a_pdf_that_is_not_a_report_is_refused_rather_than_guessed_at() -> None:
