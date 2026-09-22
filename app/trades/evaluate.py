@@ -86,6 +86,26 @@ is not held by anybody: it has a different body in it every day. Both the
 headline and the per-man number settle it at that one figure, and
 `SideReport.opened_value` is what the page prints.
 
+THE MANAGER MAY NAME THE MAN INSTEAD
+
+That settlement is what a deal is worth to somebody who has not decided what
+to do with the place. A manager usually has: the deal he is judging is "two
+men for one *and the free agent I am about to add*", and the free agent is
+often not the one the league lens calls the best on the wire -- he is the man
+hurt today who plays the rest of the season, or the man whose categories this
+roster is short of. So `fills` names him, per side, and the place is then
+settled at his own weekly line rather than at the lane: he goes into `after`,
+into the season term, into the week in front of us and into `places_cost` as
+a man arriving, because that is what he is. Only the places left over after
+the named men are valued at `OPENED_PLACE`. A side that names nobody is
+judged exactly as it was.
+
+`fill_pool` is the other half of it: the free agents available on the day,
+each priced by what he would be worth *to this roster after this deal* -- the
+change in its expected category wins in a week with him in the opened place,
+against the place left open -- so a punt build sorts the wire differently
+from the league lens, which is the whole reason a manager wants to choose.
+
 When a side receives more men than it gives and has no open slot, somebody is
 dropped -- the caller may name him, and by default it is the cheapest man on
 the active roster by what his place is worth. The report names him and what he
@@ -116,7 +136,7 @@ the data is read as of.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -149,6 +169,7 @@ from app.pickups.state import (
     load_team_week,
     season_calendar,
     team_row,
+    waiver_state,
 )
 from app.pickups.stream import week_deltas
 from app.scoring.knowable import knowable
@@ -158,17 +179,21 @@ from app.scoring.value import category_wins
 from app.trades.summary import summarise
 
 __all__ = [
+    "POOL_LIMIT",
     "THIN_GAMES",
     "TRADE_HURDLE",
     "TRADE_REVIEW_DAYS",
     "TRADE_REVIEW_SOURCE",
     "CategoryView",
+    "FillCandidate",
+    "FillPool",
     "PlayerCard",
     "PlayoffLens",
     "SideReport",
     "TeamOffer",
     "TradeReport",
     "evaluate_trade",
+    "fill_pool",
     "playoff_window",
 ]
 
@@ -200,6 +225,12 @@ THIN_GAMES = 12
 #: A category's win probability has moved when it changes by this much, the
 #: threshold the streaming report already uses.
 MOVED_THRESHOLD = 0.01
+
+#: Men the fill pool answers with by default. The wire this league's listener
+#: sees is 20 to 60 deep, so the whole of it fits in one list a manager can
+#: read; the cost is in pricing them, which happens either way, not in sending
+#: them.
+POOL_LIMIT = 40
 
 
 @dataclass(frozen=True)
@@ -312,6 +343,10 @@ class SideReport:
     gives: tuple[PlayerCard, ...]
     #: Men dropped to make room, charged like anyone leaving.
     drops: tuple[PlayerCard, ...]
+    #: Free agents the caller named for the places this deal opens, in the
+    #: order they were named. Their lines are in `categories` and in the
+    #: judgement, exactly as a man arriving in the deal would be.
+    fills: tuple[PlayerCard, ...]
     #: How the drops were chosen: "named", "cheapest" or "" when none.
     drop_source: str
     #: Roster places the deal leaves open, each worth `replacement` a week.
@@ -342,16 +377,29 @@ class SideReport:
     notes: tuple[str, ...] = ()
 
     @property
+    def places_filled(self) -> int:
+        """Opened places the caller put a named free agent into."""
+        return len(self.fills)
+
+    @property
+    def places_left_open(self) -> int:
+        """Opened places nobody was named for, which are valued as a lane."""
+        return max(0, self.places_opened - self.places_filled)
+
+    @property
     def opened_value(self) -> float:
         """Categories a week the places this deal leaves open are worth.
 
         The better of the man the wire offers and streaming the place, summed
-        over the places opened (`app.scoring.replacement.opened_places`,
-        revision R2). Zero when the deal opens none. It is on the payload
-        because `replacement` alone stopped being the answer to "what is that
-        empty place worth" the day an opened place was re-priced.
+        over the places still open (`app.scoring.replacement.opened_places`,
+        revision R2). Zero when the deal opens none, and zero when every place
+        it opens has a named man in it -- a place with a man in it is worth
+        his line, which is in the categories and in the judgement already. It
+        is on the payload because `replacement` alone stopped being the answer
+        to "what is that empty place worth" the day an opened place was
+        re-priced.
         """
-        return opened_places(self.places_opened, self.replacement)
+        return opened_places(self.places_left_open, self.replacement)
 
     @property
     def net(self) -> float:
@@ -375,6 +423,70 @@ class SideReport:
                 key=lambda view: -abs(view.p_delta),
             )
         )
+
+
+@dataclass(frozen=True)
+class FillCandidate:
+    """One free agent, and what he would be worth in the place this deal opens.
+
+    `worth` is the only ranking on the page, and it is deliberately not the
+    league standard. `value` is the league standard, kept beside it, because
+    the two disagreeing is the interesting case: a man worth little to the
+    league and a lot to this roster is exactly the pickup a punt build wants.
+    """
+
+    player_id: int
+    name: str
+    position: str | None
+    pro_team_id: int
+    injury_status: str | None
+    expected_return_date: date | None
+    #: The day he clears waivers and that day as a scoring period, when the
+    #: league has him on waivers; None when he can be had today.
+    waiver_clears_at: date | None
+    waiver_clears_on: int | None
+    #: Games left over the stretch the report plans over.
+    games_left: int
+    #: Change in this side's expected category wins in a week, with him in the
+    #: opened place against the place left open.
+    worth: float
+    #: Categories a week he gives an ordinary place, league standard.
+    value: float
+    #: His week in the nine, the line the roster gains.
+    weekly: CategoryLine
+
+    @property
+    def on_waivers(self) -> bool:
+        return self.waiver_clears_at is not None
+
+    @property
+    def hurt(self) -> bool:
+        return bool(self.injury_status) and self.injury_status not in ("ACTIVE", "NORMAL")
+
+
+@dataclass(frozen=True)
+class FillPool:
+    """The wire as one side of one deal sees it, on one day."""
+
+    team_id: int
+    team_name: str
+    today: int
+    #: The nine in this league's own order, for reading `weekly` off.
+    categories: tuple[str, ...]
+    #: Places this deal opens for this side. Zero means there is nothing to
+    #: fill, and the page draws no chooser.
+    places_opened: int
+    #: What those places are worth left open and streamed: the "leave it open"
+    #: choice, in the same currency as every candidate's `worth`.
+    opened_value: float
+    replacement: float
+    replacement_player_id: int | None
+    pool_size: int
+    historical_wire: bool
+    #: False when the season has posted nothing to measure a lens against, so
+    #: every `worth` is zero rather than a guess.
+    measured: bool
+    candidates: tuple[FillCandidate, ...]
 
 
 @dataclass(frozen=True)
@@ -424,12 +536,20 @@ class _Side:
     gives: tuple[int, ...]
     receives: tuple[int, ...]
     drops: tuple[int, ...] = ()
+    #: Free agents named for the places this side's deal opens.
+    fills: tuple[int, ...] = ()
     drop_source: str = ""
     notes: tuple[str, ...] = ()
 
     @property
     def leaving(self) -> tuple[int, ...]:
         return (*self.gives, *self.drops)
+
+    @property
+    def arriving(self) -> tuple[int, ...]:
+        """Everybody who ends the day on this roster and did not start it
+        there: the men in the deal and the men named off the wire."""
+        return (*self.receives, *self.fills)
 
 
 def playoff_window(session: Session, league_season: LeagueSeason) -> tuple[int, int] | None:
@@ -454,6 +574,92 @@ def playoff_window(session: Session, league_season: LeagueSeason) -> tuple[int, 
     return int(first), int(last)
 
 
+@dataclass(frozen=True)
+class _Context:
+    """Everything both answers read, loaded once.
+
+    `evaluate_trade` and `fill_pool` ask the same question of the same day --
+    what are these two rosters and this wire worth -- and they must not answer
+    it from two different readings. The playoff lens is the one thing the pool
+    does not need, and it is the expensive half, so it is not in here.
+    """
+
+    today: int
+    first_day: int
+    last_day: int
+    days: tuple[int, ...]
+    weeks: float
+    as_of: date | None
+    distributions: tuple[CategoryDistribution, ...]
+    categories: tuple[str, ...]
+    sides: tuple[_Side, _Side]
+    wire: tuple[RosteredPlayer, ...]
+    historical_wire: bool
+    weekly: Mapping[int, CategoryLine]
+    players: Mapping[int, RosteredPlayer]
+    lens: Standard
+
+    @property
+    def wire_ids(self) -> tuple[int, ...]:
+        return tuple(player.player_id for player in self.wire)
+
+
+def _context(
+    session: Session,
+    league_season: LeagueSeason,
+    today: int,
+    offers: tuple[TeamOffer, TeamOffer],
+    *,
+    drops: Mapping[int, Sequence[int]] | None,
+    fills: Mapping[int, Sequence[int]] | None,
+    distributions: Sequence[CategoryDistribution] | None,
+    pool: Sequence[int] | None,
+    tilt: bool,
+) -> _Context:
+    """Both rosters, the wire, every weekly line, and the lens over them."""
+    first_day, last_day, today = horizon(session, league_season, today)
+    season = int(league_season.season)
+    days = tuple(range(today, last_day + 1))
+    calendar = season_calendar(session, season)
+    as_of = calendar.date_of(today) if calendar is not None else None
+    if distributions is None:
+        distributions = category_distributions(session, league_season)
+
+    sides = _open(session, league_season, today, offers, drops)
+    held = {player_id for side in sides for player_id in side.active}
+
+    wire = tuple(
+        player
+        for player in load_free_agents(
+            session, league_season, sides[0].week, player_ids=pool, days=days
+        )
+        if player.player_id not in held
+    )
+    sides = _with_fills(sides, fills, {player.player_id for player in wire}, today)
+
+    everyone = sorted(held | {player.player_id for player in wire})
+    weekly, _weeks = weekly_lines(session, league_season, everyone, today, tilt=tilt, as_of=as_of)
+    return _Context(
+        today=today,
+        first_day=first_day,
+        last_day=last_day,
+        days=days,
+        weeks=weeks_between(today, last_day),
+        as_of=as_of,
+        distributions=tuple(distributions),
+        categories=tuple(distribution.abbreviation for distribution in distributions),
+        sides=sides,
+        wire=wire,
+        historical_wire=pool is None and not has_free_agent_snapshots(session, league_season),
+        weekly=weekly,
+        players={
+            player.player_id: player
+            for player in build_players(session, league_season, everyone, days)
+        },
+        lens=standard_lens(session, league_season, today, distributions),
+    )
+
+
 def evaluate_trade(
     session: Session,
     league_season: LeagueSeason,
@@ -462,6 +668,7 @@ def evaluate_trade(
     side_b: TeamOffer,
     *,
     drops: Mapping[int, Sequence[int]] | None = None,
+    fills: Mapping[int, Sequence[int]] | None = None,
     review_days: int = TRADE_REVIEW_DAYS,
     hurdle: float = TRADE_HURDLE,
     tilt: bool = True,
@@ -472,52 +679,46 @@ def evaluate_trade(
 
     `drops` names, per ESPN team id, the men a side drops to make room; a side
     that needs room and names nobody drops the cheapest man on its active
-    roster. `pool` names the wire instead of reading it, for a test or a
-    calibration run, and `distributions` stands in for the league's measured
-    category spreads. `review_days` is the days before the deal can be in a
-    lineup (see the module docstring); `tilt` switches the minutes tilt in the
-    projections.
+    roster. `fills` names, per ESPN team id, the free agents a side puts into
+    the places the deal opens: his line is then what the place is worth,
+    rather than the wire's best man floored at a streamed lane. `pool` names
+    the wire instead of reading it, for a test or a calibration run, and
+    `distributions` stands in for the league's measured category spreads.
+    `review_days` is the days before the deal can be in a lineup (see the
+    module docstring); `tilt` switches the minutes tilt in the projections.
 
     Raises `ValueError` when a named player is not on the roster he is being
-    traded from, when a side names a drop it does not hold, or when the season
-    has no matchup periods to plan over.
+    traded from, when a side names a drop it does not hold, when a fill is not
+    a free agent on the day or is named for a side that opens no place, or
+    when the season has no matchup periods to plan over.
     """
-    first_day, last_day, today = horizon(session, league_season, today)
+    loaded = _context(
+        session,
+        league_season,
+        today,
+        (side_a, side_b),
+        drops=drops,
+        fills=fills,
+        distributions=distributions,
+        pool=pool,
+        tilt=tilt,
+    )
+    today, last_day = loaded.today, loaded.last_day
     season = int(league_season.season)
     effective_day = today + max(0, review_days)
-    days = tuple(range(today, last_day + 1))
-    weeks = weeks_between(today, last_day)
-    calendar = season_calendar(session, season)
-    as_of = calendar.date_of(today) if calendar is not None else None
-    if distributions is None:
-        distributions = category_distributions(session, league_season)
-    categories = tuple(distribution.abbreviation for distribution in distributions)
-
-    sides = _open(session, league_season, today, (side_a, side_b), drops)
-    held = {player_id for side in sides for player_id in side.active}
-
-    wire = tuple(
-        player
-        for player in load_free_agents(
-            session, league_season, sides[0].week, player_ids=pool, days=days
-        )
-        if player.player_id not in held
-    )
-    historical_wire = pool is None and not has_free_agent_snapshots(session, league_season)
-
-    everyone = sorted(held | {player.player_id for player in wire})
-    weekly, _weeks = weekly_lines(session, league_season, everyone, today, tilt=tilt, as_of=as_of)
-    players = {
-        player.player_id: player for player in build_players(session, league_season, everyone, days)
-    }
-    lens = standard_lens(session, league_season, today, distributions)
+    weeks, as_of = loaded.weeks, loaded.as_of
+    distributions, categories = loaded.distributions, loaded.categories
+    sides, wire = loaded.sides, loaded.wire
+    historical_wire = loaded.historical_wire
+    weekly, players, lens = loaded.weekly, loaded.players, loaded.lens
+    waivers = waiver_state(wire)
 
     playoffs = playoff_window(session, league_season)
     playoff_days, playoff_weeks = _playoff_days(playoffs, today)
     playoff_weekly, playoff_games = _playoff_lines(
         session,
         league_season,
-        everyone,
+        sorted(weekly),
         today,
         playoff_days,
         playoff_weeks,
@@ -559,7 +760,8 @@ def evaluate_trade(
             playoff_weeks=playoff_weeks,
             playoff_window_days=playoffs,
             players=players,
-            wire=tuple(player.player_id for player in wire),
+            wire=loaded.wire_ids,
+            waivers=waivers,
             lens=lens,
             categories=categories,
             distributions=distributions,
@@ -575,7 +777,7 @@ def evaluate_trade(
         effective_day=effective_day,
         review_days=max(0, review_days),
         review_source=TRADE_REVIEW_SOURCE,
-        first_scoring_period=first_day,
+        first_scoring_period=loaded.first_day,
         last_scoring_period=last_day,
         weeks_remaining=weeks,
         sides=(built[0], built[1]),
@@ -583,6 +785,119 @@ def evaluate_trade(
         pool_size=len(wire),
         historical_wire=historical_wire,
         notes=tuple(notes),
+    )
+
+
+def fill_pool(
+    session: Session,
+    league_season: LeagueSeason,
+    today: int,
+    side_a: TeamOffer,
+    side_b: TeamOffer,
+    *,
+    for_team: int,
+    drops: Mapping[int, Sequence[int]] | None = None,
+    limit: int = POOL_LIMIT,
+    tilt: bool = True,
+    distributions: Sequence[CategoryDistribution] | None = None,
+    pool: Sequence[int] | None = None,
+) -> FillPool:
+    """The free agents who could fill the place this deal opens for `for_team`.
+
+    Each of them priced by **what he is worth to this roster after this deal**:
+    the expected categories a week the side's post-trade roster wins with him
+    in the opened place, less the same roster with the place left open. That is
+    the nine-category table's own arithmetic (`Standard.week_wins`), so a punt
+    build ranks the wire differently from the league lens -- a poor free-throw
+    big is free to a roster that has given up on the category and expensive to
+    one still winning it -- which is the whole reason the choice belongs to the
+    manager rather than to `_best_wire`.
+
+    The deal is a parameter because the answer depends on it: who is leaving
+    decides what the roster is short of. Sorted by worth, best first, and cut
+    to `limit`; the cost is in pricing the wire, not in sending it, so the cut
+    is about what a manager can read.
+
+    No look-ahead: the wire, the rosters and every line are `today`'s, read
+    exactly as `evaluate_trade` reads them (`_context`).
+    """
+    loaded = _context(
+        session,
+        league_season,
+        today,
+        (side_a, side_b),
+        drops=drops,
+        fills=None,
+        distributions=distributions,
+        pool=pool,
+        tilt=tilt,
+    )
+    side = next(
+        (found for found in loaded.sides if found.offer.team_id == for_team),
+        None,
+    )
+    if side is None:
+        raise ValueError(f"team {for_team} is not in this trade")
+
+    spots = load_spots(
+        session,
+        league_season,
+        side.offer.team_id,
+        loaded.today,
+        roster=side.active,
+        wire=loaded.wire_ids,
+        weekly=loaded.weekly,
+        distributions=loaded.distributions,
+    )
+    side = _settle_drops(side, spots)
+    leaving, arriving = side.leaving, side.receives
+    opened = max(0, len(leaving) - len(arriving))
+
+    # The roster this deal leaves, with the opened place empty: the line every
+    # candidate is priced against.
+    base = sum_lines(loaded.weekly.get(player_id, CategoryLine()) for player_id in side.active)
+    base = _after(base, loaded.weekly, leaving, arriving, None, 0)
+    without = loaded.lens.week_wins(base)
+
+    candidates = sorted(
+        (
+            FillCandidate(
+                player_id=man.player_id,
+                name=man.name,
+                position=man.position,
+                pro_team_id=man.pro_team_id,
+                injury_status=man.injury_status,
+                expected_return_date=man.expected_return_date,
+                waiver_clears_at=man.waiver_clears_at,
+                waiver_clears_on=man.waiver_clears_on,
+                games_left=man.games_remaining_this_period,
+                worth=(
+                    loaded.lens.week_wins(base + loaded.weekly.get(man.player_id, CategoryLine()))
+                    - without
+                    if loaded.lens.measured
+                    else 0.0
+                ),
+                value=spots.value(man.player_id),
+                weekly=loaded.weekly.get(man.player_id, CategoryLine()),
+            )
+            for man in loaded.wire
+        ),
+        key=lambda candidate: (-candidate.worth, candidate.name),
+    )
+    best = _best_wire(loaded.wire_ids, spots)
+    return FillPool(
+        team_id=side.offer.team_id,
+        team_name=side.team_name,
+        today=loaded.today,
+        categories=loaded.categories,
+        places_opened=opened,
+        opened_value=opened_places(opened, spots.replacement(exclude=arriving)),
+        replacement=spots.replacement(exclude=arriving),
+        replacement_player_id=best,
+        pool_size=len(loaded.wire),
+        historical_wire=loaded.historical_wire,
+        measured=loaded.lens.measured,
+        candidates=tuple(candidates[: max(1, limit)]),
     )
 
 
@@ -666,6 +981,54 @@ def _with_drops(side: _Side, named: Mapping[int, Sequence[int]]) -> _Side:
     return replace(side, drops=tuple(wanted), drop_source="named" if wanted else "")
 
 
+def _with_fills(
+    sides: tuple[_Side, _Side],
+    named: Mapping[int, Sequence[int]] | None,
+    wire: Collection[int],
+    today: int,
+) -> tuple[_Side, _Side]:
+    """The free agents each side puts into the places its deal opens.
+
+    Checked against the wire as it stands on `today` and against the places
+    the deal actually opens, because both are things a caller can get wrong
+    and neither should turn into a quietly strange number. A man named twice,
+    or named on both sides, is refused: there is one wire, and he can only be
+    in one place.
+    """
+    wanted = named or {}
+    if not wanted:
+        return sides
+    spoken_for: set[int] = set()
+    built: list[_Side] = []
+    for side in sides:
+        fills = list(
+            dict.fromkeys(int(player_id) for player_id in wanted.get(side.offer.team_id, ()))
+        )
+        off_the_wire = [player_id for player_id in fills if player_id not in set(wire)]
+        if off_the_wire:
+            raise ValueError(
+                ", ".join(str(player_id) for player_id in off_the_wire)
+                + f" is not a free agent on day {today}, so he cannot fill an opened place"
+            )
+        both = [player_id for player_id in fills if player_id in spoken_for]
+        if both:
+            raise ValueError(
+                ", ".join(str(player_id) for player_id in both)
+                + " cannot fill a place on both sides of this deal"
+            )
+        spoken_for.update(fills)
+        opened = max(0, len(side.gives) + len(side.drops) - len(side.receives))
+        if fills and not opened:
+            raise ValueError(f"{side.team_name} opens no roster place in this deal")
+        if len(fills) > opened:
+            raise ValueError(
+                f"{side.team_name} opens {opened} roster place(s) and {len(fills)} men "
+                "are named to fill them"
+            )
+        built.append(replace(side, fills=tuple(fills)))
+    return built[0], built[1]
+
+
 def _needed_drops(side: _Side) -> int:
     """Places the arriving men need that the roster does not already have."""
     arriving = len(side.receives)
@@ -691,6 +1054,7 @@ def _judge_side(
     playoff_window_days: tuple[int, int] | None,
     players: Mapping[int, RosteredPlayer],
     wire: Sequence[int],
+    waivers: Mapping[int, tuple[date, int]],
     lens: Standard,
     categories: Sequence[str],
     distributions: Sequence[CategoryDistribution],
@@ -719,44 +1083,51 @@ def _judge_side(
 
     side = _settle_drops(side, spots)
     leaving = side.leaving
-    receiving = side.receives
+    # A man named off the wire is a man arriving, everywhere: in the week in
+    # front of us, in the roster the season term reads, and in `places_cost`.
+    # Only the places nobody was named for are settled as a lane.
+    arriving = side.arriving
 
     opponent_move: tuple[Sequence[int], Sequence[int]] | None = None
     if side.week.opponent_team_id == other.offer.team_id:
-        opponent_move = (other.receives, other.leaving)
+        opponent_move = (other.arriving, other.leaving)
     delta_week = week_deltas(
         session,
         league_season,
         side.offer.team_id,
         today,
-        [(receiving, leaving)],
+        [(arriving, leaving)],
         tilt=tilt,
         distributions=distributions,
+        waivers=waivers,
         effective_day=effective_day,
         opponent_move=opponent_move,
     )[0]
 
-    best_on_the_wire = _best_wire(wire, spots)
-    opened = max(0, len(leaving) - len(receiving))
-    used = max(0, min(side.week.open_slots, len(receiving) - len(leaving)))
+    opened = max(0, len(leaving) - len(side.receives))
+    left_open = max(0, opened - len(side.fills))
+    used = max(0, min(side.week.open_slots, len(side.receives) - len(leaving)))
+    best_on_the_wire = _best_wire(
+        [player_id for player_id in wire if player_id not in set(side.fills)], spots
+    )
 
     filler = weekly.get(best_on_the_wire, CategoryLine()) if best_on_the_wire is not None else None
     before_line = sum_lines(weekly.get(player_id, CategoryLine()) for player_id in side.active)
-    after_line = _after(before_line, weekly, leaving, receiving, filler, opened)
+    after_line = _after(before_line, weekly, leaving, arriving, filler, left_open)
 
-    independent = _independent_season(spots, leaving=leaving, receiving=receiving)
+    independent = _independent_season(spots, leaving=leaving, receiving=arriving)
     judgement = judge(
         spots,
         delta_week=delta_week,
         dropped=leaving,
-        added=receiving,
+        added=arriving,
         delta_season_per_week=_roster_season(
             spots,
             lens,
             before_line,
             after_line,
-            opened=opened,
-            replacement=spots.replacement(exclude=receiving),
+            opened=left_open,
+            replacement=spots.replacement(exclude=arriving),
             filled=filler is not None,
         ),
     )
@@ -784,15 +1155,16 @@ def _judge_side(
         categories=categories,
         distributions=distributions,
         filler=None if best_on_the_wire is None else playoff_weekly.get(best_on_the_wire),
-        opened=opened,
+        opened=left_open,
     )
 
     built = SideReport(
         team_id=side.offer.team_id,
         team_name=side.team_name,
-        receives=tuple(card(player_id) for player_id in receiving),
+        receives=tuple(card(player_id) for player_id in side.receives),
         gives=tuple(card(player_id) for player_id in side.gives),
         drops=tuple(card(player_id) for player_id in side.drops),
+        fills=tuple(card(player_id) for player_id in side.fills),
         drop_source=side.drop_source,
         places_opened=opened,
         places_used=used,
@@ -974,10 +1346,15 @@ def _side_notes(side: _Side, weeks: float, opened: int, used: int) -> tuple[str,
         )
     if used:
         out.append(f"{used} of the men arriving take open roster places rather than a drop")
-    if opened:
+    if side.fills:
         out.append(
-            f"the deal leaves {opened} roster place(s) open, valued at the better of the man "
-            "the wire offers and what a streamed place returns"
+            f"{len(side.fills)} of the {opened} place(s) this deal opens is filled by a free "
+            "agent named by us, and his own line is what it is worth here"
+        )
+    if opened - len(side.fills) > 0:
+        out.append(
+            f"the deal leaves {opened - len(side.fills)} roster place(s) open, valued at the "
+            "better of the man the wire offers and what a streamed place returns"
         )
     if side.week.on_bye:
         out.append("this side is on a bye, so the week half of its judgement is zero")
@@ -1046,7 +1423,7 @@ def _playoff_lens(
     """The deal over the playoff weeks alone, or why it cannot be counted."""
     first = playoff_days[0] if playoff_days else None
     last = playoff_days[-1] if playoff_days else None
-    involved = (*side.leaving, *side.receives)
+    involved = (*side.leaving, *side.arriving)
     games = sum(playoff_games.get(player_id, 0) for player_id in involved)
     empty = PlayoffLens(
         first_scoring_period=first,
@@ -1074,16 +1451,15 @@ def _playoff_lens(
     def value(player_id: int) -> float:
         return lens.value(playoff_weekly.get(player_id, CategoryLine()))
 
-    replacement = max(
-        [TYPICAL_PICKUP, *(value(player_id) for player_id in wire)] if wire else [TYPICAL_PICKUP]
-    )
+    spare = [player_id for player_id in wire if player_id not in set(side.fills)]
+    replacement = max([TYPICAL_PICKUP, *(value(player_id) for player_id in spare)])
     cost = places_cost(
         [value(player_id) for player_id in side.leaving],
-        [value(player_id) for player_id in side.receives],
+        [value(player_id) for player_id in side.arriving],
         replacement,
     )
     before = sum_lines(playoff_weekly.get(player_id, CategoryLine()) for player_id in side.active)
-    after = _after(before, playoff_weekly, side.leaving, side.receives, filler, opened)
+    after = _after(before, playoff_weekly, side.leaving, side.arriving, filler, opened)
     return replace(
         empty,
         delta_per_week=-cost,

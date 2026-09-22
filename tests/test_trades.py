@@ -30,7 +30,14 @@ from app.pickups.bids import clear_cache
 from app.pickups.judge import TYPICAL_PICKUP
 from app.pickups.projection import clear_cache as clear_lines
 from app.scoring.replacement import OPENED_PLACE
-from app.trades import CALIBRATION_NOTE, PUBLISHED, TRADE_HURDLE, TeamOffer, evaluate_trade
+from app.trades import (
+    CALIBRATION_NOTE,
+    PUBLISHED,
+    TRADE_HURDLE,
+    TeamOffer,
+    evaluate_trade,
+    fill_pool,
+)
 from app.trades.calibration import COIN_RANGE, DEALS, UNEVEN_ERROR, WINDOW_DAYS
 from app.trades.summary import WORDS, join, words
 from scripts.trade import AmbiguousNameError, player_by_name, render
@@ -39,7 +46,9 @@ from tests.pickups_db import (
     SMALL_LINEUP,
     WEEK,
     clear_schedule,
+    clears_waivers_on,
     configure,
+    day_date,
     eligible,
     games,
     on_the_wire,
@@ -92,6 +101,41 @@ EVEN = {
     "FTA": 100.0,
     "FG%": 235 / 500,
     "FT%": 0.78,
+}
+
+
+#: The same starter, who cannot shoot free throws: a quarter from the line,
+#: which is a category his team has given up before any deal is made.
+PUNTER: Mapping[str, float] = {**STARTER, "FTM": 1.5, "FTA": 6.0}
+
+#: Two men on the wire whom the two lenses rank in opposite orders. The big
+#: rebounds and blocks and shoots half his free throws; the guard shoots them
+#: all and does little else.
+BIG: Mapping[str, float] = {
+    "PTS": 14.0,
+    "REB": 14.0,
+    "AST": 2.0,
+    "STL": 0.8,
+    "BLK": 2.5,
+    "3PM": 0.2,
+    "TO": 1.8,
+    "FGM": 6.0,
+    "FGA": 10.0,
+    "FTM": 2.0,
+    "FTA": 4.0,
+}
+GUARD: Mapping[str, float] = {
+    "PTS": 18.0,
+    "REB": 3.0,
+    "AST": 5.0,
+    "STL": 1.0,
+    "BLK": 0.1,
+    "3PM": 2.5,
+    "TO": 2.0,
+    "FGM": 6.5,
+    "FGA": 14.0,
+    "FTM": 5.0,
+    "FTA": 5.3,
 }
 
 
@@ -650,6 +694,287 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     assert "about four tenths of a category a week" in CALIBRATION_NOTE
     assert UNEVEN_ERROR["R2, the streamed lane"] == pytest.approx(0.103)
     assert "the gap is about a tenth" in CALIBRATION_NOTE
+
+
+# ---------------------------------------------------------------------------
+# the man who fills the opened place, and the pool he is chosen from
+# ---------------------------------------------------------------------------
+
+
+def test_a_named_free_agent_fills_the_place_and_is_judged_as_a_man_arriving(
+    session: Session,
+) -> None:
+    """The deal a manager is really judging: two men for one *and* the free
+    agent he is about to add.
+
+    Left alone, the place a two-for-one opens is settled at the better of the
+    wire's best man and a streamed lane. Named, it is settled at the named
+    man's own week: his line goes into the after-roster, into the season term,
+    into the week in front of us and into the per-man number, and the lane
+    floor no longer applies, because nothing is left open to stream. Here the
+    manager names the *worse* of the two free agents -- which is what he does
+    when the better one cannot shoot free throws or is not playing -- so every
+    number has to move the right way.
+    """
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    on_wire(session, ls, "Wire", scaled(0.5))
+    chosen = on_wire(session, ls, "Chosen", scaled(0.3))
+    offers = (
+        TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (who["Star"].id,)),
+    )
+
+    open_place = evaluate_trade(session, ls, TODAY, *offers, distributions=WEEK)
+    named = evaluate_trade(
+        session, ls, TODAY, *offers, fills={HOME: (chosen.id,)}, distributions=WEEK
+    )
+
+    left, filled = open_place.side(HOME), named.side(HOME)
+    assert left.fills == () and left.places_left_open == 1
+    assert left.replacement_player is not None and left.replacement_player.name == "Wire"
+    assert [card.name for card in filled.fills] == ["Chosen"]
+    assert (filled.places_opened, filled.places_filled, filled.places_left_open) == (1, 1, 0)
+    assert filled.opened_value == 0.0, "a place with a man in it is worth his line, not a lane"
+    assert "Chosen comes off the wire into the place it opens" in filled.summary
+    assert "a week streamed" not in filled.summary
+
+    after = {view.abbreviation: view for view in filled.categories}
+    was = {view.abbreviation: view for view in left.categories}
+    assert after["PTS"].after < was["PTS"].after, "the lesser man was named, and the table says so"
+    assert filled.judgement.delta_season_per_week < left.judgement.delta_season_per_week
+
+
+def test_filling_a_place_with_the_best_man_on_the_wire_is_the_default_settlement(
+    session: Session,
+) -> None:
+    """Naming the man the report would have stood in the place anyway changes
+    the arithmetic of the settlement and not the answer -- unless the lane
+    floor was binding, and here it is not, because that man clears it.
+
+    It is the check that the two paths are one rule read two ways rather than
+    two rules that happen to agree on a fixture. The one thing that does move
+    is the week in front of us: an opened place has never been seated in
+    `delta_week`, because nobody knows who would be in it day by day, and a
+    man the manager has named is on the roster from the day the deal lands.
+    """
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    best = on_wire(session, ls, "Wire", scaled(1.4))
+    offers = (
+        TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (who["Star"].id,)),
+    )
+
+    left = evaluate_trade(session, ls, TODAY, *offers, distributions=WEEK).side(HOME)
+    named = evaluate_trade(
+        session, ls, TODAY, *offers, fills={HOME: (best.id,)}, distributions=WEEK
+    ).side(HOME)
+
+    assert left.replacement_player is not None and left.replacement_player.name == "Wire"
+    assert left.opened_value > OPENED_PLACE, "the man beats the lane, so the floor does not bind"
+    for view, same in zip(named.categories, left.categories, strict=True):
+        assert view.after == pytest.approx(same.after), "the same roster either way"
+    assert named.judgement.delta_season_per_week == pytest.approx(
+        left.judgement.delta_season_per_week
+    )
+    assert named.judgement.delta_week > left.judgement.delta_week, (
+        "the place nobody is named for is not seated this week; a named man is"
+    )
+
+
+def test_a_fill_the_wire_does_not_hold_is_a_sentence_not_a_number(session: Session) -> None:
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    wire = on_wire(session, ls, "Wire", scaled(0.5))
+    other = on_wire(session, ls, "Other", scaled(0.4))
+    two_for_one = (
+        TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (who["Star"].id,)),
+    )
+    even = (TeamOffer(HOME, (who["HomeWeak"].id,)), TeamOffer(AWAY, (who["Star"].id,)))
+
+    with pytest.raises(ValueError, match="is not a free agent"):
+        evaluate_trade(
+            session, ls, TODAY, *two_for_one, fills={HOME: (who["HomeA"].id,)}, distributions=WEEK
+        )
+    with pytest.raises(ValueError, match="opens no roster place"):
+        evaluate_trade(session, ls, TODAY, *even, fills={HOME: (wire.id,)}, distributions=WEEK)
+    with pytest.raises(ValueError, match="are named to fill them"):
+        evaluate_trade(
+            session,
+            ls,
+            TODAY,
+            *two_for_one,
+            fills={HOME: (wire.id, other.id)},
+            distributions=WEEK,
+        )
+
+
+def test_the_same_man_cannot_fill_a_place_on_both_sides(session: Session) -> None:
+    """One wire, one man: a deal that opens a place on each side cannot put
+    him in both of them.
+
+    Both sides open a place only when the side receiving more men also names
+    more drops than it needs -- a manager clearing out two fringe men while he
+    is at it -- which is the shape this builds, because it is the only one in
+    which the question can be asked at all.
+    """
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    wire = on_wire(session, ls, "Wire", scaled(0.5))
+    offers = (
+        TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (who["Star"].id,)),
+    )
+    clearing_out = {AWAY: (who["AwayA"].id, who["AwayB"].id)}
+
+    both = evaluate_trade(session, ls, TODAY, *offers, drops=clearing_out, distributions=WEEK)
+    assert both.side(HOME).places_opened == 1 and both.side(AWAY).places_opened == 1
+
+    with pytest.raises(ValueError, match="both sides"):
+        evaluate_trade(
+            session,
+            ls,
+            TODAY,
+            *offers,
+            drops=clearing_out,
+            fills={HOME: (wire.id,), AWAY: (wire.id,)},
+            distributions=WEEK,
+        )
+
+
+def test_the_pool_ranks_the_wire_by_what_each_man_is_worth_to_this_roster(
+    session: Session,
+) -> None:
+    """The reason the choice belongs to the manager and not to `_best_wire`.
+
+    Home cannot shoot free throws: four men at a quarter from the line, so the
+    category is lost before the deal and lost after it, whoever fills the place
+    the deal opens. The league standard -- a man dropped into an average team --
+    prefers the guard, because in an average team those free throws are worth
+    something. To this roster they are worth nothing, and the big's rebounds
+    and blocks are worth a great deal, so the pool puts him first.
+
+    Both numbers are on every candidate, which is what makes the disagreement
+    readable rather than mysterious.
+    """
+    ls, home, away, periods = build_league(session)
+    punters = [
+        rostered(session, home, periods[1], name, PUNTER)
+        for name in ("PuntA", "PuntB", "PuntC", "PuntD")
+    ]
+    star = rostered(session, away, periods[1], "Star", scaled(1.6), pro_team=20)
+    for name in ("AwayA", "AwayB", "AwayC"):
+        rostered(session, away, periods[1], name, STARTER, pro_team=20)
+    on_wire(session, ls, "Big", BIG)
+    on_wire(session, ls, "Guard", GUARD)
+
+    pool = fill_pool(
+        session,
+        ls,
+        TODAY,
+        TeamOffer(HOME, (punters[0].id, punters[1].id)),
+        TeamOffer(AWAY, (star.id,)),
+        for_team=HOME,
+        distributions=WEEK,
+    )
+
+    assert pool.places_opened == 1
+    assert pool.opened_value == pytest.approx(max(pool.replacement, OPENED_PLACE))
+    by_name = {candidate.name: candidate for candidate in pool.candidates}
+    assert [candidate.name for candidate in pool.candidates] == ["Big", "Guard"]
+    assert by_name["Big"].worth > by_name["Guard"].worth, "to this roster"
+    assert by_name["Big"].value < by_name["Guard"].value, "to an average one"
+    assert pool.replacement_player_id == by_name["Guard"].player_id, (
+        "the man the report would stand in the place is the league lens's, not this roster's"
+    )
+    assert by_name["Big"].weekly.get("REB") > by_name["Guard"].weekly.get("REB")
+
+
+def test_the_pool_on_a_replayed_day_is_that_days_wire_and_not_a_later_ones(
+    session: Session,
+) -> None:
+    """The wire of a season the listener never ran for is rebuilt from who
+    played and was in nobody's lineup, day by day (`historical_free_agents`).
+    A man who first plays tomorrow is not on the wire this morning, and the
+    pool must not offer him -- the same claim the rosters route makes about a
+    roster, on the half of the answer that comes off the wire.
+    """
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    today_only = player(session, "PlayedToday")
+    eligible(session, today_only, ANY, "PG")
+    snapshot(session, today_only, pro_team_id=20, on_team_id=0)
+    projected(session, today_only, 70, scaled(0.6))
+    tomorrow_only = player(session, "PlayedTomorrow")
+    eligible(session, tomorrow_only, ANY, "PG")
+    snapshot(session, tomorrow_only, pro_team_id=20, on_team_id=0)
+    projected(session, tomorrow_only, 70, scaled(0.9))
+    played(session, today_only, TODAY, 30.0, scaled(0.6))
+    played(session, tomorrow_only, TODAY + 1, 30.0, scaled(0.9))
+
+    def wire_on(day: int) -> set[str]:
+        clear_lines()
+        return {
+            candidate.name
+            for candidate in fill_pool(
+                session,
+                ls,
+                day,
+                TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+                TeamOffer(AWAY, (who["Star"].id,)),
+                for_team=HOME,
+                distributions=WEEK,
+            ).candidates
+        }
+
+    assert wire_on(TODAY) == {"PlayedToday"}, "nobody who has not played yet is on it"
+    assert wire_on(TODAY + 1) == {"PlayedTomorrow"}
+
+
+def test_the_pool_says_who_is_hurt_and_who_is_still_on_waivers(session: Session) -> None:
+    """The three things a manager checks before he names a man: is he playing,
+    when is he back, and can he be had today at all."""
+    ls, home, away, periods = build_league(session)
+    who = build_rosters(session, ls, home, away, periods)
+    hurt = player(session, "Hurt")
+    eligible(session, hurt, ANY, "SF")
+    snapshot(
+        session,
+        hurt,
+        pro_team_id=20,
+        on_team_id=0,
+        injury_status="OUT",
+        expected_return_date=day_date(TODAY + 3),
+    )
+    projected(session, hurt, 70, scaled(0.9))
+    on_the_wire(session, ls, hurt)
+    claimed = player(session, "Claimed")
+    eligible(session, claimed, ANY, "PG")
+    snapshot(session, claimed, pro_team_id=20, on_team_id=0)
+    projected(session, claimed, 70, scaled(0.5))
+    on_the_wire(session, ls, claimed, status="WAIVERS", clears_at=clears_waivers_on(TODAY + 2))
+
+    pool = fill_pool(
+        session,
+        ls,
+        TODAY,
+        TeamOffer(HOME, (who["HomeWeak"].id, who["HomeC"].id)),
+        TeamOffer(AWAY, (who["Star"].id,)),
+        for_team=HOME,
+        distributions=WEEK,
+    )
+
+    by_name = {candidate.name: candidate for candidate in pool.candidates}
+    assert by_name["Hurt"].hurt and by_name["Hurt"].injury_status == "OUT"
+    assert by_name["Hurt"].expected_return_date == day_date(TODAY + 3)
+    assert by_name["Hurt"].games_left < by_name["Claimed"].games_left, "ruled out of the days"
+    assert by_name["Claimed"].on_waivers and by_name["Claimed"].waiver_clears_on == TODAY + 2
+    assert by_name["Hurt"].on_waivers is False
+    assert pool.historical_wire is False, "the listener's own pass, on this fixture"
+    assert pool.pool_size == len(pool.candidates)
+    assert all(candidate.position for candidate in pool.candidates)
 
 
 def test_the_summary_joins_names_the_way_a_sentence_does() -> None:

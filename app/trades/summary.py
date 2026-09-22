@@ -179,9 +179,12 @@ def _cost(side: SideReport) -> str:
         cost = sum(card.value for card in side.drops)
         how = "named" if side.drop_source == "named" else "the cheapest place on the roster"
         parts.append(f"{who} goes to make room ({how}, {cost:.2f} categories a week)")
-    if side.places_opened:
+    if side.fills:
+        who = join([card.name for card in side.fills])
+        parts.append(f"{who} comes off the wire into the place it opens")
+    if side.places_left_open:
         parts.append(
-            f"it leaves {side.places_opened} place(s) open, worth "
+            f"it leaves {side.places_left_open} place(s) open, worth "
             f"{side.opened_value:.2f} a week streamed"
         )
     if not parts:

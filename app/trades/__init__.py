@@ -8,29 +8,36 @@ can read side by side. See docs/trades.md.
 
 from app.trades.calibration import CALIBRATION_NOTE, PUBLISHED, Measured
 from app.trades.evaluate import (
+    POOL_LIMIT,
     THIN_GAMES,
     TRADE_HURDLE,
     TRADE_REVIEW_DAYS,
     TRADE_REVIEW_SOURCE,
     CategoryView,
+    FillCandidate,
+    FillPool,
     PlayerCard,
     PlayoffLens,
     SideReport,
     TeamOffer,
     TradeReport,
     evaluate_trade,
+    fill_pool,
     playoff_window,
 )
 from app.trades.summary import summarise
 
 __all__ = [
     "CALIBRATION_NOTE",
+    "POOL_LIMIT",
     "PUBLISHED",
     "THIN_GAMES",
     "TRADE_HURDLE",
     "TRADE_REVIEW_DAYS",
     "TRADE_REVIEW_SOURCE",
     "CategoryView",
+    "FillCandidate",
+    "FillPool",
     "Measured",
     "PlayerCard",
     "PlayoffLens",
@@ -38,6 +45,7 @@ __all__ = [
     "TeamOffer",
     "TradeReport",
     "evaluate_trade",
+    "fill_pool",
     "playoff_window",
     "summarise",
 ]

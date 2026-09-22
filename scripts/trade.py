@@ -18,6 +18,12 @@ from the stored schedule.
 room and `--their-drop` one the other side drops; without them a side that
 needs room drops the cheapest place on its roster, and the report says so.
 
+`--fill` names a free agent `--team` puts into a place the deal opens, and
+`--their-fill` one the other side puts into its own: the place is then worth
+his week rather than the better of the wire's best man and a streamed lane,
+which is the deal a manager is usually really judging. Without them the place
+is left open and settled as it always was.
+
 Domain logic lives in app/trades/; this file is argument parsing and layout.
 See docs/trades.md.
 """
@@ -40,7 +46,7 @@ from app.config import get_settings
 from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
 from app.inseason.startable import team_by_name, team_names
-from app.pickups.state import load_team_week, season_calendar
+from app.pickups.state import load_free_agents, load_team_week, season_calendar
 from app.trades import (
     TRADE_REVIEW_DAYS,
     CategoryView,
@@ -84,6 +90,21 @@ def roster_names(
     """
     week = load_team_week(session, league_season, team.espn_team_id, today)
     return {player.player_id: player.name for player in week.roster}
+
+
+def wire_names(
+    session: Session, league_season: LeagueSeason, team: Team, today: int
+) -> dict[int, str]:
+    """Player id -> name for the free agents on the wire on `today`.
+
+    The scope a `--fill` is matched in, for the same reason a `--give` is
+    matched on a roster: the man has to be somewhere the deal can take him
+    from, and a name that is not there should say which names are.
+    """
+    week = load_team_week(session, league_season, team.espn_team_id, today)
+    return {
+        player.player_id: player.name for player in load_free_agents(session, league_season, week)
+    }
 
 
 def player_by_name(roster: dict[int, str], name: str) -> int:
@@ -172,10 +193,15 @@ def render_side(side: SideReport, *, estimate: bool) -> list[str]:
     if side.drops:
         how = "named" if side.drop_source == "named" else "cheapest place on the roster"
         add(f"  drops: {', '.join(_card(card) for card in side.drops)}  [{how}]")
-    if side.places_opened:
+    if side.fills:
         add(
-            f"  opens {side.places_opened} roster place(s), worth "
-            f"{side.replacement:.3f} a week on the wire"
+            f"  fills {side.places_filled} of the {side.places_opened} place(s) it opens, "
+            "named by us: " + ", ".join(_card(card) for card in side.fills)
+        )
+    if side.places_left_open:
+        add(
+            f"  leaves {side.places_left_open} roster place(s) open, worth "
+            f"{side.opened_value:.3f} a week"
             + (
                 f" (the best free agent is {side.replacement_player.name})"
                 if side.replacement_player is not None
@@ -201,7 +227,7 @@ def render_side(side: SideReport, *, estimate: bool) -> list[str]:
         add(f"  {line}")
     add("")
     add("  what it rests on:")
-    for card in (*side.receives, *side.gives, *side.drops):
+    for card in (*side.receives, *side.gives, *side.drops, *side.fills):
         add(f"    {_rests_on(card)}")
     if side.notes:
         add("  notes:")
@@ -252,30 +278,39 @@ def _resolve(
     today: int,
     names: Sequence[str],
     label: str,
+    *,
+    pool: dict[int, str] | None = None,
 ) -> tuple[int, ...] | None:
-    """Player ids for `names` on this team's roster, or None after complaining."""
-    roster = roster_names(session, league_season, team, today)
+    """Player ids for `names`, or None after complaining about one of them.
+
+    `pool` is the scope the name is matched in and defaults to this team's
+    roster; a `--fill` passes the wire instead, because that is where the man
+    has to be.
+    """
+    where = "on this roster" if pool is None else "on the wire"
+    scope = roster_names(session, league_season, team, today) if pool is None else pool
     out: list[int] = []
     for name in names:
         try:
-            out.append(player_by_name(roster, name))
+            out.append(player_by_name(scope, name))
         except AmbiguousNameError as clash:
             print(
-                f"{label} {clash.name!r} matches more than one man on {team.name}:",
+                f"{label} {clash.name!r} matches more than one man {where}:",
                 file=sys.stderr,
             )
             for found in clash.matches:
                 print(f"  {found}", file=sys.stderr)
             return None
         except KeyError:
-            print(f"{label} {name!r} is not on {team.name} on day {today}.", file=sys.stderr)
+            somewhere = f"on {team.name}" if pool is None else "a free agent"
+            print(f"{label} {name!r} is not {somewhere} on day {today}.", file=sys.stderr)
             elsewhere = anywhere(session, name)
             if elsewhere:
                 print("  players of that name in the database:", file=sys.stderr)
                 for found in elsewhere:
                     print(f"    {found}", file=sys.stderr)
-            print("  on this roster:", file=sys.stderr)
-            for found in sorted(roster.values()):
+            print(f"  {where}:", file=sys.stderr)
+            for found in sorted(scope.values()):
                 print(f"    {found}", file=sys.stderr)
             return None
     return tuple(out)
@@ -299,6 +334,12 @@ def main() -> int:
     parser.add_argument("--get", action="append", default=[], help="A player we get (repeat)")
     parser.add_argument("--drop", action="append", default=[], help="Whom we drop for room")
     parser.add_argument("--their-drop", action="append", default=[], help="Whom they drop for room")
+    parser.add_argument(
+        "--fill", action="append", default=[], help="A free agent we put into a place we open"
+    )
+    parser.add_argument(
+        "--their-fill", action="append", default=[], help="A free agent they put into theirs"
+    )
     parser.add_argument("--today", type=int, default=None, help="Scoring period (default: today)")
     parser.add_argument(
         "--review-days",
@@ -354,10 +395,24 @@ def main() -> int:
             their_drops = _resolve(
                 session, league_season, theirs, today, args.their_drop, "--their-drop"
             )
+            wire = (
+                wire_names(session, league_season, ours, today)
+                if args.fill or args.their_fill
+                else {}
+            )
+            our_fills = _resolve(
+                session, league_season, ours, today, args.fill, "--fill", pool=wire
+            )
+            their_fills = _resolve(
+                session, league_season, theirs, today, args.their_fill, "--their-fill", pool=wire
+            )
             if give is None or get is None or our_drops is None or their_drops is None:
+                return 1
+            if our_fills is None or their_fills is None:
                 return 1
 
             drops = {ours.espn_team_id: our_drops, theirs.espn_team_id: their_drops}
+            fills = {ours.espn_team_id: our_fills, theirs.espn_team_id: their_fills}
             try:
                 report = evaluate_trade(
                     session,
@@ -366,6 +421,7 @@ def main() -> int:
                     TeamOffer(team_id=ours.espn_team_id, gives=give),
                     TeamOffer(team_id=theirs.espn_team_id, gives=get),
                     drops={k: v for k, v in drops.items() if v},
+                    fills={k: v for k, v in fills.items() if v},
                     review_days=(
                         args.review_days if args.review_days is not None else TRADE_REVIEW_DAYS
                     ),
