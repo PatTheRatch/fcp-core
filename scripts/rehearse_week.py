@@ -112,6 +112,7 @@ from app.db.models import (
     TransactionItem,
 )
 from app.db.session import make_engine, make_session_factory
+from app.digest import TEXT_LIMIT
 from app.job_kinds import handlers
 from app.jobs import JobError, JobRef
 from app.pickups.state import (
@@ -128,8 +129,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 #: The mark every rehearsal job carries, in its payload and its dedupe label.
 REHEARSAL = "rehearsal"
-#: Telegram refuses a message longer than this.
-TELEGRAM_LIMIT = 4096
 #: A digest with fewer useful lines than this is saying nothing.
 THIN_DIGEST_LINES = 6
 #: How long a rehearsal worker waits on an empty queue before it exits.
@@ -331,14 +330,14 @@ def look_ahead_findings(
 def digest_findings(name: str, text: str, *, games: bool) -> list[str]:
     """What is wrong with a rendered digest, if anything.
 
-    Telegram's limit is the hard one. The soft one is a message that renders
+    The length cap is the hard one. The soft one is a message that renders
     and says nothing: on a day the league played, a digest whose week section
     could not be built, or which is barely any lines at all, is a digest the
     reader learns nothing from.
     """
     out: list[str] = []
-    if len(text) > TELEGRAM_LIMIT:
-        out.append(f"{name}: {len(text)} characters, over Telegram's {TELEGRAM_LIMIT}")
+    if len(text) > TEXT_LIMIT:
+        out.append(f"{name}: {len(text)} characters, over the {TEXT_LIMIT} the text part allows")
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         out.append(f"{name}: renders empty")

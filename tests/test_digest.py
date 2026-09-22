@@ -37,7 +37,7 @@ from app.digest import (
     LEAGUE_NEWS_CHARS,
     MAX_LINES,
     ROSTER_EVENT_LIMIT,
-    TELEGRAM_LIMIT,
+    TEXT_LIMIT,
     WIRE_EVENT_LIMIT,
     Digest,
     Line,
@@ -150,7 +150,7 @@ def test_the_first_digest_has_no_events_but_still_says_where_the_roster_stands(
     assert rendered.count("nothing new") == 2
     assert "All 2 active" in rendered
     assert "Standing now" not in rendered
-    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert f"  0 adds in the last {CHURN_DAYS} days." in rendered
 
 
 def test_each_event_reaches_its_own_section_and_a_rivals_does_not(session: Session) -> None:
@@ -408,7 +408,7 @@ def test_the_message_stays_under_forty_lines_however_much_happened() -> None:
     assert "  and 10 more, see /events" in lines
     assert "  and 14 more carrying a status" in lines
     assert "  2 of 22 active" in lines
-    assert lines[-1].endswith("returned less per move.")
+    assert any(line.endswith("returned less per move.") for line in lines)
     assert max(len(line) for line in lines) <= 90, "readable on a phone"
     assert "1 adds" not in crowded.render()
 
@@ -512,6 +512,10 @@ def _the_old_way(session: Session, league_season: LeagueSeason, espn_team_id: in
         # roster and the wire and of nothing else.
         today=digest_module.today_lines(session, league_season, espn_team_id, on=LATER.date()),
         plan=digest_module.week_plan(session, league_season, espn_team_id, on=LATER.date()),
+        season_plan=digest_module.season_outlook(
+            session, league_season, espn_team_id, on=LATER.date()
+        )[1],
+        table=digest_module.standing_lines(session, league_season, espn_team_id)[1],
         event_ids=reported,
     )
 
@@ -803,7 +807,7 @@ def test_the_morning_digest_carries_the_days_plan(session: Session) -> None:
 
     # An extra section, not a replacement: the rest of the digest is untouched.
     assert "YOUR ROSTER" in rendered and "ON THE WIRE" in rendered
-    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert f"  0 adds in the last {CHURN_DAYS} days." in rendered
     assert digest.event_ids == [], "the plan reports state; it marks no news"
     assert len(rendered.splitlines()) <= MAX_LINES
 
@@ -866,7 +870,7 @@ def test_a_week_that_cannot_be_built_costs_the_digest_nothing(session: Session) 
     assert digest.team_name == "Through The Wire"
     assert rendered.count("nothing new") == 2
     assert "All 2 active" in rendered
-    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert f"  0 adds in the last {CHURN_DAYS} days." in rendered
 
 
 def test_a_season_with_no_schedule_at_all_says_so(session: Session) -> None:
@@ -896,7 +900,7 @@ def test_an_unexpected_failure_is_named_by_its_type_and_nothing_else(
         "  no plan today: the week could not be built (RuntimeError)"
     ]
     assert "hunter2" not in rendered and "player_game_stats" not in rendered
-    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert f"  0 adds in the last {CHURN_DAYS} days." in rendered
 
 
 def test_the_later_passes_alert_carries_no_plan(session: Session) -> None:
@@ -990,7 +994,7 @@ def test_the_morning_digest_opens_with_todays_lineup(session: Session) -> None:
     assert "YOUR ROSTER" in rendered and "ON THE WIRE" in rendered
     assert _week_section(rendered)[0] == "  period 1, days 5-7 left (3), v Away"
     assert len(rendered.splitlines()) <= MAX_LINES
-    assert len(rendered) <= TELEGRAM_LIMIT
+    assert len(rendered) <= TEXT_LIMIT
 
 
 def test_the_digest_names_the_place_that_will_produce_nothing_tonight(
@@ -1032,7 +1036,7 @@ def test_a_lineup_that_cannot_be_built_costs_the_digest_nothing(session: Session
     assert _today_section(rendered) == ["  no lineup today: it could not be built (RuntimeError)"]
     assert "hunter2" not in rendered and "pro_team_games" not in rendered
     assert _week_section(rendered)[0] == "  period 1, days 5-7 left (3), v Away"
-    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+    assert f"  0 adds in the last {CHURN_DAYS} days." in rendered
 
 
 def test_the_whole_message_fits_a_phone_with_a_crowded_day_on_top() -> None:
@@ -1076,7 +1080,11 @@ def test_the_whole_message_fits_a_phone_with_a_crowded_day_on_top() -> None:
     lines = rendered.splitlines()
 
     assert len(lines) <= MAX_LINES
-    assert len(rendered) <= TELEGRAM_LIMIT, "one Telegram message, never two out of order"
-    assert lines[-1].endswith("returned less per move.")
+    assert len(rendered) <= TEXT_LIMIT, "the text part stays readable to the end"
+    assert any(line.endswith("returned less per move.") for line in lines)
     assert "TODAY" in lines and "THIS WEEK" in lines
     assert lines.index("TODAY") < lines.index("THIS WEEK")
+    # A digest built by hand has nothing to say about the two newest
+    # sections, and says so rather than printing a heading over nothing.
+    assert "  no rest-of-season view today" in lines
+    assert "  no standings yet" in lines

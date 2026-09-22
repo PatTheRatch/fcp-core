@@ -210,7 +210,7 @@ def test_a_digest_is_flagged_when_it_will_not_fit_or_will_not_help() -> None:
     a working product and tells the reader nothing."""
     good = "\n".join(f"line {index}" for index in range(20))
     assert rehearsal.digest_findings("owner", good, games=True) == []
-    over = "x" * (rehearsal.TELEGRAM_LIMIT + 1)
+    over = "x" * (rehearsal.TEXT_LIMIT + 1)
     assert "over Telegram's 4096" in rehearsal.digest_findings("owner", over, games=True)[0]
     assert rehearsal.digest_findings("owner", "   \n\n", games=False) == ["owner: renders empty"]
     assert rehearsal.digest_findings("owner", "one\ntwo", games=True) == [

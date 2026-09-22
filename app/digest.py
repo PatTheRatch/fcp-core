@@ -1,7 +1,7 @@
 """The morning digest: what changed, for the one team being tracked.
 
-Layer 3 of docs/pickups.md, phase 1b. Plain text, built from stored rows
-only: no ESPN request. Five sections:
+Layer 3 of docs/pickups.md, phase 1b. Built from stored rows only: no ESPN
+request. Seven sections:
 
 1. The tracked roster, from the listener's events (went out, returned, a
    moved return date, a minutes drop), then where that roster stands now.
@@ -15,19 +15,36 @@ only: no ESPN request. Five sections:
 5. Churn, the team's adds in the last fortnight, because this league's own
    history says the heavier movers returned less per move
    (docs/acquirable_value.md, r = -0.63 between add volume and return).
+6. The season: where it ends on this roster, and the one move over the rest
+   of it that would move it (`app.pickups.season`).
+7. Standings: where he stands on matchups and on categories. The projected
+   finish is a marked slot until that work lands.
 
-Section 4 of the design note, the rest-of-season advice, is still to come,
-as is a value rank for a free agent: percent owned stands in meanwhile.
+TWO SHAPES, ONE BUILD
+
+The message is sent as an email with two parts (`app/mail/`): the HTML page
+a manager reads, and `render()`, the plain text, beside it. Both are made
+from one `Digest`, which carries the recommender's own objects as well as
+the lines built from them -- a lineup is a grid in the HTML and a sentence
+in the text, and a grid cannot be recovered from a sentence.
+
+WHAT IS IN IT IS THE READER'S
+
+`build_digest` takes a `Subscription` (`app.subscriptions`): the named
+topics he switched on, per league. A section he did not ask for is not built
+and not rendered, so a reader who wants only today's lineup does not pay for
+the rest-of-season search.
 
 THE PLAN NEVER BREAKS THE DIGEST
 
-Sections 3 and 4 are the ones that run the recommender, and it needs a
+Sections 3, 4 and 6 are the ones that run the recommender, and it needs a
 schedule, a roster, a wire and a matchup period. On a bye, before the
 season's first matchup, or with any of those missing, each section is one
-line saying so and the rest are untouched. `today_lines` and `week_plan`
-therefore catch everything, including exceptions they cannot name: a digest
-that fails to go out because a pickup report could not be built would lose
-the roster news too, which is the part that is always worth reading.
+line saying so and the rest are untouched. `today_block`, `week_block` and
+`season_outlook` therefore catch everything, including exceptions they
+cannot name: a digest that fails to go out because a pickup report could not
+be built would lose the roster news too, which is the part that is always
+worth reading.
 
 Every event the digest reports on, including the ones it summarises as "and
 N more", is marked `notified_at` by the caller once delivery has actually
@@ -62,6 +79,8 @@ of time. `league_section` is the free part every member gets: the week's
 matchups as they stand, and what the league did in the last day.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -72,6 +91,8 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     League,
     LeagueSeason,
+    Matchup,
+    MatchupPeriod,
     PlayerStatusEvent,
     PlayerStatusSnapshot,
     Team,
@@ -87,10 +108,17 @@ from app.inseason.changes import changes as what_changed
 from app.listener import events as kinds
 from app.listener.snapshots import latest_snapshots
 from app.pickups.judge import Judgement
+from app.pickups.season import SeasonReport, Swap, season_recommendations
 from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
 from app.pickups.today import DayPlayer, TodayReport, today_lineup
 from app.scoring.wire import WIRE_TYPES
+
+# The topics a reader chooses between (`app.subscriptions`), named here so
+# the sections and the choices share one vocabulary. Nothing else about
+# subscriptions reaches this module: it is told which topics to build.
+from app.subscriptions import LINEUP, MOVES, MY_TEAM, STANDINGS, Subscription
+from app.subscriptions import everything as subscriptions_everything
 
 #: What a change to your own player can be: anything that moves whether he
 #: plays, or how much. An ownership move on a player you already hold tells
@@ -136,14 +164,18 @@ EMPTY_DAY_LIMIT = 3
 #: `TODAY_SIT_LIMIT` men with a game and no place, and one line of who is
 #: not playing -- eleven at the very worst, and three on an ordinary
 #: morning. Twelve more, for the same reason: nothing else loses a line.
-MAX_LINES = 64
+#: The season section is a header and at most four lines and the standings
+#: section a header and three, so eleven more again.
+MAX_LINES = 75
 
-#: What one Telegram message holds. Not a cap this module enforces -- the
-#: line budgets are what keep the message short, and they are about being
-#: readable rather than about being deliverable -- but the number every
-#: section is weighed against, and what `tests/test_digest.py` holds the
-#: worst case to. A digest that split in two would arrive out of order.
-TELEGRAM_LIMIT = 4096
+#: A cap on the whole text message, in characters. It was Telegram's 4,096
+#: until 2026-09-22, when the chat channel was retired and email became the
+#: only one; an inbox has no such limit, and the cap is kept because it is
+#: what every section's line budget was weighed against and because a text
+#: part nobody can read to the end is no fallback at all. Not enforced here:
+#: the line budgets are what keep the message short, and
+#: `tests/test_digest.py` holds the worst case to this.
+TEXT_LIMIT = 4096
 
 #: The window the churn line counts over, from docs/pickups.md section 4.4.
 CHURN_DAYS = 14
@@ -200,7 +232,19 @@ def _line(change: Change) -> Line | None:
 
 @dataclass
 class Digest:
-    """What the digest found. `render()` is the message that gets sent."""
+    """What the digest found. `render()` is the message that gets sent.
+
+    Since 2026-09-22 it carries the recommender's own objects as well as the
+    lines built from them (`today_report`, `week_report`, `season_report`,
+    `place`, `feed`). The text message reads the lines; the HTML email
+    (`app/mail/`) reads the objects, because "the starters by slot with their
+    game" is a small grid and a grid cannot be recovered from a sentence.
+    Both are built once, here, so the two cannot disagree.
+
+    `topics` is what the reader asked for (`app.subscriptions`). A section he
+    did not ask for is not built and not rendered, which is why the whole
+    message is skipped when he asked for nothing.
+    """
 
     season: int
     team_name: str
@@ -218,53 +262,97 @@ class Digest:
     #: The week section, already rendered and indented (`week_plan`). One
     #: line when there is no plan to make; never empty.
     plan: list[str] = field(default_factory=list)
+    #: The rest-of-season section, the same way (`season_outlook`).
+    season_plan: list[str] = field(default_factory=list)
+    #: Where he stands, already rendered (`standing_lines`).
+    table: list[str] = field(default_factory=list)
     #: Every event reported on, to mark notified once this has been sent.
     event_ids: list[int] = field(default_factory=list)
+
+    #: The objects behind the lines, for the HTML. None when the section
+    #: could not be built, which is exactly when its lines say why.
+    today_report: TodayReport | None = None
+    week_report: StreamReport | None = None
+    season_report: SeasonReport | None = None
+    place: Standing | None = None
+    #: The league's own news over the display window, unfiltered: the email
+    #: filters it by the reader's topics and groups it by day.
+    feed: list[Change] = field(default_factory=list)
+    league_name: str = ""
+    opponent_name: str | None = None
+    #: The topics this was built for, in the email's order.
+    topics: tuple[str, ...] = ()
 
     @property
     def roster_size(self) -> int:
         return self.healthy + len(self.standing)
 
+    def wants(self, topic: str) -> bool:
+        """Whether the reader asked for this section. Nothing asked for at
+        all means everything: a `Digest` built by hand (a test, a preview)
+        should render whole."""
+        return not self.topics or topic in self.topics
+
     def render(self) -> str:
+        """The plain-text message, which is also the email's text part.
+
+        The order is the one this message has always had, and not the HTML
+        email's: the text is the message as it was, with the two new sections
+        after it, and the tests that hold the rebuilt digest against the old
+        one line for line still hold (docs/jobs.md, "The digest job").
+        """
         out = [
             f"{self.team_name} - {self.generated_at:%a %d %b}, "
             f"{self.generated_at:%H:%M} UTC - season {self.season}"
         ]
 
-        out.append("")
-        out.append("YOUR ROSTER")
-        out.extend(_render(self.roster, self.roster_extra, "nothing new"))
+        if self.wants(MY_TEAM):
+            out.append("")
+            out.append("YOUR ROSTER")
+            out.extend(_render(self.roster, self.roster_extra, "nothing new"))
 
-        out.append("")
-        if self.standing:
-            out.append("  Standing now:")
-            out.extend(f"  {line}" for line in self.standing[:STATUS_LINE_LIMIT])
-            hidden = len(self.standing) - STATUS_LINE_LIMIT
-            if hidden > 0:
-                out.append(f"  and {hidden} more carrying a status")
-            out.append(f"  {self.healthy} of {self.roster_size} active")
-        else:
-            out.append(f"  All {self.healthy} active")
+            out.append("")
+            if self.standing:
+                out.append("  Standing now:")
+                out.extend(f"  {line}" for line in self.standing[:STATUS_LINE_LIMIT])
+                hidden = len(self.standing) - STATUS_LINE_LIMIT
+                if hidden > 0:
+                    out.append(f"  and {hidden} more carrying a status")
+                out.append(f"  {self.healthy} of {self.roster_size} active")
+            else:
+                out.append(f"  All {self.healthy} active")
 
-        out.append("")
-        out.append("ON THE WIRE")
-        out.extend(_render(self.wire, self.wire_extra, "nothing new"))
+        if self.wants(MOVES):
+            out.append("")
+            out.append("ON THE WIRE")
+            out.extend(_render(self.wire, self.wire_extra, "nothing new"))
 
-        out.append("")
-        out.append("TODAY")
-        out.extend(self.today or ["  no lineup today"])
+        if self.wants(LINEUP):
+            out.append("")
+            out.append("TODAY")
+            out.extend(self.today or ["  no lineup today"])
 
-        out.append("")
-        out.append("THIS WEEK")
-        out.extend(self.plan or ["  no plan today"])
+        if self.wants(MOVES):
+            out.append("")
+            out.append("THIS WEEK")
+            out.extend(self.plan or ["  no plan today"])
 
-        out.append("")
-        out.append("CHURN")
-        churn = f"  {_plural(self.adds_recently, 'add')} in the last {CHURN_DAYS} days."
-        if self.adds_recently:
-            # Only worth saying when there is volume to weigh it against.
-            churn += " Heavier movers here have returned less per move."
-        out.append(churn)
+            out.append("")
+            out.append("CHURN")
+            churn = f"  {_plural(self.adds_recently, 'add')} in the last {CHURN_DAYS} days."
+            if self.adds_recently:
+                # Only worth saying when there is volume to weigh it against.
+                churn += " Heavier movers here have returned less per move."
+            out.append(churn)
+
+            out.append("")
+            out.append("THE SEASON")
+            out.extend(self.season_plan or ["  no rest-of-season view today"])
+
+        if self.wants(STANDINGS):
+            out.append("")
+            out.append("STANDINGS")
+            out.extend(self.table or ["  no standings yet"])
         return "\n".join(out[:MAX_LINES])
 
 
@@ -464,19 +552,24 @@ def _names(players: Sequence[DayPlayer], limit: int) -> str:
     return f"{named} and {extra} more" if extra > 0 else named
 
 
-def today_lines(
+def today_block(
     session: Session,
     league_season: LeagueSeason,
     espn_team_id: int,
     *,
     on: date,
-) -> list[str]:
-    """The day's lineup for `on`, as indented lines. Never raises.
+) -> tuple[TodayReport | None, list[str]]:
+    """The day's lineup for `on`: the report, and the lines built from it.
 
     The morning question, above the week's plan, because it is the one thing
     the manager acts on before tip-off: who to start, who cannot be started,
     and the place that will produce nothing tonight while a man on the bench
-    would have. The grid belongs on the week page; this is the answer.
+    would have.
+
+    Two returns rather than one because there are two readers: the text
+    message prints the lines, and the HTML email draws the lineup as a grid
+    from the report itself. Neither builds it twice, and a report that could
+    not be built is None beside lines that say why.
 
     It catches everything, for the reason `week_plan` does: a digest that
     failed to go out because a lineup could not be built would lose the
@@ -486,13 +579,24 @@ def today_lines(
     try:
         calendar = season_calendar(session, season)
         if calendar is None:
-            return [f"  no NBA schedule stored for {season}, so no lineup today"]
+            return None, [f"  no NBA schedule stored for {season}, so no lineup today"]
         report = today_lineup(session, league_season, espn_team_id, calendar.scoring_period_on(on))
     except ValueError as error:
-        return [f"  no lineup today: {error}"]
+        return None, [f"  no lineup today: {error}"]
     except Exception as error:  # The digest goes out regardless.
-        return [f"  no lineup today: it could not be built ({type(error).__name__})"]
-    return _today_lines(report)
+        return None, [f"  no lineup today: it could not be built ({type(error).__name__})"]
+    return report, _today_lines(report)
+
+
+def today_lines(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    on: date,
+) -> list[str]:
+    """`today_block`'s lines alone, for a caller with no use for the report."""
+    return today_block(session, league_season, espn_team_id, on=on)[1]
 
 
 def _today_lines(report: TodayReport) -> list[str]:
@@ -523,14 +627,14 @@ def _today_lines(report: TodayReport) -> list[str]:
     return out
 
 
-def week_plan(
+def week_block(
     session: Session,
     league_season: LeagueSeason,
     espn_team_id: int,
     *,
     on: date,
-) -> list[str]:
-    """The week section for `on`, as indented lines. Never raises.
+) -> tuple[StreamReport | None, str | None, list[str]]:
+    """The week for `on`: the report, the opponent's name, and the lines.
 
     The recommender is the one part of the digest that can fail on rows the
     listener has not written yet, and the digest must go out anyway (the
@@ -543,16 +647,217 @@ def week_plan(
     try:
         calendar = season_calendar(session, season)
         if calendar is None:
-            return [f"  no NBA schedule stored for {season}, so no plan today"]
+            return None, None, [f"  no NBA schedule stored for {season}, so no plan today"]
         report = stream_recommendations(
             session, league_season, espn_team_id, calendar.scoring_period_on(on)
         )
         opponent = _team_names(session, league_season).get(report.opponent_team_id or -1)
     except ValueError as error:
-        return [f"  no plan today: {error}"]
+        return None, None, [f"  no plan today: {error}"]
     except Exception as error:  # The digest goes out regardless.
-        return [f"  no plan today: the week could not be built ({type(error).__name__})"]
-    return _week_lines(report, opponent)
+        return (
+            None,
+            None,
+            [f"  no plan today: the week could not be built ({type(error).__name__})"],
+        )
+    return report, opponent, _week_lines(report, opponent)
+
+
+def week_plan(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    on: date,
+) -> list[str]:
+    """`week_block`'s lines alone."""
+    return week_block(session, league_season, espn_team_id, on=on)[2]
+
+
+# ---------------------------------------------------------------------------
+# the season: the same question over the rest of it
+# ---------------------------------------------------------------------------
+
+#: Men named on the stash line before the rest are counted.
+SEASON_STASH_LIMIT = 2
+
+
+def _season_lines(report: SeasonReport) -> list[str]:
+    """The rest-of-season section's body, from a report that was built.
+
+    The week's plan answers "what do I do today"; this answers "where is the
+    season going, and what would move it". Three things and no more: where it
+    ends as it stands, the best move over the rest of it with its number, and
+    a man worth stashing until he is back.
+    """
+    record = report.outlook.record_without
+    out = [
+        f"  {report.weeks_remaining:.0f} weeks left; {report.expected_wins:.2f} of 9 "
+        f"categories in an ordinary week",
+        f"  on this roster the season ends {_record(record)}",
+    ]
+    move = report.recommended
+    if move is None:
+        best = report.moves[0] if report.moves else None
+        if best is None:
+            out.append(f"  nothing on the wire moves it; {report.pool_size} free agents weighed")
+        else:
+            hurdle = best.hurdle(report.hurdle_paid, report.hurdle_free)
+            out.append(
+                f"  nothing clears the bar ({hurdle:.2f} a week); the nearest is "
+                f"{_swap(best)} at {best.judgement.per_week:+.2f}"
+            )
+    else:
+        out.append(f"  worth a look: {_swap(move)}")
+        out.append(
+            f"  {move.judgement.per_week:+.2f} a week over the rest of it; "
+            f"record {_record(report.outlook.record_without)} without, "
+            f"{_record(move.judgement.record_with)} with"
+        )
+    if report.stashes:
+        named = ", ".join(
+            f"{stash.player.name} (back {stash.expected_return_date:%d %b})"
+            for stash in report.stashes[:SEASON_STASH_LIMIT]
+        )
+        out.append(f"  worth a place when he is back: {named}")
+    return out
+
+
+def _swap(move: Swap) -> str:
+    """One rest-of-season move on one line, in the week section's words."""
+    coming = ", ".join(player.name for player in move.into)
+    if not move.out:
+        return f"add {coming} into the open place"
+    going = ", ".join(player.name for player in move.out)
+    return f"add {coming}, drop {going}"
+
+
+def season_outlook(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    on: date,
+) -> tuple[SeasonReport | None, list[str]]:
+    """The rest of the season for `on`: the report and its lines. Never
+    raises, for the reason `week_block` does not."""
+    season = int(league_season.season)
+    try:
+        calendar = season_calendar(session, season)
+        if calendar is None:
+            return None, [f"  no NBA schedule stored for {season}, so no season view today"]
+        report = season_recommendations(
+            session, league_season, espn_team_id, calendar.scoring_period_on(on)
+        )
+    except ValueError as error:
+        return None, [f"  no season view today: {error}"]
+    except Exception as error:  # The digest goes out regardless.
+        return None, [f"  no season view today: it could not be built ({type(error).__name__})"]
+    return report, _season_lines(report)
+
+
+# ---------------------------------------------------------------------------
+# standings: where he stands, and where it is heading
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Standing:
+    """One team's place in the league, derived the way `/standings` derives it.
+
+    ESPN reports no matchup record, only category tallies, so the record is
+    counted from the matchups themselves and the place is the order that
+    puts. Byes are not wins and playoff matchups are not counted, exactly as
+    `app.api.leagues.get_standings` does it.
+
+    `projected` is the projected finish, and is None until that work lands:
+    the email leaves a marked slot rather than pretending.
+    """
+
+    place: int
+    of: int
+    won: int
+    lost: int
+    tied: int
+    categories_won: int
+    categories_lost: int
+    projected: str | None = None
+
+    def describe(self) -> str:
+        tied = f"-{self.tied}" if self.tied else ""
+        return f"{self.place} of {self.of}, {self.won}-{self.lost}{tied}"
+
+
+def _place_of(session: Session, league_season: LeagueSeason, espn_team_id: int) -> Standing | None:
+    """Where this team stands, or None when the season has no matchups yet."""
+    teams = list(
+        session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all()
+    )
+    if not teams:
+        return None
+    record = {team.id: [0, 0, 0] for team in teams}
+    rows = session.scalars(
+        select(Matchup)
+        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
+        .where(
+            MatchupPeriod.league_season_id == league_season.id,
+            MatchupPeriod.is_playoff.is_(False),
+            Matchup.away_team_id.is_not(None),
+        )
+    ).all()
+    played = 0
+    for matchup in rows:
+        home, away = matchup.home_team_id, matchup.away_team_id
+        if away is None or home not in record or away not in record:
+            continue
+        if matchup.winner == "HOME":
+            record[home][0] += 1
+            record[away][1] += 1
+        elif matchup.winner == "AWAY":
+            record[away][0] += 1
+            record[home][1] += 1
+        elif matchup.winner == "TIE":
+            record[home][2] += 1
+            record[away][2] += 1
+        else:
+            continue
+        played += 1
+    if not played:
+        return None
+    order = sorted(
+        teams,
+        key=lambda t: (-record[t.id][0], record[t.id][1], -(t.categories_won or 0)),
+    )
+    for place, team in enumerate(order, start=1):
+        if int(team.espn_team_id) == espn_team_id:
+            won, lost, tied = record[team.id]
+            return Standing(
+                place=place,
+                of=len(order),
+                won=won,
+                lost=lost,
+                tied=tied,
+                categories_won=int(team.categories_won or 0),
+                categories_lost=int(team.categories_lost or 0),
+            )
+    return None
+
+
+def standing_lines(
+    session: Session, league_season: LeagueSeason, espn_team_id: int
+) -> tuple[Standing | None, list[str]]:
+    """Where he stands, and the lines for it. Never raises."""
+    try:
+        place = _place_of(session, league_season, espn_team_id)
+    except Exception as error:  # The digest goes out regardless.
+        return None, [f"  no standings today: they could not be read ({type(error).__name__})"]
+    if place is None:
+        return None, ["  no matchup has been settled yet, so there is no table"]
+    return place, [
+        f"  {place.describe()} on matchups",
+        f"  {place.categories_won}-{place.categories_lost} on categories",
+        f"  projected finish: {place.projected or 'not built yet'}",
+    ]
 
 
 def _standing(roster: Sequence[PlayerStatusSnapshot]) -> tuple[list[str], int]:
@@ -582,6 +887,7 @@ def build_digest(
     *,
     now: datetime | None = None,
     since: datetime | None = None,
+    wanted: Subscription | None = None,
 ) -> Digest:
     """The morning message for one team. Reads only; marking is the caller's.
 
@@ -593,12 +899,19 @@ def build_digest(
     on the wire when he is unrostered now. An event on a rival's roster is
     neither, and stays unreported.
 
+    `wanted` is what the reader asked for (`app.subscriptions`); the default
+    is everything. A section he did not ask for is **not built**, which is
+    what keeps the cost of a subscription honest: a reader who wants only
+    today's lineup does not pay for the rest-of-season search.
+
     The week section is built for the calendar day of `now`, and says so in
-    one line when it cannot be (`week_plan`). This is the morning message;
+    one line when it cannot be (`week_block`). This is the morning message;
     `build_alert`, which is what the later passes send, has no plan in it,
     because an add is not what a player being ruled out at 22:30 calls for.
     """
     generated_at = now or datetime.now(UTC)
+    wanted = wanted or subscriptions_everything()
+    on = generated_at.date()
     snapshots = latest_snapshots(session, league_season.season)
     team = session.scalar(
         select(Team).where(
@@ -636,6 +949,25 @@ def build_digest(
         if snapshot.on_team_id == espn_team_id
     }
     standing, healthy = _standing([snapshots[player_id] for player_id in mine])
+
+    today_report, today = (
+        today_block(session, league_season, espn_team_id, on=on)
+        if wanted.on(LINEUP)
+        else (None, [])
+    )
+    week_report, opponent, plan = (
+        week_block(session, league_season, espn_team_id, on=on)
+        if wanted.on(MOVES)
+        else (None, None, [])
+    )
+    season_report, season_plan = (
+        season_outlook(session, league_season, espn_team_id, on=on)
+        if wanted.on(MOVES)
+        else (None, [])
+    )
+    place, table = (
+        standing_lines(session, league_season, espn_team_id) if wanted.on(STANDINGS) else (None, [])
+    )
     return Digest(
         season=league_season.season,
         team_name=team.name if team is not None else f"team {espn_team_id}",
@@ -646,8 +978,10 @@ def build_digest(
         healthy=healthy,
         wire=wire_events[:WIRE_EVENT_LIMIT],
         wire_extra=max(0, len(wire_events) - WIRE_EVENT_LIMIT),
-        today=today_lines(session, league_season, espn_team_id, on=generated_at.date()),
-        plan=week_plan(session, league_season, espn_team_id, on=generated_at.date()),
+        today=today,
+        plan=plan,
+        season_plan=season_plan,
+        table=table,
         adds_recently=adds_in_window(
             session,
             league_season,
@@ -656,7 +990,56 @@ def build_digest(
             days=CHURN_DAYS,
         ),
         event_ids=reported,
+        today_report=today_report,
+        week_report=week_report,
+        season_report=season_report,
+        place=place,
+        feed=display_feed(session, league_season, espn_team_id, now=generated_at, since=since),
+        league_name=str(league_season.name or ""),
+        opponent_name=opponent,
+        topics=wanted.chosen,
     )
+
+
+#: How far back the email's "What changed" looks, at most. The owner's own
+#: window is a fortnight of unreported events (`OWNER_BACKLOG`), which is the
+#: right window for "what have I not been told" and much too long for a
+#: section grouped by day: three mornings of a busy league is already a
+#: screenful. The section reads the shorter of the two.
+CHANGED_WINDOW = timedelta(days=3)
+
+
+def display_feed(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    now: datetime,
+    since: datetime | None,
+) -> list[Change]:
+    """The league's news over the window the email shows, newest first.
+
+    Unfiltered: every `Change` carries `mine`, `opponent` and its kind, and
+    the reader's topics decide which of them he sees (`app.subscriptions`).
+    It marks nothing and it is not what `event_ids` is built from -- that
+    stays the roster and wire loop above, so the owner's digest marks exactly
+    what it always marked.
+
+    Never raises: the message goes out with an empty feed rather than not at
+    all, which is the rule every other section here follows.
+    """
+    opened = max(since or (now - CHANGED_WINDOW), now - CHANGED_WINDOW)
+    try:
+        return what_changed(
+            session,
+            league_season,
+            since=opened,
+            until=now,
+            team_id=espn_team_id,
+            kinds_wanted=feed.KINDS,
+        )
+    except Exception:  # The digest goes out regardless.
+        return []
 
 
 def build_alert(
