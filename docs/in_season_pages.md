@@ -71,6 +71,40 @@ another that did not; the page says so rather than leaving it to be noticed.
 with no move made, what is banked, and what a place on this roster gives
 back if it is vacated.
 
+## What changed, on the league's This week page
+
+The morning question after "who starts today" is "anything I should know?",
+and this is the one place that answers it: the league's news, a day at a
+time, newest first, under the matchups on `league-week.html`.
+
+Each line is the moment (UTC), what happened in one sentence, and the one
+word that says which kind it is — *injury*, *minutes*, *owned*, *add*,
+*claim*, *drop*, *trade*, *waivers*, *roster*. The sentence is the API's
+(`app/inseason/changes.py`), not the page's: the digest sends the same
+words, so the two can never disagree about what happened. A claim carries
+what it cost; a trade names both teams and every player in it. A line about
+the reader's own team takes the accent rule a matchup of his does, his
+opponent's takes a plain one, and the checkbox **My team and my opponent**
+shows him only those two. The count beside it says how many of how many.
+
+**The window is the day on the page and the day before it.** `?today=` picks
+the day, as it does everywhere else, so a past day of a played season shows
+that day's news and not today's. The route's own default, with no window
+asked for, is the last twenty-four hours — or everything since the reader's
+own last morning digest went out, which is what makes the page and the
+message one conversation (docs/site.md, docs/jobs.md).
+
+**The browser works nothing out.** It groups the lines by the day the API
+stamped, hides the ones the filter is not asking for, and prints times in
+UTC, which is also how the feed is bounded and grouped, so a line never
+lands on the wrong day.
+
+**The player card is a hook, not a card.** Each player's name is wrapped in
+`<span class="player" data-espn-player-id="…">`. The shared card being added
+to `pages.css` and `shell.js` had not landed when this was written, so
+nothing attaches to it yet; when it does, the names on this page are already
+marked up for it and only the styling is missing.
+
 ## What is on the season page
 
 The outlook (the projected record, the weeks left, an ordinary week's odds

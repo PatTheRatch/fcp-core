@@ -416,3 +416,22 @@ def test_the_map_in_the_docs_names_every_page() -> None:
         "/account/alerts",
     ):
         assert f"`{path}`" in site, path
+
+
+def test_what_changed_prints_the_api_sentence_and_leaves_the_card_a_hook() -> None:
+    """The league's This week page carries the feed (docs/in_season_pages.md).
+
+    Nothing in it is worked out in the browser: the page asks `/changes` for
+    a window, prints the sentence the API wrote -- the same one the digest
+    sends, so the two cannot disagree -- and only groups and filters. Each
+    player's name is marked up so the shared player card can attach to it
+    once that has landed.
+    """
+    page = (STATIC / "league-week.html").read_text()
+
+    assert "What changed" in page
+    assert "/changes?" in page, "the feed comes from the route, not from the page"
+    assert 'id="changed-mine"' in page and 'for="changed-mine"' in page, "the filter, labelled"
+    assert "change.mine || change.opponent" in page, "the flags are the API's, not the page's"
+    assert 'class="player" data-espn-player-id=' in page, "the player card's hook"
+    assert "escape(change.text)" in page, "the sentence is printed, never rebuilt"

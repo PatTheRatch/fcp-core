@@ -134,6 +134,18 @@ count between them, a line ("Final: Masters of their Domains won 5–4", or
 shaded where that side is winning the category. The reader's matchup is
 first with the accent rule. A bye says so.
 
+Then **What changed**: the league's news over that day and the day before
+it, a day at a time and newest first — injuries and status changes, adds,
+drops, claims with what they cost, and trades — each one sentence with the
+moment beside it and the kind of thing it was after it, and a checkbox for
+a manager, "My team and my opponent". It reads
+`GET /leagues/{league_id}/seasons/{season}/changes?since=&until=&team_id=`
+(league member; `team_id` only sets the `mine` and `opponent` flags and adds
+no check, docs/accounts.md), whose default window with none asked for is the
+last twenty-four hours, or everything since the reader's own last morning
+digest. The sentences are the API's, and are the ones the digest sends.
+docs/in_season_pages.md has the whole of it.
+
 It reads `pages/context` (the day, the teams), `/periods` and
 `/matchups?period=N`, and for the reader's own block `/pickups/glance`
 (step 4: the team's manager, not the paid tier, from the morning's stored

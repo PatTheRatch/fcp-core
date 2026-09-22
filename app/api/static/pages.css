@@ -266,6 +266,32 @@ section{margin-top:56px}
   letter-spacing:.07em;font-size:12px;flex-wrap:wrap}
 .pager a{text-decoration:none}
 
+/* ---- what changed: a day at a time, a rule over every line -------------
+   The house has no boxes, so a line is a rule and three columns: when, what
+   happened in words, and the one word that says which kind it is. A line
+   about the reader's own team takes the accent rule the matchup does; his
+   opponent's takes a plain one, so the two are told apart by where the rule
+   is and not only by its colour. */
+.dayhead{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11px;
+  color:var(--faint);margin:26px 0 6px}
+.feed{list-style:none;margin:0;padding:0}
+.feed li{border-top:1px solid var(--rule);padding:9px 0;display:flex;gap:4px 14px;
+  align-items:baseline;flex-wrap:wrap}
+.feed li:first-child{border-top:1px solid var(--rule-strong)}
+.feed .when{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:anywhere;font-size:16px}
+.feed .kind{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+  font-size:10.5px;color:var(--muted);white-space:nowrap;margin-left:auto}
+.feed li.ours{border-left:2px solid var(--accent);padding-left:12px}
+.feed li.theirs{border-left:2px solid var(--rule-strong);padding-left:12px}
+.feed li.urgent .kind{color:var(--stop)}
+.feed .player{font-weight:600}
+.filter{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:-8px 0 18px;
+  font-size:15px}
+.filter label{cursor:pointer;margin-right:8px}
+.filter input{accent-color:var(--accent);cursor:pointer}
+
 /* ---- a team's strip with its name, one per line ------------------------ */
 .profile{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);gap:0 18px;
   align-items:end;border-bottom:1px solid var(--rule);padding:10px 0}
