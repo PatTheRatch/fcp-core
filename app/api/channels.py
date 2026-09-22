@@ -8,6 +8,8 @@ each route's scope, all of them "signed in", about the caller's own rows.
     POST   /me/channels   {target}       add one; a confirmation link goes to it
     POST   /me/channels/verify  {token}  the link's token, spent
     DELETE /me/channels/{channel_id}     disable one, and wipe its target
+    GET    /me/subscriptions             what goes in his email, per league
+    PUT    /me/subscriptions/{league_id} choose it (`app.subscriptions`)
 
 **Email and nothing else** since 2026-09-22. `kind` is still accepted in the
 body and still answered, because it is a column and the page shows a row the
@@ -35,13 +37,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from app import channels, secrets_box
+from app import accounts, channels, memberships, secrets_box, subscriptions
 from app.api.access import CurrentUser, SettingsDep, Viewer
 from app.api.auth import TokenBucket
-from app.api.deps import SessionDep
+from app.api.deps import LeagueIdPath, SessionDep
 from app.config import Settings
-from app.db.models import NotificationChannel
+from app.db.models import League, NotificationChannel
 
 log = logging.getLogger("fcp.channels")
 
@@ -55,6 +58,7 @@ NOT_SENT = "the confirmation email could not be sent, so the address was not add
 BAD_SECRET = "That link is not valid, or has expired. Add the address again for a new one."
 TOO_MANY = f"at most {channels.MAX_CHANNELS} addresses at once; disable one first"
 SUBJECT = "Confirm this address for FCP alerts"
+NOT_HIS_LEAGUE = "no such league of yours"
 
 
 class ChannelLimits:
@@ -222,3 +226,101 @@ def disable_channel(channel_id: int, viewer: CurrentUser, session: SessionDep) -
     session.commit()
     log.info("user %s disabled channel %s", viewer.user_id, channel_id)
     return _out(channel)
+
+
+# ---------------------------------------------------------------------------
+# what he wants to hear about, per league (app/subscriptions.py)
+# ---------------------------------------------------------------------------
+
+
+class TopicOut(BaseModel):
+    name: str = Field(description="The topic's key, as `topics` is keyed")
+    label: str = Field(description="What the page and the email call it")
+    note: str = Field(description="One line of what it puts in the message")
+    on: bool
+
+
+class SubscriptionOut(BaseModel):
+    espn_league_id: int
+    league: str = Field(description="The league's name, for the page's heading")
+    topics: list[TopicOut] = Field(description="Every topic, in the order the email reads them")
+    morning: bool = Field(description="The morning digest")
+    alerts: bool = Field(description="The urgent roster change between digests")
+    silent: bool = Field(description="Every topic off: nothing is sent, and the job says so")
+
+
+class SubscriptionsOut(BaseModel):
+    leagues: list[SubscriptionOut]
+
+
+class SubscriptionIn(BaseModel):
+    topics: dict[str, bool]
+    morning: bool = True
+    alerts: bool = True
+
+
+def _subscription(session: Session, user_id: int, league: League) -> SubscriptionOut:
+    held = subscriptions.for_member(session, user_id, league.id)
+    return SubscriptionOut(
+        espn_league_id=int(league.espn_league_id),
+        league=memberships.league_name(session, league),
+        topics=[
+            TopicOut(
+                name=topic,
+                label=subscriptions.LABELS[topic],
+                note=subscriptions.NOTES[topic],
+                on=held.on(topic),
+            )
+            for topic in subscriptions.TOPICS
+        ],
+        morning=held.morning,
+        alerts=held.alerts,
+        silent=held.silent,
+    )
+
+
+def _his_league(session: Session, user_id: int, espn_league_id: int) -> League:
+    """A league he is a member of; anything else is a 404, like one that does
+    not exist. A subscription is about a league's news, and its news is its
+    members'."""
+    if espn_league_id not in accounts.member_league_ids(session, user_id):
+        raise HTTPException(status_code=404, detail=NOT_HIS_LEAGUE)
+    league = memberships.league_by_espn_id(session, espn_league_id)
+    if league is None:  # pragma: no cover - a membership names a stored league
+        raise HTTPException(status_code=404, detail=NOT_HIS_LEAGUE)
+    return league
+
+
+@router.get("/me/subscriptions", summary="What goes in your email, per league")
+def list_subscriptions(viewer: CurrentUser, session: SessionDep) -> SubscriptionsOut:
+    """One answer per league you are a member of. A league you have never
+    changed reads as the defaults; no row is written until you do."""
+    user_id = _user_id(viewer)
+    out: list[SubscriptionOut] = []
+    for espn_league_id, _role in accounts.member_leagues(session, user_id):
+        league = memberships.league_by_espn_id(session, espn_league_id)
+        if league is not None:
+            out.append(_subscription(session, user_id, league))
+    return SubscriptionsOut(leagues=out)
+
+
+@router.put("/me/subscriptions/{league_id}", summary="Choose what goes in your email")
+def set_subscription(
+    league_id: LeagueIdPath, body: SubscriptionIn, viewer: CurrentUser, session: SessionDep
+) -> SubscriptionOut:
+    """Replaces the whole answer for this league: every topic you left out
+    takes its default rather than its last value, so the page always sends
+    what it is showing."""
+    user_id = _user_id(viewer)
+    league = _his_league(session, user_id, league_id)
+    subscriptions.save(
+        session,
+        user_id,
+        league.id,
+        topics=dict(body.topics),
+        morning=body.morning,
+        alerts=body.alerts,
+    )
+    session.commit()
+    log.info("user %s set his subscription in league %s", user_id, league_id)
+    return _subscription(session, user_id, league)

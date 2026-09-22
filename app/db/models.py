@@ -1729,3 +1729,48 @@ class InjuryReportRun(Base):
     #: Counts: snapshots, lines, matched, unmatched, inserted, dates.
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class DigestSubscription(Base):
+    """What one member wants to hear about in one league.
+
+    A row per (member, league), holding the named topics he has switched on
+    (`app.subscriptions`) and the two cadence flags: the morning digest, and
+    the alerts that come between digests. No row means the defaults, which is
+    why nothing had to be written for anybody when this arrived.
+
+    **A JSONB map rather than a column each.** The topics change as the
+    product grows -- the trade block and the projected finish are not built
+    yet, and both are named in the list -- and a topic nobody has an opinion
+    about should not need a migration to appear or a backfill to default.
+    `morning` and `alerts` are columns because they are not topics: they say
+    whether a message is sent at all, and that will not change.
+
+    An unknown key is ignored on the way out and a missing one takes its
+    default, so a row written by an older version still reads.
+    """
+
+    __tablename__ = "digest_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "league_id", name="uq_digest_subscriptions_user_league"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    league_id: Mapped[int] = mapped_column(
+        ForeignKey("leagues.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Topic name -> on. See `app.subscriptions.TOPICS` for the names.
+    topics: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    morning: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    alerts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

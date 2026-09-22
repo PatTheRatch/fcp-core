@@ -20,6 +20,13 @@ they are enqueued is `app.schedule`.
   events since his own last digest and marks nothing. A member whose only
   channel was a Telegram chat or an ntfy topic has none now (migration
   `0024`), and the job says so.
+
+  **What is in it is his** (`app.subscriptions`): per league, the topics he
+  has switched on and whether he wants the morning digest and the alerts at
+  all. A member who wants neither, or who has turned off every topic, is not
+  sent to and the job's note says which of those it was. The owner's tracked
+  team in single mode keeps everything on: single mode is one person reading
+  his own server, and nothing there should be silently missing.
 * `injury_backfill`: a whole season of the NBA's official injury reports
   (`app.injury_backfill`, docs/injuries.md). Hours at the full cadence,
   which is why it is queued rather than held open in a terminal.
@@ -55,6 +62,7 @@ from app import (
     notify,
     reports,
     secrets_box,
+    subscriptions,
 )
 from app.config import Settings, get_settings
 from app.db.models import League, LeagueConnection, LeagueSeason, Team, User
@@ -89,6 +97,23 @@ WIRE_MODE = "wire"
 #: twice: a Telegram row the migration disabled is not a channel, so a member
 #: who only ever confirmed one lands here and the note has to say why.
 NO_ADDRESS = "no confirmed email address; nothing was sent"
+
+#: What the job says when a member has switched the message off. Three
+#: separate notes, because they are three different things to look at: he
+#: does not want the morning one, he does not want to be interrupted between
+#: them, or he has turned off every topic there is and so there is nothing to
+#: put in a message at all (`app.subscriptions`).
+NOT_SUBSCRIBED = {
+    MORNING: "he does not want the morning digest in this league",
+    ALERT: "he does not want alerts between digests in this league",
+}
+NO_TOPICS = "every topic is off in this league; there is nothing to send"
+
+#: An alert is filtered by the same topics the digest is. `build_alert` names
+#: men on the reader's own roster, so today it rides on `my_team`; an alert
+#: about the opponent, when there is one to send, rides on `opponent` through
+#: `Subscription.allows` like every other line of the feed.
+NO_ROSTER_ALERT = "he does not want his own roster's news, so there is no alert to send"
 
 NO_LOGIN = "the league has no live connection to read it with"
 NO_KEY = "FCP_SECRETS_KEY is not set, so the league's login cannot be opened"
@@ -381,13 +406,33 @@ def run_digest(
             and settings.fcp_tracked_team_id is not None
             and int(team.espn_team_id) == int(settings.fcp_tracked_team_id)
         )
+        if tracked and team is not None and settings.fcp_auth_mode == "single":
+            # Single mode is one person reading his own server: nothing there
+            # should be silently missing, so the tracked team keeps every
+            # topic whatever is stored (docs/jobs.md, "Subscriptions").
+            return _owner_digest(
+                session, user, team, mode, at, settings, subscriptions.everything()
+            )
+        wanted = subscriptions.for_member(session, user.id, league.id)
+        if not (wanted.morning if mode == MORNING else wanted.alerts):
+            return NOT_SUBSCRIBED[mode]
+        if wanted.silent:
+            return NO_TOPICS
         if tracked and team is not None:
-            return _owner_digest(session, user, team, mode, at, settings)
-        return _member_digest(session, job, user, league, team, mode, at, settings, listener)
+            return _owner_digest(session, user, team, mode, at, settings, wanted)
+        return _member_digest(
+            session, job, user, league, team, mode, at, settings, listener, wanted
+        )
 
 
 def _owner_digest(
-    session: Session, user: User, team: Team, mode: str, at: datetime, settings: Settings
+    session: Session,
+    user: User,
+    team: Team,
+    mode: str,
+    at: datetime,
+    settings: Settings,
+    wanted: subscriptions.Subscription,
 ) -> str | None:
     """The owner's digest of the tracked team: `scripts/digest.py`, with the
     league section after it, marking what it reports once it is delivered."""
@@ -400,6 +445,8 @@ def _owner_digest(
         raise JobError(f"no stored season {season} for the league", retry=False)
     espn_team_id = int(team.espn_team_id)
     if mode == ALERT:
+        if not wanted.on(subscriptions.MY_TEAM):
+            return NO_ROSTER_ALERT
         alert = build_alert(session, league_season, espn_team_id)
         if alert is None:
             return "no urgent change on the tracked roster"
@@ -430,6 +477,7 @@ def _member_digest(
     at: datetime,
     settings: Settings,
     listener: bool,
+    wanted: subscriptions.Subscription,
 ) -> str | None:
     """Anyone else's: the league section, and his team's when he manages one
     and is entitled; the events since his own last digest, marking nothing."""
@@ -445,6 +493,11 @@ def _member_digest(
             raise JobError("the team's season is not stored", retry=False)
         espn_team_id = int(team.espn_team_id)
         if mode == ALERT:
+            # What he wants is asked before what the server can do: a reader
+            # who does not want to be interrupted should not have the answer
+            # depend on which league he is in.
+            if not wanted.on(subscriptions.MY_TEAM):
+                return NO_ROSTER_ALERT
             if not listener:
                 return "alerts need the listener's league; none for this one yet"
             alert = build_alert(session, league_season, espn_team_id, since=since)

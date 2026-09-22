@@ -29,7 +29,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import accounts, channels, jobs, league_ingest, memberships, notify, reports, schedule
+from app import (
+    accounts,
+    channels,
+    jobs,
+    league_ingest,
+    memberships,
+    notify,
+    reports,
+    schedule,
+    subscriptions,
+)
 from app.api.deps import get_session
 from app.config import Settings, get_settings
 from app.db.models import (
@@ -48,6 +58,9 @@ from app.espn import ESPNSettings
 from app.job_kinds import (
     BAD_CLOCK,
     NO_ADDRESS,
+    NO_ROSTER_ALERT,
+    NO_TOPICS,
+    NOT_SUBSCRIBED,
     REFUSED,
     handlers,
     run_digest,
@@ -693,7 +706,7 @@ def _channel(
 
 
 def _retired_channel(session: Session, user_id: int) -> None:
-    """A row as migration 0023 leaves a Telegram channel: kept, disabled,
+    """A row as migration 0024 leaves a Telegram channel: kept, disabled,
     its target wiped. The member has nowhere to be sent."""
     session.add(
         NotificationChannel(
@@ -761,7 +774,7 @@ def test_a_member_with_no_confirmed_address_is_sent_nothing(
 def test_a_member_left_with_only_a_telegram_row_has_nowhere_to_be_sent(
     factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Migration 0023 disabled it. He is not silently skipped: the job note
+    """Migration 0024 disabled it. He is not silently skipped: the job note
     says he has no confirmed address, which is what the operator reads."""
     outbox = Outbox(monkeypatch)
     with factory() as session:
@@ -772,6 +785,86 @@ def test_a_member_left_with_only_a_telegram_row_has_nowhere_to_be_sent(
         _retired_channel(session, member)
     ref = jobs.JobRef(1, jobs.DIGEST, league.id, None, member, 1, {"mode": "morning"})
     assert run_digest(factory, ref, settings_for(), now=NOW) == NO_ADDRESS
+    assert outbox.sent == []
+
+
+def test_a_member_who_wants_no_morning_digest_is_not_sent_one(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """And the alert between digests is a separate answer: switching off the
+    morning one does not switch off being told a man is out."""
+    settings = settings_for(fcp_smtp_host="smtp.example.test", fcp_email_from="fcp@example.test")
+    outbox = Outbox(monkeypatch)
+    with factory() as session:
+        league, _, member = _connect(session)
+        ls, _, _ = league_season(session, season=SEASON)
+        ls.league_id = league.id
+        session.flush()
+        _channel(session, member, "member@example.com", settings, verified=True)
+        subscriptions.save(session, member, league.id, morning=False, alerts=True)
+        session.commit()
+        outbox.sent.clear()
+    ref = jobs.JobRef(1, jobs.DIGEST, league.id, None, member, 1, {"mode": "morning"})
+
+    assert run_digest(factory, ref, settings, now=NOW) == NOT_SUBSCRIBED["morning"]
+    assert outbox.sent == []
+
+
+def test_a_member_with_every_topic_off_is_sent_nothing_and_the_job_says_so(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rather than a masthead with nothing under it."""
+    settings = settings_for(fcp_smtp_host="smtp.example.test", fcp_email_from="fcp@example.test")
+    outbox = Outbox(monkeypatch)
+    with factory() as session:
+        league, _, member = _connect(session)
+        ls, _, _ = league_season(session, season=SEASON)
+        ls.league_id = league.id
+        session.flush()
+        _channel(session, member, "member@example.com", settings, verified=True)
+        subscriptions.save(
+            session,
+            member,
+            league.id,
+            topics=dict.fromkeys(subscriptions.TOPICS, False),
+        )
+        session.commit()
+        outbox.sent.clear()
+    ref = jobs.JobRef(1, jobs.DIGEST, league.id, None, member, 1, {"mode": "morning"})
+
+    assert run_digest(factory, ref, settings, now=NOW) == NO_TOPICS
+    assert outbox.sent == []
+
+
+def test_an_alert_is_suppressed_when_its_topic_is_off(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An alert is filtered by the same topics the digest is: a reader who
+    does not want his own roster's news is not interrupted for it."""
+    settings = settings_for(
+        fcp_smtp_host="smtp.example.test",
+        fcp_email_from="fcp@example.test",
+        espn_league_id=LEAGUE_ID,
+    )
+    outbox = Outbox(monkeypatch)
+    with factory() as session:
+        league, _, member = _connect(session)
+        ls, (home, _), _ = league_season(session, season=SEASON)
+        ls.league_id = league.id
+        session.flush()
+        _channel(session, member, "member@example.com", settings, verified=True)
+        subscriptions.save(
+            session,
+            member,
+            league.id,
+            topics={**subscriptions.DEFAULTS, subscriptions.MY_TEAM: False},
+        )
+        session.commit()
+        outbox.sent.clear()
+        team_id = home.id
+    ref = jobs.JobRef(1, jobs.DIGEST, league.id, team_id, member, 1, {"mode": "alert"})
+
+    assert run_digest(factory, ref, settings, now=NOW) == NO_ROSTER_ALERT
     assert outbox.sent == []
 
 

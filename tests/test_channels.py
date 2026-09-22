@@ -9,7 +9,7 @@ never quotes the mail server; without the secrets key nothing is kept.
 
 **Email and nothing else** (2026-09-22). The Telegram and ntfy kinds are
 gone: the page cannot offer them, the route refuses them, and a row migration
-`0023` disabled is listed as retired and is not a channel the digest can use.
+`0024` disabled is listed as retired and is not a channel the digest can use.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def _logged_link(caplog: pytest.LogCaptureFixture) -> str:
 
 
 def _retired(session: Session, user_id: int, kind: str) -> NotificationChannel:
-    """A row of a kind that was retired, as migration 0023 leaves one: kept,
+    """A row of a kind that was retired, as migration 0024 leaves one: kept,
     disabled, its target wiped."""
     row = NotificationChannel(
         user_id=user_id,
