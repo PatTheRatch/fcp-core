@@ -533,8 +533,13 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && cardFor) hideCard(true);
 });
+/* A card follows the name it belongs to rather than closing when the page
+   moves. Closing was the first cut, and it broke the keyboard: tabbing to a
+   name below the fold scrolls it into view, which fired this and shut the
+   card in the same breath as opening it. On a phone the sheet is fixed to
+   the bottom and `placeCard` leaves it there. */
 window.addEventListener("scroll", () => {
-  if (!cardPinned) hideCard(false);
+  if (cardFor) placeCard(cardFor);
 }, { passive: true });
 
 async function startShell() {
