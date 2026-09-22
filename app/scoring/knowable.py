@@ -38,18 +38,40 @@ A season with no usable projection (2020, 2023: `app.draft.projections`)
 or a player with none uses his season to date alone, then recent form; a
 player with no games and no projection has an empty line.
 
+THE PRIOR, AS A PARAMETER
+
+The blend is fitted on ESPN's stored preseason projection, and that is what it
+uses when nothing else is offered: the numbers above are the numbers, not a
+version of them. A caller measuring a different prior -- Basketball Monster's
+export, a manager's own file -- passes `prior`, either a mapping of player id
+to a per-game rate over `COUNTS` or a callable taking the player id and
+returning one or None, and the blend, the weights and the fallbacks are
+exactly the same arithmetic with a different number shrunk toward. That is
+the seam `scripts/projection_prior.py` uses to ask whether the in-season tool
+is better on another vendor's forecast. A player the given prior does not
+cover is treated as a player with no projection at all, which is the rule
+already in force for a season ESPN never published one for.
+
+COUNTING A GAME
+
+`played` is not the filter; `played` **and** `minutes > 0` is. Ten 2026 games
+carry a row with minutes zero, and summing them into the to-date rate as a
+goose egg drags a man's line down for a game he never played.
+
 From 2027, pass `as_of` (the calendar date of the move): the latest saved
 projection snapshot on or before it (`player_projection_snapshots`, S10)
 stands in for the preseason projection in the blend. It replaces the prior,
 not the whole line, because whether ESPN refreshes its projection in season
 was not measurable before the season (the S1 probe, branch `scoring-s1`);
 if it turns out to be a true rest-of-season forecast, it should earn more
-weight, and the first in-season month of snapshots is how to fit that.
+weight, and the first in-season month of snapshots is how to fit that. A
+caller that passes `prior` overrides both, since it is asking about a prior
+that is not ESPN's at all.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -91,6 +113,42 @@ def _rate(rows: Sequence[Mapping[str, Any]]) -> dict[str, float]:
         key: sum(float(r[column] or 0.0) for r in rows) / len(rows)
         for key, column in COUNTS.items()
     }
+
+
+#: A per-game rate over `COUNTS`, the shape every prior is reduced to.
+Rate = dict[str, float]
+
+#: Where the blend takes its prior from, when it is not ESPN's stored
+#: projection: a player id to his per-game rate, or None. The lookup form is
+#: wrapped by `prior_from`, since a mapping is not callable.
+Prior = Callable[[int], "Rate | None"]
+
+
+def prior_from(source: Mapping[int, Rate] | Prior) -> Prior:
+    """A prior lookup from a mapping of player id to per-game rate.
+
+    Every prior is a plain dict of `COUNTS`; this is the one place a caller's
+    mapping is turned into the callable the blend takes, so the blend itself
+    has a single shape to reason about.
+    """
+    if callable(source):
+        return source
+    return lambda player_id: source.get(player_id)
+
+
+def rate_from_totals(totals: Mapping[str, float], games: float) -> Rate | None:
+    """A per-game rate from season totals and a games projection, or None.
+
+    Takes `COUNTS` keys; `FGM` and `FTM` are in it because they are the made
+    halves of the two percentages, which `CategoryLine` rebuilds from them.
+    A rate that carries only the nine scored categories leaves a line whose
+    percentages have no attempts behind them, which is why a file's own
+    `fg%` and `ft%` columns are used to reconstruct the makes rather than
+    assumed absent.
+    """
+    if games <= 0:
+        return None
+    return {key: float(totals.get(key) or 0.0) / games for key in COUNTS}
 
 
 def _mix(a: Mapping[str, float], b: Mapping[str, float], weight_a: float) -> dict[str, float]:
@@ -136,12 +194,22 @@ def snapshot_rate(
 
 
 def knowable(
-    session: Session, player_id: int, season: int, day: int, *, as_of: date | None = None
+    session: Session,
+    player_id: int,
+    season: int,
+    day: int,
+    *,
+    as_of: date | None = None,
+    prior: Prior | None = None,
 ) -> Knowable:
     """The per-game line knowable at the end of scoring period `day - 1`.
 
     Only games before `day` count: a move made on a day is judged before
     that day's games.
+
+    `prior` replaces the preseason projection in the blend -- see the module
+    docstring. Left out, the line is ESPN's stored projection and this is the
+    arithmetic the docstring's fit was taken on.
     """
     columns = [getattr(PlayerGameStat, column) for column in COUNTS.values()]
     rows = session.execute(
@@ -156,8 +224,14 @@ def knowable(
     games = [dict(row._mapping) for row in rows]
     recent = [g for g in games if int(g["scoring_period"]) >= day - RECENT_DAYS]
 
-    snapshot = snapshot_rate(session, player_id, season, as_of) if as_of else None
-    projected = snapshot if snapshot is not None else projection_rate(session, player_id, season)
+    if prior is not None:
+        projected = prior(player_id)
+        snapshot = None
+    else:
+        snapshot = snapshot_rate(session, player_id, season, as_of) if as_of else None
+        projected = (
+            snapshot if snapshot is not None else projection_rate(session, player_id, season)
+        )
     to_date = _rate(games)
     if projected is None:
         base = to_date
