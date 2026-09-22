@@ -32,7 +32,9 @@ from app.db.models import (
 from app.db.session import make_engine, make_session_factory
 from app.digest import (
     CHURN_DAYS,
+    LEAGUE_EVENT_LIMIT,
     LEAGUE_MOVES_HOURS,
+    LEAGUE_NEWS_CHARS,
     MAX_LINES,
     ROSTER_EVENT_LIMIT,
     WIRE_EVENT_LIMIT,
@@ -46,6 +48,8 @@ from app.digest import (
     mark_notified,
 )
 from app.listener import events as kinds
+from app.listener.pool import UNROSTERED_STATUSES
+from app.listener.snapshots import latest_snapshots
 from app.listener.status import next_pass_after, run_status_pass
 from app.pickups.stream import stream_recommendations
 from tests.fakes import attach_pool, fake_league, fake_pool_entry, fake_pro_game, fake_team
@@ -344,7 +348,38 @@ def test_the_leagues_wire_traffic_stops_at_the_moment_the_digest_is_built(
 
     lines = league_section(session, league_season, now=LATER)
 
-    assert lines[-1] == "  1 move on the wire in the last day"
+    assert "  1 move on the wire in the last day" in lines
+    assert lines[-1] == "  Through The Wire claimed Wire Guy for $3.", (
+        "and the move itself, in the feed's own words"
+    )
+
+
+def test_the_leagues_news_is_bounded_by_characters_as_well_as_by_lines(
+    session: Session,
+) -> None:
+    """A four-team trade names eight players and runs to nearly 200
+    characters. Eight of those would put the whole message past Telegram's
+    4096 on its own -- measured at 4392 on 2026's busiest day -- so the
+    section spends a budget rather than a count, and says how many it left
+    out."""
+    _pass(session, _baseline(), FIRST)
+    league_season = _stored(session)
+    mine = session.scalars(
+        select(Team).where(Team.league_season_id == league_season.id, Team.espn_team_id == MINE)
+    ).one()
+    for number in range(LEAGUE_EVENT_LIMIT + 4):
+        who = Player(espn_player_id=9000 + number, name=f"A Very Long Player Name {number}")
+        session.add(who)
+        session.flush()
+        _transaction(session, mine, who, processed=LATER, espn_id=f"move-{number}")
+
+    lines = league_section(session, league_season, now=LATER)
+    news = [line for line in lines if "claimed" in line]
+
+    assert sum(len(line) for line in news) <= LEAGUE_NEWS_CHARS + 90, "the budget, plus one line"
+    assert len(news) <= LEAGUE_EVENT_LIMIT
+    assert lines[-1] == f"  and {LEAGUE_EVENT_LIMIT + 4 - len(news)} more"
+    assert f"  {LEAGUE_EVENT_LIMIT + 4} moves on the wire in the last day" in lines
 
 
 def test_the_message_stays_under_forty_lines_however_much_happened() -> None:
@@ -421,6 +456,101 @@ def test_an_unknown_team_still_renders_rather_than_failing(session: Session) -> 
     assert digest.healthy == 0 and digest.adds_recently == 0
 
 
+def _the_old_way(session: Session, league_season: LeagueSeason, espn_team_id: int) -> Digest:
+    """The roster and wire sections as they were built before `changes()`.
+
+    Kept here, once, so the rebuild can be held against it: the owner's
+    message is the one surface a manager reads with no page in front of him,
+    and it should not have moved by a character.
+    """
+    snapshots = latest_snapshots(session, league_season.season)
+    names = {
+        team.espn_team_id: team.name
+        for team in session.scalars(
+            select(Team).where(Team.league_season_id == league_season.id)
+        ).all()
+    }
+    mine = {
+        player_id
+        for player_id, snapshot in snapshots.items()
+        if snapshot.on_team_id == espn_team_id
+    }
+    wire = {
+        player_id
+        for player_id, snapshot in snapshots.items()
+        if snapshot.status in UNROSTERED_STATUSES
+    }
+    roster: list[Line] = []
+    on_the_wire: list[Line] = []
+    reported: list[int] = []
+    wanted = sorted({*digest_module.ROSTER_KINDS, *digest_module.WIRE_KINDS})
+    for event in digest_module.unnotified(session, league_season.season, wanted):
+        line = Line(event.kind, event.player.name, digest_module.describe(event, names))
+        if event.player_id in mine and event.kind in digest_module.ROSTER_KINDS:
+            roster.append(line)
+        elif event.player_id in wire and event.kind in digest_module.WIRE_KINDS:
+            on_the_wire.append(line)
+        else:
+            continue
+        reported.append(event.id)
+    standing, healthy = digest_module._standing([snapshots[player_id] for player_id in mine])
+    return Digest(
+        season=league_season.season,
+        team_name=names.get(espn_team_id, f"team {espn_team_id}"),
+        generated_at=LATER,
+        roster=roster[:ROSTER_EVENT_LIMIT],
+        roster_extra=max(0, len(roster) - ROSTER_EVENT_LIMIT),
+        standing=standing,
+        healthy=healthy,
+        wire=on_the_wire[:WIRE_EVENT_LIMIT],
+        wire_extra=max(0, len(on_the_wire) - WIRE_EVENT_LIMIT),
+        plan=digest_module.week_plan(session, league_season, espn_team_id, on=LATER.date()),
+        event_ids=reported,
+    )
+
+
+def test_the_rebuilt_digest_is_the_message_the_owner_always_had(session: Session) -> None:
+    """The whole roster and wire sections now come from `changes()`. On a
+    league with nothing but the listener's own events in it -- which is what
+    the owner's morning is -- the message has to be the same one."""
+    _pass(session, _baseline(), FIRST)
+    changed = [
+        fake_pool_entry(
+            100,
+            "Kawhi Leonard",
+            on_team_id=MINE,
+            injury_status="OUT",
+            expected_return_date=(2026, 12, 1),
+        ),
+        fake_pool_entry(101, "Alperen Sengun", on_team_id=MINE, injury_status="QUESTIONABLE"),
+        fake_pool_entry(200, "Rival Star", on_team_id=RIVAL, injury_status="OUT"),
+        fake_pool_entry(201, "Rival Spare", percent_owned=30.0),
+        fake_pool_entry(300, "Wire Guy", percent_owned=26.0, percent_change=9.0),
+    ]
+    _pass(session, changed, LATER)
+    league_season = _stored(session)
+
+    rebuilt = build_digest(session, league_season, MINE, now=LATER)
+    before = _the_old_way(session, league_season, MINE)
+
+    def by_player(lines: list[Line]) -> list[Line]:
+        return sorted(lines, key=lambda line: (line.player, line.kind))
+
+    assert by_player(rebuilt.roster) == by_player(before.roster)
+    assert by_player(rebuilt.wire) == by_player(before.wire)
+    assert (rebuilt.standing, rebuilt.healthy) == (before.standing, before.healthy)
+    assert sorted(rebuilt.event_ids) == sorted(before.event_ids)
+    assert sorted(rebuilt.render().splitlines()) == sorted(before.render().splitlines())
+    assert rebuilt.roster and rebuilt.wire, "the fixture has news in both sections"
+
+    # The one thing that did move, and deliberately: two events from the same
+    # pass used to come out in the order the rows happened to be written in,
+    # and now the worse news leads. A man ruled out is read before a man
+    # downgraded.
+    assert [line.kind for line in rebuilt.roster] == [kinds.WENT_OUT, kinds.DOWNGRADED]
+    assert [line.kind for line in before.roster] == [kinds.DOWNGRADED, kinds.WENT_OUT]
+
+
 @pytest.mark.parametrize(
     ("kind", "previous", "current", "detail", "expected"),
     [
@@ -484,11 +614,21 @@ def test_every_kind_the_digest_shows_has_a_sentence(
 def test_the_script_prints_and_marks_nothing_without_a_delivery_url(
     session: Session, test_database_url: str, tmp_path: Path
 ) -> None:
-    """The design's own test hook: a message nobody received stays unsent."""
+    """The design's own test hook: a message nobody received stays unsent.
+
+    The script builds its digest for the moment it runs in, and this
+    module's rooms are dated in next season's November, so the event is
+    moved to an hour ago first: the owner's window has a near end now as
+    well as a far one, and an event observed six weeks from now is not news
+    this morning (`OWNER_BACKLOG`).
+    """
     _pass(session, _baseline(), FIRST)
     out = _baseline()
     out[0] = fake_pool_entry(100, "Kawhi Leonard", on_team_id=MINE, injury_status="OUT")
     _pass(session, out, LATER)
+    for event in session.scalars(select(PlayerStatusEvent)).all():
+        event.observed_at = datetime.now(UTC) - timedelta(hours=1)
+    session.commit()
 
     completed = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "digest.py")],

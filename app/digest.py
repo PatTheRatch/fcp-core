@@ -31,20 +31,37 @@ N more", is marked `notified_at` by the caller once delivery has actually
 succeeded. Kinds the digest never shows are never queried and never marked.
 The plan marks nothing: it reports state, not news.
 
+ONE FEED, TWO SURFACES
+
+Sections 1, 2 and the league section are built on `app.inseason.changes`,
+which is also what the "What changed" section of the league's This week page
+reads. The sentence beside a player is written once, there, so the message
+and the page can never disagree about what happened. Two consequences worth
+knowing:
+
+- **The worst news leads its moment.** Two events from one pass used to come
+  out in whatever order the rows were written in; the feed ranks them by
+  concern, so a man ruled out is read before a man downgraded.
+- **A drop the ledger has already named is the league section's**, not the
+  wire's. The feed drops the listener's account of a move in favour of the
+  transaction behind it, which has the team and the money in it, and the
+  league section says it properly: "Load Management claimed X for $4,
+  dropping Y."
+
 MORE THAN ONE READER (step 4, docs/jobs.md)
 
 `notified_at` is one column on the event, so it can only mean "the owner has
 been told". A member's digest, sent by the `digest` job, passes `since`
 instead: the events observed since his own last digest went out, and marks
 nothing. The owner's digest keeps marking, exactly as `scripts/digest.py`
-always has. `league_section` is the free part every member gets: the week's
-matchups as they stand and the wire's traffic, from the league's own rows.
+always has, and now looks back `OWNER_BACKLOG` rather than to the beginning
+of time. `league_section` is the free part every member gets: the week's
+matchups as they stand, and what the league did in the last day.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -58,8 +75,13 @@ from app.db.models import (
     Transaction,
     TransactionItem,
 )
+from app.inseason import changes as feed
+
+# `describe` is the feed's now, and is re-exported under its old name: it is
+# one sentence, written once, and this is where it used to live.
+from app.inseason.changes import EVENT_KINDS, Change, describe
+from app.inseason.changes import changes as what_changed
 from app.listener import events as kinds
-from app.listener.pool import UNROSTERED_STATUSES
 from app.listener.snapshots import latest_snapshots
 from app.pickups.judge import Judgement
 from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
@@ -110,6 +132,15 @@ MAX_LINES = 52
 #: The window the churn line counts over, from docs/pickups.md section 4.4.
 CHURN_DAYS = 14
 
+#: How far back the owner's digest looks for news it has never sent.
+#:
+#: His window is "everything not yet reported", which had no near end at all
+#: and so was not a window (docs/inseason_rehearsal.md, finding 3). A
+#: fortnight is far longer than the passes have ever fallen behind, and an
+#: event older than that is not news: it stays unnotified and the events
+#: route still has it.
+OWNER_BACKLOG = timedelta(days=14)
+
 #: Statuses worth naming in the roster's standing line.
 _CONCERNING = ("OUT", "SUSPENSION", "DOUBTFUL", "QUESTIONABLE", "DAY_TO_DAY")
 
@@ -137,6 +168,18 @@ class Line:
     kind: str
     player: str
     detail: str
+
+
+def _line(change: Change) -> Line | None:
+    """One change as a digest line, or None when it is not the digest's.
+
+    The feed carries the ledger's account of a move as well as the
+    listener's, and the ledger's has no `event_kind`: those are the league
+    section's business, where the team and the money can be said properly.
+    """
+    if change.event_kind is None or not change.players:
+        return None
+    return Line(change.event_kind, change.players[0].name, change.detail)
 
 
 @dataclass
@@ -216,47 +259,6 @@ def _render(lines: Sequence[Line], extra: int, empty: str) -> list[str]:
     if extra > 0:
         out.append(f"  and {extra} more, see /events")
     return out
-
-
-def _day(value: Any) -> str:
-    """An ISO date from an event payload, printed short."""
-    if not isinstance(value, str) or not value:
-        return ""
-    try:
-        return datetime.fromisoformat(value).strftime("%d %b")
-    except ValueError:
-        return str(value)
-
-
-def describe(event: PlayerStatusEvent, teams: dict[int, str]) -> str:
-    """The right-hand column: what this event actually says."""
-    previous, current, detail = event.previous, event.current, event.detail
-    if event.kind in (kinds.WENT_OUT, kinds.DOWNGRADED, kinds.UPGRADED, kinds.RETURNED):
-        moved = f"{previous.get('injury_status') or '?'} to {current.get('injury_status') or '?'}"
-        back = _day(current.get("expected_return_date"))
-        return f"{moved}, back {back}" if back else moved
-    if event.kind == kinds.RETURN_DATE_CHANGED:
-        days = detail.get("days")
-        way = "later" if isinstance(days, int) and days > 0 else "sooner"
-        return f"{_day(current.get('expected_return_date'))}, {abs(int(days or 0))} days {way}"
-    if event.kind == kinds.CHANGED_PRO_TEAM:
-        return f"NBA team {previous.get('pro_team_id')} to {current.get('pro_team_id')}"
-    if event.kind in (kinds.MINUTES_SPIKE, kinds.MINUTES_DROP):
-        return (
-            f"{detail.get('recent_mean')} min last {detail.get('recent_games')},"
-            f" was {detail.get('prior_mean')}"
-        )
-    if event.kind in (kinds.OWNERSHIP_SURGE, kinds.OWNERSHIP_SLIDE):
-        return f"{current.get('percent_owned')}% owned, {current.get('percent_change'):+g} today"
-    if event.kind == kinds.DROPPED:
-        by = teams.get(int(detail.get("from_team_id") or 0), "another team")
-        return f"by {by}"
-    if event.kind == kinds.CLAIMED:
-        return f"by {teams.get(int(detail.get('to_team_id') or 0), 'another team')}"
-    if event.kind == kinds.WAIVER_CLEARING:
-        clears = detail.get("clears_at")
-        return f"at {clears[11:16]} UTC" if isinstance(clears, str) and len(clears) > 16 else ""
-    return ""
 
 
 def _team_names(session: Session, league_season: LeagueSeason) -> dict[int, str]:
@@ -497,39 +499,41 @@ def build_digest(
     """
     generated_at = now or datetime.now(UTC)
     snapshots = latest_snapshots(session, league_season.season)
-    team_names = _team_names(session, league_season)
     team = session.scalar(
         select(Team).where(
             Team.league_season_id == league_season.id, Team.espn_team_id == espn_team_id
         )
     )
 
+    roster_events: list[Line] = []
+    wire_events: list[Line] = []
+    reported: list[int] = []
+    for change in what_changed(
+        session,
+        league_season,
+        since=since if since is not None else generated_at - OWNER_BACKLOG,
+        until=generated_at,
+        team_id=espn_team_id,
+        kinds_wanted=EVENT_KINDS,
+        unnotified=since is None,
+    ):
+        line = _line(change)
+        if line is None:
+            continue
+        if change.mine and line.kind in ROSTER_KINDS:
+            roster_events.append(line)
+        elif change.on_wire and line.kind in WIRE_KINDS:
+            wire_events.append(line)
+        else:
+            continue
+        if change.event_id is not None:
+            reported.append(change.event_id)
+
     mine = {
         player_id
         for player_id, snapshot in snapshots.items()
         if snapshot.on_team_id == espn_team_id
     }
-    wire = {
-        player_id
-        for player_id, snapshot in snapshots.items()
-        if snapshot.status in UNROSTERED_STATUSES
-    }
-
-    roster_events: list[Line] = []
-    wire_events: list[Line] = []
-    reported: list[int] = []
-    for event in unnotified(
-        session, league_season.season, sorted({*ROSTER_KINDS, *WIRE_KINDS}), since=since
-    ):
-        line = Line(event.kind, event.player.name, describe(event, team_names))
-        if event.player_id in mine and event.kind in ROSTER_KINDS:
-            roster_events.append(line)
-        elif event.player_id in wire and event.kind in WIRE_KINDS:
-            wire_events.append(line)
-        else:
-            continue
-        reported.append(event.id)
-
     standing, healthy = _standing([snapshots[player_id] for player_id in mine])
     return Digest(
         season=league_season.season,
@@ -604,13 +608,31 @@ def mark_notified(session: Session, event_ids: Sequence[int], at: datetime) -> i
 LEAGUE_MATCHUP_LIMIT = 8
 #: The window the wire's traffic is counted over.
 LEAGUE_MOVES_HOURS = 24
+#: Moves named before the rest are counted. Eight sentences is a paragraph a
+#: manager will read on a phone; a busy Thursday can be three times that.
+LEAGUE_EVENT_LIMIT = 8
+#: And a budget in characters, because the sentences are not all one size: a
+#: four-team trade names eight players and runs to 196 characters, and eight
+#: of those would put the whole message past Telegram's 4096 on its own
+#: (measured on 2026 day 107, the season's busiest: 4392 characters). The
+#: budget keeps the league's news around 700 and the message near 3,400.
+LEAGUE_NEWS_CHARS = 700
+#: What the league's own news is. A `lineup` change -- a movement the ledger
+#: never named -- is the page's business: "no transaction says how" is a note
+#: for someone looking into it, not a line in a morning message.
+LEAGUE_NEWS_KINDS = (feed.ADD, feed.CLAIM, feed.DROP, feed.TRADE)
+#: The moves on the wire, which is what the count has always been: a claim,
+#: a free pickup or a drop, one per transaction. A trade is not one of them.
+WIRE_MOVE_KINDS = (feed.ADD, feed.CLAIM, feed.DROP)
 
 
 def league_section(session: Session, league_season: LeagueSeason, *, now: datetime) -> list[str]:
-    """THE LEAGUE: this period's matchups as they stand, and the wire's
-    traffic in the last day. From the league's own rows, so it is right for
-    any league the ingest reads. Never raises: a missing schedule or a day
-    in no period is one line."""
+    """THE LEAGUE: this period's matchups as they stand, and what the league
+    did in the last day -- who got whom, for how much, and who was traded for
+    whom. From the league's own rows, so it is right for any league the
+    ingest reads, and in the feed's own sentences, so the message and the
+    page cannot disagree. Never raises: a missing schedule or a day in no
+    period is one line."""
     out = ["THE LEAGUE"]
     season = int(league_season.season)
     try:
@@ -648,22 +670,25 @@ def league_section(session: Session, league_season: LeagueSeason, *, now: dateti
     # fortnight: open at the far end this counted every move the league went
     # on to make, and a replayed morning said 609 moves on the wire in the
     # last day where nine had been made.
-    since = now - timedelta(hours=LEAGUE_MOVES_HOURS)
-    moves = (
-        session.scalar(
-            select(func.count())
-            .select_from(Transaction)
-            .where(
-                Transaction.league_season_id == league_season.id,
-                Transaction.type.in_(WIRE_TYPES),
-                Transaction.status == "EXECUTED",
-                Transaction.processed_at >= since,
-                Transaction.processed_at <= now,
-            )
-        )
-        or 0
+    news = what_changed(
+        session,
+        league_season,
+        since=now - timedelta(hours=LEAGUE_MOVES_HOURS),
+        until=now,
+        kinds_wanted=LEAGUE_NEWS_KINDS,
     )
-    out.append(f"  {_plural(moves, 'move')} on the wire in the last day")
+    moves = [change for change in news if change.kind in WIRE_MOVE_KINDS]
+    out.append(f"  {_plural(len(moves), 'move')} on the wire in the last day")
+    named = 0
+    spent = 0
+    for change in news[:LEAGUE_EVENT_LIMIT]:
+        if named and spent + len(change.text) > LEAGUE_NEWS_CHARS:
+            break
+        out.append(f"  {change.text}")
+        spent += len(change.text)
+        named += 1
+    if len(news) > named:
+        out.append(f"  and {len(news) - named} more")
     return out
 
 

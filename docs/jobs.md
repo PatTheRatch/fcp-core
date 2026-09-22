@@ -166,6 +166,32 @@ table. The page is Account, Alerts.
 
 ## The digest job
 
+**Every section but the plan is built on `app/inseason/changes.py`**, which
+is also what the "What changed" section of the league's This week page reads
+(docs/in_season_pages.md). The sentence beside a player is written once,
+there, so the message and the page cannot disagree about what happened.
+Three things follow:
+
+- The roster and wire sections say exactly what they always said, with the
+  worse news of one pass now read first: a man ruled out before a man
+  downgraded. `tests/test_digest.py` holds the rebuilt message against the
+  one the old code produced, line for line.
+- The league section now **names** the moves as well as counting them —
+  "Optimize the MVPs claimed Jock Landale for $5, dropping Zach Edey", and
+  the trades with both sides of them — capped at `LEAGUE_EVENT_LIMIT` lines
+  and `LEAGUE_NEWS_CHARS` characters, whichever binds first, then "and N
+  more".
+- A drop the transaction ledger has already named belongs to the league
+  section rather than the wire section: the ledger row has the team and the
+  money in it, and the listener's account of the same move is dropped in its
+  favour.
+
+**The owner's window has a near end** (`OWNER_BACKLOG`, a fortnight). It was
+"every event never reported", which is not a window at all
+(docs/inseason_rehearsal.md, finding 3); an event nobody has been told about
+for two weeks is not news, and it stays unnotified with the events route
+still holding it.
+
 - **The owner's digest of the tracked team** is `scripts/digest.py`: the same
   message (with the league section after it), to the `.env` channels and
   any he has verified, marking the events it reports as notified once any
