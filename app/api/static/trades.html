@@ -127,6 +127,8 @@ const DEAL = {
 let CONTEXT = null;
 let ROSTERS = null;
 let JUDGING = false;
+/** Set when the deal changed while a judgement was in flight. */
+let AGAIN = false;
 /** The pool answered for each side, and the deal it was answered for, so a
  *  tap that does not change who is leaving does not read the wire again. */
 const POOLS = { ours: null, theirs: null };
@@ -816,11 +818,24 @@ function working(saying) {
 }
 
 async function judge() {
-  if (JUDGING || DEAL.other === null) return;
+  if (DEAL.other === null) return;
+  if (JUDGING) {
+    // A man named off the wire while the last judgement was still in flight.
+    // The answer on its way is about the deal as it was, so it is thrown
+    // away and the deal on screen is judged again: the numbers under a
+    // trade must never be a judgement of some other one.
+    AGAIN = true;
+    return;
+  }
   working("Judging this deal: both rosters, week by week and category by category…");
   $("failed").hidden = true;
   const answer = await get(`${base()}/teams/${WHERE.team}/trades/report${askedWith()}`);
   working("");
+  if (AGAIN) {
+    AGAIN = false;
+    await judge();
+    return;
+  }
   if (!answer.ok) {
     ["fit", "number", "rests"].forEach((id) => ($(id).hidden = true));
     $("readout").hidden = true;
