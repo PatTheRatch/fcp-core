@@ -67,6 +67,7 @@ from app import (
 from app.config import Settings, get_settings
 from app.db.models import League, LeagueConnection, LeagueSeason, Team, User
 from app.digest import (
+    Digest,
     build_alert,
     build_digest,
     latest_listened_season,
@@ -79,6 +80,7 @@ from app.espn import ESPNSettings, fetch_newest_league, get_espn_settings
 from app.ingest_runs import record_run
 from app.jobs import JobError, JobRef
 from app.listener.status import label_for, next_pass_after, run_status_pass, run_wire_pass
+from app.mail import Mail, alert_mail, digest_mail, lines_mail
 
 log = logging.getLogger("fcp.jobs")
 
@@ -356,18 +358,35 @@ def _deliver(
     user: User,
     *,
     to_env: bool,
-    text: str,
-    title: str,
+    mail: Mail,
     settings: Settings,
 ) -> list[notify.Delivery] | None:
     """Mail his verified addresses, and the `.env` ones when he is the
-    server's owner. None when he has no address at all."""
+    server's owner. None when he has no address at all.
+
+    One `Mail` for both: the same subject, the same two parts and the same
+    headers whoever it reaches, so the operator's copy is the copy the member
+    got and not a second rendering of it.
+    """
     mine = channels.verified(session, user.id)
     env_set = to_env and settings.email_configured
     if not mine and not env_set:
         return None
-    results = notify.deliver(settings, text, title=title) if env_set else []
-    results += channels.deliver(mine, text, title=title, settings=settings)
+    results = (
+        notify.deliver(
+            settings, mail.text, title=mail.subject, html=mail.html, headers=mail.headers
+        )
+        if env_set
+        else []
+    )
+    results += channels.deliver(
+        mine,
+        mail.text,
+        title=mail.subject,
+        settings=settings,
+        html=mail.html,
+        headers=mail.headers,
+    )
     return results
 
 
@@ -451,14 +470,20 @@ def _owner_digest(
         if alert is None:
             return "no urgent change on the tracked roster"
         text, event_ids = alert
-        title = ALERT_TITLE
+        mail = alert_mail(
+            team.name, text, when=f"{at:%a %d %b, %H:%M} UTC", public_url=settings.fcp_public_url
+        )
     else:
-        digest = build_digest(session, league_season, espn_team_id, now=at)
+        digest = build_digest(session, league_season, espn_team_id, now=at, wanted=wanted)
         league_lines = league_section(session, league_season, now=at)
-        text = digest.render() + "\n\n" + "\n".join(league_lines)
         event_ids = digest.event_ids
-        title = DIGEST_TITLE
-    results = _deliver(session, user, to_env=True, text=text, title=title, settings=settings)
+        mail = digest_mail(
+            digest,
+            wanted=wanted,
+            public_url=settings.fcp_public_url,
+            league_tail="\n".join(league_lines),
+        )
+    results = _deliver(session, user, to_env=True, mail=mail, settings=settings)
     if results is None:
         return f"{NO_ADDRESS}, {len(event_ids)} event(s) stay unnotified"
     note = _outcome(results)
@@ -487,6 +512,12 @@ def _member_digest(
     ) or (at - FIRST_WINDOW[mode])
     entitled = _entitled(session, user, is_owner)
     parts: list[str] = []
+    # The `Digest` when there is one, so the HTML part can draw the lineup as
+    # a grid rather than re-reading a sentence. A league the listener does not
+    # follow has no `Digest` (docs/jobs.md, "One listener league"), and its
+    # message is the same lines as a plain page.
+    built: Digest | None = None
+    league_tail = ""
     if team is not None and entitled:
         league_season = session.get(LeagueSeason, team.league_season_id)
         if league_season is None:  # pragma: no cover - the foreign key guarantees it
@@ -505,9 +536,10 @@ def _member_digest(
                 return "no urgent change on his roster"
             parts.append(alert[0])
         elif listener:
-            parts.append(
-                build_digest(session, league_season, espn_team_id, now=at, since=since).render()
+            built = build_digest(
+                session, league_season, espn_team_id, now=at, since=since, wanted=wanted
             )
+            parts.append(built.render())
         else:
             parts.append(
                 "\n".join(
@@ -522,10 +554,27 @@ def _member_digest(
             return "the league has no season stored yet; nothing to send"
         name = memberships.league_name(session, league)
         header = [] if parts else [f"{name} - {at:%a %d %b}, {at:%H:%M} UTC", ""]
-        parts.append("\n".join(header + league_section(session, season_row, now=at)))
+        league_tail = "\n".join(header + league_section(session, season_row, now=at))
+        parts.append(league_tail)
     text = "\n\n".join(parts)
-    title = ALERT_TITLE if mode == ALERT else DIGEST_TITLE
-    results = _deliver(session, user, to_env=is_owner, text=text, title=title, settings=settings)
+    where = settings.fcp_public_url
+    if mode == ALERT:
+        mail = alert_mail(
+            team.name if team is not None else "FCP",
+            text,
+            when=f"{at:%a %d %b, %H:%M} UTC",
+            public_url=where,
+        )
+    elif built is not None:
+        mail = digest_mail(built, wanted=wanted, public_url=where, league_tail=league_tail)
+    else:
+        mail = lines_mail(
+            memberships.league_name(session, league),
+            text,
+            when=f"{at:%A %d %B %Y}",
+            public_url=where,
+        )
+    results = _deliver(session, user, to_env=is_owner, mail=mail, settings=settings)
     if results is None:
         return NO_ADDRESS
     return _outcome(results)

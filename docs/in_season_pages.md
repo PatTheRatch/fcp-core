@@ -187,6 +187,24 @@ because there is no draft pool here to rank against — a probability shades
 by how settled it is, a shift by how far it moved — but the component takes
 the shade it is handed and does not know the difference.
 
+**The morning email is one of these pages** (2026-09-22, `app/mail/`, and
+docs/jobs.md's "The shape of the message"). It carries the same masthead,
+the same rules and no boxes, the same burnt-orange accent, the same nine in
+the same order, and the same language: **worth a look**, **nothing clears
+the bar**, never *recommended*. Its sections are Today's lineup, This week,
+The season, What changed and Standings — exactly the topics the reader
+switched on, and nothing else.
+
+It cannot use `pages.css`. An email client fetches no stylesheet, knows no
+custom property, runs no script, loads no web font, and in Outlook's case
+lays the page out with Word. So the theme is said again inline: the light
+palette as literal hex, the site's own font fallbacks in place of the three
+Google faces (`Arial Narrow` for Oswald, Georgia for Source Serif 4), tables
+for layout, and no image of any kind. There is no dark half: the switch is a
+thing a reader presses on a page, and an email has no button to press. A
+client that inverts the page in dark mode is why a gain and a loss carry a
+sign and an arrow as well as a colour, exactly as the trade page has them.
+
 ## What the pages fetch
 
 The reports come from the routes that already existed, unchanged, plus the

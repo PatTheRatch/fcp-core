@@ -134,14 +134,16 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /pages/static/{name}` | open | the shared CSS and JS, no data |
 | `GET /` | open | the landing page signed out; signed in, the shell's home, which finds his league in the browser; no data either way |
 | `GET /auth/me` | signed in | the caller's own account |
-| `GET /me/alerts` | signed in | where the digest goes: its channels to the server's owner only, a URL channel by kind, never its URL |
+| `GET /me/alerts` | signed in | where the digest goes: the server's own recipients, to its owner only |
 | `GET /account/connections` | signed in (page) | connect, your connections, your leagues' invites and claims |
 | `GET /account/projections` | signed in (page) | your own projection sets |
-| `GET /account/alerts` | signed in (page) | reads `/me/alerts` and `/me/channels`; spends an emailed link's `?token=` |
-| `GET /me/channels` | signed in, own only | his alert channels, each masked; never a target in full |
-| `POST /me/channels` | signed in, rate-limited | add a channel (sealed); a link or a code is sent to it, never shown |
-| `POST /me/channels/verify` | signed in, own only, rate-limited | spend the link's token or the code, on one of his own channels |
+| `GET /account/alerts` | signed in (page) | reads `/me/alerts`, `/me/channels` and `/me/subscriptions`; spends an emailed link's `?token=` |
+| `GET /me/channels` | signed in, own only | his alert addresses, each masked; never one in full |
+| `POST /me/channels` | signed in, rate-limited | add an address (sealed); a confirmation link is mailed to it, never shown |
+| `POST /me/channels/verify` | signed in, own only, rate-limited | spend the link's token, on one of his own channels |
 | `DELETE /me/channels/{channel_id}` | signed in, own only (404 otherwise) | disable, and wipe the sealed target |
+| `GET /me/subscriptions` | signed in, own only | what goes in his email, per league he is a member of |
+| `PUT /me/subscriptions/{league_id}` | signed in, member of that league (404 otherwise) | choose it: the topics, the morning digest, the alerts |
 | `GET /leagues` | signed in, filtered | lists only the leagues the caller is a member of (single mode: all) |
 | `GET /ingest-runs` | signed in | ingest history, no league member's data |
 | `GET /ingest-runs/health` | signed in | whether the data is current |

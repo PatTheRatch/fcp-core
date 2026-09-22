@@ -50,6 +50,7 @@ from app.api.access import (
 from app.api.deps import SessionDep
 from app.config import Settings
 from app.db.models import User
+from app.mail import SIGN_IN_SUBJECT, sign_in_mail
 from app.notify import send_email
 
 log = logging.getLogger("fcp.auth")
@@ -62,7 +63,9 @@ STATIC = Path(__file__).parent / "static"
 #: response says nothing about who has an account.
 ASKED = "If that address can sign in, a link is on its way. It works once, for 15 minutes."
 BAD_LINK = "That link has expired or was already used."
-SUBJECT = "Your FCP sign-in link"
+#: The subject the mail carries. This module has always named it; the mail
+#: itself, both its parts, is `app.mail` now.
+SUBJECT = SIGN_IN_SUBJECT
 
 
 # ---------------------------------------------------------------------------
@@ -174,17 +177,16 @@ def sign_in(
     link = _link(settings, request, token)
 
     if settings.smtp_configured and settings.fcp_public_url:
+        mail = sign_in_mail(link, public_url=settings.fcp_public_url)
         try:
             send_email(
-                "Sign in to FCP:\n\n"
-                f"{link}\n\n"
-                "The link works once, for 15 minutes. If you did not ask for it, "
-                "ignore this email and nothing happens.\n",
+                mail.text,
+                html=mail.html,
                 host=str(settings.fcp_smtp_host),
                 port=settings.fcp_smtp_port,
                 sender=str(settings.fcp_email_from),
                 recipients=[email],
-                subject=SUBJECT,
+                subject=mail.subject,
                 user=settings.fcp_smtp_user,
                 password=settings.fcp_smtp_password,
             )

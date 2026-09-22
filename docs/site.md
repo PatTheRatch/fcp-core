@@ -33,7 +33,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
-| `/account/alerts` | Alerts: your own channels (add, confirm, disable), and the server's for its owner | anyone signed in | `alerts.html` |
+| `/account/alerts` | Alerts: your own address (add, confirm, disable), what goes in your email per league, and the server's recipients for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
 | `/join/{token}` | where an invite link lands (step 2's, under the shell) | anyone signed in | `join.html` |
 
@@ -280,17 +280,36 @@ one": the file it wants, preview first, the API's own form at
 Reads `/projections/sets`, which answers with his own sets only.
 
 **Alerts.** Step 4 (docs/jobs.md). "Your channels": each of the reader's own,
-masked ("p•••@example.com", "chat •••4321"), confirmed or waiting, with
-Disable; or "None yet: nothing is sent to you until you add one." "Add a
-channel": a kind (email, Telegram, ntfy, whichever the server can send) and
-the address, chat id or topic; an email gets a link, the others a test
-message with a code, typed into the form below it. An emailed link lands
-here with `?token=`, which the page spends and takes out of the address bar.
-Then, for the server's owner only, "The server's channels": the digest's
-`.env` channels (email to the addresses in `FCP_EMAIL_TO`; a Telegram chat
-or an ntfy topic by kind, never its URL). Reads `GET /me/channels` and
-`GET /me/alerts`; writes through `POST /me/channels`,
-`POST /me/channels/verify` and `DELETE /me/channels/{id}`.
+masked ("p•••@example.com"), confirmed or waiting, with Disable; or "None
+yet: nothing is sent to you until you add an address." A Telegram chat or an
+ntfy topic he confirmed before 2026-09-22 is listed under it, once, as
+stopped, so he is told rather than left wondering why nothing arrives. "Add
+an address": one field, because email is the only channel there is; it gets
+a link to confirm it. An emailed link lands here with `?token=`, which the
+page spends and takes out of the address bar.
+
+"What goes in it", per league: the topics one to a row with a line saying
+what each one puts in the message, and above them the two cadence questions
+— the morning digest at all, and being interrupted between them. Ticking
+anything writes the whole block back, so what is saved is always what is on
+the screen, and the page says so when every topic is off. This is where the
+email's own "Manage your alerts" link lands (`#wants`).
+
+Then, for the server's owner only, "The server's own recipients": the
+addresses in `FCP_EMAIL_TO`, which are his. Reads `GET /me/channels`,
+`GET /me/subscriptions` and `GET /me/alerts`; writes through
+`POST /me/channels`, `POST /me/channels/verify`,
+`DELETE /me/channels/{id}` and `PUT /me/subscriptions/{league_id}`.
+
+**The email is a page too.** The morning digest is the house style in an
+inbox (`app/mail/`, and docs/jobs.md's "The shape of the message"): the same
+light palette written as literal colours, the same masthead and rules, the
+same nine categories in the same order, the same "worth a look" and "nothing
+clears the bar". It cannot share `pages.css` — an email client does not
+fetch a stylesheet and knows no custom property — so the palette is written
+out a second time in `app/mail/style.py`, and that is the one place in this
+product where a colour is written twice. When the palette moves, it moves
+there too.
 
 **Home** (`/`, signed in). Goes to the default league's This week at once
 (`location.replace`, so Back does not return to it); with no league yet,
@@ -304,7 +323,11 @@ or an ntfy topic by kind, never its URL). Reads `GET /me/channels` and
   fills in; the frame (the name and the switch) is drawn at once.
 - **One thin route, `GET /me/alerts`,** because the alerts page has to say
   what the server is configured with and no route said it. Signed in; the
-  owner alone sees the channels; a URL channel is named by kind only.
+  owner alone sees the recipients.
+- **The email is drawn from the site's palette, not from its stylesheet.**
+  An inbox fetches nothing and knows no custom property, so `app/mail/` says
+  the house style again in the only vocabulary an email has. The duplication
+  is the price of an email that looks like the site.
 - **`/leagues` gained `name`** (the newest season's), for the switcher: a
   field on an existing route, rather than a request per league.
 - **The old addresses keep their checks** rather than being open redirects:

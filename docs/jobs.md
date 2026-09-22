@@ -9,17 +9,21 @@ main session makes after review.
 Code: `app/jobs.py` (the queue), `app/job_kinds.py` (what each job does),
 `app/schedule.py` (what each schedule label enqueues), `app/league_ingest.py`
 (one league's ingest with its own login), `app/reports.py` (stored reports),
-`app/channels.py` and `app/api/channels.py` (members' channels), the
-per-league half of `app/watchdog.py`; `scripts/worker.py`,
-`scripts/enqueue.py`, `scripts/scheduled_enqueue.sh`;
-`deploy/fcp-core-worker.service`, `deploy/fcp-core-enqueue.{service,timer}`;
-migration `0020_jobs_reports_channels`. Tests: `tests/test_jobs.py`,
-`tests/test_channels.py`.
+`app/channels.py` and `app/api/channels.py` (members' channels),
+`app/subscriptions.py` (what a member wants to hear about),
+`app/mail/` (the message itself, both its parts), the per-league half of
+`app/watchdog.py`; `scripts/worker.py`, `scripts/enqueue.py`,
+`scripts/scheduled_enqueue.sh`; `deploy/fcp-core-worker.service`,
+`deploy/fcp-core-enqueue.{service,timer}`; migrations
+`0020_jobs_reports_channels`, `0024_email_only_channels` and
+`0025_digest_subscriptions`. Tests: `tests/test_jobs.py`,
+`tests/test_channels.py`, `tests/test_subscriptions.py`,
+`tests/test_mail.py`.
 
 ## Why
 
 The timers run one league: the `.env` league, with the `.env` cookies, for
-the one tracked team, to the one digest channel. A second league, or a
+the one tracked team, to the one digest address. A second league, or a
 second manager, has nowhere to go. docs/product.md asks for jobs per league
 (ingest, listener pass) and per claimed team (the morning reports, the
 digest), a queue Postgres can hold, reports built once and read many times,
@@ -34,7 +38,7 @@ and each member's alerts on his own channels.
 | `ingest` | a league | the trailing ten days and next season's settings, what `scheduled_ingest.sh` does, with the league's own login; a league never ingested is backfilled, every season ESPN holds |
 | `status_pass` | a league | the listener's pass (below, "One listener league") |
 | `precompute` | a team | its day, week and season reports for today, stored in `team_reports` |
-| `digest` | a member (and his team) | the morning digest, or an alert between digests, to his verified channels |
+| `digest` | a member (and his team) | the morning digest, or an alert between digests, emailed to his confirmed addresses |
 | `injury_backfill` | a season | a whole season of the NBA's official injury reports (docs/injuries.md); hours at the full cadence, which is why it is queued |
 | `injury_pass` | a season | the same, today only, for the season in progress |
 
@@ -61,9 +65,8 @@ schedule enqueued twice on a day, by a timer that fires twice or a person
 running it by hand, adds nothing.
 
 **Secrets.** `last_error` is one of our own sentences or an exception's
-class name, never its text: ESPN's words, the SMTP server's and Telegram's
-(whose refusal quotes the bot's URL, and with it the token) stay out of the
-table and the log. The ingest wraps ESPN's own errors (`FetchError`) before
+class name, never its text: ESPN's words and the mail server's reply stay
+out of the table and the log. The ingest wraps ESPN's own errors (`FetchError`) before
 `record_run` sees them, so `ingest_runs.error`, which a signed-in route
 lists, cannot quote a login either. The tests make an error that quotes the
 cookies and check every place it could land.
@@ -171,24 +174,85 @@ read the stored rows), and the switched-over units do not run it.
 
 ## Members' channels
 
-`notification_channels`: per member, an email address, a Telegram chat id
-or an ntfy.sh topic, sealed with `FCP_SECRETS_KEY` and shown only masked
-(`p•••@example.com`, `chat •••4321`, `ntfy.sh/fc•••`). Nothing is sent to one
-until it is verified: an email by a link (`/account/alerts?token=`, one day,
+**Everything goes by email** (2026-09-22). A member's digest, his alerts and
+the operator's own notices all go the one way; there is no push channel and
+no bot. `FCP_DIGEST_URL`, `FCP_DIGEST_CHAT_ID` and `FCP_TELEGRAM_BOT_URL`
+are gone from `app/config.py` and from `.env.example`, and a `.env` that
+still sets them is not an error: the keys do nothing.
+
+`notification_channels`: per member, an email address, sealed with
+`FCP_SECRETS_KEY` and shown only masked (`p•••@example.com`). Nothing is sent
+to one until it is verified, by a link (`/account/alerts?token=`, one day,
 once, only its sha256 kept, built on `FCP_PUBLIC_URL`; logged instead of
-mailed when SMTP is not configured, as sign-in's link is); a chat or a topic
-by a code in a test message, typed back on the page. Telegram chats go
-through the server's bot: `FCP_TELEGRAM_BOT_URL` (optional, new), else the
-digest's own Telegram URL. ntfy topics must be on ntfy.sh, so a member cannot
-make the server post anywhere else. Disabling wipes the sealed target.
+mailed when SMTP is not configured, as sign-in's link is). Disabling wipes
+the sealed target.
+
+**The Telegram and ntfy rows are disabled, not deleted** (migration
+`0024_email_only_channels`). The row stays so the Alerts page can tell the
+member his old channel has stopped and ask him for an address; its chat id
+or topic is wiped, so nothing can be sent to it; and the table's CHECK
+becomes "an email address, or disabled", so no new row of a retired kind can
+be written even by hand. A member left with only one of those rows has no
+channel at all, and the digest job says so ("no confirmed email address")
+rather than failing to reach him quietly.
 
 The routes (`GET`/`POST /me/channels`, `POST /me/channels/verify`,
 `DELETE /me/channels/{id}`) are signed-in scope and in docs/accounts.md's
 table. The page is Account, Alerts.
 
-**The owner's channels stay in `.env`.** The server's owner
-(`FCP_OWNER_EMAIL`) keeps `FCP_DIGEST_URL` (and its chat id) and
-`FCP_EMAIL_*`, unsealed and unstored, in either mode, plus any he verifies.
+**The owner's recipients stay in `.env`.** The server's owner
+(`FCP_OWNER_EMAIL`) keeps `FCP_EMAIL_*`, unsealed and unstored, in either
+mode, plus any address he confirms.
+
+## Subscriptions: what a member wants to hear about
+
+`digest_subscriptions` (migration `0025`), a row per (member, league):
+`topics`, a JSONB map of topic name to on, and two columns, `morning` and
+`alerts`. `app/subscriptions.py` is the vocabulary; the page is the "What
+goes in it" block on Account, Alerts, and the routes are
+`GET /me/subscriptions` and `PUT /me/subscriptions/{league_id}`.
+
+| topic | what it puts in the email |
+|---|---|
+| `lineup` | today's lineup: the fix-this line and the starters |
+| `moves` | the week's and the season's pickups that clear the bar |
+| `my_team` | adds, drops and claims on my team; status changes on my roster |
+| `opponent` | this week's opponent: his moves and his injuries |
+| `league_transactions` | every add, drop, claim and trade in the league |
+| `league_injuries` | every status change in the league |
+| `trades` | trades and proposals, and the block once there is one |
+| `standings` | my place, my record, the projected finish once it exists |
+
+`morning` and `alerts` are not topics: they say whether a message is sent at
+all. An alert is filtered by the same topics the digest is — today
+`build_alert` names men on the reader's own roster, so it rides on
+`my_team`; an alert about the opponent, when there is one to send, rides on
+`opponent` like every other line of the feed.
+
+**Defaults:** lineup, my moves, my team, my opponent, trades and standings
+on; the two league-wide feeds off. Those are the sections that would make a
+new member unsubscribe on his second morning — on 2026 day 107, the season's
+busiest, the league's transaction feed ran to 4,392 characters on its own. A
+trade is on because a league sees a handful in a season and every one is
+worth reading. **The owner's tracked team in single mode keeps everything
+on**: single mode is one person reading his own server, and nothing there
+should be silently missing.
+
+**Nothing was backfilled.** No row means the defaults, and one appears the
+first time he changes something. A JSONB map rather than a column each
+because the topics will change — the trade block and the projected finish
+are in the list and are not built — and a topic should not need a migration
+to appear or a backfill to default. An unknown key is dropped on the way out
+and a missing one takes its default, so a row written by an older version
+still reads.
+
+**A member with every topic off gets no digest**, and the job's note says
+which of the three it was: he does not want the morning one, he does not
+want the alerts, or he has no topics left.
+
+**A section he did not ask for is not built.** `build_digest` takes the
+subscription, so a reader who wants only today's lineup does not pay for the
+rest-of-season search.
 
 ## The digest job
 
@@ -219,35 +283,133 @@ for two weeks is not news, and it stays unnotified with the events route
 still holding it.
 
 - **The owner's digest of the tracked team** is `scripts/digest.py`: the same
-  message (with the league section after it), to the `.env` channels and
-  any he has verified, marking the events it reports as notified once any
-  channel took it.
+  message (with the league section after it), to the `.env` recipients and
+  any address he has confirmed, marking the events it reports as notified
+  once a send succeeded.
 - **Anyone else's** is the league section (this period's matchups as they
   stand, the wire's traffic in the last day) and, for a verified manager
   who is entitled (everyone while `BILLING_ENABLED` is off), his team's
   digest. It reads the events observed since his own last digest went out
   and marks nothing, because `notified_at` is one column and can only mean
   "the owner has been told".
-- No verified channel: nothing is sent and the job is done, saying so. A
-  channel that fails is named in the job's note by its masked target, never
+- No confirmed address: nothing is sent and the job is done, saying so. An
+  address that fails is named in the job's note by its masked form, never
   with the error; all failing is a failure, retried.
+
+## The shape of the message
+
+The digest is sent as one `multipart/alternative` email (`app/mail/`): a
+text part and an HTML part, both built from one `Digest`, so the two cannot
+disagree.
+
+**The text part is `Digest.render()`**, unchanged in order and wording: what
+`--dry-run` prints, what the tests hold line for line, and what a reader in
+a terminal client sees. It gained two sections, `THE SEASON` and
+`STANDINGS`, after the churn line.
+
+**The HTML part is the email as a page in the house style**
+(`app/mail/render.py`, palette and faces in `app/mail/style.py`): a 600px
+column that reads on a phone, the masthead (league, team, the day), then
+exactly the sections the reader subscribed to, in the topics' own order:
+
+1. **Today's lineup** — the place going empty tonight in the warn colour,
+   then the starters by slot with the game each one has. Places nobody on
+   the roster can fill are counted under the grid, not given a row each: a
+   roster short at three UT slots printed the same sentence three times,
+   which reads as a fault rather than a fact.
+2. **This week** — the moves that clear the bar, each with its number and one
+   line of reason; the nearest ones that did not are shown and labelled
+   "under the bar", because a bar labels and never hides. Deduplicated by
+   the man coming in: the plan judges its second move with the first already
+   made, so the same add otherwise appears twice with two different numbers,
+   which read as the bar contradicting itself.
+3. **The season** — where the season ends on this roster, and the one move
+   over the rest of it.
+4. **What changed** — the feed's own sentences, grouped by day, filtered by
+   his topics. The five feed topics are five ways into one section, not five
+   sections; a lede says which of them he holds.
+5. **Standings and projections** — his place and his two records, and a
+   marked slot where the projected finish will go.
+
+Then a footer: the pages this came from (`FCP_PUBLIC_URL`), one line of why
+he got it, and a link to manage his alerts.
+
+**What an email allows**, and so what the renderer uses: tables for layout,
+inline styles, literal colours (an inbox has no custom property), system
+fonts with the site's own fallbacks (no web font is loaded, so Oswald's
+fallback `Arial Narrow` and Source Serif 4's fallback Georgia are what is
+asked for). No stylesheet, no `<style>` block worth relying on, no script,
+no image of any kind — not a spacer, and certainly not a tracking pixel. No
+flexbox, no grid, no `position`, no float: the Outlook client lays out with
+Word and knows none of them.
+
+**Numbers** are `tabular-nums` and in the mono face; the nine categories are
+in the fixed order every screen uses; a gain and a loss are told apart by a
+sign and an arrow before they are told apart by colour, as the trade page
+does, because a client in dark mode may invert every colour on the page.
+
+**The subject line** is
+
+    {team}: {the one thing worth opening it for, in at most eight words}
+
+the one thing being, in order: the place in tonight's lineup that will
+produce nothing while a man on the bench would have (it expires at tip-off,
+so nothing outranks it); then the top move that clears the bar; then, when
+neither exists, "nothing to fix today". Eight words because a phone shows
+about forty characters of a subject and that is where a manager decides. The
+team leads because a manager in two leagues has two of these.
+
+**The sign-in email and the address confirmation** get the same masthead and
+footer, the link as a button and as a plain URL under it, and the same two
+parts.
+
+## Deliverability
+
+* `List-Unsubscribe` points at the Alerts page, which is where the topics
+  are turned off. RFC 8058's one-click `List-Unsubscribe-Post` is
+  deliberately **not** sent: one-click means a POST from the mail provider
+  with no session, and no route here would honour it safely.
+* **No tracking of any kind.** No pixel, no redirect through a counter, no
+  per-reader link.
+* **A stable From name.** `FCP_EMAIL_FROM` wants a display name that never
+  changes ("Full Court Press <fcp@…>"); a From name that moves is a
+  deliverability problem, not a style choice.
+* **DMARC is still owed a move to `p=quarantine`.** The domain publishes
+  `p=none` today, which asks receivers to do nothing about a forgery. SPF
+  and DKIM have to be right for the sending domain first, and only then does
+  the policy tighten. Not done here: it is a DNS change on the live domain,
+  and this job opened no connection at all.
+
+## Looking at it without sending
+
+    python scripts/digest.py --season 2026 --on 2026-02-04 --html OUT.html
+    python scripts/notify_test.py --preview DIR
+
+The first writes the HTML part of exactly the message that would go out and
+opens no connection (`--dry-run` still prints the text part). The second
+writes the sign-in and confirmation mail, HTML and text, with a sample link
+that goes nowhere. Neither sends anything.
 
 ## The watchdog
 
 Unchanged until it has something new to say. A connected league whose
 ingest has not succeeded in 36 hours (or ever, once the connection is that
-old) is named in the owner's message, its connector is emailed through his
-verified email channel ("Your league ... has not refreshed since ...
-reconnect it at .../account/connections"), and so is `FCP_EMAIL_TO`. Never
-the error text. Once the queue has ever held a job, a `worker` line says
-whether a worker is taking them (quiet when a queued job is two hours past
-due).
+old) is named in the owner's message, its connector is emailed at his
+confirmed address ("Your league ... has not refreshed since ... reconnect it
+at .../account/connections"), and so is `FCP_EMAIL_TO`. Never the error
+text. Once the queue has ever held a job, a `worker` line says whether a
+worker is taking them (quiet when a queued job is two hours past due).
+
+**Its notice goes by email too**, like everything else, with a subject that
+names what broke — "fcp-core: listener, bbm quiet" — because a phone shows
+the subject and little else. `scripts/watchdog.py --dry-run` prints the
+subject and the message and sends nothing.
 
 ## Switching over
 
 Today, and until this is done: `fcp-core-ingest.timer` (09:00) runs
 `scheduled_ingest.sh`, `fcp-core-status.timer` (15:00, 22:30, 00:30) runs
-`scheduled_status.sh` (the pass, the digest to Telegram, `warm_pages.py`).
+`scheduled_status.sh` (the pass, the digest by email, `warm_pages.py`).
 They keep running, unchanged. The BBM, backup and watchdog timers are not
 part of this and stay as they are after the switch.
 
@@ -260,14 +422,26 @@ few minutes of 09:00, 15:00, 22:30 or 00:30 UTC):
    ```
    git pull
    ./.venv/bin/pip install -q -e ".[dev]"
-   ./.venv/bin/python -m alembic upgrade head        # 0020
+   ./.venv/bin/python -m alembic upgrade head        # 0020, then 0024 and 0025
    sudo systemctl restart fcp-core-api.service
    ```
 2. Check the `.env` has what the jobs read: `ESPN_LEAGUE_ID`, `ESPN_S2`,
-   `ESPN_SWID`, `FCP_TRACKED_TEAM_ID`, `FCP_DIGEST_URL` (and chat id), and
+   `ESPN_SWID`, `FCP_TRACKED_TEAM_ID`, the mail settings (`FCP_SMTP_HOST`,
+   `FCP_EMAIL_FROM`, `FCP_EMAIL_TO`, and `FCP_SMTP_USER` /
+   `FCP_SMTP_PASSWORD` if the relay wants a login), `FCP_PUBLIC_URL` so the
+   email's links and its `List-Unsubscribe` can be built, and
    `FCP_SECRETS_KEY` if any league is connected. `FCP_OWNER_EMAIL` if set
-   must be the address the owner's channels belong to. Nothing new is
-   required; `FCP_TELEGRAM_BOT_URL` is optional.
+   must be the address the owner's channels belong to.
+
+   **Three keys stop mattering** (2026-09-22): `FCP_DIGEST_URL`,
+   `FCP_DIGEST_CHAT_ID` and `FCP_TELEGRAM_BOT_URL`. Nothing reads them, and
+   leaving them set is not an error — the settings ignore what they do not
+   know — but delete them so the file says what the server does. There is
+   now no channel but email: if the mail settings are not right, the digest
+   prints and sends nothing rather than falling back to a chat.
+
+   `python scripts/notify_test.py` confirms the mail settings in one send,
+   and `--dry-run` confirms them without one.
 3. Dry run, with the old timers still on: enqueue and look, run nothing.
    ```
    ./.venv/bin/python scripts/enqueue.py --schedule nightly
@@ -291,7 +465,7 @@ few minutes of 09:00, 15:00, 22:30 or 00:30 UTC):
    ```
 6. Watch the first of each: `journalctl -u fcp-core-worker -f`,
    `./.venv/bin/python scripts/worker.py --list`, and the morning digest
-   arriving on Telegram at 15:00. `GET /ingest-runs/health` and
+   arriving in the inbox at 15:00. `GET /ingest-runs/health` and
    `?mode=status` answer as before: the jobs write the same `ingest_runs`.
 7. After a deploy from then on, restart the worker as well as the API
    (`sudo systemctl restart fcp-core-worker`): it is long-running.
@@ -338,8 +512,11 @@ live, as before. The migration need not be undone; if it must be,
 - **A member's digest does not mark events notified**; the owner's still
   does (above).
 - **Email is offered without SMTP** (the link is logged), as sign-in is.
-- **Telegram goes through the server's one bot**; a member gives his chat
-  id. The page says to message the bot first; the bot's name is Patrick's
-  to share.
+- **Email is the only channel** (2026-09-22). The push URL and the bot are
+  gone, their rows disabled rather than deleted, and the message is a page
+  rather than a chat box's worth of text ("The shape of the message").
+- **What is in it is the member's**, per league, as a small set of named
+  topics ("Subscriptions"), stored as a JSONB map so a new topic needs no
+  migration and no backfill.
 - **The watchdog emails the connector every day the league is stale**, a
   daily reminder rather than one message that is easy to miss.

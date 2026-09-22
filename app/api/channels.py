@@ -45,6 +45,7 @@ from app.api.auth import TokenBucket
 from app.api.deps import LeagueIdPath, SessionDep
 from app.config import Settings
 from app.db.models import League, NotificationChannel
+from app.mail import CONFIRM_SUBJECT, confirm_mail
 
 log = logging.getLogger("fcp.channels")
 
@@ -57,7 +58,7 @@ NO_LINK = "an email channel needs FCP_PUBLIC_URL, so its link can be built"
 NOT_SENT = "the confirmation email could not be sent, so the address was not added"
 BAD_SECRET = "That link is not valid, or has expired. Add the address again for a new one."
 TOO_MANY = f"at most {channels.MAX_CHANNELS} addresses at once; disable one first"
-SUBJECT = "Confirm this address for FCP alerts"
+SUBJECT = CONFIRM_SUBJECT
 NOT_HIS_LEAGUE = "no such league of yours"
 
 
@@ -154,12 +155,15 @@ def _send_verification(
         # is logged for whoever runs the server, and nothing is mailed.
         log.info("channel link for user %s (SMTP not configured): %s", user_id, link)
         return "a link, logged by the server (no SMTP here)"
-    text = (
-        "Someone (we hope you) asked for FCP's digest and alerts to come to this "
-        f"address. To confirm, open this link while signed in to FCP:\n\n{link}\n\n"
-        "It works once, for a day. If this was not you, ignore it and nothing is sent.\n"
+    mail = confirm_mail(link, public_url=settings.fcp_public_url)
+    channels.send_to(
+        channel,
+        mail.text,
+        title=mail.subject,
+        settings=settings,
+        html=mail.html,
+        headers=mail.headers,
     )
-    channels.send_to(channel, text, title=SUBJECT, settings=settings)
     return f"a link to {channel.masked_target}"
 
 
