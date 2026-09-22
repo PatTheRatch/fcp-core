@@ -35,6 +35,11 @@ and each member's alerts on his own channels.
 | `status_pass` | a league | the listener's pass (below, "One listener league") |
 | `precompute` | a team | its day, week and season reports for today, stored in `team_reports` |
 | `digest` | a member (and his team) | the morning digest, or an alert between digests, to his verified channels |
+| `injury_backfill` | a season | a whole season of the NBA's official injury reports (docs/injuries.md); hours at the full cadence, which is why it is queued |
+| `injury_pass` | a season | the same, today only, for the season in progress |
+
+The last two belong to no league: the reports are the NBA's own, not
+ESPN's, so both carry a `season` in their payload and no `league_id`.
 
 `state` goes `queued`, `running`, `done`; a failure goes back to `queued`
 with a later `run_after` (5 minutes, then 20) until the third try, then
@@ -98,6 +103,19 @@ good ingest) gets an ingest on whichever label fires next; `enqueue.py
 connection is marked good and its connector is verified on the teams his
 SWID owns (`memberships.verify_connection_owner`), which is how whoever
 connected a new league gets his team once it exists.
+
+**Where `injury_pass` belongs, and why it is not there yet.** It belongs on
+the `morning` label, beside the `status_pass`: the league's nine o'clock
+Eastern report is published by then, and the day's pickup and lineup
+decisions are the ones that want it. It depends on nothing and nothing
+depends on it, so it is due at 15:00 alongside the passes rather than after
+them, and a day the NBA does not play is a no-op rather than a failure.
+
+It is deliberately **not** in `app/schedule.py` yet, because adding it there
+would start it running on the VPS the next morning and the VPS cannot read
+the PDFs: `pdfplumber` is not installed. The deploy step is in
+docs/injuries.md, and wiring it into `schedule.py` is a one-line change to
+make once that step has been done.
 
 ## One listener league
 

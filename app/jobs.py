@@ -70,7 +70,12 @@ INGEST = "ingest"
 STATUS_PASS = "status_pass"
 PRECOMPUTE = "precompute"
 DIGEST = "digest"
-KINDS = (INGEST, STATUS_PASS, PRECOMPUTE, DIGEST)
+#: The NBA's official injury reports (docs/injuries.md). Both belong to no
+#: league -- the reports are the league's own, not ESPN's -- so they carry a
+#: season in their payload and no `league_id`.
+INJURY_BACKFILL = "injury_backfill"
+INJURY_PASS = "injury_pass"
+KINDS = (INGEST, STATUS_PASS, PRECOMPUTE, DIGEST, INJURY_BACKFILL, INJURY_PASS)
 
 QUEUED = "queued"
 RUNNING = "running"

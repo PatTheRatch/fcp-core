@@ -18,6 +18,12 @@ they are enqueued is `app.schedule`.
   `.env` channels, and his digest of the tracked team marks the events it
   reports as notified, as `scripts/digest.py` always has; everyone else's
   reads the events since his own last digest and marks nothing.
+* `injury_backfill`: a whole season of the NBA's official injury reports
+  (`app.injury_backfill`, docs/injuries.md). Hours at the full cadence,
+  which is why it is queued rather than held open in a terminal.
+* `injury_pass`: the same for today only, for the season in progress.
+  Neither belongs to a league, so both carry a `season` in their payload
+  and no `league_id`; neither is on a schedule yet (docs/jobs.md).
 
 Every failure is put into a fixed sentence (`JobError`) before it is stored
 or logged: ESPN's and the mail server's words stay out of both.
@@ -27,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import requests
 from espn_api.basketball import League as ESPNLeague
@@ -36,7 +42,18 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import accounts, channels, jobs, league_ingest, memberships, notify, reports, secrets_box
+from app import (
+    accounts,
+    channels,
+    injury_backfill,
+    injury_reports,
+    jobs,
+    league_ingest,
+    memberships,
+    notify,
+    reports,
+    secrets_box,
+)
 from app.config import Settings, get_settings
 from app.db.models import League, LeagueConnection, LeagueSeason, Team, User
 from app.digest import (
@@ -455,6 +472,89 @@ def _member_digest(
 
 
 # ---------------------------------------------------------------------------
+# the NBA's injury reports
+# ---------------------------------------------------------------------------
+
+NO_SEASON = "the job names no season to load injury reports for"
+NO_SCHEDULE = "no NBA schedule is stored for that season, so there are no dates to walk"
+NO_PARSER = "pdfplumber is not installed, so the injury report PDFs cannot be read"
+
+
+def _payload_season(job: JobRef) -> int:
+    season = job.payload.get("season")
+    try:
+        return int(str(season))
+    except (TypeError, ValueError):
+        raise JobError(NO_SEASON, retry=False) from None
+
+
+def _injury_days(factory: sessionmaker[Session], season: int, *, only: date | None) -> list[date]:
+    with factory() as session:
+        days = injury_backfill.game_dates(session, season)
+    if not days:
+        raise JobError(NO_SCHEDULE, retry=False)
+    return [day for day in days if day == only] if only is not None else days
+
+
+def _load(
+    factory: sessionmaker[Session],
+    *,
+    season: int,
+    days: list[date],
+    which: str,
+    mode: str,
+) -> str:
+    try:
+        import pdfplumber  # noqa: F401
+    except ImportError:
+        raise JobError(NO_PARSER, retry=False) from None
+    counts = injury_backfill.run_backfill(factory, season=season, days=days, which=which, mode=mode)
+    rate = "" if counts.match_rate is None else f", {counts.match_rate:.1%} of names placed"
+    return (
+        f"{counts.dates} dates, {counts.snapshots_fetched} snapshots, {counts.inserted} rows{rate}"
+    )
+
+
+def run_injury_backfill(factory: sessionmaker[Session], job: JobRef) -> str | None:
+    """Walk a whole season's injury reports (docs/injuries.md).
+
+    Hours, not minutes, at `--snapshots all`, which is why it is a job:
+    queued per season and taken by the worker rather than held open in a
+    terminal. `snapshots` in the payload picks the cadence.
+    """
+    season = _payload_season(job)
+    which = str(job.payload.get("snapshots", "all"))
+    return _load(
+        factory,
+        season=season,
+        days=_injury_days(factory, season, only=None),
+        which=which,
+        mode=injury_backfill.BACKFILL,
+    )
+
+
+def run_injury_pass(factory: sessionmaker[Session], job: JobRef, today: date | None) -> str | None:
+    """Today's injury report snapshots for the live season.
+
+    Only today: a snapshot already lists the next day's games, so today's is
+    enough to learn about tomorrow. A day the league does not play has no
+    report to fetch and is not a failure.
+    """
+    season = _payload_season(job)
+    day = today or datetime.now(UTC).astimezone(injury_reports.ET).date()
+    days = _injury_days(factory, season, only=day)
+    if not days:
+        return "no NBA games that day; nothing to fetch"
+    return _load(
+        factory,
+        season=season,
+        days=days,
+        which=str(job.payload.get("snapshots", "all")),
+        mode=injury_backfill.PASS,
+    )
+
+
+# ---------------------------------------------------------------------------
 # the registry
 # ---------------------------------------------------------------------------
 
@@ -494,7 +594,7 @@ def payload_moment(job: JobRef, key: str) -> datetime | None:
 
 
 def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
-    """The four kinds, bound to the process's settings (or a test's)."""
+    """The six kinds, bound to the process's settings (or a test's)."""
 
     def current() -> Settings:
         return settings or get_settings()
@@ -507,5 +607,9 @@ def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
         ),
         jobs.DIGEST: lambda factory, job: run_digest(
             factory, job, current(), payload_moment(job, "now")
+        ),
+        jobs.INJURY_BACKFILL: lambda factory, job: run_injury_backfill(factory, job),
+        jobs.INJURY_PASS: lambda factory, job: run_injury_pass(
+            factory, job, payload_day(job, "today")
         ),
     }
