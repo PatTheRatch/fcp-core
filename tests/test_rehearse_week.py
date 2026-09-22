@@ -203,15 +203,15 @@ def test_the_adds_a_team_has_spent_may_only_be_the_ones_it_had_made() -> None:
 
 
 def test_a_digest_is_flagged_when_it_will_not_fit_or_will_not_help() -> None:
-    """Telegram refuses anything over 4096 characters, so a digest over it is
-    not a long message but no message. The softer failures are a digest that
-    renders empty, one that is a handful of lines on a day the league played,
-    and one whose week section gave up -- each of which arrives looking like
-    a working product and tells the reader nothing."""
+    """A text part past `TEXT_LIMIT` is not a long message but one nobody
+    reads to the end. The softer failures are a digest that renders empty,
+    one that is a handful of lines on a day the league played, and one whose
+    week section gave up -- each of which arrives looking like a working
+    product and tells the reader nothing."""
     good = "\n".join(f"line {index}" for index in range(20))
     assert rehearsal.digest_findings("owner", good, games=True) == []
     over = "x" * (rehearsal.TEXT_LIMIT + 1)
-    assert "over Telegram's 4096" in rehearsal.digest_findings("owner", over, games=True)[0]
+    assert "over the 4096" in rehearsal.digest_findings("owner", over, games=True)[0]
     assert rehearsal.digest_findings("owner", "   \n\n", games=False) == ["owner: renders empty"]
     assert rehearsal.digest_findings("owner", "one\ntwo", games=True) == [
         "owner: only 2 lines on a day with games"
