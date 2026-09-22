@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api import access
 from app.api.auth import router as auth_router
+from app.api.changes import router as changes_router
 from app.api.channels import router as channels_router
 from app.api.draft import router as draft_router
 from app.api.health import router as health_router
@@ -123,4 +124,5 @@ def create_app() -> FastAPI:
     app.include_router(pages_router)
     app.include_router(site_router)
     app.include_router(channels_router)
+    app.include_router(changes_router)
     return app

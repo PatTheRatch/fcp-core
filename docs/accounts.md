@@ -167,6 +167,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/transactions` | league member | |
 | `GET /leagues/{league_id}/seasons/{season}/contested-claims` | league member | |
 | `GET /leagues/{league_id}/seasons/{season}/events` | league member | the listener's status changes |
+| `GET /leagues/{league_id}/seasons/{season}/changes` | league member | what changed: injuries, adds, drops, claims and trades, all of it league-visible already. `team_id` only flags which of them are a team's own and its opponent's, so it adds no check |
 | `GET /leagues/{league_id}/seasons/{season}/streaks` | league member | narratives |
 | `GET /leagues/{league_id}/seasons/{season}/category-profiles` | league member | narratives |
 | `GET /leagues/{league_id}/seasons/{season}/bench-leaderboard` | league member | narratives |

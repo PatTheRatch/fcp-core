@@ -1155,3 +1155,49 @@ class PageContextOut(BaseModel):
     our_espn_team_id: int | None
     source_note: str = Field(description="Where the numbers came from, in the page's words")
     generated_at: datetime = Field(description="When this answer was built, for the refreshed line")
+
+
+class ChangePlayerOut(BaseModel):
+    """A player named in a change, with the id a player card is built on."""
+
+    espn_player_id: int
+    name: str
+
+
+class ChangeTeamOut(BaseModel):
+    """A fantasy team named in a change."""
+
+    espn_team_id: int
+    name: str
+
+
+class ChangeOut(BaseModel):
+    """One thing that happened (app/inseason/changes.py).
+
+    `text` is the whole of it in the house's own words; the parts are here
+    as well so a caller can group, filter or link them without taking the
+    sentence apart.
+    """
+
+    at: datetime
+    kind: str = Field(description="status, add, drop, claim, trade, minutes, waiver_clear, lineup")
+    players: list[ChangePlayerOut]
+    teams: list[ChangeTeamOut]
+    text: str
+    mine: bool = Field(description="Touches the team asked about; false without one")
+    opponent: bool = Field(description="Touches that team's opponent this matchup period")
+    severity: int = Field(description="0 is a man ruled out, 4 is a fact with nothing to do about")
+
+
+class ChangesOut(BaseModel):
+    """What changed in a league between two moments, newest first."""
+
+    league_id: int
+    season: int
+    since: datetime
+    until: datetime
+    team_id: int | None = Field(description="The ESPN team id the flags are about, if named")
+    opponent_team_id: int | None = Field(description="Its opponent in the period `until` falls in")
+    items: list[ChangeOut]
+    total: int = Field(description="Changes in the window, before `limit`")
+    limit: int
