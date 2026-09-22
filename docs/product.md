@@ -229,13 +229,23 @@ negotiation is one thread. Nothing touches ESPN: when both agree, the page
 says "now submit it on ESPN" and links there. That keeps the tool read-only
 against ESPN and keeps the decision where it belongs.
 
-A manager who has not signed up gets a **temporary link** to that one
-proposal: it shows him the deal and his side's fit and nothing else about the
-league, expires, and is the invitation to sign up (the proposer's league is
-already connected, so joining is one email). Sending and receiving proposals
-is a league-scope thing and should be free; the deeper judgement on the page
-stays paid. What the temporary link must never show: the proposer's own plan,
-the other rosters, or anything a member could not see.
+**Who sees what on a proposal (Patrick, 2026-09-22).** Both sides' fit are
+shown to both managers: the tool's stance is that a deal should work for both,
+and a manager reading "he gains threes, I gain blocks" is a manager who
+trusts the page. The tiers gate how far he can look, not which side:
+
+| The recipient | Sees |
+|---|---|
+| No account (the temporary link) | The deal, and how it affects **his** roster only. Nothing else about the league. |
+| Free account | Both sides' fit, and the thread (counter, accept, decline). |
+| Paid account | Both sides, plus the league view: what the deal does to the standings and the other contenders, and each man's card. |
+
+The temporary link is the invitation: it shows a stranger the one thing he
+cares about, expires, and signing up (one email; the league is already
+connected) opens the rest. Sending and receiving proposals is a league-scope
+thing and should be free; the judgement beyond a manager's own side stays
+paid. What the temporary link must never show: the proposer's own plan, the
+other rosters, or anything a member could not see.
 
 Data: `trade_proposals` (league_season, from_team, to_team, the deal as the
 report route takes it, state: open / countered / accepted / declined /
