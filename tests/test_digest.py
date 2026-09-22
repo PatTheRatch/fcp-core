@@ -37,6 +37,7 @@ from app.digest import (
     LEAGUE_NEWS_CHARS,
     MAX_LINES,
     ROSTER_EVENT_LIMIT,
+    TELEGRAM_LIMIT,
     WIRE_EVENT_LIMIT,
     Digest,
     Line,
@@ -54,6 +55,8 @@ from app.listener.status import next_pass_after, run_status_pass
 from app.pickups.stream import stream_recommendations
 from tests.fakes import attach_pool, fake_league, fake_pool_entry, fake_pro_game, fake_team
 from tests.pickups_db import ANY, WEEK, clear_schedule, day_date, games
+from tests.scoring_db import held
+from tests.scoring_db import player as stored_player
 from tests.test_pickups_stream import TEN_POINTS, build_week, free_agent, rostered
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -729,6 +732,12 @@ def _week_section(rendered: str) -> list[str]:
     return body.split("\n\nCHURN")[0].splitlines()
 
 
+def _today_section(rendered: str) -> list[str]:
+    """The lines under TODAY, up to the blank line before THIS WEEK."""
+    body = rendered.split("TODAY\n", 1)[1]
+    return body.split("\n\nTHIS WEEK")[0].splitlines()
+
+
 def _two_empty_slots_a_day(session: Session) -> tuple[LeagueSeason, Any, Any]:
     """One man plays and three do not, against a rival who plays every day.
 
@@ -937,3 +946,121 @@ def test_the_script_attempts_every_configured_channel_and_marks_nothing_when_all
     session.expire_all()
     [event] = session.scalars(select(PlayerStatusEvent).where(PlayerStatusEvent.kind == "went_out"))
     assert event.notified_at is None
+
+
+# ---------------------------------------------------------------------------
+# today: the day's lineup, above the week's plan
+# ---------------------------------------------------------------------------
+
+
+def test_the_morning_digest_opens_with_todays_lineup(session: Session) -> None:
+    """The block, on the same fixture the week section is proved against.
+
+    One man has a game on day 5 and three do not, so the lineup fills one of
+    its three places and the digest says who to start and who cannot be
+    started -- above the week, because it is what the manager does first.
+    """
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    rendered = build_digest(session, ls, 1, now=MORNING).render()
+    section = _today_section(rendered)
+
+    assert section[0] == f"  day 5, {day_date(5):%a %d %b}: 1 of 3 places fillable"
+    assert section[1] == "  start: Playing"
+    assert section[-1] == "  sitting, no game: Dead One, Dead Two, Dead Three"
+    assert "TODAY" in rendered.split("THIS WEEK")[0], "above the week, not below it"
+    # An extra section, not a replacement.
+    assert "YOUR ROSTER" in rendered and "ON THE WIRE" in rendered
+    assert _week_section(rendered)[0] == "  period 1, days 5-7 left (3), v Away"
+    assert len(rendered.splitlines()) <= MAX_LINES
+    assert len(rendered) <= TELEGRAM_LIMIT
+
+
+def test_the_digest_names_the_place_that_will_produce_nothing_tonight(
+    session: Session,
+) -> None:
+    """The fix-this line: the team has set a man with no game and benched
+    the one man who has one."""
+    clear_schedule(session)
+    ls, home, _away = _two_empty_slots_a_day(session)
+    _, first = ls.matchup_periods[0], ls.matchup_periods[0]
+    held(session, home, first, stored_player(session, "Dead One"), 5, slot="UT")
+    held(session, home, first, stored_player(session, "Playing"), 5, slot="BE")
+    session.flush()
+
+    section = _today_section(build_digest(session, ls, 1, now=MORNING).render())
+
+    assert section[0] == f"  day 5, {day_date(5):%a %d %b}: 1 of 3 places fillable, 0 set"
+    assert section[1] == "  start: Playing"
+    assert section[2] == "  fix: Dead One has no game at UT; Playing could take it"
+
+
+def test_a_lineup_that_cannot_be_built_costs_the_digest_nothing(session: Session) -> None:
+    """The same promise the week section makes: one line, and the rest of
+    the message is untouched. An exception's text can carry a query or a
+    connection string, so only its type is reported."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("password=hunter2 while selecting from pro_team_games")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(digest_module, "today_lineup", boom)
+    try:
+        rendered = build_digest(session, ls, 1, now=MORNING).render()
+    finally:
+        monkeypatch.undo()
+
+    assert _today_section(rendered) == ["  no lineup today: it could not be built (RuntimeError)"]
+    assert "hunter2" not in rendered and "pro_team_games" not in rendered
+    assert _week_section(rendered)[0] == "  period 1, days 5-7 left (3), v Away"
+    assert rendered.endswith(f"0 adds in the last {CHURN_DAYS} days.")
+
+
+def test_the_whole_message_fits_a_phone_with_a_crowded_day_on_top() -> None:
+    """The block's own budget, against the worst day it can render: every
+    cap full on every section at once."""
+    crowded = Digest(
+        season=SEASON,
+        team_name="Through The Wire",
+        generated_at=LATER,
+        roster=[Line(kinds.WENT_OUT, f"Player {i}", "ACTIVE to OUT") for i in range(20)][
+            :ROSTER_EVENT_LIMIT
+        ],
+        roster_extra=12,
+        standing=[f"OUT          Player {i}" for i in range(20)],
+        healthy=2,
+        wire=[Line(kinds.DROPPED, f"Wire {i}", "by Load Management") for i in range(20)][
+            :WIRE_EVENT_LIMIT
+        ],
+        wire_extra=10,
+        today=[
+            "  day 52, Thu 11 Dec: 10 of 10 places fillable, 8 set",
+            "  start: " + ", ".join(f"Starter Number {i}" for i in range(10)),
+            "  fix: UT is empty; Bench One, Bench Two could take it",
+            "  fix: Resting Man has no game at PG; Bench Three could take it",
+            "  and 3 more place(s) worth fixing",
+            *[f"  Bench {i} has a game but no place in the lineup" for i in range(4)],
+            "  sitting, no game: Idle One, Idle Two, Idle Three, Idle Four and 2 more",
+        ],
+        plan=[
+            "  period 8, days 52-55 left (4), v Rival",
+            "  4.50 of 9 categories as things stand; adds this period: used 0 of 7",
+            "  day 52: C going empty",
+            "  worth a look, in this order:",
+            "  1. add Somebody (3 of 3 games), drop Nobody (0 of 0)",
+            "    week +0.50 + season -0.00/wk = net +0.50; record 4.5-4.5 without, 5.0-4.0 with",
+        ],
+        adds_recently=4,
+    )
+
+    rendered = crowded.render()
+    lines = rendered.splitlines()
+
+    assert len(lines) <= MAX_LINES
+    assert len(rendered) <= TELEGRAM_LIMIT, "one Telegram message, never two out of order"
+    assert lines[-1].endswith("returned less per move.")
+    assert "TODAY" in lines and "THIS WEEK" in lines
+    assert lines.index("TODAY") < lines.index("THIS WEEK")

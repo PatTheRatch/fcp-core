@@ -1,15 +1,18 @@
 """The morning digest: what changed, for the one team being tracked.
 
 Layer 3 of docs/pickups.md, phase 1b. Plain text, built from stored rows
-only: no ESPN request. Four sections:
+only: no ESPN request. Five sections:
 
 1. The tracked roster, from the listener's events (went out, returned, a
    moved return date, a minutes drop), then where that roster stands now.
 2. The wire, from events on unrostered players worth a look (a minutes
    spike, an ownership surge, dropped by a rival, waivers clearing).
-3. This week: the matchup as it stands and the day's streaming plan, from
+3. Today: who to start, and the place that will produce nothing tonight
+   while a man on the bench would have (`app.pickups.today`). The morning
+   question, so it sits above the week.
+4. This week: the matchup as it stands and the day's streaming plan, from
    `app.pickups.stream` (section 3 of the design note).
-4. Churn, the team's adds in the last fortnight, because this league's own
+5. Churn, the team's adds in the last fortnight, because this league's own
    history says the heavier movers returned less per move
    (docs/acquirable_value.md, r = -0.63 between add volume and return).
 
@@ -18,13 +21,13 @@ as is a value rank for a free agent: percent owned stands in meanwhile.
 
 THE PLAN NEVER BREAKS THE DIGEST
 
-Section 3 is the only one that runs the recommender, and the recommender
-needs a schedule, a roster, a wire and a matchup period. On a bye, before
-the season's first matchup, or with any of those missing, the section is one
-line saying so and the other three are untouched. `week_plan` therefore
-catches everything, including exceptions it cannot name: a digest that
-fails to go out because a pickup report could not be built would lose the
-roster news too, which is the part that is always worth reading.
+Sections 3 and 4 are the ones that run the recommender, and it needs a
+schedule, a roster, a wire and a matchup period. On a bye, before the
+season's first matchup, or with any of those missing, each section is one
+line saying so and the rest are untouched. `today_lines` and `week_plan`
+therefore catch everything, including exceptions they cannot name: a digest
+that fails to go out because a pickup report could not be built would lose
+the roster news too, which is the part that is always worth reading.
 
 Every event the digest reports on, including the ones it summarises as "and
 N more", is marked `notified_at` by the caller once delivery has actually
@@ -86,6 +89,7 @@ from app.listener.snapshots import latest_snapshots
 from app.pickups.judge import Judgement
 from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
+from app.pickups.today import DayPlayer, TodayReport, today_lineup
 from app.scoring.wire import WIRE_TYPES
 
 #: What a change to your own player can be: anything that moves whether he
@@ -126,8 +130,20 @@ EMPTY_DAY_LIMIT = 3
 #: The whole message's cap, which is what makes it readable on a phone. It
 #: was forty before the week section; that section is a header, at most
 #: `EMPTY_DAY_LIMIT` + 1 empty-day lines and at most `PLAN_MOVES` move lines,
-#: so a dozen more keeps every other section's budget exactly where it was.
-MAX_LINES = 52
+#: so a dozen more kept every other section's budget exactly where it was.
+#: The day's lineup added a header, its starters on one line, at most
+#: `TODAY_FIX_LIMIT` + 1 lines about places worth fixing, at most
+#: `TODAY_SIT_LIMIT` men with a game and no place, and one line of who is
+#: not playing -- eleven at the very worst, and three on an ordinary
+#: morning. Twelve more, for the same reason: nothing else loses a line.
+MAX_LINES = 64
+
+#: What one Telegram message holds. Not a cap this module enforces -- the
+#: line budgets are what keep the message short, and they are about being
+#: readable rather than about being deliverable -- but the number every
+#: section is weighed against, and what `tests/test_digest.py` holds the
+#: worst case to. A digest that split in two would arrive out of order.
+TELEGRAM_LIMIT = 4096
 
 #: The window the churn line counts over, from docs/pickups.md section 4.4.
 CHURN_DAYS = 14
@@ -196,6 +212,9 @@ class Digest:
     wire: list[Line] = field(default_factory=list)
     wire_extra: int = 0
     adds_recently: int = 0
+    #: The day's lineup, already rendered and indented (`today_lines`). One
+    #: line when there is none to set; never empty.
+    today: list[str] = field(default_factory=list)
     #: The week section, already rendered and indented (`week_plan`). One
     #: line when there is no plan to make; never empty.
     plan: list[str] = field(default_factory=list)
@@ -230,6 +249,10 @@ class Digest:
         out.append("")
         out.append("ON THE WIRE")
         out.extend(_render(self.wire, self.wire_extra, "nothing new"))
+
+        out.append("")
+        out.append("TODAY")
+        out.extend(self.today or ["  no lineup today"])
 
         out.append("")
         out.append("THIS WEEK")
@@ -422,6 +445,84 @@ def _week_lines(report: StreamReport, opponent: str | None) -> list[str]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# today: the day's lineup, above the week's plan
+# ---------------------------------------------------------------------------
+
+#: Men named on the "sitting" line, and places named on the "fix" line,
+#: before the rest are counted. Telegram's limit is 4096 characters and the
+#: whole point of this block is that it is read on a phone at breakfast, so
+#: it carries the starters and the thing to fix and leaves the grid to the
+#: week page (`app.pickups.today`, docs/in_season_pages.md).
+TODAY_SIT_LIMIT = 4
+TODAY_FIX_LIMIT = 2
+
+
+def _names(players: Sequence[DayPlayer], limit: int) -> str:
+    named = ", ".join(player.name for player in players[:limit])
+    extra = len(players) - limit
+    return f"{named} and {extra} more" if extra > 0 else named
+
+
+def today_lines(
+    session: Session,
+    league_season: LeagueSeason,
+    espn_team_id: int,
+    *,
+    on: date,
+) -> list[str]:
+    """The day's lineup for `on`, as indented lines. Never raises.
+
+    The morning question, above the week's plan, because it is the one thing
+    the manager acts on before tip-off: who to start, who cannot be started,
+    and the place that will produce nothing tonight while a man on the bench
+    would have. The grid belongs on the week page; this is the answer.
+
+    It catches everything, for the reason `week_plan` does: a digest that
+    failed to go out because a lineup could not be built would lose the
+    roster news with it.
+    """
+    season = int(league_season.season)
+    try:
+        calendar = season_calendar(session, season)
+        if calendar is None:
+            return [f"  no NBA schedule stored for {season}, so no lineup today"]
+        report = today_lineup(session, league_season, espn_team_id, calendar.scoring_period_on(on))
+    except ValueError as error:
+        return [f"  no lineup today: {error}"]
+    except Exception as error:  # The digest goes out regardless.
+        return [f"  no lineup today: it could not be built ({type(error).__name__})"]
+    return _today_lines(report)
+
+
+def _today_lines(report: TodayReport) -> list[str]:
+    """The block's body, from a lineup that was built."""
+    when = f", {report.calendar_date:%a %d %b}" if report.calendar_date is not None else ""
+    if report.teams_playing == 0:
+        return [f"  day {report.today}{when}: no NBA games, so there is no lineup to set"]
+
+    out = [
+        f"  day {report.today}{when}: {report.starts} of {len(report.lineup)} places fillable"
+        + (f", {report.actual_starts} set" if report.actual_known else "")
+    ]
+    out.append(f"  start: {_names(report.starters, len(report.lineup))}")
+    for misstart in report.fix[:TODAY_FIX_LIMIT]:
+        where = (
+            f"{misstart.seat.slot} is empty"
+            if misstart.seat.player is None
+            else f"{misstart.seat.player.name} has no game at {misstart.seat.slot}"
+        )
+        out.append(f"  fix: {where}; {_names(misstart.instead, 2)} could take it")
+    hidden = len(report.fix) - TODAY_FIX_LIMIT
+    if hidden > 0:
+        out.append(f"  and {hidden} more place(s) worth fixing")
+    for benched in report.benched[:TODAY_SIT_LIMIT]:
+        out.append(f"  {benched.player.name} has a game but no place in the lineup")
+    if report.idle:
+        out.append(f"  sitting, no game: {_names(report.idle, TODAY_SIT_LIMIT)}")
+    return out
+
+
 def week_plan(
     session: Session,
     league_season: LeagueSeason,
@@ -545,6 +646,7 @@ def build_digest(
         healthy=healthy,
         wire=wire_events[:WIRE_EVENT_LIMIT],
         wire_extra=max(0, len(wire_events) - WIRE_EVENT_LIMIT),
+        today=today_lines(session, league_season, espn_team_id, on=generated_at.date()),
         plan=week_plan(session, league_season, espn_team_id, on=generated_at.date()),
         adds_recently=adds_in_window(
             session,
@@ -713,6 +815,9 @@ def team_section_without_listener(
     )
     return [
         f"{name} - {now:%a %d %b}, {now:%H:%M} UTC - season {league_season.season}",
+        "",
+        "TODAY",
+        *today_lines(session, league_season, espn_team_id, on=now.date()),
         "",
         "THIS WEEK",
         *week_plan(session, league_season, espn_team_id, on=now.date()),
