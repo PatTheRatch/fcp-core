@@ -818,9 +818,11 @@ details.disc .inside > .lede{margin-top:0}
 
 /* The days left as a sheet: the period across, both sides down, a real table
    because that is what it is. The figure is the games that will count that
-   day, with the games behind it in the small face when the lineup cannot
-   seat them all; the last column is the week. A day with places the roster
-   cannot fill is marked; tapping a day names the men behind both figures. */
+   day; a small raised count beside it is the men a full lineup had no place
+   for; OPEN in the accent is a place going empty that the wire could fill.
+   Nothing else is in a cell. The last column is the week, and is the one
+   thing in this section the eye is meant to land on. Tapping a day names
+   the men behind the figures and the places behind the word. */
 .sched{width:100%;border-collapse:collapse;table-layout:fixed}
 .sched th,.sched td{border:1px solid var(--rule);padding:0;text-align:center}
 .sched thead th{border-width:0 1px 1px 0;border-bottom-color:var(--rule-strong);
@@ -837,25 +839,30 @@ details.disc .inside > .lede{margin-top:0}
   color:var(--muted);font-weight:600}
 .sched tbody tr.us th{color:var(--accent)}
 .sched td button{display:block;width:100%;font:inherit;color:inherit;background:none;border:0;
-  border-radius:0;padding:8px 2px;cursor:pointer;font-family:var(--mono);font-size:14px;
+  border-radius:0;padding:7px 2px 6px;cursor:pointer;font-family:var(--mono);
   font-variant-numeric:tabular-nums}
 .sched td button:hover{background:var(--sunk)}
 .sched td button[aria-expanded="true"]{background:var(--accent-soft)}
-.sched td .flat{display:block;padding:8px 2px;font-family:var(--mono);font-size:14px;
-  color:var(--faint);font-variant-numeric:tabular-nums}
-.sched td .open{display:block;margin-top:2px;font-family:var(--mono);font-size:9px;
-  letter-spacing:.06em;text-transform:uppercase;color:var(--stop)}
-/* Places nobody can fill on a day no free agent can fill one either: true,
-   and not the alarm the accent is for. */
-.sched td .open.quiet{color:var(--faint)}
-/* The games behind the starts. Small, because the big figure is the one
-   that counts and this is the size of what is going to waste. */
-.sched td .of{font-size:10px;color:var(--faint)}
+.sched td .count{display:block;font-family:var(--mono);font-size:15px;
+  font-variant-numeric:tabular-nums}
+.sched td .flat{display:block;padding:8px 2px;font-family:var(--mono);font-size:15px;
+  color:var(--muted);font-variant-numeric:tabular-nums}
+/* The men a full lineup could not seat, raised beside the figure that
+   counts rather than printed as a second number beside it: at 34px there is
+   room for one number, and this is not the one a manager acts on. */
+.sched td .over{font-size:9.5px;line-height:0;color:var(--muted);vertical-align:super;
+  margin-left:1px;font-weight:400}
+/* A place going empty that somebody on the wire could fill -- the one thing
+   the bar above is waived for, and the only day-level thing on this grid
+   worth a word. A word and not a count: the count is in the day's detail. */
+.sched td .open{display:block;margin-top:1px;font-family:var(--mono);font-size:9.5px;
+  font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
 .sched th.total,.sched td.total{border-left-color:var(--rule-strong);background:var(--sunk)}
 .sched th.total{padding-top:10px}
 .sched th.total .dn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
   color:var(--muted)}
-.sched td.total .flat.sum{color:var(--ink);font-weight:500}
+.sched td.total .flat.sum{color:var(--ink);font-family:var(--display);font-weight:600;
+  font-size:19px}
 .sched td.past{color:var(--faint)}
 .sched td.now{box-shadow:inset 0 0 0 1px var(--accent)}
 .daybox{border-top:1px solid var(--rule-strong);margin-top:18px;padding:12px 0 4px}

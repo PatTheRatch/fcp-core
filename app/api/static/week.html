@@ -1290,13 +1290,29 @@ async function runWhatIf() {
 /* ---- the schedule -------------------------------------------------------
    The period across and both sides down, from the week report's own games
    table (`schedule`): the games each side has on each day by men who are not
-   ruled out, and how many of them its lineup seats. The cell is what will
-   count -- the seated figure -- with the games behind it in the small face
-   when the two differ, because a tenth place is a cap and a man with a game
-   on a full day produces nothing. A day with places nobody can fill carries
-   the mark, and tapping a day names the men behind both numbers. */
+   ruled out, and how many of them its lineup seats.
 
-/** One side's cell: seated big, `/games` small when a game goes unplayed. */
+   A cell says two things and no more. The figure is the games that will
+   count -- men with a game, seated by the same lineup solve the projection
+   above is built from -- and the word OPEN under it says a starting place
+   is going to go empty that day that somebody on the wire could fill. It
+   was three things until now: the seated figure, the games behind it as
+   `/9`, and "N open" in two different tones depending on whether anybody
+   could fill it, and Patrick was right that a row of `7 /9 2 OPEN` takes a
+   second to decode and there is no second to spare in a cell 34px wide.
+
+   So: the games behind the seated figure are one figure now, the second
+   carried as a small raised count of the men a full lineup left on the
+   bench -- 8 with a raised 2 is eight starts and two men over -- and the
+   open mark is a word rather than a count, printed only in the case that
+   is worth a manager's morning. The counts it dropped are in the day's own
+   detail, a tap away, where the men behind both figures are already named;
+   the cell's own aria-label says all three in words for a reader who does
+   not see the grid at all. */
+
+/** One side's cell: the games that will count, big; the men a full lineup
+ *  had no place for, as a small raised figure; OPEN where a place is going
+ *  empty that the wire could fill. */
 function gamesCell(side, day, which, empty) {
   const gap = which === "us" ? empty.get(day.scoring_period) : undefined;
   const classes = [day.played ? "past" : "", day.today ? "now" : "", gap ? "gap" : ""]
@@ -1307,22 +1323,32 @@ function gamesCell(side, day, which, empty) {
     // what is left, and the grid says so rather than printing a zero.
     return `<td class="${classes}"><span class="flat">${dash}</span></td>`;
   }
-  const spare = side.games > side.seated ? `<span class="of">/${side.games}</span>` : "";
-  const open = side.open_places
-    ? `<span class="open${gap ? "" : " quiet"}">${side.open_places} open</span>`
-    : "";
+  const over = side.games - side.seated;
+  const said = [
+    `${count(side.seated, "game")} ${side.seated === 1 ? "counts" : "count"}`,
+    over > 0 ? `${count(over, "man", "men")} on the bench` : "",
+    gap ? "a place open the wire could fill" : "",
+  ].filter(Boolean);
   return (
     `<td class="${classes}"><button type="button" data-day="${day.scoring_period}" ` +
-    `aria-expanded="false" aria-controls="day-detail">` +
-    `${side.seated}${spare}${open}</button></td>`
+    `aria-expanded="false" aria-controls="day-detail" ` +
+    `aria-label="Day ${day.scoring_period}: ${escape(said.join(", "))}">` +
+    `<span class="count">${side.seated}${benchMark(over)}</span>` +
+    `${gap ? `<span class="open">open</span>` : ""}</button></td>`
   );
 }
 
-/** The week in one cell: the same two figures over the days left. */
+/** The men over: a small raised figure, never a second number in the row. */
+const benchMark = (over) => (over > 0 ? `<sup class="over">${over}</sup>` : "");
+
+/** The week in one cell: the same figure added over the days still to play,
+ *  and the same raised count of the games those lineups cannot hold. */
 function totalCell(total) {
   if (!total) return `<td class="total"><span class="flat">${dash}</span></td>`;
-  const spare = total.games > total.seated ? `<span class="of">/${total.games}</span>` : "";
-  return `<td class="total"><span class="flat sum">${total.seated}${spare}</span></td>`;
+  return (
+    `<td class="total"><span class="flat sum">${total.seated}` +
+    `${benchMark(total.games - total.seated)}</span></td>`
+  );
 }
 
 function drawSchedule(report) {
@@ -1383,13 +1409,12 @@ function drawSchedule(report) {
     `Each cell is the <b>games that will count</b> for that side on that day: men on the ` +
     `roster with a game, seated by the same lineup solve the week above is projected from. ` +
     `A man ESPN has <b>out</b> is not counted on a day before the date he is due back, and ` +
-    `nobody counts on a day he has no game. Where a side has more games than the lineup has ` +
-    `places, the games follow in the small face — <b>7/9</b> is seven starts out of nine ` +
-    `games, and the other two are men on the bench that day. ` +
-    `<b>Open</b> is starting places no man on that roster can fill; it is in the accent on a ` +
-    `day a free agent could fill one, which is the one thing the bar above is waived for. ` +
-    `<b>Total</b> is the same two figures added over the days still to play. Tap a day for ` +
-    `the men behind both numbers.`;
+    `nobody counts on a day he has no game. The small raised figure beside it is how many men ` +
+    `with a game the lineup had no place left for — <b>7</b> with a raised <b>2</b> is seven ` +
+    `starts and two men over, because a tenth place is a cap. <b>Open</b> marks a day a ` +
+    `starting place goes empty that somebody on the wire could fill, which is the one thing ` +
+    `the bar above is waived for. <b>Total</b> is the same figure added over the days still ` +
+    `to play. Tap a day for the men behind it and the places behind the word.`;
 }
 
 function pickDay(button, days, left, empty) {
@@ -1415,11 +1440,15 @@ function pickDay(button, days, left, empty) {
       (man.seated ? "" : ` <span class="faint mono">bench</span>`);
     return side.men.map(one).join(", ");
   };
+  // The counts the cell stopped printing: how many of the games started,
+  // and how many starting places went unfilled. Both sides, both figures,
+  // in the one place a reader who wants them is already looking.
   const line = (side) =>
     !side
       ? ""
       : `<span class="faint"> · ${side.seated} of ${side.games} ` +
-        `${side.games === 1 ? "game" : "games"} started</span>`;
+        `${side.games === 1 ? "game" : "games"} started` +
+        `${side.open_places ? `, ${count(side.open_places, "place")} left open` : ""}</span>`;
   const them = REPORT && !onBye(REPORT) ? nameOf(REPORT.opponent_espn_team_id) : null;
   const fillers = gap ? gap.fillers || [] : [];
   const named = fillers.slice(0, 4).map((p) => escape(p.name)).join(", ");
