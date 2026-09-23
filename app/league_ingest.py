@@ -50,7 +50,14 @@ from app.ingest_runs import record_run
 #: The trailing scoring periods a nightly run rewrites; the script's default.
 RECENT_DAYS = 10
 
-__all__ = ["RECENT_DAYS", "FetchError", "IngestSummary", "fetch_league", "ingest_league"]
+__all__ = [
+    "RECENT_DAYS",
+    "FetchError",
+    "IngestSummary",
+    "fetch_league",
+    "ingest_league",
+    "ingest_one_season",
+]
 
 
 @dataclass
@@ -168,6 +175,19 @@ def _ingest_season(
         if scope.is_full and recent_days is not None:
             detail["note"] = "fell back to a full pass: nothing stored to narrow against"
     return detail
+
+
+def ingest_one_season(
+    factory: sessionmaker[Session], settings: ESPNSettings, league: ESPNLeague
+) -> dict[str, Any]:
+    """One season, in full, recorded in `ingest_runs` as every pass is.
+
+    `_ingest_season` under a name the intake may call (`app.intake.steps`).
+    The intake walks the seasons itself, because it has to tell a 404 ("ESPN
+    does not hold that year for this league") from a 401 ("the login does not
+    open it"), which `ingest_league`'s backfill has no way to report.
+    """
+    return _ingest_season(factory, settings, league, recent_days=None)
 
 
 def _refresh_upcoming(factory: sessionmaker[Session], settings: ESPNSettings, season: int) -> str:

@@ -52,6 +52,25 @@ def stored_games(session: Session, season: int) -> int:
     )
 
 
+def backfill_season(
+    session: Session, espn: object, season: int, *, force: bool = False
+) -> tuple[int, int]:
+    """Store one season's NBA schedule; (team-games stored now, before).
+
+    The body of the loop below, as a function, because the intake wants it
+    too (`app.intake.steps`): a newly connected league needs the schedules
+    behind every season it brought with it, and the NBA's schedule is the
+    NBA's -- shared by every league on this server -- so a season another
+    league already stored is skipped rather than fetched again. Commits
+    nothing: the caller does.
+    """
+    before = stored_games(session, season)
+    if before and not force:
+        return before, before
+    league = fetch_league(espn, season=season)  # type: ignore[arg-type]
+    return rewrite_pro_schedule(session, league, season), before
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--season", type=int, action="append", help="a season; repeatable")

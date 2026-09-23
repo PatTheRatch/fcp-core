@@ -413,14 +413,21 @@ class TeamPeriod:
         return sum(lane.line.games for lane in self.lanes)
 
 
-def load_occupancy(session: Session, seasons: Sequence[int]) -> list[Occupancy]:
-    """Roster occupancy per team-period, for `seasons`."""
-    wanted = [
-        int(row[0])
-        for row in session.execute(
-            select(LeagueSeason.id).where(LeagueSeason.season.in_(list(seasons)))
-        )
-    ]
+def load_occupancy(
+    session: Session, seasons: Sequence[int], league_id: int | None = None
+) -> list[Occupancy]:
+    """Roster occupancy per team-period, for `seasons`.
+
+    `league_id` is `leagues.id`, and narrows to that league's own seasons.
+    The intake passes it (`app.intake.measure`), because a database now holds
+    more than one league and a lane measured across two of them is a
+    measurement of neither. Without it, every league's seasons of those
+    years, which is what this script has always measured.
+    """
+    rows = select(LeagueSeason.id).where(LeagueSeason.season.in_(list(seasons)))
+    if league_id is not None:
+        rows = rows.where(LeagueSeason.league_id == league_id)
+    wanted = [int(row[0]) for row in session.execute(rows)]
     names = {
         int(row[0]): str(row[1]).strip()
         for row in session.execute(
@@ -699,10 +706,14 @@ class SeasonMeasure:
     detail: list[dict[str, object]]
 
 
-def measure_season(session: Session, season: int) -> SeasonMeasure:
-    """Every sample one season contributes, in one pass."""
+def measure_season(session: Session, season: int, league_id: int | None = None) -> SeasonMeasure:
+    """Every sample one season contributes, in one pass.
+
+    `league_id` narrows the occupancy to one league's teams; see
+    `load_occupancy`. The adds and the season book are the season's own
+    either way: a box score belongs to the NBA, not to a fantasy league."""
     book = SeasonBook.load(session, season)
-    occupancy = load_occupancy(session, [season])
+    occupancy = load_occupancy(session, [season], league_id)
     periods = build_team_periods(season, occupancy, book)
     adds = adds_per_team_period(session, season)
 

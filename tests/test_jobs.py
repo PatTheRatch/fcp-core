@@ -200,7 +200,22 @@ def test_a_schedule_enqueued_twice_adds_nothing(factory: sessionmaker[Session]) 
         first = schedule.enqueue_schedule(session, settings, "nightly", NOW)
         second = schedule.enqueue_schedule(session, settings, "nightly", NOW + timedelta(minutes=4))
         kinds = sorted(job.kind for job in first)
-        assert kinds == ["ingest", "ingest", "status_pass"], "requested, nightly, and its pass"
+        # The requested ingest, the nightly one and its pass -- and, because
+        # this league has never been measured, the whole intake chain beside
+        # them (docs/intake.md).
+        assert kinds == [
+            "ingest",
+            "ingest",
+            "intake_done",
+            "intake_hurdles",
+            "intake_ingest",
+            "intake_lane",
+            "intake_pool",
+            "intake_replacement",
+            "intake_schedule",
+            "intake_trades",
+            "status_pass",
+        ]
         assert all(job.created for job in first)
         assert not any(job.created for job in second)
         assert sorted(job.id for job in first) == sorted(job.id for job in second)

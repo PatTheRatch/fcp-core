@@ -4,7 +4,7 @@ Step 4 of docs/product.md; docs/jobs.md is the whole story. Postgres is the
 queue (`SELECT ... FOR UPDATE SKIP LOCKED`), which is enough at this size and
 needs no broker.
 
-A job is one of six kinds, each about one thing:
+A job is one of these kinds, each about one thing:
 
 * `ingest`: one league, the trailing days and next season's settings.
 * `status_pass`: the listener, for one league.
@@ -12,6 +12,8 @@ A job is one of six kinds, each about one thing:
 * `digest`: one member's morning digest, or an alert between digests.
 * `injury_backfill`: one season of the NBA's own injury reports.
 * `injury_pass`: the same for today (docs/injuries.md).
+* the eight `intake_*` kinds: everything a newly connected league needs
+  measured on its own history, one step at a time (docs/intake.md).
 
 What each does is `app.job_kinds`; when they are enqueued is `app.schedule`.
 This module only moves rows.
@@ -77,7 +79,47 @@ DIGEST = "digest"
 #: season in their payload and no `league_id`.
 INJURY_BACKFILL = "injury_backfill"
 INJURY_PASS = "injury_pass"
-KINDS = (INGEST, STATUS_PASS, PRECOMPUTE, DIGEST, INJURY_BACKFILL, INJURY_PASS)
+
+#: The intake chain (`app.intake`, docs/intake.md): everything a league needs
+#: measured on its own history, in order, each step waiting on the one before
+#: it. Eight kinds rather than one job with eight stages, because a step that
+#: fails should park with its own error and the ones after it should not run
+#: at all -- which is what `depends_on` and `fail_orphans` already do.
+INTAKE_INGEST = "intake_ingest"
+INTAKE_SCHEDULE = "intake_schedule"
+INTAKE_REPLACEMENT = "intake_replacement"
+INTAKE_LANE = "intake_lane"
+INTAKE_HURDLES = "intake_hurdles"
+INTAKE_TRADES = "intake_trades"
+INTAKE_POOL = "intake_pool"
+INTAKE_DONE = "intake_done"
+INTAKE_KINDS = (
+    INTAKE_INGEST,
+    INTAKE_SCHEDULE,
+    INTAKE_REPLACEMENT,
+    INTAKE_LANE,
+    INTAKE_HURDLES,
+    INTAKE_TRADES,
+    INTAKE_POOL,
+    INTAKE_DONE,
+)
+
+KINDS = (
+    INGEST,
+    STATUS_PASS,
+    PRECOMPUTE,
+    DIGEST,
+    INJURY_BACKFILL,
+    INJURY_PASS,
+    *INTAKE_KINDS,
+)
+
+#: Where a job sits in the queue: smaller runs first, ahead of `run_after`.
+#: Everything is `NORMAL`; `LOW` is the intake's hurdle sweep, which is an
+#: hour and a half of replay for one league and must never make a morning's
+#: precomputes wait (docs/intake.md).
+NORMAL = 0
+LOW = 100
 
 QUEUED = "queued"
 RUNNING = "running"
@@ -171,11 +213,14 @@ def enqueue(
     user_id: int | None = None,
     depends_on: int | None = None,
     payload: Mapping[str, Any] | None = None,
+    priority: int = NORMAL,
 ) -> Enqueued:
     """Add a job unless this schedule already holds it; either way, its id.
 
     `league_id`, `team_id` and `user_id` are this database's own keys
-    (`leagues.id`, `teams.id`, `users.id`). Does not commit.
+    (`leagues.id`, `teams.id`, `users.id`). `priority` puts a job behind
+    everything ordinary (`LOW`) without moving its `run_after`, so a long job
+    is taken only when nothing else is due. Does not commit.
     """
     if kind not in KINDS:
         raise ValueError(f"unknown job kind {kind!r}")
@@ -199,6 +244,7 @@ def enqueue(
             depends_on=depends_on,
             dedupe_key=key,
             run_after=run_after,
+            priority=priority,
             payload=body,
         )
         .on_conflict_do_nothing(constraint="uq_jobs_dedupe_key")
@@ -246,12 +292,17 @@ def lock_next(
     session: Session, at: datetime | None = None, *, only: ColumnElement[bool] | None = None
 ) -> Job | None:
     """The next due job, locked for this transaction; jobs another worker has
-    locked are skipped, not waited on. Commits nothing: `claim` does."""
+    locked are skipped, not waited on. Commits nothing: `claim` does.
+
+    `priority` is read before `run_after`, so a `LOW` job that has been due
+    for an hour still waits behind an ordinary one that fell due a second
+    ago. That is the point of it: the intake's hurdle sweep runs for an hour
+    and a half, and the morning's precomputes must not be behind it."""
     at = at or now()
     return session.scalar(
         select(Job)
         .where(_ready(at), _mine(only))
-        .order_by(Job.run_after, Job.id)
+        .order_by(Job.priority, Job.run_after, Job.id)
         .limit(1)
         .with_for_update(skip_locked=True, of=Job)
     )

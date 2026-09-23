@@ -354,6 +354,62 @@ class Setting:
         return self.no_move_rate > MIN_NO_MOVE and self.mean > baseline
 
 
+#: One cell of the grid: (stream hurdle, season paid, season free).
+Cell = tuple[float, float, float]
+Grid = Mapping[Cell, tuple[Setting, Setting]]
+
+
+@dataclass(frozen=True)
+class Picked:
+    """What the tuning rule chose on one grid, and what it rested on.
+
+    `hurdle` is None when no setting qualified, which is not a failure: it is
+    the answer the streaming side has given on this league every time it has
+    been run, and it means the constant stays where the design note put it.
+    """
+
+    #: The chosen stream hurdle, or None when nothing qualified.
+    stream: float | None
+    #: The chosen (paid, free) pair, or None when nothing qualified.
+    season: tuple[float, float] | None
+    #: Categories the chosen settings delivered, and over how many moves.
+    stream_mean: float = 0.0
+    stream_n: int = 0
+    stream_no_move: float = 0.0
+    season_mean: float = 0.0
+    season_n: int = 0
+    season_no_move: float = 0.0
+
+
+def tuning_picks(grid: Grid, *, base_week: float, base_season: float) -> Picked:
+    """The tuning rule of section 4, applied to one grid.
+
+    A setting qualifies when it still says *no move* on more than
+    `MIN_NO_MOVE` of decisions -- a tool that always names a pickup makes its
+    user worse, which is the league's own finding -- and when the categories
+    it delivers beat the league's own moves. Among the qualifying settings,
+    the best mean wins.
+
+    It lives here, as a function, because two callers now need the same
+    answer: the write-up's section 4, and the intake that stores a second
+    league's hurdles (`app.intake.measure`). Written twice it would drift.
+    """
+    stream_ok = [(key, s) for key, (s, _) in sorted(grid.items()) if s.eligible(base_week)]
+    season_ok = [(key, s) for key, (_, s) in sorted(grid.items()) if s.eligible(base_season)]
+    stream_key, stream = max(stream_ok, key=lambda row: row[1].mean, default=(None, None))
+    season_key, season = max(season_ok, key=lambda row: row[1].mean, default=(None, None))
+    return Picked(
+        stream=None if stream_key is None else stream_key[0],
+        season=None if season_key is None else (season_key[1], season_key[2]),
+        stream_mean=stream.mean if stream is not None else 0.0,
+        stream_n=stream.n if stream is not None else 0,
+        stream_no_move=stream.no_move_rate if stream is not None else 0.0,
+        season_mean=season.mean if season is not None else 0.0,
+        season_n=season.n if season is not None else 0,
+        season_no_move=season.no_move_rate if season is not None else 0.0,
+    )
+
+
 def rebuild_schedule(
     session: Session,
     season: int,
@@ -444,10 +500,18 @@ def patched_state() -> Any:
 # without being touched, and the numbers are the ones they always were.
 
 
-def load_season(session: Session) -> LeagueSeason:
-    found = session.query(LeagueSeason).filter(LeagueSeason.season == SEASON).one_or_none()
+def load_season(
+    session: Session, season: int = SEASON, league_id: int | None = None
+) -> LeagueSeason:
+    """The stored season to replay. `league_id` is `leagues.id`, which the
+    intake passes because there is now more than one league; without it, any
+    league's row of that season, which is what this script always did."""
+    query = session.query(LeagueSeason).filter(LeagueSeason.season == season)
+    if league_id is not None:
+        query = query.filter(LeagueSeason.league_id == league_id)
+    found = query.one_or_none()
     if found is None:
-        raise SystemExit(f"no league season {SEASON}")
+        raise SystemExit(f"no league season {season}")
     return found
 
 
@@ -508,7 +572,11 @@ def free_agent_pool(session: Session, league_season: LeagueSeason, day: int) -> 
                   AND {FREE_AGENT}
                 """
             ),
-            {"season": SEASON, "day": day, "league_season_id": league_season.id},
+            {
+                "season": int(league_season.season),
+                "day": day,
+                "league_season_id": league_season.id,
+            },
         ).all()
     ]
 
@@ -585,7 +653,7 @@ class Replay:
                 WHERE t.league_season_id = :ls AND dls.started AND pgs.played
                 """
             ),
-            {"ls": league_season.id, "season": SEASON},
+            {"ls": league_season.id, "season": int(league_season.season)},
         ):
             started[(int(row[0]), int(row[1]), int(row[2]))] = _line(row[3:])
 
@@ -612,7 +680,7 @@ class Replay:
                 WHERE pgs.season = :season AND pgs.played
                 """
             ),
-            {"season": SEASON},
+            {"season": int(league_season.season)},
         ):
             games[(int(row[0]), int(row[1]))] = _line(row[2:])
 
@@ -622,7 +690,7 @@ class Replay:
                 "SELECT player_id, eligible_slots FROM player_season_stats "
                 "WHERE season = :season AND eligible_slots IS NOT NULL"
             ),
-            {"season": SEASON},
+            {"season": int(league_season.season)},
         ):
             key = int(player_id)
             eligible[key] = eligible.get(key, frozenset()) | frozenset(str(s) for s in slots)
@@ -1270,7 +1338,7 @@ def _pct(value: float) -> str:
     return f"{value:.1%}"
 
 
-def minutes_events_stored(session: Session) -> int:
+def minutes_events_stored(session: Session, season: int = SEASON) -> int:
     """How many minutes events the season holds for the tilt to read."""
     return int(
         session.scalar(
@@ -1278,7 +1346,7 @@ def minutes_events_stored(session: Session) -> int:
                 "SELECT count(*) FROM player_status_events "
                 "WHERE season = :season AND kind IN :kinds"
             ).bindparams(bindparam("kinds", expanding=True)),
-            {"season": SEASON, "kinds": list(_MINUTES_KINDS)},
+            {"season": season, "kinds": list(_MINUTES_KINDS)},
         )
         or 0
     )
@@ -1488,12 +1556,11 @@ def report(
     )
     lines.append("")
     for tilt_label, settings in results.items():
-        stream_qualifying = [
-            (key, stream)
-            for key, (stream, _season) in sorted(settings.items())
-            if stream.eligible(base_week)
-        ]
-        if not stream_qualifying:
+        # The same `tuning_picks` the intake stores a second league's hurdles
+        # from, so the document and the database cannot disagree about what
+        # the rule chose.
+        picked = tuning_picks(settings, base_week=base_week, base_season=base_season)
+        if picked.stream is None:
             lines.append(
                 f"- Tilt {tilt_label}, streaming: **no setting qualifies**. The no-move "
                 "rate never clears the bar, because a move that seats a man on a day "
@@ -1502,30 +1569,24 @@ def report(
                 "rest. `STREAM_HURDLE` is left where the design note put it."
             )
         else:
-            key, stream = max(stream_qualifying, key=lambda row: row[1].mean)
             lines.append(
-                f"- Tilt {tilt_label}, streaming: best qualifying hurdle **{key[0]:.2f}** "
-                f"({stream.mean:+.2f} categories over {stream.n} moves, "
-                f"{_pct(stream.no_move_rate)} no-move)."
+                f"- Tilt {tilt_label}, streaming: best qualifying hurdle "
+                f"**{picked.stream:.2f}** ({picked.stream_mean:+.2f} categories over "
+                f"{picked.stream_n} moves, {_pct(picked.stream_no_move)} no-move)."
             )
-        season_qualifying = [
-            (key, season)
-            for key, (_stream, season) in sorted(settings.items())
-            if season.eligible(base_season)
-        ]
-        if not season_qualifying:
+        if picked.season is None:
             lines.append(
                 f"- Tilt {tilt_label}, rest of season: **no setting qualifies**, so "
                 "`SEASON_HURDLE_PAID` and `SEASON_HURDLE_FREE` are left where the "
                 "design note put them."
             )
         else:
-            key, season = max(season_qualifying, key=lambda row: row[1].mean)
+            paid, free = picked.season
             lines.append(
                 f"- Tilt {tilt_label}, rest of season: best qualifying hurdles "
-                f"**{key[1]:.2f} paid / {key[2]:.2f} free** ({season.mean:+.2f} "
-                f"categories over 30 days, {season.n} moves, "
-                f"{_pct(season.no_move_rate)} no-move)."
+                f"**{paid:.2f} paid / {free:.2f} free** ({picked.season_mean:+.2f} "
+                f"categories over 30 days, {picked.season_n} moves, "
+                f"{_pct(picked.season_no_move)} no-move)."
             )
     lines.append("")
     # Written here rather than added to the document by hand, because the last

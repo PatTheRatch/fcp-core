@@ -33,6 +33,13 @@ they are enqueued is `app.schedule`.
 * `injury_pass`: the same for today only, for the season in progress.
   Neither belongs to a league, so both carry a `season` in their payload
   and no `league_id`; neither is on a schedule yet (docs/jobs.md).
+* the eight `intake_*` kinds (`app.intake.steps`, docs/intake.md): one
+  chain per league, enqueued when a league is connected, that reads every
+  season ESPN will give us, stores the NBA schedules behind them, runs each
+  of the four measurements on that league's own history, rebuilds the
+  pooled rows and then emails whoever connected it with its own numbers.
+  `intake_hurdles` is the long one and is enqueued at `jobs.LOW`, so a
+  morning's precomputes are never behind ninety minutes of category replay.
 
 Every failure is put into a fixed sentence (`JobError`) before it is stored
 or logged: ESPN's and the mail server's words stay out of both.
@@ -711,12 +718,25 @@ def payload_moment(job: JobRef, key: str) -> datetime | None:
 
 
 def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
-    """The six kinds, bound to the process's settings (or a test's)."""
+    """Every kind, bound to the process's settings (or a test's)."""
+    from app.intake import steps
 
     def current() -> Settings:
         return settings or get_settings()
 
     return {
+        jobs.INTAKE_INGEST: lambda factory, job: steps.run_intake_ingest(factory, job, current()),
+        jobs.INTAKE_SCHEDULE: lambda factory, job: steps.run_intake_schedule(
+            factory, job, current()
+        ),
+        jobs.INTAKE_REPLACEMENT: steps.run_intake_replacement,
+        jobs.INTAKE_LANE: steps.run_intake_lane,
+        jobs.INTAKE_HURDLES: steps.run_intake_hurdles,
+        jobs.INTAKE_TRADES: steps.run_intake_trades,
+        jobs.INTAKE_POOL: steps.run_intake_pool,
+        jobs.INTAKE_DONE: lambda factory, job: steps.run_intake_done(
+            factory, job, current(), payload_moment(job, "now")
+        ),
         jobs.INGEST: lambda factory, job: run_ingest(factory, job, current()),
         jobs.STATUS_PASS: lambda factory, job: run_pass(factory, job, current()),
         jobs.PRECOMPUTE: lambda factory, job: run_precompute(

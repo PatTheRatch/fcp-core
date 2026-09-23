@@ -45,6 +45,7 @@ whichever label fires next.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -69,6 +70,8 @@ from app.espn import get_espn_settings
 from app.ingest_runs import SUCCEEDED
 from app.job_kinds import ALERT, MORNING, listened_season
 from app.listener.status import PASS_SCHEDULE
+
+log = logging.getLogger("fcp.schedule")
 
 NIGHTLY = "nightly"
 LABELS = ("nightly", "morning", "report", "late")
@@ -243,6 +246,28 @@ def _requested_ingests(session: Session, at: datetime) -> list[tuple[int, int]]:
     ]
 
 
+def _intake_for(session: Session, league_pk: int, at: datetime) -> list[jobs.Enqueued]:
+    """The intake chain for a league that has never had one, or nothing.
+
+    A newly connected league is the whole reason the chain exists: the
+    connection asks for an ingest, and what it really wants is every season
+    ESPN holds and the four measurements on them (docs/intake.md). A league
+    measured on an earlier day is left alone; re-measuring is the account
+    page's button.
+
+    Enqueued with `force`, so a timer that fires twice in a day hits the
+    dedupe key and adds nothing the second time rather than being refused --
+    which keeps `enqueue_schedule`'s own promise that running it twice
+    returns the same jobs.
+    """
+    from app import intake
+
+    previous = intake.last_started(session, league_pk)
+    if previous is not None and previous.astimezone(UTC).date() != at.astimezone(UTC).date():
+        return []
+    return intake.enqueue_intake(session, league_pk, at=at, force=True)
+
+
 def enqueue_schedule(
     session: Session, settings: Settings, label: str, now: datetime | None = None
 ) -> list[jobs.Enqueued]:
@@ -255,6 +280,12 @@ def enqueue_schedule(
     out: list[jobs.Enqueued] = []
     for pk, _ in _requested_ingests(session, at):
         out.append(jobs.enqueue(session, jobs.INGEST, run_after=at, label=REQUESTED, league_id=pk))
+        # A league that has never been measured gets the whole intake chain
+        # rather than one ingest: every season ESPN will give us, and each of
+        # the measurements on its own history (docs/intake.md). The refusal
+        # is quiet here -- one already running, or one today -- because this
+        # runs on a timer and has nobody to tell.
+        out += _intake_for(session, pk, at)
 
     for league in scheduled_leagues(session, settings):
         if label == NIGHTLY:

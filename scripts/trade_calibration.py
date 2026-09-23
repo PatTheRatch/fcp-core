@@ -589,9 +589,19 @@ def rows_for_season(
     players: list[PlayerRow],
     *,
     review_days: int,
+    league_id: int | None = None,
 ) -> list[Row]:
-    """Every scoreable side of every reconstructable trade in one season."""
-    league_season = session.scalar(select(LeagueSeason).where(LeagueSeason.season == season))
+    """Every scoreable side of every reconstructable trade in one season.
+
+    `league_id` is `leagues.id`, and names whose season it is; the intake
+    passes it (`app.intake.measure`) because a database now holds more than
+    one league. Without it, the first stored season of that year, which is
+    what this script has always taken.
+    """
+    where = select(LeagueSeason).where(LeagueSeason.season == season)
+    if league_id is not None:
+        where = where.where(LeagueSeason.league_id == league_id)
+    league_season = session.scalar(where)
     if league_season is None:
         return []
     teams = _teams(session, league_season)
