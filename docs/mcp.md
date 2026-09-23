@@ -366,6 +366,13 @@ appended to the system prompt, against the local database on the stored
 been given.** The transcripts are the session's stream-json files; the
 check was by hand.
 
+The run was made that morning, **before** the weekly spread was widened later
+the same day (docs/spread_revision.md). What was measured here is the model's
+discipline, which does not depend on the spread: it quoted what the tools gave
+it. But the figures the table names as stated -- the expected wins, the nine
+chances, the nets and the projected record -- are the old model's, and the same
+three questions asked today would return smaller ones.
+
 | question | tools called | turns | numbers stated | not in a tool result |
 |---|---|---|---|---|
 | "day 52 — what should I do today and this week?" | `my_leagues`, `league_context`, `todays_lineup`, `week_report`, `what_changed` | 8 | 5.24 expected wins, nine chances, two moves' nets and bids, 42 FAAB, 0 of 7 adds, 95.8–75.2, three bars with their sources and dates, eight league moves | **none** |
