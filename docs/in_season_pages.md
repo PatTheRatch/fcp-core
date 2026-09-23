@@ -36,11 +36,90 @@ the manager the constant is written for.
 
 ## What is on the week page, top to bottom
 
+Rewritten 2026-09-23 as **the game sheet**. The page had grown to seven
+screens and showed the database, the model, the reasoning and the answer all
+at once. It now shows **answer → evidence → model**, in that order, with the
+evidence one tap away. *Nothing was removed.* Everything that was on it is
+still on it, in the same words; what changed is how much of it is open when
+the page loads. The one job: *I open Box Out. Within ten seconds I know what
+matters tonight and whether I should do anything.*
+
+It is designed at 390 and widens; 1280 is the roomy version of the phone
+layout and not the other way round.
+
+**1. The matchup.** The team, the season and the matchup period; who this
+week is against; the day and its date; **days left** as the largest figure
+on the page, because it is what every other answer is measured against; and
+the two projected category totals (`5.24 – 3.76`) over one proportion bar.
+Nothing else: the source line and the standing figures are under More.
+
+**2. The nine.** The categories as a pulse rather than a table: three bands,
+each headed in words as well as told apart by ink — **likely yours** (at or
+over 65%), **swing** (35–65%) and **likely theirs** (at or under 35%). The
+swing band carries the accent rule, because that is the band tonight can
+move. The two thresholds are constants in the page's own script
+(`BAND_YOURS`, `BAND_THEIRS`) with a comment saying they are a display
+choice about ink and not a claim the model makes; nothing in the report
+knows they exist. Tapping a category opens both sides' projected totals and
+the chance, which is what the old tale of the tape printed nine rows of at
+once — and the other side is said to be *our estimate of their side*, there
+where the estimate is.
+
+**3. Tonight.** Who plays, on both sides. A man a row: his name, his mark
+(`HOU · PG`), his game and its tip-off (`at UTA · 9:00 PM`), and what ESPN
+says about him (**active**, **questionable**, **out**). No headshots — the
+NBA team's abbreviation set in the display face is the mark, which is
+licensed to nobody and reads at any size. Theirs is the places they have set
+for the day, from the stored daily lineups (`/teams/{id}/lineups`, the
+league's own route): a fact rather than a projection, and a name opens the
+same card every other name does, which is where the rest of what is known
+about him is. Men with no game are under **Not playing**.
+
+Above them, and **only when the day's own report says there is a decision in
+the lineup** — a place that will produce nothing tonight, or a man on the
+bench with a game — the warn line that has always been there. When there is
+no decision there is no block, and the absence is the answer.
+
+**4. The read.** At most three moves from the plan, each one: `ADD` a man,
+`DROP` a man, the number (`+0.94 categories`), the categories it helps and
+the ones it costs, the games it buys, and the bid with its range. **See why**
+opens the judgement lines and the shift strip that were always printed under
+it. It is headed *The read* and never "Box Out says" or "the call": a tool,
+not gospel. What did not clear the bar is not hidden — it is under More,
+every move of it, each marked *clears the bar* or *below the bar*.
+
+**5. Schedule.** The period's days across, **you** and **them** down, as a
+real table: how many starting places each side has a man in on each day,
+from the stored lineups. A day with places this roster cannot fill carries
+the mark (`n open`) the week report puts on it, and tapping a day opens who
+each side has in those places and who on the wire could fill an open one.
+
+**6. What changed.** Only when the window — the day on the page and the day
+before it — holds something worth the eye: a man out, a doubt, a piece of
+news, or a move that touched this matchup. Everything else in the window is
+a count and a disclosure. The sentences are the API's, exactly as they are
+on the league's page and in the morning message.
+
+**7. Season.** One line: the projected finish in categories, the place the
+simulations put this team in most often, and the playoff odds; and under it,
+in the small face, `SHORT_NOTE` from `app.inseason.projected_calibration`,
+which says in one sentence what the forecast scored. Week by week is what
+the line opens.
+
+**8. More.** Every move considered; where the season finishes; with a move
+and without; the week's standing figures (adds left, FAAB, open places, the
+wire); how this is worked out (the source line, the bar and where it came
+from, and `calibration_note` verbatim); and the links to the other pages.
+
+On first load it is a little over half the page it was at 1280 and a little
+over two-fifths of it at 390, with nothing gone.
+
+### The day's own report, inside Tonight
+
 **Today** (added 2026-09-22, `app/pickups/today.py`). The morning question,
-and the first thing on the page, because it is the first thing the manager
-does. The date and the scoring period; how many NBA teams play and how many
-of the ten places this roster can fill; then two lineups side by side (one
-above the other on a phone):
+and still the first thing fetched, because it is the first thing the manager
+does. Its full comparison now lives under a disclosure in Tonight: two
+lineups side by side (one above the other on a phone):
 
 * **As we would set it** — a place a line, in the league's own slot order,
   with the man's name, the game his NBA team plays ("at MIL"), and a flag
@@ -51,7 +130,7 @@ above the other on a phone):
   says the lineup has not been read from ESPN yet rather than comparing
   against an empty one.
 
-Between the lede and the grids, in the warn style, **the one thing this page
+Above the grids, in the warn style, **the one thing this page
 calls a mistake**: a place in the set lineup that will produce nothing
 tonight — the man in it has no game, or it was left unset — while a man on
 the bench has a game and fits that very place. It names who could take it
@@ -78,41 +157,55 @@ Every player name opens the **shared player card** (`cardName` and
 `wireCards` in `shell.js`), the same one the trade page hangs off a name, so
 what the card says about a man here is what it says about him there.
 
-**The masthead.** The team, the season, the matchup period, the opponent,
-the day and its date, the days left, and where the numbers came from
-(`source_note`, from `app/projections/sources.py`'s `describe`).
+**Where the numbers come from** (`source_note`, from
+`app/projections/sources.py`'s `describe`) is under More, with the bar and
+where it came from, and with `calibration_note` verbatim. Every number on
+the page keeps its provenance; it is one tap away rather than always
+visible.
 
-**The readout.** Expected categories won, days left, adds left of the
+**The readout** — expected categories won, days left, adds left of the
 period's budget, FAAB, open places and the injured-reserve slot, and how
-many free agents were evaluated — with which wire they came from.
+many free agents were evaluated, with which wire they came from — is under
+More as *the week's standing figures*.
 
-**The tale of the tape.** The nine categories in the fixed order, each with
-both sides' projected totals, the chance of winning it as things stand, and
-a bar. Above it the same nine as a shaded strip. This is the one place the
-page computes anything: a side's weekly totals go out as raw counts, so FG%
-and FT% are rebuilt in the browser from the made and attempted behind them
-(`totalOf` in `pages.js`). A rate cannot be summed across a roster or a week
-without its attempts, which is why they travel as counts at all.
+**Both sides' totals** are what a category in the pulse opens. This is the
+one place the page computes anything: a side's weekly totals go out as raw
+counts, so FG% and FT% are rebuilt in the browser from the made and
+attempted behind them (`totalOf` in `pages.js`). A rate cannot be summed
+across a roster or a week without its attempts, which is why they travel as
+counts at all.
 
-**The days left.** The matchup period's days as a strip, the played ones
-faint, today in the accent, a day the lineup cannot fill marked. Then each
-empty day with the slots that go begging and who on the wire could fill one.
+**Every move considered** is under More: all of them, best first, each
+marked *clears the bar* or *below the bar*, each with its judgement lines,
+the categories it moved as a strip, the bid when there is one, and "on
+waivers, clears Thursday" when the league has the man on waivers. A move
+that fills an empty day clears the bar whatever its size, which is why one
+can clear it below another that did not; the page says so rather than
+leaving it to be noticed. When no adds are left, or when nothing cleared the
+bar, The read says so and says the projected record either way, because a
+bar nothing cleared is an answer.
 
-**The plan.** The moves worth a look, in the order to make them, each one
-found against the roster the one before it leaves. When no adds are left,
-or when nothing cleared the bar, that is what it says — and says the
-projected record either way, because a bar nothing cleared is an answer.
-
-**Every move considered.** All of them, best first, each marked *clears the
-bar* or *below the bar*, each with its judgement lines, the categories it
-moved as a strip, the bid when there is one, and "on waivers, clears
-Thursday" when the league has the man on waivers. A move that fills an empty
-day clears the bar whatever its size, which is why one can clear it below
-another that did not; the page says so rather than leaving it to be noticed.
-
-**The season, as it stands.** The projected end-of-season category record
+**The season as it stands** — the projected end-of-season category record
 with no move made, what is banked, and what a place on this roster gives
-back if it is vacated.
+back if it is vacated — is under More as *with a move and without*.
+
+### Two fields the game sheet needed
+
+Added 2026-09-23, both additive and neither a new number:
+
+* `pro_team` on every player a report carries (`PickupPlayerOut`): his NBA
+  team's abbreviation, from ESPN's own table — the one `app/pickups/today.py`
+  already reads to write "at MIL" — so a page can set a mark beside a name
+  without carrying the table.
+* `at` on a day's game (`TodayGameOut`): tip-off, as the stored schedule
+  holds it. A moment and never a clock, because the same report is read in
+  three time zones.
+* `calibration_short` on the projection (`ProjectedOut`): `SHORT_NOTE`, the
+  forecast's record in one sentence, for the Season line. The long
+  `calibration_note` is unchanged and still printed verbatim under More.
+
+All three are null or empty rather than absent on a report stored before
+they existed, so a morning's stored row still draws.
 
 ## What changed, on the league's This week page
 
@@ -205,6 +298,17 @@ block in `pages.css`. The rules of the house: rules, not boxes; no rounded
 corners, no chips, no shadows; one burnt-orange accent; tabular numerals
 wherever there is a number.
 
+**The game sheet** (2026-09-23) is the same house pushed from a newspaper
+column towards a front-office sheet: more basketball objects, more visual
+priority, far less explanatory prose. No gradients, no glass, no giant
+metric cards, no emoji as section markers, no "AI dashboard" idiom. Its
+objects are in `pages.css` under *the game sheet*, on the existing tokens.
+Every disclosure on it is a real `<details>`/`<summary>`, or a button with
+`aria-expanded` and `aria-controls` where the panel is shared (a category of
+the pulse, a day of the schedule); the schedule is a real `<table>` with
+scoped headers; the bands are told apart by their headings before they are
+told apart by ink; and a reader who has asked for reduced motion gets it.
+
 **The nine-category strip** is the draft screen's component, markup and
 class names unchanged, so the two do not drift. What shades a cell differs,
 because there is no draft pool here to rank against — a probability shades
@@ -254,6 +358,19 @@ day's own and the rest of the season:
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/projected
+
+The game sheet adds two more of the league's own, and no new route:
+
+    /leagues/{league_id}/seasons/{season}/teams/{team_id}/lineups?period=&started=true
+    /leagues/{league_id}/seasons/{season}/changes?since=&until=&team_id=
+
+`/lineups` is league scope (docs/accounts.md: every team's stored lineups
+are a member's to read), which is what lets the sheet show the other side of
+Tonight and the other row of the schedule without a scope of its own. It is
+what the ingest wrote down and not a plan: what the page *estimates* about
+the opponent is the totals in the nine, and it says so there. A day the
+ingest holds no lineup for is an en dash. `/changes` is the same route and
+the same window the league's This week page uses.
 
 `/today` is the same scope as the other two (the team's verified manager,
 entitled) and carries its own `source_note`, so the Today section can say

@@ -48,6 +48,10 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
 .muted{color:var(--muted)} .faint{color:var(--faint)}
 [hidden]{display:none !important}
 .accent{color:var(--accent)}
+/* A label a screen reader needs and a sighted reader does not: the corner of
+   a grid whose column headings already say what the row of it is. */
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;border:0}
 
 /* ---- the shell: one bar over every page, a rule under it (shell.js) ------
    Links and menu buttons in the display face, the current one in the accent
@@ -204,9 +208,8 @@ section{margin-top:56px}
 .grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
 .grid.lineup tr.has-game td.name{font-weight:600}
 .flag{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--warn)}
-#today-section .two{gap:0 32px}
-#today-section .side h3{font-size:15px}
-#today-section .shead{margin-top:28px}
+#tonight-section .side h3{font-size:15px}
+#tonight-section .shead{margin-top:28px}
 
 /* ---- the schedule strip: the matchup period's days ---------------------- */
 .days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
@@ -554,6 +557,242 @@ section{margin-top:56px}
   color:var(--accent-ink);text-decoration:none;border:0}
 .cta:hover{background:var(--ink);color:var(--ground)}
 
+/* ---- the game sheet -----------------------------------------------------
+   The Week page's own furniture (docs/in_season_pages.md, "The game sheet"):
+   the same house -- cream paper, black ink, one orange, rules and never
+   boxes, tabular numerals -- pushed from a newspaper column towards a
+   front-office sheet. The page answers first, shows the evidence under a
+   disclosure and keeps the model under More, so everything below is either a
+   thing to read at a glance or the control that opens what is behind it.
+
+   Mobile first: every measure here is written for 390 and widens with the
+   viewport, and nothing in it scrolls the page sideways. */
+
+/* A disclosure, everywhere on the page: a real <details>, the summary in the
+   house's small display face with a rule over it, the marker a sign rather
+   than a triangle so it reads the same in both themes and at any size. */
+details.disc{border-top:1px solid var(--rule)}
+details.disc > summary{list-style:none;cursor:pointer;padding:8px 0 7px;display:flex;
+  align-items:baseline;gap:10px;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:11px;color:var(--muted)}
+details.disc > summary::-webkit-details-marker{display:none}
+details.disc > summary::after{content:"+";margin-left:auto;font-family:var(--mono);font-size:14px;
+  line-height:1;color:var(--faint)}
+details.disc[open] > summary::after{content:"\2212"}
+details.disc > summary:hover{color:var(--ink)}
+details.disc[open] > summary{color:var(--accent)}
+details.disc > summary .n{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  color:var(--faint);text-transform:none}
+details.disc .inside{padding:2px 0 18px}
+details.disc .inside > .lede{margin-top:0}
+.disclist{border-bottom:1px solid var(--rule)}
+.disclist > details.disc:first-child{border-top:1px solid var(--rule-strong)}
+
+/* The matchup, at the top: who, when, how many days are left, and the two
+   projected numbers over one proportion bar. The days left is the largest
+   thing on the page because it is the fact every other answer is measured
+   against. */
+.mast .versus{margin:10px 0 0;font-family:var(--display);font-weight:600;
+  font-size:clamp(17px,4vw,26px);text-transform:uppercase;letter-spacing:.02em;color:var(--muted)}
+.mast .versus b{color:var(--ink);font-weight:600}
+.mast .when{margin:8px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint)}
+.tale{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 24px;align-items:end;
+  margin:16px 0 0;padding:16px 0 18px;border-top:1px solid var(--rule)}
+.tale .k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--faint)}
+.tale .left{border-right:1px solid var(--rule);padding-right:24px}
+.tale .big{display:block;margin-top:2px;font-family:var(--display);font-weight:600;
+  font-size:clamp(52px,13vw,84px);line-height:.88;color:var(--accent);
+  font-variant-numeric:tabular-nums}
+.tale .big .unit{display:block;margin-top:4px;font-family:var(--mono);font-size:11px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.tale .pair{display:flex;align-items:baseline;gap:10px;margin:4px 0 0;font-family:var(--display);
+  font-weight:600;font-size:clamp(32px,8vw,48px);line-height:1;font-variant-numeric:tabular-nums}
+.tale .pair .them{color:var(--muted)}
+.tale .pair .v{color:var(--faint);font-size:.55em}
+.split{display:block;height:12px;background:var(--shade-2);margin:12px 0 0;position:relative}
+.split i{position:absolute;inset:0 auto 0 0;display:block;background:var(--accent)}
+.split u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--ink);
+  opacity:.45;text-decoration:none}
+.tale .ends{display:flex;justify-content:space-between;gap:10px;margin:6px 0 0;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint)}
+.tale .ends span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tale .ends .r{text-align:right}
+@media (max-width:560px){
+  .tale{grid-template-columns:1fr;gap:16px 0}
+  .tale .left{border-right:0;border-bottom:1px solid var(--rule);padding:0 0 14px}
+}
+/* On a desk the sheet's head is one band: who and when on the left, the two
+   numbers that matter on the right, rather than a column a reader scrolls
+   past. On a phone it stacks, which is the order it was designed in. */
+@media (min-width:861px){
+  #mast{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,27rem);gap:0 36px;
+    align-items:end;padding:30px 0 18px}
+  #mast > .head{min-width:0}
+  #mast .tale{margin:0;padding:0 0 0 36px;border-top:0;border-left:1px solid var(--rule)}
+  #mast h1{font-size:clamp(34px,4.6vw,56px)}
+}
+/* This page carries eight sections where the others carry four, so its own
+   rhythm is a little tighter than the house's. */
+#body section{margin-top:40px}
+#body .shead{margin-bottom:16px}
+
+/* The nine as a pulse: three bands, each headed in words as well as told
+   apart by ink, so what is safe, what is live and what is gone is read
+   before any number is. The swing band takes the accent rule, because that
+   is the band tonight can move. Each cell is a button that opens the two
+   projected totals and the chance under the strip. */
+.band{margin-top:14px}
+.band:first-child{margin-top:0}
+.band .blab{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;
+  font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;font-size:11px;
+  color:var(--faint)}
+.band .blab .n{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.08em}
+.band.swing{border-left:2px solid var(--accent);padding-left:12px}
+.band.swing .blab{color:var(--accent)}
+/* auto-fill, not auto-fit: a band of three keeps the cell width a band of
+   five has, so the three read as three of nine rather than as a row of their
+   own, and a band that wraps on a phone wraps into the same grid. */
+.pulse{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));
+  border:1px solid var(--rule);border-width:1px 0 0 1px}
+.pulse button{display:block;width:100%;text-align:right;font:inherit;color:inherit;
+  background:none;border:0;border-right:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);border-radius:0;padding:7px 9px 6px;cursor:pointer}
+.pulse button:hover{background:var(--sunk)}
+.pulse button[aria-expanded="true"]{background:var(--accent-soft)}
+.pulse .lab{display:block;margin-bottom:1px;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:10px;color:var(--muted)}
+.pulse b{font-family:var(--mono);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums}
+.band.yours .pulse b{color:var(--good)}
+.band.theirs .pulse b{color:var(--stop)}
+.band.swing .pulse b{color:var(--accent)}
+.empty.bandempty{padding:4px 0 0;font-size:14px}
+
+/* What one category opens: both sides' projected totals and the chance, the
+   numbers the page already holds, with the bar the tale of the tape drew. */
+.catbox{border-top:1px solid var(--rule-strong);margin-top:20px;padding:12px 0 4px}
+.catbox .cn{font-family:var(--display);font-weight:600;font-size:20px;text-transform:uppercase;
+  letter-spacing:.03em}
+.catbox .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;margin:8px 0 0}
+.catbox dt{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);padding-top:4px;white-space:nowrap}
+.catbox dd{margin:0;font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
+.catbox .note{margin:8px 0 0;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+/* Tonight: a man a row, name first, then his mark and his game, then what
+   ESPN says about him. No headshot: the NBA team's abbreviation in the
+   display face is the mark, which is licensed to nobody and reads at any
+   size. On a phone the row is two lines; the second is the mono line. */
+.tonight{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule-strong)}
+.tonight li{border-bottom:1px solid var(--rule);padding:9px 0 8px;display:grid;
+  grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline}
+.tonight li.one{padding:7px 0 6px}
+.tonight li.off .who{color:var(--muted);font-weight:400}
+.tonight li.one .who{display:flex;align-items:baseline;gap:10px}
+.tonight li.one .who .team{flex:0 0 2.4em}
+.tonight .who{min-width:0;font-size:16px;font-weight:600;overflow-wrap:anywhere}
+.tonight .st{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);white-space:nowrap;text-align:right}
+.tonight .st.on{color:var(--good)} .tonight .st.doubt{color:var(--warn)}
+.tonight .st.out{color:var(--stop)}
+.tonight .meta{grid-column:1/-1;font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  letter-spacing:.02em;overflow-wrap:anywhere}
+.tonight .meta .team{font-family:var(--display);font-weight:600;font-size:12.5px;
+  letter-spacing:.09em;color:var(--ink)}
+.sideline{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-family:var(--display);
+  text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--faint)}
+.sideline .n{margin-left:auto;font-family:var(--mono);font-size:10px}
+#tonight-grids{gap:0 32px}
+#tonight-grids > .side{border-top:0;padding-top:0}
+@media (max-width:860px){ #tonight-grids > .side{margin-top:24px} }
+
+/* A move worth a look: the two names, the number, the categories it moves,
+   and everything behind it one tap away. A rule over it, never a box; the
+   first one carries the accent rule the house gives a reader's own row. */
+.read{border-top:1px solid var(--rule);padding:14px 0 6px}
+.read:first-of-type{border-top:1px solid var(--rule-strong)}
+.read.top{border-left:2px solid var(--accent);padding-left:14px}
+.read .deal{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0;font-size:17px}
+.read .verb{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
+  font-size:11px;color:var(--faint)}
+.read .deal b{font-weight:600}
+.read .num{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:20px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.read .num.up{color:var(--good)} .read .num.down{color:var(--stop)}
+.read .num .unit{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  font-weight:400;margin-left:5px}
+.read .moves{margin:7px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+  color:var(--faint)}
+.read .moves .up{color:var(--good)} .read .moves .down{color:var(--stop)}
+.read .moves .w{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+  font-size:10px;color:var(--faint);margin-right:5px}
+.read .meta{margin:4px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.read details.disc{border-top:0;margin-top:2px}
+.read details.disc > summary{padding:6px 0 5px}
+
+/* The days left as a sheet: the period across, both sides down, a real table
+   because that is what it is. A day with places the roster cannot fill is
+   marked; tapping a day opens who each side has starting on it. */
+.sched{width:100%;border-collapse:collapse;table-layout:fixed}
+.sched th,.sched td{border:1px solid var(--rule);padding:0;text-align:center}
+.sched thead th{border-width:0 1px 1px 0;border-bottom-color:var(--rule-strong);
+  padding:5px 2px 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint);font-weight:400}
+.sched thead th:first-child{border-left:0}
+.sched thead th .dn{display:block;font-family:var(--display);font-weight:600;font-size:15px;
+  color:var(--ink);letter-spacing:0}
+.sched thead th.past .dn{color:var(--faint);font-weight:400}
+.sched thead th.now{background:var(--accent-soft)}
+.sched thead th.now .dn{color:var(--accent)}
+.sched tbody th{width:4.4em;border-left:0;padding:8px 8px 8px 0;text-align:left;
+  font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11px;
+  color:var(--muted);font-weight:600}
+.sched tbody tr.us th{color:var(--accent)}
+.sched td button{display:block;width:100%;font:inherit;color:inherit;background:none;border:0;
+  border-radius:0;padding:8px 2px;cursor:pointer;font-family:var(--mono);font-size:14px;
+  font-variant-numeric:tabular-nums}
+.sched td button:hover{background:var(--sunk)}
+.sched td button[aria-expanded="true"]{background:var(--accent-soft)}
+.sched td .flat{display:block;padding:8px 2px;font-family:var(--mono);font-size:14px;
+  color:var(--faint);font-variant-numeric:tabular-nums}
+.sched td .open{display:block;margin-top:2px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--stop)}
+.sched td.past{color:var(--faint)}
+.sched td.now{box-shadow:inset 0 0 0 1px var(--accent)}
+.daybox{border-top:1px solid var(--rule-strong);margin-top:18px;padding:12px 0 4px}
+.daybox .cn{font-family:var(--display);font-weight:600;font-size:18px;text-transform:uppercase;
+  letter-spacing:.03em}
+.daybox .who{margin:10px 0 0;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:10.5px;color:var(--faint)}
+.daybox .names{margin:3px 0 0;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
+.daybox .names .pname{font-size:15px}
+.daybox .note{margin:8px 0 0;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.daybox .gapline{margin:10px 0 0;border-left:2px solid var(--stop);padding:2px 0 2px 12px;
+  font-size:14px;color:var(--muted)}
+.daybox .gapline b{color:var(--ink)}
+
+/* The season in one line, with the forecast's own record under it. */
+.standing{display:flex;align-items:baseline;gap:8px 16px;flex-wrap:wrap;margin:0;
+  font-family:var(--display);font-weight:600;font-size:clamp(20px,4.6vw,28px);
+  font-variant-numeric:tabular-nums}
+.standing .k{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);font-weight:400}
+.standing .sep{color:var(--rule);font-weight:400}
+.standing .odds{color:var(--accent)}
+.smallnote{margin:8px 0 0;font-family:var(--mono);font-size:11px;line-height:1.7;
+  color:var(--faint);max-width:78ch}
+@media (max-width:560px){
+  /* A phone wraps the line, and a separator at the end of a wrapped line
+     reads as a missing word, so the labels carry the break instead. */
+  .standing{gap:4px 14px}
+  .standing .sep{display:none}
+  /* The number is the move's, not the dropped man's: on a narrow screen it
+     takes a line of its own rather than trailing his name. */
+  .read .num{margin-left:0;flex-basis:100%}
+}
+
 /* ---- the footnote ------------------------------------------------------- */
 .foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
   font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.9}
@@ -580,3 +819,11 @@ section{margin-top:56px}
   .grid td.links a{display:block;margin:2px 0 0}
 }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Nothing on these pages animates to say anything -- the one transition is
+   the player card fading in -- but a reader who has asked for stillness gets
+   it outright rather than nearly. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important}
+}

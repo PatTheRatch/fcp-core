@@ -209,7 +209,7 @@ def stored(session: Session, season: int) -> LeagueSeason:
 @pytest.mark.parametrize(
     ("path", "wanted"),
     [
-        (f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week", "The tale of the tape"),
+        (f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week", "The read"),
         (f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/season", "Drop candidates"),
         (f"/l/{LEAGUE_ID}/{SEASON}/standings", "The table"),
     ],
@@ -244,23 +244,28 @@ def test_a_page_never_tells_anyone_what_to_do(client: TestClient) -> None:
         assert "you should" not in visible
 
 
-def test_the_week_page_draws_todays_lineup_above_the_week(client: TestClient) -> None:
-    """The Today section, and the route it reads.
+def test_the_week_page_answers_before_it_explains(client: TestClient) -> None:
+    """The order the page is read in: the matchup, then the nine, then
+    tonight, then the moves, and the model under More.
 
-    The markup is checked for the section and the script for the fetch and
+    The markup is checked for the sections and the script for the fetches and
     the player-card hook, because the page draws itself in the browser and
     there is nothing else here to assert it against; the route it calls is
     then asked the same question and has to answer the same day. A place a
     man with a game could take is wired to the warn style, which is the one
-    thing on this page stated as a mistake.
+    thing on this page stated as a mistake, and the comparison of the two
+    lineups is still on the page, under a disclosure.
     """
     page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
 
-    assert page.index("today-section") < page.index("tape-section"), "above the week"
+    order = ["pulse-section", "tonight-section", "read-section", "sched-section", "more-section"]
+    assert [page.index(name) for name in order] == sorted(page.index(name) for name in order)
     assert 'id="today-fix"' in page and 'class="warnline" id="today-fix"' in page
     assert "/today${params(WHERE)}" in page, "the day's own route, with the same ?today="
     assert "cardName(" in page and "wireCards(" in page, "every name opens the shared card"
     assert "As we would set it" in page and "As it is set" in page
+    assert page.count('<details class="disc"') >= 6, "the evidence is a tap away, not gone"
+    assert "aria-expanded" in page, "and what is not a <details> says whether it is open"
 
     body = client.get(
         f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams/{OURS}/today", params={"today": 1}
@@ -268,6 +273,30 @@ def test_the_week_page_draws_todays_lineup_above_the_week(client: TestClient) ->
     assert body["today"] == 1
     assert [seat["slot"] for seat in body["lineup"]] == ["G", "F", "UT"]
     assert body["source_note"], "the page's footnote says where the numbers came from"
+
+
+def test_the_week_page_keeps_everything_it_used_to_show(client: TestClient) -> None:
+    """Nothing was removed, only layered (docs/in_season_pages.md).
+
+    Every part of the old page has to still be reachable: the whole list of
+    moves with its marks, the standing figures, the rest of the season, the
+    projected record either way, and the calibration text verbatim.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+
+    for wanted in (
+        "Every move considered",
+        "Where the season finishes",
+        "With a move and without",
+        "The week's standing figures",
+        "How this is worked out",
+        "Week by week",
+        "Not playing",
+    ):
+        assert wanted in page, wanted
+    assert "clears the bar" in page and "below the bar" in page, "a bar labels, never hides"
+    assert "calibration_note" in page and "calibration_short" in page
+    assert "BAND_YOURS" in page and "display choice" in page, "the bands are a choice about ink"
 
 
 def test_the_lineup_grid_is_styled_in_both_themes_and_at_phone_width(

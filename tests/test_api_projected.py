@@ -179,8 +179,10 @@ def test_every_answer_carries_its_record_and_its_source(client: TestClient) -> N
     # The same record in one line, for a page that prints the projected
     # finish on one line and keeps the whole note a tap away. Verbatim from
     # the constant, so the two can never say different numbers.
+    # Verbatim from the constant, whose own number is guarded against
+    # `RECORD_ERROR` in tests/test_inseason_projected.py, so there is one
+    # place the sentence and the figure in it can disagree and it is not here.
     assert body["calibration_short"] == SHORT_NOTE
-    assert "7.4" in body["calibration_short"], "and it is the same number the long one gives"
     assert body["source_note"]
     assert body["basis"].startswith("rosters and box scores as of scoring period 1")
     assert body["n_sims"] > 0

@@ -13,93 +13,178 @@
 <div id="shell"></div>
 <div class="page">
 
-<header class="mast">
-  <p class="eyebrow" id="eyebrow">{{brand}} &middot; the week</p>
-  <h1 id="title">&nbsp;</h1>
-  <p class="sub" id="sub"></p>
+<!-- 1. The matchup. Who, when, how many days are left, and the two projected
+     numbers over one bar. Nothing else: everything that used to sit in the
+     masthead and the readout is under More, one tap away. -->
+<header class="mast" id="mast">
+  <div class="head">
+    <p class="eyebrow" id="eyebrow">{{brand}} &middot; the week</p>
+    <h1 id="title">&nbsp;</h1>
+    <p class="versus" id="versus"></p>
+    <p class="when" id="when"></p>
+  </div>
+  <div class="tale" id="tale" hidden>
+    <div class="left">
+      <span class="k">Days left</span>
+      <span class="big" id="days-left">&nbsp;<span class="unit" id="days-unit"></span></span>
+    </div>
+    <div class="right">
+      <span class="k">Projected categories</span>
+      <p class="pair"><b id="score-us">&ndash;</b><span class="v">&ndash;</span>
+        <b class="them" id="score-them">&ndash;</b></p>
+      <span class="split"><i id="split-bar" style="width:50%"></i><u></u></span>
+      <p class="ends"><span id="ends-us"></span><span class="r" id="ends-them"></span></p>
+    </div>
+  </div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
 
-<!-- The morning question, above the week it belongs to, and outside the
-     body: one day's seating comes back at once, while the week below has
-     to search the whole wire, and the thing the manager acts on first
-     should not wait on the thing he reads afterwards. -->
-<section id="today-section" hidden>
-  <div class="shead"><h2>Today</h2><span class="tag" id="today-tag"></span></div>
-  <p class="lede" id="today-lede"></p>
-  <p class="warnline" id="today-fix" hidden></p>
-  <div class="two" id="today-grids">
-    <div class="side">
-      <h3>As we would set it</h3>
-      <p class="whose" id="today-ours"></p>
-      <div id="today-lineup"></div>
-    </div>
-    <div class="side">
-      <h3>As it is set</h3>
-      <p class="whose" id="today-theirs"></p>
-      <div id="today-actual"></div>
-    </div>
-  </div>
-  <div id="today-rest"></div>
-</section>
-
-<dl class="line" id="readout"></dl>
-
 <main id="body" hidden>
 
-  <section id="tape-section">
-    <div class="shead"><h2>The tale of the tape</h2><span class="tag" id="tape-tag"></span></div>
-    <p class="lede" id="tape-lede"></p>
-    <div class="strip" id="odds-strip"></div>
-    <table class="tape">
-      <thead><tr>
-        <th>Category</th><th id="tape-us">Us</th><th id="tape-them">Them</th>
-        <th>Odds</th><th class="bar"></th>
-      </tr></thead>
-      <tbody id="tape"></tbody>
-      <tfoot><tr>
-        <td>Expected categories</td><td colspan="2"></td>
-        <td class="odds" id="tape-total"></td><td class="bar"></td>
-      </tr></tfoot>
-    </table>
+  <!-- 2. The nine as a pulse: three bands, named in words, the swing band in
+       the accent because that is the band tonight can move. -->
+  <section id="pulse-section">
+    <div class="shead"><h2>The nine</h2><span class="tag" id="pulse-tag"></span></div>
+    <div id="bands"></div>
+    <div id="cat-detail"></div>
+    <details class="disc" id="pulse-how">
+      <summary>How this is worked out</summary>
+      <div class="inside"><p class="lede" id="pulse-how-text"></p></div>
+    </details>
   </section>
 
-  <section>
-    <div class="shead"><h2>The days left</h2><span class="tag" id="days-tag"></span></div>
-    <div class="days" id="days"></div>
-    <p class="lede">An empty day is a slot nobody on the roster can fill that a free agent
-      could. It is the one thing the bar below is waived for.</p>
-    <div id="empty-days"></div>
-  </section>
-
-  <section>
-    <div class="shead"><h2>The plan</h2><span class="tag" id="plan-tag"></span></div>
-    <p class="lede" id="plan-lede"></p>
-    <div id="plan"></div>
-  </section>
-
-  <section>
-    <div class="shead"><h2>Every move considered</h2><span class="tag" id="moves-tag"></span></div>
-    <p class="lede" id="moves-lede"></p>
-    <div id="moves"></div>
-  </section>
-
-  <section>
-    <div class="shead"><h2>The season, as it stands</h2><span class="tag">no move made</span></div>
-    <div id="outlook"></div>
-  </section>
-
-  <section id="rest-section" hidden>
-    <div class="shead"><h2>Rest of season</h2><span class="tag" id="rest-tag"></span></div>
-    <p class="lede" id="rest-lede"></p>
-    <div class="scroll">
-      <table class="grid" id="rest-grid">
-        <thead><tr id="rest-head"></tr></thead>
-        <tbody id="rest-weeks"></tbody>
-      </table>
+  <!-- 3. Tonight. Who plays, ours and theirs, and the one thing in the set
+       lineup worth fixing -- when there is one. When there is not, there is
+       no block, and the absence is the message. -->
+  <section id="tonight-section" hidden>
+    <div class="shead"><h2>Tonight</h2><span class="tag" id="tonight-tag"></span></div>
+    <p class="warnline" id="today-fix" hidden></p>
+    <p class="lede" id="tonight-lede"></p>
+    <div class="two" id="tonight-grids">
+      <div class="side">
+        <p class="sideline" id="ours-line">Yours <span class="n"></span></p>
+        <ul class="tonight" id="tonight-ours"></ul>
+      </div>
+      <div class="side">
+        <p class="sideline" id="theirs-line">Theirs <span class="n"></span></p>
+        <ul class="tonight" id="tonight-theirs"></ul>
+      </div>
     </div>
-    <div id="rest-finish"></div>
+    <div class="disclist">
+      <details class="disc" id="tonight-rest">
+        <summary>Not playing <span class="n" id="tonight-rest-n"></span></summary>
+        <div class="inside"><ul class="tonight" id="tonight-idle"></ul></div>
+      </details>
+      <details class="disc">
+        <summary>As I would set it, against as it is set</summary>
+        <div class="inside">
+          <div class="two">
+            <div class="side">
+              <h3>As we would set it</h3>
+              <p class="whose" id="today-ours"></p>
+              <div id="today-lineup"></div>
+            </div>
+            <div class="side">
+              <h3>As it is set</h3>
+              <p class="whose" id="today-theirs"></p>
+              <div id="today-actual"></div>
+            </div>
+          </div>
+          <div id="today-bench"></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 4. The read: at most three moves, each with its number, what it moves
+       and what it costs. Everything under the bar is under More, labelled,
+       never hidden. -->
+  <section id="read-section">
+    <div class="shead"><h2>The read</h2><span class="tag" id="read-tag"></span></div>
+    <p class="lede" id="read-lede"></p>
+    <div id="read"></div>
+    <details class="disc" id="read-how">
+      <summary>How this is worked out</summary>
+      <div class="inside"><p class="lede" id="read-how-text"></p></div>
+    </details>
+  </section>
+
+  <!-- 5. The schedule: the period across, both sides down, a real table. -->
+  <section id="sched-section">
+    <div class="shead"><h2>Schedule</h2><span class="tag" id="sched-tag"></span></div>
+    <div class="scroll"><table class="sched" id="sched">
+      <thead><tr id="sched-head"></tr></thead>
+      <tbody id="sched-body"></tbody>
+    </table></div>
+    <div id="day-detail"></div>
+    <details class="disc" id="sched-how">
+      <summary>How this is worked out</summary>
+      <div class="inside"><p class="lede" id="sched-how-text"></p></div>
+    </details>
+  </section>
+
+  <!-- 6. What changed: only when the window holds something worth the eye. -->
+  <section id="changed-section" hidden>
+    <div class="shead"><h2>What changed</h2><span class="tag" id="changed-tag"></span></div>
+    <div id="changed-body"></div>
+    <details class="disc" id="changed-rest" hidden>
+      <summary>Everything else in the window <span class="n" id="changed-rest-n"></span></summary>
+      <div class="inside"><div id="changed-quiet"></div></div>
+    </details>
+  </section>
+
+  <!-- 7. The season, in one line, with the forecast's own record under it. -->
+  <section id="season-section" hidden>
+    <div class="shead"><h2>Season</h2><span class="tag" id="season-tag"></span></div>
+    <p class="standing" id="standing"></p>
+    <p class="smallnote" id="season-note"></p>
+    <details class="disc" id="season-weeks">
+      <summary>Week by week <span class="n" id="season-weeks-n"></span></summary>
+      <div class="inside">
+        <p class="lede" id="rest-lede"></p>
+        <div class="scroll">
+          <table class="grid" id="rest-grid">
+            <thead><tr id="rest-head"></tr></thead>
+            <tbody id="rest-weeks"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- 8. More: everything the page used to show at once, a tap away. -->
+  <section id="more-section">
+    <div class="shead"><h2>More</h2><span class="tag">nothing is gone</span></div>
+    <div class="disclist">
+      <details class="disc" id="more-moves">
+        <summary>Every move considered <span class="n" id="more-moves-n"></span></summary>
+        <div class="inside">
+          <p class="lede" id="moves-lede"></p>
+          <div id="moves"></div>
+        </div>
+      </details>
+      <details class="disc" id="more-finish" hidden>
+        <summary>Where the season finishes</summary>
+        <div class="inside"><div id="rest-finish"></div></div>
+      </details>
+      <details class="disc">
+        <summary>With a move and without</summary>
+        <div class="inside"><div id="outlook"></div></div>
+      </details>
+      <details class="disc">
+        <summary>The week's standing figures</summary>
+        <div class="inside"><dl class="line" id="readout"></dl></div>
+      </details>
+      <details class="disc" id="more-how">
+        <summary>How this is worked out</summary>
+        <div class="inside"><div id="provenance"></div></div>
+      </details>
+      <details class="disc">
+        <summary>Elsewhere</summary>
+        <div class="inside"><p class="lede" id="elsewhere"></p></div>
+      </details>
+    </div>
   </section>
 
 </main>
@@ -112,29 +197,189 @@
 <script>
 "use strict";
 
-/* The streaming report as a page: everything `scripts/stream.py` prints, in
-   the same words and the same order. Two fetches, the report and the page
-   context; the report is the slow one, because it searches the wire.
+/* The week page, as a game sheet: the answer, then the evidence, then the
+   model (docs/in_season_pages.md, "The game sheet").
 
-   It is not reloaded on an interval. A report over a real season takes the
-   better part of half a minute to build, so a page that refetched itself
-   every minute would spend its life loading; the footnote says when this
-   answer was built instead, and the reader reloads. */
+   Nothing the page used to show has gone. The matchup, the nine and tonight
+   are the answer and are drawn at once; the numbers behind each of them are
+   one tap away in that section; the whole of the old page -- every move
+   considered, the standing figures, the rest of the season and the
+   calibration text -- is under More, verbatim from the payload.
+
+   Four fetches at once, and two more that need an answer first. The week is
+   the slow one, because it searches the whole wire, so the day's own seating
+   is drawn before it and the week fills in underneath. It is not reloaded on
+   an interval: the footnote says when this answer was built and the reader
+   reloads. */
 
 const WHERE = place();
 let CONTEXT = null;
+let REPORT = null;
+/* Both sides' stored daily lineups for the period, indexed by day, which is
+   what the schedule sheet and the other side of Tonight are drawn from. */
+const SET_LINEUPS = { us: null, them: null };
 
-/* ---- Today: the day's lineup -------------------------------------------
-   `app/pickups/today.py` through /teams/{id}/today, which is the same
-   seating the week below is projected from, for one day, with the places
-   named. It is the first thing on the page because it is the first thing
-   the manager does.
+/* ---- the bands ----------------------------------------------------------
+   Where the nine are split for the eye. A display choice, not a model claim:
+   every cell prints its own chance and opens the two totals behind it, and
+   nothing in the report knows these numbers exist. */
+const BAND_YOURS = 0.65;
+const BAND_THEIRS = 0.35;
 
+/** Which band a chance falls in. An unknown chance is a swing: it is the
+ *  band that says "this is not settled", which is true of a missing one. */
+const bandOf = (p) => (!isNum(p) ? "swing" : p >= BAND_YOURS ? "yours" : p <= BAND_THEIRS ? "theirs" : "swing");
+
+const BAND_WORDS = {
+  yours: ["Likely yours", `at or over ${Math.round(BAND_YOURS * 100)}%`],
+  swing: ["Swing", `${Math.round(BAND_THEIRS * 100)}–${Math.round(BAND_YOURS * 100)}%`],
+  theirs: ["Likely theirs", `at or under ${Math.round(BAND_THEIRS * 100)}%`],
+};
+
+/** A bye: the schema carries no `on_bye`, only an opponent that is null. */
+const onBye = (report) => report.opponent_espn_team_id === null;
+
+const nameOf = (id) => {
+  const found = ((CONTEXT && CONTEXT.teams) || []).find((t) => t.espn_team_id === id);
+  return found ? found.name : id === null || id === undefined ? "nobody" : `team ${id}`;
+};
+
+/** A tip-off in the reader's own zone. The payload carries the moment, never
+ *  a clock, because the same report is read in three of them. */
+function tipOff(iso) {
+  if (!iso) return "";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/* ---- the matchup -------------------------------------------------------- */
+
+function drawMatchup(report) {
+  const us = nameOf(report.espn_team_id);
+  const them = onBye(report) ? null : nameOf(report.opponent_espn_team_id);
+  const days = report.scoring_periods_remaining || [];
+  const first = days.length ? days[0] : report.matchup_period;
+  const last = days.length ? days[days.length - 1] : first;
+  document.title = `${us} — the week`;
+  $("title").textContent = us;
+  $("eyebrow").textContent = `{{brand}} · ${WHERE.season} · matchup period ${report.matchup_period}`;
+  $("versus").innerHTML =
+    them === null ? "On a <b>bye</b> this period" : `vs <b>${escape(them)}</b>`;
+  $("when").textContent =
+    (CONTEXT && CONTEXT.today_date ? `${dayName(CONTEXT.today_date)} · ` : "") +
+    `day ${first} of ${first}–${last}`;
+
+  $("tale").hidden = false;
+  $("days-left").innerHTML =
+    `${days.length}<span class="unit">${days.length === 1 ? "day to play" : "days to play"}</span>`;
+  if (onBye(report)) {
+    $("score-us").textContent = dash;
+    $("score-them").textContent = dash;
+    $("split-bar").style.width = "0%";
+    $("ends-us").textContent = us;
+    $("ends-them").textContent = "no head-to-head";
+    return;
+  }
+  const ours = report.expected_wins;
+  const theirs = isNum(ours) ? 9 - ours : undefined;
+  $("score-us").textContent = fixed(ours, 2);
+  $("score-them").textContent = fixed(theirs, 2);
+  $("split-bar").style.width = `${isNum(ours) ? Math.round((ours / 9) * 100) : 0}%`;
+  $("ends-us").textContent = us;
+  $("ends-them").textContent = them;
+}
+
+/* ---- the nine ----------------------------------------------------------- */
+
+function bandHtml(which, cats, probabilities) {
+  const [word, range] = BAND_WORDS[which];
+  const cells = cats
+    .map((cat) => {
+      const p = probabilities ? probabilities[cat] : undefined;
+      return (
+        `<button type="button" data-cat="${escape(cat)}" aria-expanded="false" ` +
+        `aria-controls="cat-detail">` +
+        `<span class="lab">${escape(cat)}</span><b>${pct(p)}</b></button>`
+      );
+    })
+    .join("");
+  return (
+    `<div class="band ${which}">` +
+    `<p class="blab">${escape(word)} <span class="n">${escape(range)}</span></p>` +
+    (cats.length
+      ? `<div class="pulse">${cells}</div>`
+      : `<p class="empty bandempty">None this week.</p>`) +
+    `</div>`
+  );
+}
+
+function drawBands(report) {
+  if (onBye(report)) {
+    $("pulse-tag").textContent = "on a bye";
+    $("bands").innerHTML =
+      `<p class="empty">On a bye this period: there is no head-to-head to win a category in.</p>`;
+    $("pulse-how-text").textContent =
+      "A bye is a week with no opponent, so there is nothing to give a chance to.";
+    return;
+  }
+  const probabilities = report.probabilities || {};
+  const grouped = { yours: [], swing: [], theirs: [] };
+  CATS.forEach((cat) => grouped[bandOf(probabilities[cat])].push(cat));
+  $("pulse-tag").textContent = `${grouped.swing.length} in the balance`;
+  $("bands").innerHTML =
+    bandHtml("swing", grouped.swing, probabilities) +
+    bandHtml("yours", grouped.yours, probabilities) +
+    bandHtml("theirs", grouped.theirs, probabilities);
+  $("bands")
+    .querySelectorAll("button[data-cat]")
+    .forEach((button) => {
+      button.onclick = () => pickCategory(button);
+    });
+  $("pulse-how-text").innerHTML =
+    "Each side's week is what it has posted plus what its roster projects to add over the days " +
+    "left; the chance is head to head, not against the field. The three bands are where this " +
+    `page splits them for the eye — <b>${Math.round(BAND_YOURS * 100)}%</b> and ` +
+    `<b>${Math.round(BAND_THEIRS * 100)}%</b> — and are a choice about ink, not a claim the ` +
+    "model makes. Tap a category for both sides' totals.";
+}
+
+/** One category opened: the two projected totals and the chance, which are
+ *  the numbers the old tale of the tape printed nine rows of at once. */
+function pickCategory(button) {
+  const cat = button.dataset.cat;
+  const open = button.getAttribute("aria-expanded") === "true";
+  $("bands")
+    .querySelectorAll("button[data-cat]")
+    .forEach((each) => each.setAttribute("aria-expanded", "false"));
+  if (open || !REPORT) {
+    $("cat-detail").innerHTML = "";
+    return;
+  }
+  button.setAttribute("aria-expanded", "true");
+  const p = REPORT.probabilities ? REPORT.probabilities[cat] : undefined;
+  const us = nameOf(REPORT.espn_team_id);
+  const them = onBye(REPORT) ? dash : nameOf(REPORT.opponent_espn_team_id);
+  const width = isNum(p) ? Math.round(p * 100) : 0;
+  $("cat-detail").innerHTML =
+    `<div class="catbox"><p class="cn">${escape(cat)}</p>` +
+    `<dl class="facts">` +
+    `<dt>${escape(us)}</dt><dd>${showCat(cat, totalOf(REPORT.projected, cat))}</dd>` +
+    `<dt>${escape(them)}</dt>` +
+    `<dd>${showCat(cat, totalOf(REPORT.opponent_projected, cat))}</dd>` +
+    `<dt>Chance</dt><dd>${pct(p)}</dd>` +
+    `</dl>` +
+    `<span class="split"><i style="width:${width}%"></i><u></u></span>` +
+    `<p class="note">The other side is our estimate of their side, on the roster they hold.` +
+    `${INVERTED.has(cat) ? " Fewer wins this one." : ""}</p></div>`;
+}
+
+/* ---- tonight ------------------------------------------------------------
    Every name is a trigger for the shared player card (`cardName` and
-   `wireCards`, shell.js): the same card the trades page hangs off a name,
-   so what it says about a man here is what it says about him there. Each
-   block calls `wireCards` after its own innerHTML, because the card is
-   attached to elements and not delegated from the document. */
+   `wireCards`, shell.js): the same card the trades page hangs off a name, so
+   what it says about a man here is what it says about him there. Each block
+   calls `wireCards` after its own innerHTML, because the card is attached to
+   elements and not delegated from the document. */
 
 const playerName = (player) =>
   player ? cardName(player.espn_player_id, `<b>${escape(player.name)}</b>`) : dash;
@@ -154,6 +399,53 @@ function statusCell(player) {
   return (
     `<span class="flag">${escape(player.injury_status || "injured")}` +
     `${back ? `, back ${dayName(back)}` : ""}</span>`
+  );
+}
+
+/** What ESPN says about a man tonight, as a word and a tone. `status` and
+ *  `plays` are the payload's; nothing here decides anything about him. */
+function standing(player) {
+  if (player.status === "ir") return ["injured reserve", "out"];
+  if (player.injury_status) {
+    const word = String(player.injury_status).replace(/_/g, " ").toLowerCase();
+    if (word === "active") return player.plays ? ["active", "on"] : ["no game", ""];
+    return [word, word === "out" || word === "suspension" ? "out" : "doubt"];
+  }
+  if (!player.plays) return player.game ? ["out", "out"] : ["no game", ""];
+  return ["active", "on"];
+}
+
+/** One man of tonight: his name, his mark and his game, and his standing. */
+function tonightRow(player, extra) {
+  const [word, tone] = standing(player);
+  const mark = [player.pro_team, player.position].filter(Boolean).join(" · ");
+  const game = player.game
+    ? [player.game.describe, tipOff(player.game.at)].filter(Boolean).join(" · ")
+    : "no game";
+  const bits = [
+    mark ? `<span class="team">${escape(mark)}</span>` : "",
+    escape(game),
+    extra || "",
+  ].filter(Boolean);
+  return (
+    `<li class="${tone === "on" ? "" : "off"}">` +
+    `<span class="who">${playerName(player)}</span>` +
+    `<span class="st ${tone}">${tone === "on" ? "&#9679; " : ""}${escape(word)}</span>` +
+    `<span class="meta">${bits.join(" &middot; ")}</span></li>`
+  );
+}
+
+/** Their side, from the lineups the ingest stored for the day: who they have
+ *  in a starting place tonight. A fact, not a projection -- what the page
+ *  estimates about them is the totals in the nine, and says so there. */
+function theirRow(slot) {
+  const hurt = slot.injury_status && String(slot.injury_status).toUpperCase() !== "ACTIVE";
+  const word = hurt ? String(slot.injury_status).replace(/_/g, " ").toLowerCase() : "";
+  return (
+    `<li class="one ${hurt ? "off" : ""}">` +
+    `<span class="who"><span class="team">${escape(slot.slot)}</span>` +
+    `${cardName(slot.player_id, `<b>${escape(slot.player_name)}</b>`)}</span>` +
+    `<span class="st ${hurt ? "doubt" : ""}">${escape(word)}</span></li>`
   );
 }
 
@@ -194,10 +486,10 @@ function benchHtml(report) {
         `<td class="why">${why}</td></tr>`,
     );
   });
-  // No reason beside a man with no game: the middle column has already
-  // said it, and eight rows of the same sentence is eight rows of noise.
-  // He still opens a card, because "should I have held him" is the next
-  // question after "he is not playing".
+  // No reason beside a man with no game: the middle column has already said
+  // it, and eight rows of the same sentence is eight rows of noise. He still
+  // opens a card, because "should I have held him" is the next question
+  // after "he is not playing".
   [...(report.idle || []), ...(report.injured_reserve || [])].forEach((player) => {
     rows.push(
       `<tr><td class="name">${cardName(player.espn_player_id, escape(player.name), "faint")}</td>` +
@@ -213,7 +505,7 @@ function benchHtml(report) {
   );
 }
 
-/** The one thing here stated as a mistake. */
+/** The one thing here stated as a mistake, in the words it has always used. */
 function fixHtml(report) {
   const fix = report.fix || [];
   if (!fix.length) return "";
@@ -233,34 +525,67 @@ function fixHtml(report) {
   );
 }
 
-function drawToday(report) {
-  const section = $("today-section");
+/** A man on the bench with a game the set lineup has room for is the other
+ *  kind of lineup decision, and the block appears for either. */
+function benchedAlert(report) {
+  const benched = (report.benched || []).filter((one) => one.player && one.player.plays);
+  if (!benched.length) return "";
+  return (
+    `On the bench with a game: ` +
+    benched.map((one) => `<b>${escape(one.player.name)}</b>`).join(", ") +
+    `. Your lineup fills ${count(report.actual_starts, "place")} tonight; ` +
+    `this roster can fill ${report.starts}.`
+  );
+}
+
+function drawTonight(report) {
+  const section = $("tonight-section");
   if (!report) {
     section.hidden = true;
     return;
   }
   section.hidden = false;
   const when = report.calendar_date ? dayName(report.calendar_date) : `day ${report.today}`;
-  $("today-tag").textContent = `day ${report.today}`;
-  $("today-fix").hidden = true;
+  $("tonight-tag").textContent = `${when} · day ${report.today}`;
 
   if (report.teams_playing === 0) {
     // The All-Star break. Ten rows of "nobody" would be ten rows of noise.
-    $("today-lede").innerHTML =
-      `<b>${escape(when)}</b>: no NBA team plays, so there is no lineup to set.`;
-    $("today-grids").hidden = true;
-    $("today-rest").innerHTML = "";
+    $("tonight-lede").innerHTML = `No NBA team plays, so there is no lineup to set.`;
+    $("tonight-grids").hidden = true;
+    $("today-fix").hidden = true;
+    $("tonight-rest").hidden = true;
     return;
   }
-  $("today-grids").hidden = false;
-  $("today-lede").innerHTML =
-    `<b>${escape(when)}</b>. ${count(report.teams_playing, "NBA team")} play; this roster can ` +
-    `fill <b>${report.starts}</b> of ${report.lineup.length} places. Ideas, not instructions — ` +
-    `the manager sets the lineup.`;
+  $("tonight-grids").hidden = false;
+  $("tonight-lede").textContent = "";
+
+  const playing = [
+    ...(report.lineup || []).filter((seat) => seat.player).map((seat) => seat.player),
+    ...(report.benched || []).map((one) => one.player),
+  ];
+  $("ours-line").innerHTML =
+    `Yours <span class="n">${report.starts} of ${report.lineup.length} places filled</span>`;
+  $("tonight-ours").innerHTML = playing.length
+    ? playing.map((player) => tonightRow(player)).join("")
+    : `<li class="off"><span class="who">Nobody of yours plays tonight.</span></li>`;
+  wireCards($("tonight-ours"));
+
+  const idle = [...(report.idle || []), ...(report.injured_reserve || [])];
+  $("tonight-rest").hidden = !idle.length;
+  $("tonight-rest-n").textContent = count(idle.length, "man", "men");
+  $("tonight-idle").innerHTML = idle.map((player) => tonightRow(player)).join("");
+  wireCards($("tonight-idle"));
+
+  // The lineup block appears only when the day's own report says there is a
+  // decision in it. When there is not, there is no block, and that is the
+  // answer: the lineup is as good as this roster can make it.
+  const alert = [fixHtml(report), benchedAlert(report)].filter(Boolean).join("<br>");
+  $("today-fix").innerHTML = alert;
+  $("today-fix").hidden = !alert;
+
   $("today-ours").textContent = `${report.starts} of ${report.lineup.length} places`;
   $("today-lineup").innerHTML = lineupHtml(report.lineup, "nobody can fill it");
   wireCards($("today-lineup"));
-
   if (!report.actual_known) {
     $("today-theirs").textContent = "not stored yet";
     $("today-actual").innerHTML =
@@ -272,23 +597,38 @@ function drawToday(report) {
     $("today-actual").innerHTML = lineupHtml(report.actual, "left unset");
     wireCards($("today-actual"));
   }
-
-  const fix = fixHtml(report);
-  if (fix) {
-    $("today-fix").innerHTML = fix;
-    $("today-fix").hidden = false;
-  }
-  $("today-rest").innerHTML = benchHtml(report);
-  wireCards($("today-rest"));
+  $("today-bench").innerHTML = benchHtml(report);
+  wireCards($("today-bench"));
 }
 
-/** A bye: the schema carries no `on_bye`, only an opponent that is null. */
-const onBye = (report) => report.opponent_espn_team_id === null;
+/** Their half of Tonight, once the week has named the opponent and their
+ *  stored day has come back. Their men carry no game and no tip-off: the
+ *  lineups route is what the ingest wrote down, and the rest of what is
+ *  known about a man is in his card. */
+function drawTheirTonight(day) {
+  const them = SET_LINEUPS.them;
+  const name = REPORT && !onBye(REPORT) ? nameOf(REPORT.opponent_espn_team_id) : null;
+  if (name === null) {
+    $("theirs-line").innerHTML = `Theirs <span class="n">on a bye</span>`;
+    $("tonight-theirs").innerHTML = `<li class="off"><span class="who">No opponent this
+      period.</span></li>`;
+    return;
+  }
+  const rows = them === null ? null : them.get(day) || [];
+  if (rows === null) {
+    $("theirs-line").innerHTML = `${escape(name)} <span class="n">reading…</span>`;
+    return;
+  }
+  $("theirs-line").innerHTML =
+    `${escape(name)} <span class="n">${count(rows.length, "place")} set</span>`;
+  $("tonight-theirs").innerHTML = rows.length
+    ? rows.map(theirRow).join("")
+    : `<li class="off"><span class="who">Their lineup for tonight has not been read from ESPN
+       yet.</span></li>`;
+  wireCards($("tonight-theirs"));
+}
 
-const nameOf = (id) => {
-  const found = (CONTEXT && CONTEXT.teams || []).find((t) => t.espn_team_id === id);
-  return found ? found.name : (id === null || id === undefined ? "nobody" : `team ${id}`);
-};
+/* ---- the read ----------------------------------------------------------- */
 
 /** add X / drop Y, in the words the CLI uses. */
 function describe(move, today) {
@@ -296,14 +636,15 @@ function describe(move, today) {
   if (move.kind === "add") return `${add}, into the open place`;
   if (move.kind === "ir_move" && move.to_ir) return `${add}, ${escape(move.to_ir.name)} to IR`;
   if (move.drop) {
-    return `${add}, drop <b>${escape(move.drop.name)}</b>` +
-      ` (${move.drop_starts} of ${move.drop.games_remaining})`;
+    return (
+      `${add}, drop <b>${escape(move.drop.name)}</b>` +
+      ` (${move.drop_starts} of ${move.drop.games_remaining})`
+    );
   }
   return add;
 }
 
-/** One move, as a block with a rule over it. `rank` is null in the plan,
-    where the order is the order to make them in and is numbered anyway. */
+/** One move, as a block with a rule over it, for the list under More. */
 function moveHtml(move, today, options) {
   const opts = options || {};
   const notes = [];
@@ -323,197 +664,341 @@ function moveHtml(move, today, options) {
     `<span class="net ${move.net >= 0 ? "up" : "down"}">${signed(move.net, 3)}</span>` +
     `</div>` +
     judged(move.judgement) +
-    (move.moved && move.moved.length
-      ? `<div class="strip">${shiftStrip(move.moved)}</div>`
-      : "") +
+    (move.moved && move.moved.length ? `<div class="strip">${shiftStrip(move.moved)}</div>` : "") +
     (notes.length ? `<p class="note">${notes.join(" &middot; ")}</p>` : "") +
     `</article>`
   );
 }
 
-function drawMasthead(report) {
-  const us = nameOf(report.espn_team_id);
-  const them = report.opponent_espn_team_id === null ? null : nameOf(report.opponent_espn_team_id);
-  const days = report.scoring_periods_remaining || [];
-  const first = days.length ? days[0] : report.matchup_period;
-  const last = days.length ? days[days.length - 1] : first;
-  document.title = `${us} — the week`;
-  $("title").textContent = us;
-  $("eyebrow").textContent =
-    `{{brand}} · ${WHERE.season} · matchup period ${report.matchup_period}`;
-  $("sub").innerHTML =
-    (them === null
-      ? "On a <b>bye</b> this period, so there is no head-to-head to play for. "
-      : `Against <b>${escape(them)}</b>. `) +
-    `Day <b>${first}</b>${CONTEXT && CONTEXT.today_date ? ` (${dayName(CONTEXT.today_date)})` : ""}, ` +
-    `days ${first}–${last} left — <b>${count(days.length, "day")}</b> to play. ` +
-    `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
-  $("tape-us").textContent = us;
-  $("tape-them").textContent = them === null ? "—" : them;
+/** The categories a move helps and the ones it costs, as two lists of names
+ *  rather than nine numbers. The numbers are still under "See why". */
+function movedWords(moved) {
+  const up = (moved || []).filter((s) => s.delta > 0.005).map((s) => s.abbreviation);
+  const down = (moved || []).filter((s) => s.delta < -0.005).map((s) => s.abbreviation);
+  const parts = [];
+  if (up.length) parts.push(`<span class="up"><span class="w">helps</span>${up.join(" · ")}</span>`);
+  if (down.length)
+    parts.push(`<span class="down"><span class="w">costs</span>${down.join(" · ")}</span>`);
+  return parts.length ? parts.join(" &nbsp; ") : `<span class="w">moves nothing by a point</span>`;
 }
 
-function drawReadout(report) {
-  const money = faab(report);
-  const cells = [
-    ["Expected wins", `${fixed(report.expected_wins, 2)}<small> of 9</small>`,
-      onBye(report) ? "" : "hi"],
-    ["Days left", count(report.scoring_periods_remaining.length, "day"), ""],
-    ["Adds left", `${report.adds_left}<small> of ${report.adds_budget}, ` +
-      `${report.adds_used} used</small>`, report.adds_left === 0 ? "warn" : ""],
-    ["FAAB", `${money.value}<small> ${escape(money.note)}</small>`,
-      report.faab_overspent ? "warn" : ""],
-    ["Open places", `${report.open_slots}<small> IR slot ` +
-      `${report.ir_slot_free ? "free" : "used or none"}</small>`, ""],
-    ["The wire", `${report.pool_size}<small> free agents evaluated, ` +
-      `${escape(wire(report))}</small>`, report.historical_wire ? "caution" : ""],
-  ];
-  $("readout").innerHTML = cells
-    .map(([label, value, cls]) =>
-      `<div class="${cls}"><dt>${escape(label)}</dt><dd>${value}</dd></div>`)
-    .join("");
+/** One of the three: the deal, the number, what it moves, what it costs. */
+function readHtml(move, today, index) {
+  const bid = move.bid && move.bid.sample ? move.bid : null;
+  const meta = [
+    `${move.add_starts} of ${move.add.games_remaining} games left`,
+    bid
+      ? `bid $${bid.amount} (the ${escape(bid.basis)} of rank ${escape(bid.bucket)}, ` +
+        `$${bid.low}–$${bid.high})`
+      : move.bid
+        ? `bid: nothing to go on`
+        : "",
+    move.fills_empty_day ? "fills an empty day" : "",
+    waiverNote(move.add, today).replace(/^, /, ""),
+  ].filter(Boolean);
+  const drop = move.drop
+    ? `<span class="verb">Drop</span> ${cardName(move.drop.espn_player_id, `<b>${escape(move.drop.name)}</b>`)}`
+    : move.kind === "ir_move" && move.to_ir
+      ? `<span class="verb">To IR</span> ${cardName(move.to_ir.espn_player_id, `<b>${escape(move.to_ir.name)}</b>`)}`
+      : `<span class="verb">Into</span> the open place`;
+  return (
+    `<article class="read${index === 0 ? " top" : ""}">` +
+    `<p class="deal"><span class="verb">Add</span> ` +
+    `${cardName(move.add.espn_player_id, `<b>${escape(move.add.name)}</b>`)}` +
+    `<span class="faint">·</span>${drop}` +
+    `<span class="num ${move.net >= 0 ? "up" : "down"}">${signed(move.net, 2)}` +
+    `<span class="unit">categories</span></span></p>` +
+    `<p class="moves">${movedWords(move.moved)}</p>` +
+    `<p class="meta">${meta.join(" &middot; ")}</p>` +
+    `<details class="disc"><summary>See why</summary><div class="inside">` +
+    judged(move.judgement) +
+    (move.moved && move.moved.length
+      ? `<div class="strip">${shiftStrip(move.moved)}</div>`
+      : "") +
+    (move.bid ? `<p class="note">${bidNote(move.bid)}</p>` : "") +
+    `</div></details>` +
+    `</article>`
+  );
 }
 
-function drawTape(report) {
-  const section = $("tape-section");
-  if (onBye(report)) {
-    section.hidden = true;
-    return;
-  }
-  const ours = report.projected || {};
-  const theirs = report.opponent_projected || {};
-  $("tape-tag").textContent = "as things stand";
-  $("tape-lede").innerHTML =
-    "Each side's week is what it has posted plus what its roster projects to add over the " +
-    "days left. The odds are head to head, not against the field.";
-  $("odds-strip").innerHTML = probabilityStrip(report.probabilities);
-  $("tape").innerHTML = CATS.map((cat) => {
-    const p = report.probabilities ? report.probabilities[cat] : undefined;
-    const better = INVERTED.has(cat) ? "behind" : "ahead";
-    const cls = !isNum(p) ? "" : p >= 0.55 ? "ahead" : p <= 0.45 ? "behind" : "";
-    return (
-      `<tr class="${cls}"><td class="cat">${escape(cat)}</td>` +
-      `<td>${showCat(cat, totalOf(ours, cat))}</td>` +
-      `<td>${showCat(cat, totalOf(theirs, cat))}</td>` +
-      `<td class="odds">${pct(p)}</td>` +
-      `<td class="bar"><span><i style="width:${isNum(p) ? Math.round(p * 100) : 0}%"></i>` +
-      `<u></u></span></td></tr>`
-    );
-  }).join("");
-  $("tape-total").textContent = `${fixed(report.expected_wins, 2)} of 9`;
-}
+/** How many of the plan are shown before More takes over. */
+const READ_SHOWN = 3;
 
-function drawDays(report) {
-  const period = CONTEXT && CONTEXT.period;
-  const empty = new Map((report.empty_days || []).map((d) => [d.scoring_period, d]));
-  $("days-tag").textContent = period
-    ? `period ${period.period}, days ${period.first_scoring_period}–${period.final_scoring_period}`
-    : "";
-  $("days").innerHTML = (period ? period.days : []).map((day) => {
-    const classes = [day.played ? "past" : "", day.today ? "now" : "",
-      empty.has(day.scoring_period) ? "gap" : ""].filter(Boolean).join(" ");
-    return `<div class="${classes}"><span class="d">${escape(dayName(day.calendar_date))}</span>` +
-      `<span class="n">${day.scoring_period}</span></div>`;
-  }).join("");
-
-  const days = report.empty_days || [];
-  $("empty-days").innerHTML = days.length
-    ? days.map((day) => {
-        const fillers = day.fillers || [];
-        const named = fillers.slice(0, 4).map((p) => escape(p.name)).join(", ");
-        const more = fillers.length > 4 ? ` and ${fillers.length - 4} more` : "";
-        return `<article class="move"><div class="head">` +
-          `<span class="what">Day ${day.scoring_period} — ` +
-          `${escape((day.empty_slots || []).join(", "))} empty</span></div>` +
-          `<p class="why">${fillers.length ? `${named}${more} could fill it.`
-            : "Nobody on the wire can fill it."}</p></article>`;
-      }).join("")
-    : `<p class="empty">No empty days: the lineup fills every slot it can, every day left.</p>`;
-}
-
-function drawPlan(report) {
+function drawRead(report) {
   const plan = report.recommended || [];
+  const today = report.scoring_periods_remaining[0];
   const hurdle = `${fixed(report.hurdle, 2)} categories, or an empty day filled`;
+  $("read-tag").textContent = `bar: ${fixed(report.hurdle, 2)} categories`;
+  $("read-how-text").innerHTML =
+    `A move's number is this week plus the change in an ordinary week from here on, over the ` +
+    `${fixed(report.outlook.weeks_remaining, 1)} weeks left — the net, in categories. The bar is ` +
+    `<b>${hurdle}</b>, from ${escape(report.hurdle_source)}: ${escape(report.hurdle_note)}. ` +
+    `Each move is found against the roster the one before it leaves, so the order is the order ` +
+    `to make them in. What did not clear the bar is under More, marked, not hidden. ` +
+    `Nothing here touches ESPN.`;
+
   if (onBye(report)) {
-    $("plan-tag").textContent = "on a bye";
-    $("plan-lede").textContent = "Nothing is ranked on a bye: there is no matchup to move.";
-    $("plan").innerHTML = "";
+    $("read-lede").textContent = "Nothing is ranked on a bye: there is no matchup to move.";
+    $("read").innerHTML = "";
     return;
   }
   if (report.adds_left === 0) {
-    $("plan-tag").textContent = "no adds left";
-    $("plan-lede").innerHTML =
-      `No adds are left this period (${report.adds_used} of ${report.adds_budget} used), so ` +
-      `there is nothing to plan today; the moves below are what the wire offers. ` +
-      `Projected record either way: <b>${record(report.outlook.record_without)}</b>.`;
-    $("plan").innerHTML = "";
+    $("read-tag").textContent = "no adds left";
+    $("read-lede").innerHTML =
+      `No adds are left this period (${report.adds_used} of ${report.adds_budget} used). ` +
+      `Projected record either way: <b>${record(report.outlook.record_without)}</b>. ` +
+      `What the wire offers is under More.`;
+    $("read").innerHTML = "";
     return;
   }
   if (!plan.length) {
-    $("plan-tag").textContent = "the bar stands";
-    $("plan-lede").innerHTML =
+    $("read-tag").textContent = "the bar stands";
+    $("read-lede").innerHTML =
       `<b>${NOTHING_CLEARS}</b> (${hurdle}). Projected record either way: ` +
-      `<b>${record(report.outlook.record_without)}</b>.`;
-    $("plan").innerHTML = "";
+      `<b>${record(report.outlook.record_without)}</b>. Every move considered is under More.`;
+    $("read").innerHTML = "";
     return;
   }
-  const scarce = report.adds_left <= 2
-    ? ` ${count(report.adds_left, "add")} left this period.` : "";
-  $("plan-tag").textContent = `${WORTH_A_LOOK.toLowerCase()}, in order`;
-  $("plan-lede").innerHTML =
-    `<b>${WORTH_A_LOOK}</b>, in this order.${scarce} Each was found against the roster the one ` +
-    `before it leaves, so they stand on their own and the order is the order to make them in. ` +
-    `Ideas, not instructions — the bar is ${hurdle}.`;
-  $("plan").innerHTML = plan
-    .map((move, i) =>
-      moveHtml(move, report.scoring_periods_remaining[0],
-        { rank: plan.length > 1 ? i + 1 : null, over: true }))
+  const scarce =
+    report.adds_left <= 2 ? ` ${count(report.adds_left, "add")} left this period.` : "";
+  $("read-lede").innerHTML = `<b>${WORTH_A_LOOK}</b>, in this order.${scarce} Ideas, not
+    instructions — the manager decides.`;
+  $("read").innerHTML = plan
+    .slice(0, READ_SHOWN)
+    .map((move, i) => readHtml(move, today, i))
     .join("");
+  if (plan.length > READ_SHOWN) {
+    $("read").innerHTML +=
+      `<p class="meta mono faint">${count(plan.length - READ_SHOWN, "more move")} in the plan,` +
+      ` under More.</p>`;
+  }
+  wireCards($("read"));
 }
 
-function drawMoves(report) {
-  const moves = report.moves || [];
-  $("moves-tag").textContent = `bar: ${fixed(report.hurdle, 2)} categories`;
-  $("moves-lede").innerHTML =
-    "Everything legal the search found, best first, by net categories over both horizons. " +
-    "Each is marked against the bar, so what did not clear it is visible too. A move that " +
-    "<b>fills an empty day</b> clears the bar whatever its size, which is why one can clear " +
-    "it below another that did not.";
-  $("moves").innerHTML = moves.length
-    ? moves.map((move, i) =>
-        moveHtml(move, report.scoring_periods_remaining[0], { rank: i + 1, mark: true })).join("")
-    : `<p class="empty">No legal move: nobody on the wire can be added within the roster's
-       rules.</p>`;
+/* ---- the schedule -------------------------------------------------------
+   The period across and both sides down, from the lineups the ingest stored
+   (`/teams/{id}/lineups`): how many starting places each side has a man in
+   on each day. A day the roster cannot fill carries the mark the week report
+   puts on it, and tapping a day opens who is in those places. */
+
+function dayCell(day, which, empty) {
+  const rows = SET_LINEUPS[which];
+  const set = rows === null ? null : rows.get(day.scoring_period) || [];
+  const gap = which === "us" ? empty.get(day.scoring_period) : undefined;
+  const classes = [day.played ? "past" : "", day.today ? "now" : "", gap ? "gap" : ""]
+    .filter(Boolean)
+    .join(" ");
+  if (set === null || !set.length) {
+    return `<td class="${classes}"><span class="flat">${dash}</span></td>`;
+  }
+  const open = gap
+    ? `<span class="open">${(gap.empty_slots || []).length} open</span>`
+    : "";
+  return (
+    `<td class="${classes}"><button type="button" data-day="${day.scoring_period}" ` +
+    `data-side="${which}" aria-expanded="false" aria-controls="day-detail">` +
+    `${set.length}${open}</button></td>`
+  );
 }
 
-function drawOutlook(report) {
-  const o = report.outlook;
-  $("outlook").innerHTML =
-    `<article class="move"><div class="head"><span class="what">` +
-    `Projected to end <b>${record(o.record_without)}</b> in categories</span>` +
-    `<span class="net">${fixed(o.weeks_remaining, 1)} wks</span></div>` +
-    `<p class="why">Banked so far: <b>${record([o.banked_won, o.banked_lost])}</b> in settled ` +
-    `matchups, with ${fixed(o.weeks_remaining, 1)} weeks left after this one. A place on this ` +
-    `roster gives back <b>${fixed(o.replacement, 3)}</b> categories a week if it is vacated, ` +
-    `which is what every drop below is charged.</p></article>`;
+function drawSchedule(report) {
+  const period = CONTEXT && CONTEXT.period;
+  const days = period ? period.days : (report.scoring_periods_remaining || []).map((n) => ({
+    scoring_period: n,
+    calendar_date: null,
+    played: false,
+    today: n === report.scoring_periods_remaining[0],
+  }));
+  const empty = new Map((report.empty_days || []).map((d) => [d.scoring_period, d]));
+  $("sched-tag").textContent = period
+    ? `period ${period.period}, days ${period.first_scoring_period}–${period.final_scoring_period}`
+    : "";
+  $("sched-head").innerHTML =
+    `<th scope="col"><span class="sr">Side</span></th>` +
+    days
+      .map((day) => {
+        const classes = [day.played ? "past" : "", day.today ? "now" : ""]
+          .filter(Boolean)
+          .join(" ");
+        const label = day.calendar_date
+          ? dayName(day.calendar_date).split(" ")[0]
+          : `d${day.scoring_period}`;
+        return (
+          `<th scope="col" class="${classes}">${escape(label)}` +
+          `<span class="dn">${day.scoring_period}</span></th>`
+        );
+      })
+      .join("");
+  const them = onBye(report) ? null : nameOf(report.opponent_espn_team_id);
+  $("sched-body").innerHTML =
+    `<tr class="us"><th scope="row">You</th>` +
+    days.map((day) => dayCell(day, "us", empty)).join("") +
+    `</tr>` +
+    (them === null
+      ? ""
+      : `<tr><th scope="row">Them</th>` +
+        days.map((day) => dayCell(day, "them", empty)).join("") +
+        `</tr>`);
+  $("sched-body")
+    .querySelectorAll("button[data-day]")
+    .forEach((button) => {
+      button.onclick = () => pickDay(button, days, empty);
+    });
+  $("sched-how-text").innerHTML =
+    `Each cell is how many starting places that side has a man in on that day, from the lineups ` +
+    `the ingest has stored; a day it holds none for is an en dash. <b>Open</b> is a place ` +
+    `nobody on your roster can fill that a free agent could — the one thing the bar above is ` +
+    `waived for. Tap a day for who is in those places.`;
 }
 
-/* ---- Rest of season ------------------------------------------------------
+function pickDay(button, days, empty) {
+  const open = button.getAttribute("aria-expanded") === "true";
+  $("sched-body")
+    .querySelectorAll("button[data-day]")
+    .forEach((each) => each.setAttribute("aria-expanded", "false"));
+  if (open) {
+    $("day-detail").innerHTML = "";
+    return;
+  }
+  button.setAttribute("aria-expanded", "true");
+  const number = Number(button.dataset.day);
+  const day = days.find((each) => each.scoring_period === number);
+  const gap = empty.get(number);
+  const names = (which) => {
+    const rows = SET_LINEUPS[which];
+    const set = rows === null ? [] : rows.get(number) || [];
+    return set.length
+      ? set
+          .map(
+            (slot) =>
+              `${cardName(slot.player_id, escape(slot.player_name))} ` +
+              `<span class="faint mono">${escape(slot.slot)}</span>`,
+          )
+          .join(", ")
+      : `<span class="faint">not stored</span>`;
+  };
+  const them = REPORT && !onBye(REPORT) ? nameOf(REPORT.opponent_espn_team_id) : null;
+  const fillers = gap ? gap.fillers || [] : [];
+  const named = fillers.slice(0, 4).map((p) => escape(p.name)).join(", ");
+  const more = fillers.length > 4 ? ` and ${fillers.length - 4} more` : "";
+  $("day-detail").innerHTML =
+    `<div class="daybox"><p class="cn">` +
+    `${day && day.calendar_date ? dayName(day.calendar_date) : `Day ${number}`}` +
+    `<span class="faint"> · day ${number}</span></p>` +
+    `<p class="who">You</p><p class="names">${names("us")}</p>` +
+    (them === null ? "" : `<p class="who">${escape(them)}</p><p class="names">${names("them")}</p>`) +
+    (gap
+      ? `<p class="gapline"><b>${escape((gap.empty_slots || []).join(", "))}</b> nobody on this ` +
+        `roster can fill. ${fillers.length ? `${named}${more} could.` : "Nobody on the wire can."}</p>`
+      : "") +
+    `<p class="note">The places each side has a man in, as the ingest stored them.</p></div>`;
+  wireCards($("day-detail"));
+}
+
+/* ---- what changed -------------------------------------------------------
+   The league's news over the day on the page and the day before it, from the
+   same route and the same sentences the league's This week page and the
+   morning message use (`app/inseason/changes.py`). The section is here only
+   when the window holds something worth the eye: a man out, a doubt, a piece
+   of news, or a move that touched this matchup. Otherwise there is no
+   section, and the absence is the answer. */
+
+/** How far back the window reaches: the day on the page and the day before. */
+const CHANGED_DAYS = 2;
+/** A change at this severity or worse is worth the section (0 is a man ruled
+ *  out, 4 is a fact with nothing to do about). A display choice, like the
+ *  bands: the severity is the API's and nothing here re-ranks it. */
+const CHANGED_SEVERITY = 2;
+
+const CHANGE_WORDS = {
+  status: "injury",
+  minutes: "minutes",
+  ownership: "owned",
+  add: "add",
+  claim: "claim",
+  drop: "drop",
+  trade: "trade",
+  waiver_clear: "waivers",
+  lineup: "roster",
+};
+
+function changedLine(change) {
+  let html = escape(change.text);
+  for (const person of change.players || []) {
+    const mark = escape(person.name || "");
+    if (!mark || !person.espn_player_id) continue;
+    const at = html.indexOf(mark);
+    if (at < 0) continue;
+    html = html.slice(0, at) + cardName(person.espn_player_id, mark, "inline") + html.slice(at + mark.length);
+  }
+  const whose = change.mine ? " ours" : change.opponent ? " theirs" : "";
+  return (
+    `<li class="${whose.trim()}${change.severity === 0 ? " urgent" : ""}">` +
+    `<span class="what">${html}</span>` +
+    `<span class="kind">${escape(CHANGE_WORDS[change.kind] || change.kind)}</span></li>`
+  );
+}
+
+async function drawChanged(ours) {
+  if (!CONTEXT || !CONTEXT.today_date) return;
+  const until = new Date(`${CONTEXT.today_date}T00:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + 1);
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - CHANGED_DAYS);
+  const query = new URLSearchParams({ since: since.toISOString(), until: until.toISOString() });
+  if (ours !== null) query.set("team_id", String(ours));
+  const got = await get(
+    `/leagues/${WHERE.league}/seasons/${WHERE.season}/changes?${query.toString()}`,
+    { quiet: true },
+  );
+  if (!got.ok) return;
+  const all = got.body.items || [];
+  const worth = all.filter(
+    (change) => change.severity <= CHANGED_SEVERITY || change.mine || change.opponent,
+  );
+  if (!worth.length) return; // no section: the absence is the answer
+  const rest = all.filter((change) => !worth.includes(change));
+  $("changed-section").hidden = false;
+  $("changed-tag").textContent = `${CHANGED_DAYS} days`;
+  $("changed-body").innerHTML = `<ul class="feed">${worth.map(changedLine).join("")}</ul>`;
+  wireCards($("changed-body"));
+  if (rest.length) {
+    $("changed-rest").hidden = false;
+    $("changed-rest-n").textContent = count(rest.length, "line");
+    $("changed-quiet").innerHTML = `<ul class="feed">${rest.map(changedLine).join("")}</ul>`;
+    wireCards($("changed-quiet"));
+  }
+}
+
+/* ---- the season ---------------------------------------------------------
    The team's slice of the league projection (/teams/{id}/projected,
-   docs/projected_record.md): every week still to play, who it is against,
-   the chance of each of the nine and the categories it is expected to take,
-   then where the season ends up. It is the same payload the Standings page
-   draws, narrowed to this team, so the two cannot disagree.
+   docs/projected_record.md), as one line: where it is projected to finish,
+   the place it most often finishes in, and the playoff odds. The week by
+   week table and the finish distribution are what the line opens.
 
    Drawn only when the route answers. A season with no schedule stored, or
    one that is over, simply has no rest of season and the section stays
    hidden rather than saying so twice. */
 
-function drawRest(projection) {
+function drawSeason(projection) {
   if (!projection) return;
   const team = projection.teams[0];
   if (!team || !team.weeks.length) return;
-  $("rest-section").hidden = false;
-  $("rest-tag").textContent = count(team.weeks.length, "week");
+  $("season-section").hidden = false;
+  $("season-tag").textContent = count(team.weeks.length, "week") + " left";
+
+  const places = team.finishes.map((share, place) => ({ place: place + 1, share }));
+  const likeliest = places.reduce((best, row) => (row.share > best.share ? row : best), places[0]);
+  const ordinal = (n) =>
+    `${n}${["th", "st", "nd", "rd"][(n % 100 >= 11 && n % 100 <= 13) || n % 10 > 3 ? 0 : n % 10]}`;
+  $("standing").innerHTML =
+    `<span class="k">Projected finish</span> ${record(team.projected_record)}` +
+    `<span class="sep">·</span>${escape(ordinal(likeliest.place))} most often` +
+    `<span class="sep">·</span><span class="k">playoff odds</span>` +
+    `<span class="odds">${pct(team.playoff_odds)}</span>`;
+  $("season-note").textContent = projection.calibration_short || "";
+
+  $("season-weeks-n").textContent = count(team.weeks.length, "week");
   $("rest-lede").innerHTML =
     `Every week left, played against the opponent the schedule actually gives, on the rosters ` +
     `as they stand on day <b>${projection.as_of}</b>. Banked ` +
@@ -534,8 +1019,10 @@ function drawRest(projection) {
       }
       const cells = CATS.map((cat) => {
         const p = week.probabilities[cat];
-        return `<td class="small ${isNum(p) && p >= 0.6 ? "up" : isNum(p) && p <= 0.4 ? "down" : ""}">` +
-          `${pct(p)}</td>`;
+        return (
+          `<td class="small ${isNum(p) && p >= 0.6 ? "up" : isNum(p) && p <= 0.4 ? "down" : ""}">` +
+          `${pct(p)}</td>`
+        );
       }).join("");
       return (
         `<tr class="${week.in_play ? "ours" : ""}"><td class="name">${week.period}` +
@@ -546,10 +1033,8 @@ function drawRest(projection) {
     })
     .join("");
 
-  const places = team.finishes
-    .map((share, place) => ({ place: place + 1, share }))
-    .filter((row) => row.share >= 0.005);
   const bars = places
+    .filter((row) => row.share >= 0.005)
     .map(
       (row) =>
         `<li><span class="p">${row.place}</span>` +
@@ -557,36 +1042,144 @@ function drawRest(projection) {
         `<span class="v">${pct(row.share)}</span></li>`,
     )
     .join("");
-  const bye = isNum(team.bye_odds)
-    ? ` A first-round bye: <b>${pct(team.bye_odds)}</b>.`
-    : "";
+  const bye = isNum(team.bye_odds) ? ` A first-round bye: <b>${pct(team.bye_odds)}</b>.` : "";
+  $("more-finish").hidden = false;
   $("rest-finish").innerHTML =
-    `<p class="who">Where it finishes</p><ul class="places">${bars}</ul>` +
+    `<ul class="places">${bars}</ul>` +
     `<p class="why">Making the playoffs (the top ` +
     `${count(projection.playoff_team_count, "place")}): <b>${pct(team.playoff_odds)}</b>.${bye} ` +
     `Ordered by ${escape(projection.tiebreak)}, over ` +
-    `${count(projection.n_sims, "simulated season")}.</p>` +
+    `${count(projection.n_sims, "simulated season")}. The place shown above is the one it ` +
+    `finishes in most often across those seasons.</p>` +
     `<p class="note">${escape(projection.playoff_note || "")}</p>`;
 }
 
-function drawFoot(report) {
+/* ---- more --------------------------------------------------------------- */
+
+function drawMore(report) {
+  const moves = report.moves || [];
+  const plan = report.recommended || [];
+  $("more-moves-n").textContent = count(moves.length, "move");
+  $("moves-lede").innerHTML =
+    "Everything legal the search found, best first, by net categories over both horizons. " +
+    "Each is marked against the bar, so what did not clear it is visible too. A move that " +
+    "<b>fills an empty day</b> clears the bar whatever its size, which is why one can clear " +
+    "it below another that did not." +
+    (plan.length > READ_SHOWN
+      ? ` The whole plan is ${count(plan.length, "move")}; The read shows the first ${READ_SHOWN}.`
+      : "");
+  $("moves").innerHTML = moves.length
+    ? moves
+        .map((move, i) =>
+          moveHtml(move, report.scoring_periods_remaining[0], { rank: i + 1, mark: true }),
+        )
+        .join("")
+    : `<p class="empty">No legal move: nobody on the wire can be added within the roster's
+       rules.</p>`;
+  wireCards($("moves"));
+
+  const o = report.outlook;
+  $("outlook").innerHTML =
+    `<article class="move"><div class="head"><span class="what">` +
+    `Projected to end <b>${record(o.record_without)}</b> in categories with no move made</span>` +
+    `<span class="net">${fixed(o.weeks_remaining, 1)} wks</span></div>` +
+    `<p class="why">Banked so far: <b>${record([o.banked_won, o.banked_lost])}</b> in settled ` +
+    `matchups, with ${fixed(o.weeks_remaining, 1)} weeks left after this one. A place on this ` +
+    `roster gives back <b>${fixed(o.replacement, 3)}</b> categories a week if it is vacated, ` +
+    `which is what every drop above is charged.</p></article>`;
+
+  const money = faab(report);
+  const cells = [
+    ["Expected wins", `${fixed(report.expected_wins, 2)}<small> of 9</small>`,
+      onBye(report) ? "" : "hi"],
+    ["Days left", count(report.scoring_periods_remaining.length, "day"), ""],
+    ["Adds left", `${report.adds_left}<small> of ${report.adds_budget}, ` +
+      `${report.adds_used} used</small>`, report.adds_left === 0 ? "warn" : ""],
+    ["FAAB", `${money.value}<small> ${escape(money.note)}</small>`,
+      report.faab_overspent ? "warn" : ""],
+    ["Open places", `${report.open_slots}<small> IR slot ` +
+      `${report.ir_slot_free ? "free" : "used or none"}</small>`, ""],
+    ["The wire", `${report.pool_size}<small> free agents evaluated, ` +
+      `${escape(wire(report))}</small>`, report.historical_wire ? "caution" : ""],
+  ];
+  $("readout").innerHTML = cells
+    .map(([label, value, cls]) => `<div class="${cls}"><dt>${escape(label)}</dt><dd>${value}</dd></div>`)
+    .join("");
+
+  $("elsewhere").innerHTML =
+    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "trades"))}">Trades</a>: ` +
+    `build a deal and see what it does to these nine. ` +
+    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "season"))}">Season</a>: ` +
+    `who to hold for the rest of the year. ` +
+    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "moves"))}">Moves</a>: ` +
+    `the season's own moves, graded.`;
+}
+
+/** Where every number on the page came from, verbatim. */
+function drawProvenance(report, projection) {
+  const parts = [
+    `<p class="lede">Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}. ` +
+      `The wire is ${escape(wire(report))}` +
+      (report.historical_wire
+        ? ", rebuilt from who played and who was held that day, because the listener never ran " +
+          "for this season: it cannot see a free agent who did not play, and knows nothing " +
+          "about waivers."
+        : ".") +
+      ` The bar is <b>${fixed(report.hurdle, 2)}</b> categories, from ` +
+      `${escape(report.hurdle_source)}: ${escape(report.hurdle_note)}.</p>`,
+  ];
+  if (report.faab_overspent) {
+    parts.push(
+      `<p class="lede"><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} ` +
+        `past the budget, so the pot is shown as spent rather than as a negative. ESPN's own ` +
+        `ledger caps at the budget; the feed is a reconstruction (app/pickups/state.py).</p>`,
+    );
+  }
+  if (projection) {
+    parts.push(`<p class="lede">${escape(projection.calibration_note)}</p>`);
+  }
+  parts.push(
+    `<p class="smallnote">The week: <span class="mono">scripts/stream.py</span>, ` +
+      `<span class="mono">docs/pickups.md</span> section 4.3. Tonight: ` +
+      `<span class="mono">scripts/today.py</span>, which prints the same lineup. The rest of ` +
+      `season: <span class="mono">scripts/projected.py</span>, ` +
+      `<span class="mono">docs/projected_record.md</span>.</p>`,
+  );
+  $("provenance").innerHTML = parts.join("");
+}
+
+function drawFoot() {
   $("foot").innerHTML =
     `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
-    `Read-only: nothing here writes to the league or the database. ` +
-    `<br>The wire is ${escape(wire(report))}` +
-    (report.historical_wire
-      ? ", rebuilt from who played and who was held that day, because the listener never ran " +
-        "for this season: it cannot see a free agent who did not play, and knows nothing " +
-        "about waivers."
-      : ".") +
-    (report.faab_overspent
-      ? `<br><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} past the ` +
-        `budget, so the pot is shown as spent rather than as a negative. ESPN's own ledger ` +
-        `caps at the budget; the feed is a reconstruction (app/pickups/state.py).`
-      : "") +
-    `<br>The week: <span class="mono">scripts/stream.py</span>, ` +
-    `<span class="mono">docs/pickups.md</span> section 4.3. ` +
-    `Today: <span class="mono">scripts/today.py</span>, which prints the same lineup.`;
+    `Read-only: nothing here writes to the league or the database, and nothing on it ` +
+    `touches ESPN.`;
+}
+
+/* ---- the stored lineups -------------------------------------------------
+   One fetch a side for the whole matchup period, indexed by day. The route
+   is the league's own (`/teams/{id}/lineups`), so the other side of the
+   sheet costs no new scope. */
+
+async function setLineups(teamId, which, period) {
+  if (teamId === null || teamId === undefined || !period) return;
+  const query = new URLSearchParams({
+    period: String(period),
+    started: "true",
+    limit: "300",
+  });
+  const got = await get(
+    `/leagues/${WHERE.league}/seasons/${WHERE.season}/teams/${teamId}/lineups?${query.toString()}`,
+    { quiet: true },
+  );
+  const byDay = new Map();
+  if (got.ok) {
+    (got.body.items || []).forEach((slot) => {
+      const day = slot.scoring_period;
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(slot);
+    });
+  }
+  SET_LINEUPS[which] = byDay;
 }
 
 async function start() {
@@ -595,47 +1188,52 @@ async function start() {
   const query = params(WHERE);
   $("title").textContent = "Loading…";
 
-  // Three fetches, all started at once and not all waited on together. The
-  // week is the slow one, because it searches the whole wire for every
-  // possible move; the names and the day's seating come back in a moment,
-  // so they are drawn first and the week fills in under them. A day that
-  // cannot be built hides its own section and leaves the week standing.
   const asked = {
     context: get(`${base}/pages/context${query}`),
-    report: get(`${base}/teams/${WHERE.team}/pickups/stream${params(WHERE)}`),
+    report: get(`${base}/teams/${WHERE.team}/pickups/stream${query}`),
     today: get(`${base}/teams/${WHERE.team}/today${params(WHERE)}`, { quiet: true }),
-    rest: get(`${base}/teams/${WHERE.team}/projected${params(WHERE)}`, { quiet: true }),
+    rest: get(`${base}/teams/${WHERE.team}/projected${query}`, { quiet: true }),
   };
   const [context, today] = await Promise.all([asked.context, asked.today]);
   if (context.ok) CONTEXT = context.body;
   if (CONTEXT) $("title").textContent = nameOf(Number(WHERE.team));
-  drawToday(today.ok ? today.body : null);
+  const period = CONTEXT && CONTEXT.period ? CONTEXT.period.period : null;
+  const ourLineups = setLineups(WHERE.team, "us", period);
+  const news = drawChanged(WHERE.team === null ? null : Number(WHERE.team));
+  drawTonight(today.ok ? today.body : null);
 
   const report = await asked.report;
   if (!report.ok) {
     $("title").textContent = "No report";
     fail(`This week cannot be reported on: ${report.detail}`);
     $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    await news;
     return;
   }
-  const body = report.body;
-  drawMasthead(body);
-  drawReadout(body);
-  drawTape(body);
-  drawDays(body);
-  drawPlan(body);
-  drawMoves(body);
-  drawOutlook(body);
-  drawFoot(body);
+  REPORT = report.body;
+  drawMatchup(REPORT);
+  drawBands(REPORT);
+  drawRead(REPORT);
+  drawSchedule(REPORT);
+  drawMore(REPORT);
+  drawFoot();
+  drawProvenance(REPORT, null);
   $("body").hidden = false;
+
+  const theirLineups = onBye(REPORT)
+    ? Promise.resolve()
+    : setLineups(REPORT.opponent_espn_team_id, "them", period);
+  drawTheirTonight(today.ok && today.body ? today.body.today : null);
+  await Promise.all([ourLineups, theirLineups]);
+  drawSchedule(REPORT);
+  if (today.ok && today.body) drawTheirTonight(today.body.today);
+
   const rest = await asked.rest;
   if (rest.ok) {
-    drawRest(rest.body);
-    $("foot").innerHTML +=
-      `<br>The rest of season: <span class="mono">scripts/projected.py</span>, ` +
-      `<span class="mono">docs/projected_record.md</span>. ` +
-      `${escape(rest.body.calibration_note)}`;
+    drawSeason(rest.body);
+    drawProvenance(REPORT, rest.body);
   }
+  await news;
 }
 
 start();

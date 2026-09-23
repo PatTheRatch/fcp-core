@@ -241,30 +241,39 @@ owners, set to the reader's own, and his record against everyone he has
 met, with the seasons. Reads `/category-profiles`, `/notable-matchups`,
 `/leagues/{id}/owners` and `/leagues/{id}/head-to-head`.
 
-**My team: Week and Season.** The streaming and rest-of-season reports
-(docs/in_season_pages.md): the same masthead, readout, tale of the tape,
-plan and moves. The shell is over them, and their old "Rest of season" and
-"Every team" buttons are gone, because My team and the sections are those
-links now.
+**My team: Week.** The streaming report as **a game sheet**, rewritten
+2026-09-23 (docs/in_season_pages.md has it top to bottom). The page shows
+**answer → evidence → model**, in that order, with the evidence one tap
+away, and it was designed at phone width. Nothing was removed from it; what
+changed is how much is open when it loads.
 
-The Week page opens with **Today** (`app.pickups.today`, added 2026-09-22):
-the lineup as the recommender would set it, place by place, with each man's
-game or "no game"; the lineup the team has actually set beside it; in the
-warn style, the places that will produce nothing tonight while somebody on
-the bench would have; and under them everyone held who is not in the
-lineup, a man with a game carrying the accent. It reads a route of its own,
-`teams/{team_id}/today`, and is drawn as soon as that answers rather than
-with the rest of the page: the week searches the whole wire and takes the
-better part of half a minute, and the lineup is what the reader came for.
-A day no NBA team plays says so in one line and draws no grid.
+Eight things, in order: **the matchup** (who, when, days left as the largest
+figure, and the two projected totals over one bar); **the nine** as three
+bands — likely yours, swing, likely theirs — with the swing band in the
+accent and each category opening both sides' totals; **Tonight**, a man a
+row on both sides with his mark, his game, its tip-off and what ESPN says
+about him, and the lineup warn line only when the day's report says there is
+a decision; **The read**, at most three moves with their numbers and what
+they move, each with *See why*; **Schedule**, the period's days across and
+both sides down as a real table; **What changed**, only when the window
+holds something worth the eye; **Season**, the projected finish on one line
+with the forecast's own record under it; and **More**, which holds every
+move considered, where the season finishes, with a move and without, the
+week's standing figures, how this is worked out, and the other pages.
 
-It ends with **Rest of season** (added 2026-09-22, docs/projected_record.md):
-every week still to play with its opponent, the categories expected and the
-nine chances; then where the season ends up, as a bar a place, with the
-playoff odds and the bye odds under it. It reads
-`teams/{team_id}/projected`, which is the league projection narrowed to this
-team rather than a second computation, so the Week page and the Standings
-page always agree.
+It reads `teams/{team_id}/today` (drawn first: the week searches the whole
+wire and takes the better part of half a minute, and the lineup is what the
+reader came for), `pickups/stream`, `teams/{team_id}/projected` — the league
+projection narrowed to this team rather than a second computation, so the
+Week page and the Standings page always agree — and two of the league's own
+routes, `teams/{team_id}/lineups` for the other side of Tonight and the
+schedule, and `/changes` for What changed. A day no NBA team plays says so
+in one line and draws no grid.
+
+**My team: Season.** The rest-of-season report, in the house style the Week
+page was in before the rewrite: the same masthead, readout, plan and moves.
+The shell is over them, and their old "Rest of season" and "Every team"
+buttons are gone, because My team and the sections are those links now.
 
 **My team: Moves.** The team's name; "The season's moves, graded in
 categories a week. The league's median pickup was worth 0.072 categories a
