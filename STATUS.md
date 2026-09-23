@@ -38,6 +38,16 @@
   alternative part, and a member chooses which of its eight sections he
   wants, per league (docs/jobs.md, "Subscriptions" and "The shape of the
   message").
+
+  **Compact by default, full as an option** (2026-09-23, migration `0026`,
+  docs/jobs.md, "The two forms"). The email was the pages in an inbox: on
+  2026 day 107 it ran 3,500 pixels at a phone's width, about nine screens.
+  The compact form is four sections on about one and a half — tonight's
+  grid and the one thing to fix, the moves that clear the bar one line each
+  with a count and a link for what is under it, a line of counts for what
+  changed, and where you stand — and measures 1,193 pixels on that same
+  day. `length` on `digest_subscriptions` is the choice, beside the topics
+  on the Alerts page; `scripts/digest.py --full` is the long one.
 - The pickup recommender (`app/pickups`, docs/pickups.md), deployed. Every
   move is judged in one currency, categories, over both horizons: this
   week's head-to-head change plus the rest-of-season change per week times
