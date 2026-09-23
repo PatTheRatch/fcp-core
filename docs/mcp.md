@@ -169,7 +169,11 @@ judge_trade(league_id=3853870, season=2026, team_id=3, with_team=1,
 
 Myles Turner for Neemias Queta, our team 3 with team 1, on day 52 of the
 stored 2026 season. The answer as it came back on 2026-09-22, with the six
-other categories and the other side's detail elided and marked as such:
+other categories and the other side's detail elided and marked as such. It is
+kept as the transcript it is: the `chance_*` figures below are from before the
+weekly spread was widened on 2026-09-23 (docs/spread_revision.md), so every
+one of them would now sit nearer a half, and the counts, the per-week number
+and the shape of the payload are unaffected.
 
 ```json
 {
