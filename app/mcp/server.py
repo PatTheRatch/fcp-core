@@ -15,6 +15,22 @@ carries one token of its own. Either way the token is resolved by
 `app.mcp.scope`, which asks `app.api.access` the same questions every route
 asks, so a tool sees exactly what its owner sees in a browser.
 
+THE RESOURCE SERVER
+
+With `auth=` (which `scripts/mcp_server.py --http` builds from settings),
+this is an OAuth 2.1 protected resource. It says so in three places the
+spec names: `/.well-known/oauth-protected-resource`, naming the site as the
+authorization server that issues its tokens; a `401` carrying
+`WWW-Authenticate: Bearer resource_metadata="..."` for a request with no
+usable token, which is how an app discovers the front door; and a bearer
+check on every call. The check is the same hash lookup the site's own routes
+do, so a revoked token stops here the moment it stops there.
+
+**With auth on, the environment's token is not a fallback.** A public server
+that answered an anonymous caller as whoever `BOX_OUT_TOKEN` belongs to
+would be handing the owner's leagues to the internet. The fallback is for
+stdio and for the ChatGPT tunnel, which are one process per manager.
+
 WHY EVERY TOOL DESCRIPTION SAYS WHAT IT DOES NOT DO
 
 The model reading them is the one thing in this system that can invent a
@@ -29,13 +45,20 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+import anyio.to_thread
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.resources import FunctionResource
+from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
-from app import brand
+from app import api_tokens, brand
 from app.api.access import Viewer
 from app.config import Settings, get_settings
 from app.db.session import make_engine, make_session_factory
@@ -44,6 +67,10 @@ from app.mcp.scope import RefusedError, viewer_for_token
 
 #: Where a stdio server reads its token from.
 TOKEN_ENV = "BOX_OUT_TOKEN"
+
+#: The path the streamable-HTTP form answers on, and the tail of the resource
+#: this server calls itself in its metadata.
+HTTP_PATH = "/mcp"
 
 #: The name a host shows in its own list of servers. The slug is what a host
 #: prefixes its tool names with (`mcp__box-out__…`), so it is spelled out
@@ -148,11 +175,12 @@ speak for the other side of a trade: its numbers are our estimate of his
 roster's needs, and you say so."""
 
 
-def _token(ctx: Context | None) -> str | None:
+def _token(ctx: Context | None, *, env_fallback: bool = True) -> str | None:
     """The token this call carries: the request's bearer, else the environment's.
 
     A remote connector that puts its own token in the header wins; a stdio
     server, which has no headers at all, falls back to `BOX_OUT_TOKEN`.
+    With auth on there is no fallback at all: see the module docstring.
     """
     header = ""
     if ctx is not None:
@@ -163,7 +191,122 @@ def _token(ctx: Context | None) -> str | None:
         raw = headers.get("authorization") or headers.get("Authorization") or ""
         scheme, _, rest = raw.partition(" ")
         header = rest.strip() if scheme.lower() == "bearer" else ""
-    return header or os.environ.get(TOKEN_ENV) or None
+    if header:
+        return header
+    return (os.environ.get(TOKEN_ENV) or None) if env_fallback else None
+
+
+# ---------------------------------------------------------------------------
+# the resource server: who a bearer is, and what this server calls itself
+# ---------------------------------------------------------------------------
+
+
+class NoPublicUrlError(Exception):
+    """Auth was asked for and there is no address to advertise.
+
+    A public MCP server that cannot name itself cannot be discovered, and one
+    that guessed its name from the request's Host header would be telling
+    each caller whatever that caller wrote (docs/cutover.md's rule). So it
+    refuses to start rather than starting open.
+    """
+
+
+#: What `scripts/mcp_server.py --http` says when it cannot name itself.
+NEEDS_PUBLIC_URLS = (
+    "FCP_MCP_PUBLIC_URL (where this server answers) and FCP_PUBLIC_URL (the site "
+    "that signs managers in) are both required with auth on. Set them, or pass "
+    "--no-auth for a loopback server behind a tunnel (docs/mcp.md)."
+)
+
+
+def resource_url(settings: Settings) -> str | None:
+    """What this server calls itself in its metadata: the `/mcp` endpoint."""
+    base = (settings.fcp_mcp_public_url or "").strip().rstrip("/")
+    return f"{base}{HTTP_PATH}" if base else None
+
+
+def auth_settings(settings: Settings) -> AuthSettings:
+    """This server as a protected resource, and the site as its front door.
+
+    `validate_token_resource` is False deliberately. A `bo_` token is its
+    manager everywhere this site serves him -- the API, the pages, the
+    co-manager -- and is not audience-restricted to one of our own doors;
+    restricting it between two surfaces we both own would buy nothing and
+    would break the token a manager pastes in by hand (docs/mcp.md,
+    "Decisions").
+    """
+    site = (settings.fcp_public_url or "").strip().rstrip("/")
+    resource = resource_url(settings)
+    if not site or not resource:
+        raise NoPublicUrlError(NEEDS_PUBLIC_URLS)
+    # The strings, not `AnyHttpUrl(...)`: `AuthSettings` preserves an empty
+    # path, and RFC 8414 compares issuers as exact strings, so the trailing
+    # slash a bare `AnyHttpUrl` would add would make our own two documents
+    # disagree about our own name.
+    return AuthSettings(
+        issuer_url=site,
+        resource_server_url=resource,
+        validate_token_resource=False,
+    )
+
+
+def transport_security(settings: Settings) -> TransportSecuritySettings:
+    """Which `Host` and `Origin` headers this server answers to.
+
+    The SDK turns DNS-rebinding protection on for a server bound to
+    `127.0.0.1` and then allows only loopback hosts -- which is right for the
+    tunnel and wrong the moment Caddy proxies `mcp.boxoutfantasy.com` to that
+    same port, because Caddy passes the browser's Host through and the server
+    would answer 421 to every request. So the public name is added here, from
+    settings and not from the header itself, and loopback is kept for the
+    health check and the tunnel.
+    """
+    host = urlsplit(settings.fcp_mcp_public_url or "").netloc
+    loopback = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=([host] if host else []) + loopback,
+        allowed_origins=([f"https://{host}"] if host else []) + origins,
+    )
+
+
+class SiteTokens(TokenVerifier):
+    """A bearer, checked the way every route on the site checks one.
+
+    There is no separate store of OAuth access tokens: the token an app was
+    given IS a row in `api_tokens`, so this is the same hash lookup
+    `resolve_viewer` does, and a token revoked on the Connections page stops
+    working here in the same instant (`app/api_tokens.py`).
+
+    The lookup is a database round trip, so it runs on a worker thread rather
+    than on the event loop the transport is turning.
+    """
+
+    def __init__(self, factory: Callable[[], Any], resource: str | None) -> None:
+        self._factory = factory
+        self._resource = resource
+
+    def _holder(self, presented: str) -> int | None:
+        with self._factory() as session:
+            user = api_tokens.user_for_token(session, presented)
+            return int(user.id) if user is not None else None
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not api_tokens.looks_like_one(token):
+            return None
+        user_id = await anyio.to_thread.run_sync(self._holder, token)
+        if user_id is None:
+            return None
+        # `scopes` is empty because a token here carries none, deliberately:
+        # it is its owner, through the site's own checks (docs/accounts.md).
+        return AccessToken(
+            token=token,
+            client_id=f"user:{user_id}",
+            scopes=[],
+            resource=self._resource,
+            subject=str(user_id),
+        )
 
 
 def build_server(
@@ -171,16 +314,33 @@ def build_server(
     session_factory: sessionmaker[Session] | None = None,
     settings: Settings | None = None,
     token: str | None = None,
+    auth: AuthSettings | None = None,
 ) -> MCPServer:
     """The server, with every tool, resource and the house prompt on it.
 
     `session_factory` and `settings` are parameters so a test can point the
     whole surface at a disposable database without touching the environment,
-    and `token` so a test can be a particular manager.
+    and `token` so a test can be a particular manager. `auth` turns the
+    streamable-HTTP form into a protected resource; with it on, the
+    environment's `BOX_OUT_TOKEN` is no longer a fallback for a call that
+    carries no bearer of its own.
     """
     config = settings or get_settings()
     factory = session_factory or make_session_factory(make_engine(config.database_url))
-    mcp = MCPServer(NAME, title=TITLE, instructions=INSTRUCTIONS, version="0.1.0")
+    mcp = MCPServer(
+        NAME,
+        title=TITLE,
+        instructions=INSTRUCTIONS,
+        version="0.1.0",
+        auth=auth,
+        token_verifier=(
+            SiteTokens(factory, str(auth.resource_server_url) if auth.resource_server_url else None)
+            if auth is not None
+            else None
+        ),
+    )
+    if auth is not None:
+        _also_at_the_bare_path(mcp, auth)
 
     def run(
         ctx: Context | None, call: Callable[[Session, Viewer], dict[str, Any]]
@@ -193,7 +353,8 @@ def build_server(
         """
         with factory() as session:
             try:
-                viewer = viewer_for_token(session, config, token or _token(ctx))
+                presented = token or _token(ctx, env_fallback=auth is None)
+                viewer = viewer_for_token(session, config, presented)
                 return call(session, viewer)
             except RefusedError as no:
                 raise ToolError(str(no)) from None
@@ -473,6 +634,30 @@ def build_server(
         return HOUSE_RULES
 
     return mcp
+
+
+def _also_at_the_bare_path(mcp: MCPServer, auth: AuthSettings) -> None:
+    """The protected-resource metadata at `/.well-known/oauth-protected-resource` too.
+
+    RFC 9728 section 3.1 puts the document under the resource's own path --
+    `/.well-known/oauth-protected-resource/mcp` here -- and the SDK serves it
+    there. Clients differ about which they ask for first, and a client that
+    asks only for the bare path should not be told this server has no front
+    door. The same object, at the address the older clients use.
+    """
+    body = {
+        "resource": str(auth.resource_server_url),
+        "authorization_servers": [str(auth.issuer_url)],
+        "bearer_methods_supported": ["header"],
+    }
+
+    async def protected_resource(_: Request) -> Response:
+        return JSONResponse(body, headers={"Cache-Control": "public, max-age=3600"})
+
+    register = mcp.custom_route(
+        "/.well-known/oauth-protected-resource", methods=["GET"], include_in_schema=False
+    )
+    register(protected_resource)
 
 
 def _install_notes(mcp: MCPServer) -> None:

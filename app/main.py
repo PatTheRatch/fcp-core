@@ -14,6 +14,7 @@ from app.api.leagues import router as leagues_router
 from app.api.leagues_admin import router as leagues_admin_router
 from app.api.listener import router as listener_router
 from app.api.narratives import router as narratives_router
+from app.api.oauth import router as oauth_router
 from app.api.pages import router as pages_router
 from app.api.pickups import router as pickups_router
 from app.api.players import router as players_router
@@ -131,4 +132,5 @@ def create_app() -> FastAPI:
     app.include_router(channels_router)
     app.include_router(changes_router)
     app.include_router(tokens_router)
+    app.include_router(oauth_router)
     return app

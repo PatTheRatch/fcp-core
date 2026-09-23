@@ -145,3 +145,22 @@ def revoke(session: Session, user_id: int, token_id: int) -> bool:
         .returning(ApiToken.id)
     ).first()
     return result is not None
+
+
+def revoke_presented(session: Session, presented: str) -> bool:
+    """End the token somebody is holding. True when there was a live one.
+
+    For `POST /oauth/revoke` (RFC 7009), where the caller proves nothing
+    except that it holds the token -- which is the whole credential, so it is
+    proof enough to end it. Keyed on the hash, so no id is needed and no
+    other token can be reached. Does not commit.
+    """
+    if not looks_like_one(presented):
+        return False
+    result = session.execute(
+        update(ApiToken)
+        .where(ApiToken.token_hash == hash_token(presented), ApiToken.revoked_at.is_(None))
+        .values(revoked_at=now())
+        .returning(ApiToken.id)
+    ).first()
+    return result is not None

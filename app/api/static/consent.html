@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allow an app</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<header class="shell"><nav class="nav" aria-label="Site">
+  <a class="brand" href="/">{{brand}}</a>
+</nav></header>
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow">{{brand}}</p>
+  <h1>{{client_name}}</h1>
+  <p class="sub"><b>{{client_name}}</b> {{consent_asks}}</p>
+  <p class="sub">You are signed in as <b>{{signed_in_as}}</b>. Allowing this makes a token in
+    your name. It reads exactly what you read in the browser — your leagues, your teams'
+    plans, the numbers behind them — and it can change nothing, here or on ESPN.</p>
+  <form method="post" action="/oauth/consent" class="signin">
+{{fields}}
+    <button class="btn" type="submit" name="decision" value="allow">Allow</button>
+    <button class="btn" type="submit" name="decision" value="deny">Deny</button>
+  </form>
+</header>
+
+<section>
+  <div class="shead"><h2>What you are giving</h2><span class="tag">one token, revocable</span></div>
+  <p class="lede">The token this makes is listed on
+    <a href="/account/connections">Account &rarr; Connections</a> under the app's name, beside
+    any you made yourself. Revoke it there and the app stops reading at once. Nothing on this
+    site can add, drop, bid or accept anything on ESPN, so nothing you allow here can either.</p>
+</section>
+
+<p class="foot">Denying gives the app nothing and tells it so.
+  <span class="mono">docs/mcp.md</span> says what a token is and what it can read.</p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script>"use strict"; startTheme();</script>
+</body>
+</html>

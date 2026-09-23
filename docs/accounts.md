@@ -152,9 +152,15 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `DELETE /me/channels/{channel_id}` | signed in, own only (404 otherwise) | disable, and wipe the sealed target |
 | `GET /me/subscriptions` | signed in, own only | what goes in his email, per league he is a member of |
 | `PUT /me/subscriptions/{league_id}` | signed in, member of that league (404 otherwise) | choose it: the topics, the morning digest, the alerts |
-| `GET /me/api-tokens` | signed in, own only | his machine tokens, never their secrets (docs/mcp.md) |
+| `GET /me/api-tokens` | signed in, own only | his machine tokens, never their secrets (docs/mcp.md), an OAuth-issued one named after the app that asked |
 | `POST /me/api-tokens` | signed in, rate-limited | mint one; the token is in this answer and nowhere else |
-| `DELETE /me/api-tokens/{token_id}` | signed in, own only (404 otherwise) | revoke one of his own |
+| `DELETE /me/api-tokens/{token_id}` | signed in, own only (404 otherwise) | revoke one of his own, however it was made |
+| `GET /.well-known/oauth-authorization-server` | open | RFC 8414: what the front door supports. Describes the server and carries no data (docs/mcp.md) |
+| `POST /oauth/register` | open, rate-limited | RFC 7591: an app registers itself. No secret is issued, and a row opens nothing until a manager has signed in and allowed it |
+| `GET /oauth/authorize` | signed in (page) | the consent page. Signed out it goes to `/sign-in?next=` and comes back to the whole request |
+| `POST /oauth/consent` | signed in (page), CSRF | Allow issues one code, bound to the app, the redirect URI, the PKCE challenge and this manager; Deny issues nothing |
+| `POST /oauth/token` | open | held to a single-use code and its PKCE verifier. The answer is a `bo_` token, minted here and nowhere else |
+| `POST /oauth/revoke` | open | RFC 7009: holding the token is the credential. Always 200, whatever was sent |
 | `GET /leagues` | signed in, filtered | lists only the leagues the caller is a member of (single mode: all) |
 | `GET /ingest-runs` | signed in | ingest history, no league member's data |
 | `GET /ingest-runs/health` | signed in | whether the data is current |

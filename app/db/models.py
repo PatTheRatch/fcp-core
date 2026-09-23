@@ -1425,6 +1425,78 @@ class TeamManager(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class OAuthClient(Base):
+    """An app that asked to read for a manager: Claude, ChatGPT, a script.
+
+    Registered by the app itself (RFC 7591) rather than by hand, because no
+    manager should have to be given a client id and no owner should have to
+    hand one out. There is no secret: a public client proves itself with PKCE,
+    so a copy of this table lets nobody in (`app/oauth.py`, docs/mcp.md).
+
+    `redirect_uris` is matched exactly and never by prefix, and only
+    `https://` or a loopback address is ever stored. `client_name` is the
+    app's own, shown on the consent page and written into the name of every
+    token it is given, so a manager reading his Connections page knows which
+    app a token belongs to.
+    """
+
+    __tablename__ = "oauth_clients"
+    __table_args__ = (UniqueConstraint("client_id", name="uq_oauth_clients_client_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: What the app sends. Public and not a secret: 256 random bits so two
+    #: registrations never collide, not so it cannot be guessed.
+    client_id: Mapped[str] = mapped_column(String, nullable=False)
+    #: What the app calls itself. Shown to the manager, so it is escaped
+    #: wherever it is drawn and trimmed to something a line can hold.
+    client_name: Mapped[str] = mapped_column(String, nullable=False)
+    client_uri: Mapped[str | None] = mapped_column(String)
+    redirect_uris: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: The last time a code was issued to it, so an app nobody uses is visible.
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OAuthCode(Base):
+    """The ten minutes between "Allow" and a token.
+
+    Only the code's sha256 is kept, as a session cookie's and a sign-in
+    link's are. `used_at` makes it single-use: spending one is a single
+    UPDATE matching only an unused, unexpired row, so two clients racing on
+    the same code cannot both win. The row records everything the token
+    endpoint has to check against -- the client, the redirect URI, the PKCE
+    challenge and the resource the app asked for -- and who said yes.
+    """
+
+    __tablename__ = "oauth_codes"
+    __table_args__ = (UniqueConstraint("code_hash", name="uq_oauth_codes_code_hash"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String, nullable=False)
+    client_row_id: Mapped[int] = mapped_column(
+        ForeignKey("oauth_clients.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The manager who said yes. The token minted for this code is his.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String, nullable=False)
+    #: The PKCE S256 challenge. The verifier is checked against it, and there
+    #: is no `plain` method here at all.
+    code_challenge: Mapped[str] = mapped_column(String, nullable=False)
+    #: RFC 8707: the MCP server the app said it would use the token with.
+    resource: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 # ---------------------------------------------------------------------------
 # Leagues and their members (docs/accounts.md, docs/product.md step 2)
 # ---------------------------------------------------------------------------

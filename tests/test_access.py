@@ -653,6 +653,16 @@ OPEN = {
     ("GET", "/pages/static/{name}"),
     # The landing page signed out; signed in, a page that goes to his league.
     ("GET", "/"),
+    # The OAuth front door (docs/mcp.md, tests/test_oauth.py). Open because
+    # the spec says so and because none of them gives anything away: the
+    # metadata describes the server, registering gets no secret, and the
+    # token and revocation endpoints are held to a one-time code with PKCE or
+    # to holding the token already. `/oauth/authorize` and `/oauth/consent`
+    # are NOT here: they are pages, and a signed-out browser goes to sign in.
+    ("GET", "/.well-known/oauth-authorization-server"),
+    ("POST", "/oauth/register"),
+    ("POST", "/oauth/token"),
+    ("POST", "/oauth/revoke"),
 }
 
 

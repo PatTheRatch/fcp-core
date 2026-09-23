@@ -49,6 +49,11 @@ from tests.test_access import (  # noqa: F401
 #: anybody (`/health`), is the way in (`/sign-in`, the two auth posts, the
 #: callback, whose link is itself the credential), or carries no data
 #: (`/`, the shared stylesheet and scripts).
+#: The OAuth front door is open for the same reason: the metadata describes
+#: the server, registering gets no secret, and the token and revocation
+#: endpoints are held to a one-time code with PKCE or to holding the token
+#: already (docs/mcp.md). `/oauth/authorize`, the one that hands something
+#: over, is not here: it sends a signed-out browser to sign in.
 OPEN = {
     "GET /",
     "GET /sign-in",
@@ -57,6 +62,10 @@ OPEN = {
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    "GET /.well-known/oauth-authorization-server",
+    "POST /oauth/register",
+    "POST /oauth/token",
+    "POST /oauth/revoke",
 }
 
 #: A value for each path parameter, so a route can actually be asked for.
@@ -256,6 +265,7 @@ def ready(**changes: Any) -> Any:
         "fcp_email_from": "Box Out <hello@mail.boxoutfantasy.com>",
         "fcp_smtp_password": "not printed",
         "fcp_api_url": "http://100.105.64.94:8001",
+        "fcp_mcp_public_url": "https://mcp.boxoutfantasy.com",
     }
     base.update(changes)
     return get_settings().model_copy(update=base)
@@ -284,6 +294,11 @@ def test_the_preflight_passes_a_server_that_is_ready() -> None:
         ({"fcp_secrets_key": None}, "FCP_SECRETS_KEY"),
         ({"fcp_smtp_host": None}, "SMTP"),
         ({"fcp_api_url": "https://boxoutfantasy.com"}, "FCP_API_URL"),
+        # A bearer travels to the co-manager on this address.
+        ({"fcp_mcp_public_url": "http://mcp.boxoutfantasy.com"}, "FCP_MCP_PUBLIC_URL"),
+        # Single mode is already a FAIL above; it fails the front door too,
+        # because there it would hand the owner's token to whoever asked.
+        ({"fcp_auth_mode": "single"}, "OAuth front door"),
     ],
 )
 def test_the_preflight_fails_what_should_fail(change: dict[str, Any], fails: str) -> None:

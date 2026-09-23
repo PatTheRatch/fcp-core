@@ -74,6 +74,10 @@
     you read, and nothing more: your leagues, your teams' plans, the numbers behind them.
     It can add nobody, drop nobody and bid on nobody. Copy it when it appears; it is not
     shown again. Revoke one here and it stops working at once.</p>
+  <p class="lede">A token you made yourself is one you paste into a config file. One marked
+    <b>via OAuth</b> was asked for by an app you allowed — you signed in, read what it
+    wanted and pressed Allow — and it is named after that app. Both are the same kind of
+    token, read the same pages, and are ended the same way: here.</p>
   <form class="signin" id="mint" autocomplete="off">
     <label class="eyebrow" for="tokenname">What it is for</label>
     <input id="tokenname" maxlength="60" placeholder="Claude on my laptop" required>
@@ -329,7 +333,13 @@ async function loadTokens() {
   }
   for (const t of rows) {
     const line = el("p", "", "lede");
-    line.append(el("b", t.name), " ");
+    /* A token an app asked for is named "<the app> (OAuth)" by the server
+       (app/oauth.py, token_name). The name is drawn as the app's own, with
+       where it came from as a tag beside it, so a manager scanning the list
+       sees which of these he pasted somewhere himself. */
+    const viaOAuth = t.name.endsWith(" (OAuth)");
+    line.append(el("b", viaOAuth ? t.name.slice(0, -8) : t.name), " ");
+    if (viaOAuth) line.append(el("span", "via OAuth", "tag"), " ");
     const when = new Date(t.created_at).toLocaleDateString();
     const used = t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "never used";
     if (t.revoked_at) {

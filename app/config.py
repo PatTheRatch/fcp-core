@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     #: and no link is ever emailed.
     fcp_public_url: str | None = None
 
+    #: Where the co-manager's remote form answers, e.g.
+    #: https://mcp.boxoutfantasy.com (docs/mcp.md). The MCP server is a
+    #: resource server: it names itself and its authorization server
+    #: (`fcp_public_url`) in the metadata an app discovers, and both come from
+    #: here rather than from the request's Host header. Unset, the `--http`
+    #: server refuses to start with auth on rather than running open.
+    fcp_mcp_public_url: str | None = None
+
     #: The key that seals secrets kept at rest (app/secrets_box.py): a league
     #: connection's ESPN cookies and a member's SWID. A Fernet key, urlsafe
     #: base64 of 32 bytes, made by `scripts/new_secrets_key.py`. Lives only in
@@ -116,6 +124,7 @@ class Settings(BaseSettings):
         "fcp_owner_email",
         "fcp_service_token",
         "fcp_public_url",
+        "fcp_mcp_public_url",
         "fcp_secrets_key",
         mode="before",
     )

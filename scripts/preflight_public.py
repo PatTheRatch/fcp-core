@@ -35,6 +35,7 @@ from pathlib import Path
 # other CLIs do the same, for the same reason.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app import oauth
 from app.api import access, auth, leagues_admin
 from app.brand import BRAND, BRAND_DOMAIN
 from app.config import Settings, get_settings
@@ -85,6 +86,51 @@ def check_public_url(settings: Settings) -> Check:
     if BRAND_DOMAIN not in url:
         return Check("FCP_PUBLIC_URL", NOTE, f"{url}: https, but not the {BRAND} domain")
     return Check("FCP_PUBLIC_URL", PASS, url)
+
+
+def check_mcp_public_url(settings: Settings) -> Check:
+    """Where the co-manager answers, for the apps that have to discover it.
+
+    A NOTE rather than a FAIL: the site is public without it, and the remote
+    co-manager simply is not served. What would be a failure is serving it
+    without this, and `scripts/mcp_server.py --http` refuses to start in that
+    case rather than running open (`app.mcp.server.auth_settings`).
+    """
+    url = settings.fcp_mcp_public_url
+    if not url:
+        return Check(
+            "FCP_MCP_PUBLIC_URL",
+            NOTE,
+            "not set: no remote co-manager, and --http refuses to start with auth on",
+        )
+    if not url.startswith("https://"):
+        return Check("FCP_MCP_PUBLIC_URL", FAIL, f"{url}: must be https; a bearer travels on it")
+    if BRAND_DOMAIN not in url:
+        return Check("FCP_MCP_PUBLIC_URL", NOTE, f"{url}: https, but not the {BRAND} domain")
+    return Check(
+        "FCP_MCP_PUBLIC_URL", PASS, f"{url}/mcp, signed in through {settings.fcp_public_url}"
+    )
+
+
+def check_the_oauth_front_door(settings: Settings) -> Check:
+    """The endpoints an app discovers, and the two things that must be true.
+
+    An authorization server with no public address cannot name itself, and
+    one in single mode would hand the owner's token to whoever asked -- both
+    are already covered above, so this line says what is served and where.
+    """
+    base = (settings.fcp_public_url or "").rstrip("/")
+    if not base:
+        return Check("OAuth front door", FAIL, "no FCP_PUBLIC_URL: no metadata can be served")
+    if settings.fcp_auth_mode != "accounts":
+        return Check("OAuth front door", FAIL, "single mode: /oauth/authorize is refused outright")
+    return Check(
+        "OAuth front door",
+        PASS,
+        f"{base}/.well-known/oauth-authorization-server; PKCE S256 only, "
+        f"codes {int(oauth.CODE_TTL.total_seconds() // 60)} minutes and single-use, "
+        "no refresh token, tokens revocable on /account/connections",
+    )
 
 
 def check_owner_email(settings: Settings) -> Check:
@@ -157,6 +203,17 @@ OPEN_ROUTES = (
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    # The OAuth front door (docs/mcp.md). Each of these is open because the
+    # spec says so and because none of them gives anything away: the metadata
+    # describes the server, registering stores an app's name and gets no
+    # secret, and the token and revocation endpoints are held to a one-time
+    # code with PKCE, or to holding the token already. The one endpoint that
+    # hands something over -- `/oauth/authorize` -- is NOT here: it sends a
+    # signed-out browser to sign in, like every other page.
+    "GET /.well-known/oauth-authorization-server",
+    "POST /oauth/register",
+    "POST /oauth/token",
+    "POST /oauth/revoke",
 )
 
 
@@ -282,6 +339,8 @@ def check_billing_is_off(_: Settings) -> Check:
 CHECKS: tuple[Callable[[Settings], Check], ...] = (
     check_auth_mode,
     check_public_url,
+    check_mcp_public_url,
+    check_the_oauth_front_door,
     check_owner_email,
     check_service_token,
     check_secrets_key,
