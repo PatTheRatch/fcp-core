@@ -126,6 +126,16 @@ def _single(session: Session, settings: Settings) -> Viewer:
     return Viewer(user.id, user.email, is_owner=True, all_access=True, via="single")
 
 
+def single_mode_viewer(session: Session, settings: Settings) -> Viewer:
+    """Single mode's owner, for a caller that is not an HTTP request.
+
+    The co-manager's tools (`app/mcp/`) resolve their own viewer: they are
+    not served by FastAPI and have no request to read a cookie from. In
+    single mode the answer is the same one every request gets here.
+    """
+    return _single(session, settings)
+
+
 def resolve_viewer(request: Request, session: Session, settings: Settings) -> Viewer | None:
     """The viewer, or None when the request is not signed in."""
     if settings.fcp_auth_mode == "single":

@@ -240,7 +240,7 @@ def stored_report(
     return dict(row.payload) if row is not None else None
 
 
-def _report(
+def report(
     session: Session,
     league_season: LeagueSeason,
     team: Team,
@@ -248,7 +248,12 @@ def _report(
     today: int | None,
 ) -> tuple[dict[str, Any], bool]:
     """The report asked for, and whether it was the stored one: stored when
-    fresh, else built now."""
+    fresh, else built now.
+
+    Public, because the co-manager's tools answer with the same payload the
+    page is drawn from (`app/mcp/tools.py`) and have to be able to say which
+    of the two it was.
+    """
     calendar = _ready(session, league_season)
     day = _day(calendar, today)
     stored = stored_report(session, calendar, team, kind, day)
@@ -271,7 +276,7 @@ def stream_report(
     session: SessionDep,
     today: TodayQuery = None,
 ) -> StreamReportOut:
-    body, _ = _report(session, league_season, team, reports.STREAM, today)
+    body, _ = report(session, league_season, team, reports.STREAM, today)
     return StreamReportOut.model_validate(body)
 
 
@@ -286,7 +291,7 @@ def season_report(
     session: SessionDep,
     today: TodayQuery = None,
 ) -> SeasonReportOut:
-    body, _ = _report(session, league_season, team, reports.SEASON, today)
+    body, _ = report(session, league_season, team, reports.SEASON, today)
     return SeasonReportOut.model_validate(body)
 
 
@@ -309,7 +314,7 @@ def today_report(
     The week report's own seating for one day (`app.pickups.today`), so the
     two can never disagree about who starts. A proposal, not an instruction:
     the reasons travel with it and the manager sets the lineup."""
-    body, _ = _report(session, league_season, team, reports.TODAY, today)
+    body, _ = report(session, league_season, team, reports.TODAY, today)
     return TodayReportOut.model_validate(body)
 
 
@@ -328,7 +333,7 @@ def glance(
     report when there is one (built live otherwise): the expected categories
     against this week's opponent, their chances one by one, and the season's
     projected record with no move made. Not the moves: those are the plan."""
-    body, stored = _report(session, league_season, team, reports.STREAM, today)
+    body, stored = report(session, league_season, team, reports.STREAM, today)
     return GlanceOut(
         espn_team_id=int(body["espn_team_id"]),
         matchup_period=int(body["matchup_period"]),
