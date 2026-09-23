@@ -12,12 +12,26 @@
 
    The rules of the house: rules, not boxes. No rounded corners, no chips, no
    shadows, one burnt-orange accent, tabular numerals everywhere a number is.
+
+   The three greys carry nearly all the small type on the site, and on cream
+   paper the lightest of them read at 2.6:1 -- elegant at a glance and not
+   actually readable, which is what "too thin in places" turned out to mean.
+   They are a shade darker here: on the two grounds a page is actually made
+   of, `ground` and `surface`, every one of them now clears WCAG AA for
+   small text. The hues are the same and the hierarchy is the same; only the
+   floor moved.
+
+   `accent-deep` is the one addition: the same burnt orange taken down far
+   enough for a nine-point word to be read on cream, for the places the
+   accent is a label rather than a figure, a fill or a rule. The accent
+   itself is untouched, because it is the identity and it is used at sizes
+   where it is legible.
    --------------------------------------------------------------------------- */
 :root{
   --ground:#E8E6DF; --surface:#F7F6F2; --sunk:#DEDBD2; --rule:#C6C2B6; --rule-strong:#16181A;
-  --ink:#16181A; --muted:#5E6167; --faint:#8E9096;
-  --accent:#C4551F; --accent-ink:#FFFFFF; --accent-soft:#F1DCCF;
-  --good:#2F6F4E; --warn:#9A6A00; --stop:#B23A30;
+  --ink:#16181A; --muted:#4F5258; --faint:#63666D;
+  --accent:#C4551F; --accent-deep:#A84A1A; --accent-ink:#FFFFFF; --accent-soft:#F1DCCF;
+  --good:#2F6F4E; --warn:#7F5800; --stop:#B23A30;
   --good-soft:#DFEBE3; --warn-soft:#F3E7CA; --stop-soft:#F4DDDA;
   --shade-0:transparent; --shade-1:#E2E0D8; --shade-2:#D2CFC4; --shade-3:#C0BCAE;
   --shadow:none; --glow:none;
@@ -27,8 +41,8 @@
 }
 :root[data-theme="dark"]{
   --ground:#121316; --surface:#191A1E; --sunk:#24262B; --rule:#33363D; --rule-strong:#E9E6DD;
-  --ink:#ECE9E1; --muted:#A4A7AE; --faint:#6C7078;
-  --accent:#F08A4B; --accent-ink:#121316; --accent-soft:#3B2A20;
+  --ink:#ECE9E1; --muted:#A4A7AE; --faint:#8D9199;
+  --accent:#F08A4B; --accent-deep:#F08A4B; --accent-ink:#121316; --accent-soft:#3B2A20;
   --good:#63B58E; --warn:#D9A43B; --stop:#E56B60;
   --good-soft:#1C3128; --warn-soft:#332714; --stop-soft:#37201E;
   --shade-0:transparent; --shade-1:#23262B; --shade-2:#2F343B; --shade-3:#3E454E;
@@ -40,7 +54,7 @@
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
   font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit}
-a{color:var(--accent);text-underline-offset:3px}
+a{color:var(--accent-deep);text-underline-offset:3px}
 .page{max-width:1080px;margin:0 auto;padding:0 24px 96px}
 .num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance;
@@ -88,7 +102,8 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   border:0;border-bottom:2px solid transparent;padding:6px 0 4px;cursor:pointer;
   white-space:nowrap;border-radius:0}
 .navlink:hover,.menu-btn:hover{color:var(--ink)}
-.navlink[aria-current="page"],.menu-btn.on{color:var(--accent);border-bottom-color:var(--accent)}
+.navlink[aria-current="page"],.menu-btn.on{color:var(--accent-deep);
+  border-bottom-color:var(--accent)}
 .menu-btn .caret{margin-left:5px;font-size:10px}
 .menu-btn[aria-expanded="true"]{color:var(--ink)}
 .league-name{display:inline-block;max-width:30ch;overflow:hidden;text-overflow:ellipsis;
@@ -104,16 +119,16 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   background:none;border:0;cursor:pointer;overflow-wrap:anywhere}
 .menu-list a:hover,.menu-list a:focus-visible,.menu-list button:hover,
 .menu-list button:focus-visible{background:var(--sunk);outline:none}
-.menu-list a[aria-current]{color:var(--accent);font-weight:600}
-.menu-list .group{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--faint);padding:10px 14px 3px;overflow-wrap:anywhere}
+.menu-list a[aria-current]{color:var(--accent-deep);font-weight:600}
+.menu-list .group{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);padding:10px 14px 3px;overflow-wrap:anywhere}
 .menu-list form{margin:0;border-top:1px solid var(--rule);margin-top:6px;padding-top:4px}
 .nav .end{margin-left:auto;display:flex;align-items:center;gap:16px}
 .btn.theme{white-space:nowrap}
 
 /* ---- the masthead: the season report's, a rule under it and nothing else -- */
 .mast{padding:36px 0 22px;border-bottom:3px solid var(--rule-strong)}
-.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;
   text-transform:uppercase;color:var(--muted);margin:0}
 .mast h1{font-size:clamp(34px,6.5vw,68px);line-height:.95;margin:12px 0 0;
   text-transform:uppercase;letter-spacing:-.005em}
@@ -138,8 +153,8 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   border-bottom:1px solid var(--rule)}
 .line div{padding:16px 16px 14px;border-right:1px solid var(--rule)}
 .line div:last-child{border-right:0}
-.line dt{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--faint);margin:0}
+.line dt{font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);margin:0}
 .line dd{font-family:var(--display);font-weight:600;font-size:27px;line-height:1.12;
   margin:4px 0 0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .line dd small{font-size:13px;color:var(--muted);font-weight:400;white-space:normal}
@@ -151,10 +166,10 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
 
 /* ---- sections ----------------------------------------------------------- */
 section{margin-top:56px}
-.shead{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--rule-strong);
+.shead{display:flex;align-items:baseline;gap:14px;border-bottom:2px solid var(--rule-strong);
   padding-bottom:8px;margin-bottom:20px}
 .shead h2{font-size:24px;text-transform:uppercase;letter-spacing:.02em}
-.shead .tag{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+.shead .tag{margin-left:auto;font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--muted);white-space:nowrap}
 .lede{margin:-8px 0 20px;color:var(--muted);font-size:15px;max-width:74ch}
 .empty{color:var(--faint);padding:10px 0;font-style:italic}
@@ -162,8 +177,8 @@ section{margin-top:56px}
 /* ---- the tale of the tape: nine rows, both sides, the odds shaded ------- */
 .tape{width:100%;border-collapse:collapse}
 .tape th,.tape td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
-.tape th{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--faint);font-weight:400;border-bottom:1px solid var(--rule-strong)}
+.tape th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
 .tape th:first-child,.tape td:first-child{text-align:left}
 .tape td{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
 .tape td.cat{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.04em}
@@ -181,7 +196,7 @@ section{margin-top:56px}
   border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:10px 0 0}
 .strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
 .strip .lab{display:block;text-align:right;margin-bottom:2px;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--muted)}
+  text-transform:uppercase;letter-spacing:.08em;font-size:10.5px;color:var(--muted)}
 .strip b{font-family:var(--mono);font-weight:500;font-size:15px;font-variant-numeric:tabular-nums}
 .strip .s1{background:var(--shade-1)} .strip .s2{background:var(--shade-2)}
 .strip .s3{background:var(--shade-3)}
@@ -200,14 +215,14 @@ section{margin-top:56px}
 .grid.lineup td.name{font-size:16px;overflow-wrap:anywhere}
 .grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
 .grid.lineup td.small{font-family:var(--mono);font-size:12px;width:7em;white-space:nowrap}
-.grid.lineup td.flags,.grid.lineup td.why{font-size:13px;color:var(--muted)}
+.grid.lineup td.flags,.grid.lineup td.why{font-size:13.5px;color:var(--muted)}
 /* The reason takes the slack, so the game a man has stays beside his name
    rather than drifting to the far edge of an otherwise empty row. */
 .grid.lineup td.why{width:45%}
 .grid.lineup tr.gone td.slot{color:var(--faint)}
 .grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
 .grid.lineup tr.has-game td.name{font-weight:600}
-.flag{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--warn)}
+.flag{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--warn)}
 #tonight-section .side h3{font-size:15px}
 #tonight-section .shead{margin-top:28px}
 
@@ -215,11 +230,11 @@ section{margin-top:56px}
 .days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
   border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:0 0 6px}
 .days div{border-right:1px solid var(--rule);padding:7px 8px}
-.days .d{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);display:block}
+.days .d{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);display:block}
 .days .n{font-family:var(--display);font-weight:600;font-size:16px}
 .days .past{color:var(--faint)} .days .past .n{font-weight:400}
-.days .now{background:var(--accent-soft)} .days .now .n{color:var(--accent)}
+.days .now{background:var(--accent-soft)} .days .now .n{color:var(--accent-deep)}
 .days .gap .n{color:var(--stop)}
 
 /* ---- a move: a rule above it, never a box ------------------------------- */
@@ -234,18 +249,18 @@ section{margin-top:56px}
 .move .net.up{color:var(--good)} .move .net.down{color:var(--stop)}
 .move .why{margin:6px 0 0;color:var(--muted);font-size:15px}
 .move .why b{color:var(--ink);font-weight:600}
-.move .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--faint);
+.move .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted);
   letter-spacing:.02em}
 .move.over{border-left:2px solid var(--accent);padding-left:14px}
-.mark{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:10.5px;
+.mark{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:11px;
   padding:2px 8px;border:1px solid var(--rule);color:var(--muted)}
-.mark.clears{color:var(--accent);border-color:var(--accent)}
+.mark.clears{color:var(--accent-deep);border-color:var(--accent)}
 
 /* ---- plain listing tables ----------------------------------------------- */
 .grid{width:100%;border-collapse:collapse}
 .grid th,.grid td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
-.grid th{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--faint);font-weight:400;border-bottom:1px solid var(--rule-strong)}
+.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
 .grid th:first-child,.grid td:first-child{text-align:left}
 .grid td{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
 .grid td.name{font-family:var(--body);font-size:16px}
@@ -261,7 +276,7 @@ section{margin-top:56px}
 .grid td.name a{color:var(--ink);text-decoration-color:var(--rule)}
 .grid td.name a:hover{color:var(--accent)}
 .grid td.rank{color:var(--faint);width:2.5em}
-.grid td.small,.grid th.small{font-size:12px}
+.grid td.small,.grid th.small{font-size:12.5px}
 .grid tr.sub td{border-bottom-style:dotted}
 
 .lede select{font:inherit;color:var(--ink);background:transparent;border:0;
@@ -283,10 +298,10 @@ section{margin-top:56px}
 #rest-grid td.small.up{color:var(--good)} #rest-grid td.small.down{color:var(--stop)}
 #rest-grid td.name .faint{font-family:var(--body)}
 #rest-finish .who{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10.5px;color:var(--faint);margin:18px 0 0}
+  font-size:11px;color:var(--muted);margin:18px 0 0}
 #rest-finish .why{margin:6px 0 0;color:var(--muted);font-size:15px}
 #rest-finish .why b{color:var(--ink);font-weight:600}
-#rest-finish .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--faint)}
+#rest-finish .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted)}
 
 /* ---- two views of one table, and the odds of each place -----------------
    The toggle is the house's small display face, the chosen one in the accent
@@ -302,7 +317,7 @@ section{margin-top:56px}
   font-size:11px;padding:7px 14px;background:none;border:0;border-bottom:2px solid transparent;
   color:var(--muted);cursor:pointer}
 .views button:hover{color:var(--ink)}
-.views button[aria-pressed="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.views button[aria-pressed="true"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
 .grid th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
   background:none;border:0;padding:0;cursor:pointer}
 .grid th button:hover{color:var(--ink)}
@@ -314,7 +329,7 @@ section{margin-top:56px}
   min-width:0}
 .seeds-bar .seed i{display:block;width:100%;background:var(--shade-2)}
 .seeds-bar .seed.in i{background:var(--accent)}
-.seeds-bar .seed em{font-family:var(--mono);font-style:normal;font-size:10px;color:var(--faint)}
+.seeds-bar .seed em{font-family:var(--mono);font-style:normal;font-size:10.5px;color:var(--muted)}
 .grid tr.seedrow td{border-bottom:1px solid var(--rule);padding-top:0}
 .grid tr.seedrow .note{margin:0 0 6px;font-family:var(--body);font-size:13px;color:var(--muted);
   text-align:left}
@@ -324,7 +339,7 @@ section{margin-top:56px}
   font-family:var(--mono);font-size:12px}
 .years a{color:var(--muted);text-decoration:none;border-bottom:1px solid transparent}
 .years a:hover{color:var(--ink)}
-.years a[aria-current="page"]{color:var(--accent);border-bottom-color:var(--accent)}
+.years a[aria-current="page"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
 
 /* ---- a matchup: two sides and their nine, a rule above it -------------- */
 .matchup{border-top:1px solid var(--rule);padding:18px 0 10px}
@@ -336,10 +351,10 @@ section{margin-top:56px}
 .matchup .side.lead{color:var(--ink)} .matchup .side.trail{color:var(--muted);font-weight:400}
 .matchup .tally{font-family:var(--display);font-weight:600;font-size:26px;
   font-variant-numeric:tabular-nums;white-space:nowrap}
-.matchup .state{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted);
+.matchup .state{margin:4px 0 0;font-family:var(--mono);font-size:12.5px;color:var(--muted);
   letter-spacing:.02em}
 .matchup .who{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10.5px;color:var(--faint);margin:12px 0 0}
+  font-size:11px;color:var(--muted);margin:12px 0 0}
 .matchup .who .faint{text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12px}
 .matchup .strip{margin-top:4px}
 .matchup .expect{margin:6px 0 0;font-family:var(--body);font-size:14px;color:var(--muted)}
@@ -354,13 +369,13 @@ section{margin-top:56px}
    about the reader's own team takes the accent rule the matchup does; his
    opponent's takes a plain one, so the two are told apart by where the rule
    is and not only by its colour. */
-.dayhead{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11px;
-  color:var(--faint);margin:26px 0 6px}
+.dayhead{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+  font-size:11.5px;color:var(--muted);margin:26px 0 6px}
 .feed{list-style:none;margin:0;padding:0}
 .feed li{border-top:1px solid var(--rule);padding:9px 0;display:flex;gap:4px 14px;
   align-items:baseline;flex-wrap:wrap}
 .feed li:first-child{border-top:1px solid var(--rule-strong)}
-.feed .when{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap;
+.feed .when{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;
   font-variant-numeric:tabular-nums}
 /* `break-word` and not `anywhere`: a name in a sentence is a button, and
    `anywhere` let a line break between the button and the comma after it, so
@@ -368,7 +383,7 @@ section{margin-top:56px}
    word itself will not fit. */
 .feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:break-word;font-size:16px}
 .feed .kind{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:10.5px;color:var(--muted);white-space:nowrap;margin-left:auto}
+  font-size:11px;color:var(--muted);white-space:nowrap;margin-left:auto}
 .feed li.ours{border-left:2px solid var(--accent);padding-left:12px}
 .feed li.theirs{border-left:2px solid var(--rule-strong);padding-left:12px}
 .feed li.urgent .kind{color:var(--stop)}
@@ -384,7 +399,7 @@ section{margin-top:56px}
 .profile{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);gap:0 18px;
   align-items:end;border-bottom:1px solid var(--rule);padding:10px 0}
 .profile .who{font-weight:600;overflow-wrap:anywhere;padding-bottom:6px}
-.profile.ours .who{color:var(--accent)}
+.profile.ours .who{color:var(--accent-deep)}
 .profile .strip{margin:0}
 
 /* ---- the free pages' look at the reader's own team --------------------- */
@@ -409,18 +424,18 @@ section{margin-top:56px}
    scoped to `.side`: the week page's What if answer draws the same finish
    block the trade page does, out of the same function, and a shared
    component cannot depend on the container one page happens to put it in. */
-.whose{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--faint);margin:2px 0 0}
-.hint{color:var(--muted);font-size:14px;margin:6px 0 0}
+.whose{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:2px 0 0}
+.hint{color:var(--muted);font-size:14.5px;margin:6px 0 0}
 .roster{list-style:none;margin:10px 0 0;padding:0}
 .roster li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
 .pick{display:flex;flex:1 1 auto;min-width:0;align-items:baseline;gap:8px;text-align:left;
   background:none;border:0;border-radius:0;padding:7px 4px;cursor:pointer;font-size:15px}
 .pick:hover{background:var(--sunk)}
-.pick[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.pick[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-deep)}
 .pick[aria-pressed="true"] .who::before{content:"\2713\00a0"}
 .pick .who{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-weight:600}
-.pick .meta{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap}
+.pick .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
 .pick .meta.out{color:var(--stop)}
 .deal{border-top:1px solid var(--rule-strong);margin-top:24px;padding-top:12px}
 .deal p{margin:4px 0 0;font-size:16px}
@@ -430,14 +445,14 @@ section{margin-top:56px}
   border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
 .doing{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:22px 0 0}
 .doing button[disabled]{opacity:.45;cursor:progress}
-.doing .working{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--muted)}
+.doing .working{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;color:var(--muted)}
 /* Nine rows of six narrow columns, twice over, inside half a page: the one
    table in the house that sets its own size rather than taking the grid's. */
 .nine td,.nine th{padding:7px 4px;font-size:12.5px}
 .nine td.cat{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.04em}
 .nine td.d.up{color:var(--good)} .nine td.d.down{color:var(--stop)}
 .nine td.d.flat{color:var(--faint)}
-.grid td.flag{font-family:var(--mono);font-size:11px;color:var(--warn)}
+.grid td.flag{font-family:var(--mono);font-size:11.5px;color:var(--warn)}
 @media (max-width:860px){
   .two{grid-template-columns:1fr;gap:0}
   .two > .side{margin-top:28px}
@@ -466,7 +481,7 @@ section{margin-top:56px}
    roster's, so it is drawn as a different kind of number and its own row
    says which (docs/trades.md, "Filling the opened place"). */
 .fill .worth.faint{color:var(--faint)}
-.fill .meta{grid-column:1/-1;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.fill .meta{grid-column:1/-1;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 /* The strip stays nine across in a row of this list at every width: it is
    there to be glanced at beside the name, and three rows of three would make
    a list of forty men unreadable on a phone. */
@@ -475,13 +490,13 @@ section{margin-top:56px}
 .fill .strip div{padding:3px 5px;border-bottom:0}
 .fill .strip .lab{font-size:8.5px} .fill .strip b{font-size:11.5px}
 .badge{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:10px;margin-left:8px;color:var(--muted);white-space:nowrap}
+  font-size:10.5px;margin-left:8px;color:var(--muted);white-space:nowrap}
 .badge.hurt{color:var(--stop)} .badge.waivers{color:var(--warn)}
 /* The card's own control on a row that is already a button: a word in the
    mono face at the end of the row, never an icon in a circle. */
 .info{align-self:stretch;background:none;border:0;border-left:1px solid var(--rule);
-  border-radius:0;padding:0 10px;cursor:pointer;font-family:var(--mono);font-size:10px;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  border-radius:0;padding:0 10px;cursor:pointer;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .info:hover{color:var(--accent)}
 
 /* ---- a player's card: a popover on a desktop, a sheet on a phone --------
@@ -504,19 +519,19 @@ section{margin-top:56px}
 .pcard.pinned .cn{padding-right:46px}
 .pcard .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05;
   text-transform:uppercase;letter-spacing:.01em}
-.pcard .cm{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--muted);margin:4px 0 10px}
+.pcard .cm{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin:4px 0 10px}
 .pcard .strip{margin:0 0 10px;grid-template-columns:repeat(9,minmax(0,1fr));
   border-width:1px 0 1px 1px}
 .pcard .strip div{padding:3px 4px;border-bottom:0}
 .pcard .strip .lab{font-size:8.5px;letter-spacing:.04em} .pcard .strip b{font-size:11.5px}
 .pcard .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;margin:0;
   font-size:13.5px}
-.pcard .facts dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--faint);padding-top:3px;white-space:nowrap}
+.pcard .facts dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);padding-top:3px;white-space:nowrap}
 .pcard .facts dd{margin:0;font-variant-numeric:tabular-nums}
 .pcard .flag{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--rule);
-  font-family:var(--mono);font-size:11px;color:var(--warn)}
+  font-family:var(--mono);font-size:11.5px;color:var(--warn)}
 @media (max-width:700px){
   /* A thumb cannot hover and cannot reach the top of a tall screen: the card
      comes up along the bottom instead, full width, and stays until it is
@@ -549,8 +564,8 @@ section{margin-top:56px}
 .landing .claims .fig{color:var(--accent);font-size:38px;line-height:1.1;font-weight:500;
   margin:10px 0 0;letter-spacing:-.01em}
 .landing .claims .fig .against{color:var(--faint);font-size:20px;font-family:var(--body)}
-.landing .claims .src{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
-  color:var(--faint);line-height:1.8;margin-top:12px}
+.landing .claims .src{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+  color:var(--muted);line-height:1.8;margin-top:12px}
 /* The stance, which is a sentence and not a section: an accent rule down its
    left, like a reader's own matchup on the week page. */
 .landing .stance{border-left:2px solid var(--accent);padding:6px 0 6px 16px;
@@ -578,15 +593,15 @@ section{margin-top:56px}
 details.disc{border-top:1px solid var(--rule)}
 details.disc > summary{list-style:none;cursor:pointer;padding:8px 0 7px;display:flex;
   align-items:baseline;gap:10px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:11px;color:var(--muted)}
+  letter-spacing:.08em;font-size:11.5px;color:var(--muted)}
 details.disc > summary::-webkit-details-marker{display:none}
-details.disc > summary::after{content:"+";margin-left:auto;font-family:var(--mono);font-size:14px;
-  line-height:1;color:var(--faint)}
+details.disc > summary::after{content:"+";margin-left:auto;font-family:var(--mono);font-size:15px;
+  line-height:1;color:var(--muted)}
 details.disc[open] > summary::after{content:"\2212"}
 details.disc > summary:hover{color:var(--ink)}
-details.disc[open] > summary{color:var(--accent)}
-details.disc > summary .n{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
-  color:var(--faint);text-transform:none}
+details.disc[open] > summary{color:var(--accent-deep)}
+details.disc > summary .n{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  color:var(--muted);text-transform:none}
 details.disc .inside{padding:2px 0 18px}
 details.disc .inside > .lede{margin-top:0}
 .disclist{border-bottom:1px solid var(--rule)}
@@ -599,12 +614,12 @@ details.disc .inside > .lede{margin-top:0}
 .mast .versus{margin:10px 0 0;font-family:var(--display);font-weight:600;
   font-size:clamp(17px,4vw,26px);text-transform:uppercase;letter-spacing:.02em;color:var(--muted)}
 .mast .versus b{color:var(--ink);font-weight:600}
-.mast .when{margin:8px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--faint)}
+.mast .when{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
 .tale{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 24px;align-items:end;
   margin:16px 0 0;padding:16px 0 18px;border-top:1px solid var(--rule)}
-.tale .k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--faint)}
+.tale .k{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted)}
 .tale .left{border-right:1px solid var(--rule);padding-right:24px}
 .tale .big{display:block;margin-top:2px;font-family:var(--display);font-weight:600;
   font-size:clamp(52px,13vw,84px);line-height:.88;color:var(--accent);
@@ -620,8 +635,8 @@ details.disc .inside > .lede{margin-top:0}
 .split u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--ink);
   opacity:.45;text-decoration:none}
 .tale .ends{display:flex;justify-content:space-between;gap:10px;margin:6px 0 0;
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--faint)}
+  font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
 .tale .ends span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tale .ends .r{text-align:right}
 @media (max-width:560px){
@@ -651,11 +666,14 @@ details.disc .inside > .lede{margin-top:0}
 .band{margin-top:14px}
 .band:first-child{margin-top:0}
 .band .blab{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;
-  font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;font-size:11px;
-  color:var(--faint)}
-.band .blab .n{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.08em}
-.band.swing{border-left:2px solid var(--accent);padding-left:12px}
-.band.swing .blab{color:var(--accent)}
+  font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;font-size:11.5px;
+  color:var(--muted)}
+.band .blab .n{margin-left:auto;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  font-weight:400}
+/* The band tonight can move is where the eye should land in this
+   section, so it carries the heavier rule as well as the accent. */
+.band.swing{border-left:3px solid var(--accent);padding-left:12px}
+.band.swing .blab{color:var(--accent-deep);font-size:12.5px;font-weight:600}
 /* auto-fill, not auto-fit: a band of three keeps the cell width a band of
    five has, so the three read as three of nine rather than as a row of their
    own, and a band that wraps on a phone wraps into the same grid. */
@@ -667,11 +685,11 @@ details.disc .inside > .lede{margin-top:0}
 .pulse button:hover{background:var(--sunk)}
 .pulse button[aria-expanded="true"]{background:var(--accent-soft)}
 .pulse .lab{display:block;margin-bottom:1px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:10px;color:var(--muted)}
+  letter-spacing:.08em;font-size:10.5px;color:var(--muted)}
 .pulse b{font-family:var(--mono);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums}
 .band.yours .pulse b{color:var(--good)}
 .band.theirs .pulse b{color:var(--stop)}
-.band.swing .pulse b{color:var(--accent)}
+.band.swing .pulse b{color:var(--accent-deep)}
 .empty.bandempty{padding:4px 0 0;font-size:14px}
 /* The same strip under a What if answer, where a cell is a cell and not a
    button: there is no second pair of projected totals behind a hypothetical
@@ -681,8 +699,8 @@ details.disc .inside > .lede{margin-top:0}
 .pulse .cell{display:block;width:100%;text-align:right;border-right:1px solid var(--rule);
   border-bottom:1px solid var(--rule);padding:7px 9px 6px}
 .pulse .cell.moved{background:var(--accent-soft)}
-.pulse .mv{display:block;margin-top:2px;font-family:var(--mono);font-size:10px;
-  letter-spacing:.02em;color:var(--faint);white-space:nowrap}
+.pulse .mv{display:block;margin-top:2px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.02em;color:var(--muted);white-space:nowrap}
 .pulse .mv.up{color:var(--good)} .pulse .mv.down{color:var(--stop)}
 
 /* ---- what if: a move the manager names ----------------------------------
@@ -694,7 +712,7 @@ details.disc .inside > .lede{margin-top:0}
    here beyond the form itself. */
 .whatif .room{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
 .whatif .room > label,.whatif .room > .k{flex:0 0 4.5em;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.09em;font-size:11px;color:var(--faint)}
+  text-transform:uppercase;letter-spacing:.09em;font-size:11.5px;color:var(--muted)}
 .whatif .room select{flex:1 1 15em}
 .whatif .room select[disabled]{color:var(--faint)}
 .whatif .chosen{flex:1 1 15em;color:var(--ink);font-size:16px;overflow-wrap:anywhere}
@@ -714,16 +732,16 @@ details.disc .inside > .lede{margin-top:0}
 .catbox .cn{font-family:var(--display);font-weight:600;font-size:20px;text-transform:uppercase;
   letter-spacing:.03em}
 .catbox .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;margin:8px 0 0}
-.catbox dt{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--faint);padding-top:4px;white-space:nowrap}
+.catbox dt{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);padding-top:4px;white-space:nowrap}
 .catbox dd{margin:0;font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
-.catbox .note{margin:8px 0 0;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.catbox .note{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 
 /* Tonight: a man a row, name first, then his mark and his game, then what
    ESPN says about him. No headshot: the NBA team's abbreviation in the
    display face is the mark, which is licensed to nobody and reads at any
    size. On a phone the row is two lines; the second is the mono line. */
-.tonight{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule-strong)}
+.tonight{list-style:none;margin:0;padding:0;border-top:2px solid var(--rule-strong)}
 .tonight li{border-bottom:1px solid var(--rule);padding:9px 0 8px;display:grid;
   grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline}
 .tonight li.one{padding:7px 0 6px}
@@ -731,17 +749,17 @@ details.disc .inside > .lede{margin-top:0}
 .tonight li.one .who{display:flex;align-items:baseline;gap:10px}
 .tonight li.one .who .team{flex:0 0 2.4em}
 .tonight .who{min-width:0;font-size:16px;font-weight:600;overflow-wrap:anywhere}
-.tonight .st{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);white-space:nowrap;text-align:right}
+.tonight .st{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);white-space:nowrap;text-align:right}
 .tonight .st.on{color:var(--good)} .tonight .st.doubt{color:var(--warn)}
 .tonight .st.out{color:var(--stop)}
-.tonight .meta{grid-column:1/-1;font-family:var(--mono);font-size:11.5px;color:var(--muted);
+.tonight .meta{grid-column:1/-1;font-family:var(--mono);font-size:12px;color:var(--muted);
   letter-spacing:.02em;overflow-wrap:anywhere}
 .tonight .meta .team{font-family:var(--display);font-weight:600;font-size:12.5px;
   letter-spacing:.09em;color:var(--ink)}
 .sideline{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--faint)}
-.sideline .n{margin-left:auto;font-family:var(--mono);font-size:10px}
+  text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;color:var(--muted)}
+.sideline .n{margin-left:auto;font-family:var(--mono);font-size:10.5px}
 #tonight-grids{gap:0 32px}
 #tonight-grids > .side{border-top:0;padding-top:0}
 @media (max-width:860px){ #tonight-grids > .side{margin-top:24px} }
@@ -761,8 +779,8 @@ details.disc .inside > .lede{margin-top:0}
 #tonight-grids.together > .side + .side{margin-top:22px}
 #tonight-grids.together .tonight li{grid-template-columns:3.4em minmax(0,1fr) auto}
 #tonight-grids.together .tonight li::before{content:"THEM";font-family:var(--mono);
-  font-size:10.5px;letter-spacing:.12em;color:var(--faint)}
-#tonight-grids.together #tonight-ours li::before{content:"YOU";color:var(--accent)}
+  font-size:11px;letter-spacing:.12em;color:var(--muted)}
+#tonight-grids.together #tonight-ours li::before{content:"YOU";color:var(--accent-deep)}
 #tonight-grids.together .tonight .meta{grid-column:2/-1}
 @media (min-width:861px){
   #tonight-grids.apart{grid-template-columns:minmax(0,var(--ours,1fr)) minmax(0,var(--theirs,1fr))}
@@ -805,14 +823,14 @@ details.disc .inside > .lede{margin-top:0}
 .read .deal{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0;padding:0;
   border-top:0;font-size:17px}
 .read .verb{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
-  font-size:11px;color:var(--faint)}
+  font-size:11.5px;color:var(--muted)}
 .read .deal b{font-weight:600}
 .read .moves{margin:7px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
-  color:var(--faint)}
+  color:var(--muted)}
 .read .moves .up{color:var(--good)} .read .moves .down{color:var(--stop)}
 .read .moves .w{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10px;color:var(--faint);margin-right:5px}
-.read .meta{margin:4px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+  font-size:10.5px;color:var(--muted);margin-right:5px}
+.read .meta{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted)}
 .read details.disc{border-top:0;margin-top:2px}
 .read details.disc > summary{padding:6px 0 5px}
 
@@ -825,19 +843,19 @@ details.disc .inside > .lede{margin-top:0}
    the men behind the figures and the places behind the word. */
 .sched{width:100%;border-collapse:collapse;table-layout:fixed}
 .sched th,.sched td{border:1px solid var(--rule);padding:0;text-align:center}
-.sched thead th{border-width:0 1px 1px 0;border-bottom-color:var(--rule-strong);
-  padding:5px 2px 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--faint);font-weight:400}
+.sched thead th{border-width:0 1px 2px 0;border-bottom-color:var(--rule-strong);
+  padding:5px 2px 6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted);font-weight:400}
 .sched thead th:first-child{border-left:0}
 .sched thead th .dn{display:block;font-family:var(--display);font-weight:600;font-size:15px;
   color:var(--ink);letter-spacing:0}
 .sched thead th.past .dn{color:var(--faint);font-weight:400}
 .sched thead th.now{background:var(--accent-soft)}
-.sched thead th.now .dn{color:var(--accent)}
+.sched thead th.now .dn{color:var(--accent-deep)}
 .sched tbody th{width:4.4em;border-left:0;padding:8px 8px 8px 0;text-align:left;
-  font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11px;
+  font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;
   color:var(--muted);font-weight:600}
-.sched tbody tr.us th{color:var(--accent)}
+.sched tbody tr.us th{color:var(--accent-deep)}
 .sched td button{display:block;width:100%;font:inherit;color:inherit;background:none;border:0;
   border-radius:0;padding:7px 2px 6px;cursor:pointer;font-family:var(--mono);
   font-variant-numeric:tabular-nums}
@@ -855,8 +873,8 @@ details.disc .inside > .lede{margin-top:0}
 /* A place going empty that somebody on the wire could fill -- the one thing
    the bar above is waived for, and the only day-level thing on this grid
    worth a word. A word and not a count: the count is in the day's detail. */
-.sched td .open{display:block;margin-top:1px;font-family:var(--mono);font-size:9.5px;
-  font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.sched td .open{display:block;margin-top:1px;font-family:var(--mono);font-size:10px;
+  font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-deep)}
 .sched th.total,.sched td.total{border-left-color:var(--rule-strong);background:var(--sunk)}
 .sched th.total{padding-top:10px}
 .sched th.total .dn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
@@ -869,24 +887,27 @@ details.disc .inside > .lede{margin-top:0}
 .daybox .cn{font-family:var(--display);font-weight:600;font-size:18px;text-transform:uppercase;
   letter-spacing:.03em}
 .daybox .who{margin:10px 0 0;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:10.5px;color:var(--faint)}
+  letter-spacing:.08em;font-size:11px;color:var(--muted)}
 .daybox .names{margin:3px 0 0;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
 .daybox .names .pname{font-size:15px}
-.daybox .note{margin:8px 0 0;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.daybox .note{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .daybox .gapline{margin:10px 0 0;border-left:2px solid var(--stop);padding:2px 0 2px 12px;
   font-size:14px;color:var(--muted)}
 .daybox .gapline b{color:var(--ink)}
 
 /* The season in one line, with the forecast's own record under it. */
+/* The finish is this section's anchor: the line is a size up and the
+   playoff odds, which is the figure a manager is actually after, are
+   the largest thing in it. */
 .standing{display:flex;align-items:baseline;gap:8px 16px;flex-wrap:wrap;margin:0;
-  font-family:var(--display);font-weight:600;font-size:clamp(20px,4.6vw,28px);
+  font-family:var(--display);font-weight:600;font-size:clamp(22px,4.8vw,31px);
   font-variant-numeric:tabular-nums}
-.standing .k{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--faint);font-weight:400}
+.standing .k{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);font-weight:400}
 .standing .sep{color:var(--rule);font-weight:400}
-.standing .odds{color:var(--accent)}
-.smallnote{margin:8px 0 0;font-family:var(--mono);font-size:11px;line-height:1.7;
-  color:var(--faint);max-width:78ch}
+.standing .odds{color:var(--accent);font-size:1.12em}
+.smallnote{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;line-height:1.7;
+  color:var(--muted);max-width:78ch}
 @media (max-width:560px){
   /* A phone wraps the line, and a separator at the end of a wrapped line
      reads as a missing word, so the labels carry the break instead. */
@@ -896,8 +917,8 @@ details.disc .inside > .lede{margin-top:0}
 
 /* ---- the footnote ------------------------------------------------------- */
 .foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
-  font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.9}
-.foot b{color:var(--muted);font-weight:500}
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.9}
+.foot b{color:var(--ink);font-weight:500}
 .warnline{border-left:2px solid var(--stop);padding:8px 0 8px 12px;margin:14px 0;
   color:var(--stop);font-size:15px}
 
