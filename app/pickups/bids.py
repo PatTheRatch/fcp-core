@@ -1,8 +1,76 @@
-"""What a winning FAAB bid has cost here, and what to bid now.
+"""What a winning FAAB bid has cost here, what he is worth to you, and what
+it takes to win.
 
-The question of docs/pickups.md section 4.5. A recommender that names a
-pickup has said nothing useful until it says what to pay for him, and the
-only honest source for that is what this league has actually paid.
+The question of docs/pickups.md section 4.5, and since 2026-09-23 the one
+docs/faab.md asks: the market price is what it takes to win, and it says
+nothing about whether the man is worth that *to this roster*. So the module
+now carries three things beside the market number -- what the move is worth
+in dollars, the dollar above which it stops clearing the bar, and the chance
+a given dollar wins -- and the rule that reads them is declared in
+docs/faab.md section "Declared" before it was ever measured.
+
+WHAT HE IS WORTH TO YOU, IN DOLLARS
+
+A move's worth is already in categories (`app.pickups.judge.Judgement`). The
+missing piece is the exchange rate, and the one this module's rule uses is
+**your own budget's shadow price**: with `faab_remaining` dollars covering
+`weeks_covered` weeks, a week of your season costs `faab_remaining /
+weeks_covered` dollars, and a week of your season is worth what an ordinary
+claim returns (`app.scoring.replacement.TYPICAL_PICKUP`, 0.06 categories a
+week). So
+
+    worth_dollars = per_week / TYPICAL_PICKUP * (faab_remaining / weeks_covered)
+    ceiling       = (per_week - hurdle) / TYPICAL_PICKUP * (faab_remaining / weeks_covered)
+
+`worth_dollars` is what the move is worth; `ceiling` is the dollar above
+which paying for it no longer clears the bar, since a dollar charges the
+place `TYPICAL_PICKUP * weeks_covered / faab_remaining` categories a week.
+
+It is the shadow price rather than the league's measured going rate for two
+reasons. It is specific to you -- two managers with the same roster and
+different budgets should not bid the same, which is the whole point -- and it
+reads no claim history at all, so it cannot look ahead at prices that had not
+been paid yet. The league's going rate is measured beside it in docs/faab.md
+and published as the market check, not used to price a bid.
+
+THE WIN CURVE
+
+`P(win | bid $x)`, per rank bucket, over the claim events this league has on
+record. An event is one (day, player) that at least one waiver claim was
+filed on; its field is every bid filed on it, the winner's and the losers'.
+The losing side is readable because ESPN keeps it: a claim that lost the
+player to a higher bid the same day is stored with status
+`FAILED_INVALIDPLAYERSOURCE` (`LOST`). Against 2026 that reading holds
+exactly -- in all 574 contested events the executed bid is at or above every
+`LOST` bid, and no `LOST` bid exists without an executed winner on the same
+player and day.
+
+A bid of $x beats a field whose top bid is $w when x > w, and when x == w it
+is a tie, which ESPN breaks on waiver priority. Priority cannot be
+reconstructed from what is stored, so a tie is credited at 1/(bidders at the
+top price + 1): the chance of being drawn out of the hat, which is neither
+the optimistic reading nor the pessimistic one.
+
+THE LADDER
+
+`LADDER_RUNGS` win chances, each with the cheapest whole dollar that reaches
+it, every rung capped by the ceiling and by the two caps the market bid has
+always had. A rung the caps pull down reports the chance at the dollar
+actually offered, not at the dollar it asked for, so the ladder never
+promises a chance the number beside it does not buy.
+
+WHO ELSE WANTS HIM
+
+`competition` is how many of the other rosters in the league would take the
+man -- into an open place, or over the cheapest man they hold -- judged on
+the season term alone against each roster's own wire replacement. It is
+counted by the caller that already has the wire and handed in, because this
+module prices one move and does not read fourteen rosters. It labels; it
+hides nothing and it moves no number.
+
+`amount` is still the market number: the median or 75th percentile winning
+bid of the rank bucket. docs/faab.md section 0 is where it would change, and
+says what the replay found.
 
 THE FIT
 
@@ -51,7 +119,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from statistics import median, quantiles
+from statistics import fmean, median, quantiles
 
 from sqlalchemy import Select, distinct, func, select
 from sqlalchemy.orm import Session
@@ -68,6 +136,7 @@ from app.draft.targets import CategoryDistribution, category_distributions
 from app.pickups.projection import per_game_line
 from app.pickups.state import EXECUTED, period_for_day
 from app.pickups.stream import weight
+from app.scoring.replacement import TYPICAL_PICKUP
 
 #: Rank buckets, as docs/pickups.md section 4.5 names them: (label, first
 #: rank, last rank). The last bucket is open-ended.
@@ -80,6 +149,13 @@ BUCKETS: tuple[tuple[str, int, int | None], ...] = (
 
 #: A claim of this type, in this state, is a bid that won.
 WAIVER = "WAIVER"
+
+#: A claim of this type, in this state, is a bid that LOST: ESPN's reason for
+#: a waiver claim whose player was no longer a valid source by the time it was
+#: processed, which in this league's record is always the same fact -- a
+#: higher bid on the same player, the same day, took him first. Verified
+#: against 2026 in the module docstring.
+LOST = "FAILED_INVALIDPLAYERSOURCE"
 
 #: How far above its hurdle a move has to be worth before the bid goes to
 #: the 75th percentile rather than the median (docs/pickups.md section 4.5).
@@ -104,6 +180,161 @@ PREFILTER_DAYS = 14
 #: What the caps are called in the output.
 CAP_FAAB = "faab_remaining"
 CAP_SHARE = "share_of_the_pot"
+
+#: The ladder's rungs: the win chances a manager is offered a dollar for.
+#: Three, because the point of a ladder is that the price of certainty is
+#: visible -- the cheap bid that usually wins, the one that nearly always
+#: does, and the one that is buying the last tenth.
+LADDER_RUNGS: tuple[float, ...] = (0.50, 0.75, 0.90)
+
+#: Days the exchange rate's delivery is measured over in docs/faab.md, the
+#: same window `scripts/pickups_backtest.py` scores a rest-of-season move
+#: over. Recorded here because the published rate is quoted in these units;
+#: the rule's own shadow price is per week and needs no window.
+RATE_WINDOW_DAYS = 30
+
+#: The most a win curve is drawn out to. Above the highest bid this league
+#: has ever recorded every curve is flat at 1.0, so the table stops there.
+CURVE_HEADROOM = 1
+
+
+@dataclass(frozen=True)
+class ClaimEvent:
+    """One (day, player) at least one claim was filed on, and its whole field.
+
+    `winning_bid` is the executed claim's; `losing_bids` is every bid that
+    lost him the same day (`LOST`). An event with no losing bid is
+    uncontested, which is half of this league's record and the reason $0 is
+    worth a row of its own in the curve.
+    """
+
+    day: int
+    player_id: int
+    winning_bid: int
+    losing_bids: tuple[int, ...]
+    rank: int
+
+    @property
+    def contested(self) -> bool:
+        return bool(self.losing_bids)
+
+    @property
+    def at_the_top(self) -> int:
+        """Bids already standing at the winning price, the winner included."""
+        return 1 + sum(1 for bid in self.losing_bids if bid == self.winning_bid)
+
+    def chance(self, amount: int) -> float:
+        """What a bid of `amount` would have taken off this field.
+
+        Above the top bid it wins outright; level with it, it joins a tie
+        ESPN breaks on a waiver priority nothing here can reconstruct, so it
+        is credited one share of the hat; below it, nothing.
+        """
+        if amount > self.winning_bid:
+            return 1.0
+        if amount == self.winning_bid:
+            return 1.0 / (self.at_the_top + 1)
+        return 0.0
+
+
+@dataclass(frozen=True)
+class CurveBucket:
+    """`P(win | bid $x)` for one band of value ranks, dollar by dollar."""
+
+    label: str
+    #: Claim events in the bucket.
+    n: int
+    #: How many of them anybody else bid on.
+    contested: int
+    #: (dollar, chance), from $0 up to a dollar above the bucket's highest bid.
+    points: tuple[tuple[int, float], ...]
+
+    def chance(self, amount: int) -> float:
+        """The curve at `amount`, flat at 1.0 past its last point."""
+        found = 0.0
+        for dollar, chance in self.points:
+            if dollar > amount:
+                break
+            found = chance
+        return found
+
+    def rung(self, target: float) -> int:
+        """The cheapest whole dollar whose chance reaches `target`."""
+        for dollar, chance in self.points:
+            if chance >= target:
+                return dollar
+        return self.points[-1][0] if self.points else 0
+
+
+@dataclass(frozen=True)
+class WinCurve:
+    """What a dollar has actually won here, by rank bucket."""
+
+    buckets: tuple[CurveBucket, ...]
+    #: Claim events fitted, across every bucket.
+    events: int
+    #: How many of them nobody else bid on.
+    uncontested: int
+
+    @property
+    def uncontested_share(self) -> float:
+        return self.uncontested / self.events if self.events else 0.0
+
+    def bucket_for(self, label: str) -> CurveBucket | None:
+        for bucket in self.buckets:
+            if bucket.label == label:
+                return bucket
+        return None
+
+
+@dataclass(frozen=True)
+class Rung:
+    """One step of the ladder: a chance, and the dollar that buys it."""
+
+    #: The chance the rung asked for, one of `LADDER_RUNGS`.
+    asked: float
+    amount: int
+    #: The chance at the dollar actually offered, which is lower than `asked`
+    #: whenever a cap pulled the rung down.
+    win_chance: float
+    #: Claim events the chance was read off.
+    n: int
+
+
+def curve_points(events: Sequence[ClaimEvent]) -> tuple[tuple[int, float], ...]:
+    """`P(win | bid $x)` at every whole dollar, averaged over `events`."""
+    if not events:
+        return ()
+    top = max(event.winning_bid for event in events) + CURVE_HEADROOM
+    return tuple(
+        (dollar, fmean([event.chance(dollar) for event in events])) for dollar in range(0, top + 1)
+    )
+
+
+def win_curve(events: Sequence[ClaimEvent]) -> WinCurve:
+    """The curve per rank bucket, from claim events already ranked."""
+    by_bucket: dict[str, list[ClaimEvent]] = {label: [] for label, _, _ in BUCKETS}
+    for event in events:
+        for label, first, last in BUCKETS:
+            if event.rank >= first and (last is None or event.rank <= last):
+                by_bucket[label].append(event)
+                break
+    buckets = tuple(
+        CurveBucket(
+            label=label,
+            n=len(found),
+            contested=sum(1 for event in found if event.contested),
+            points=curve_points(found),
+        )
+        for label, _first, _last in BUCKETS
+        if (found := by_bucket[label])
+    )
+    fitted = [event for bucket in buckets for event in by_bucket[bucket.label]]
+    return WinCurve(
+        buckets=buckets,
+        events=len(fitted),
+        uncontested=sum(1 for event in fitted if not event.contested),
+    )
 
 
 @dataclass(frozen=True)
@@ -133,6 +364,9 @@ class BidFit:
     buckets: tuple[Bucket, ...]
     #: Claims fitted, across every bucket.
     claims: int
+    #: What a dollar has won here, from the same claims and the losing bids
+    #: beside them. Empty when the league has no claims on record.
+    curve: WinCurve = WinCurve(buckets=(), events=0, uncontested=0)
 
     @property
     def thin(self) -> bool:
@@ -143,12 +377,18 @@ class BidFit:
         if not self.claims:
             return "no winning FAAB bids on record; the recommendation is $0."
         seasons = ", ".join(str(season) for season in self.seasons)
+        curve = (
+            f" The ladder reads {self.curve.events} claim events, "
+            f"{self.curve.uncontested_share:.0%} of which nobody else bid on."
+            if self.curve.events
+            else ""
+        )
         if self.thin:
             return (
                 f"one FAAB season ({seasons}) is thin: {self.claims} winning bids are the "
-                "whole record, so read the range rather than the number."
+                f"whole record, so read the range rather than the number.{curve}"
             )
-        return f"{self.claims} winning bids across {seasons}."
+        return f"{self.claims} winning bids across {seasons}.{curve}"
 
     def bucket_for(self, rank: int) -> Bucket | None:
         for bucket in self.buckets:
@@ -175,6 +415,20 @@ class Bid:
     #: `CAP_FAAB`, `CAP_SHARE`, or None when the history's number stood.
     capped_by: str | None
     note: str
+    #: What the move is worth to this roster, in dollars, at the shadow price
+    #: of this manager's own budget (the module docstring).
+    worth_dollars: int = 0
+    #: The dollar above which the move stops clearing its bar. Never below 0.
+    ceiling: int = 0
+    #: The shadow price itself, categories a week per dollar, so every figure
+    #: above is checkable, and the sentence saying where it came from.
+    rate: float = 0.0
+    rate_note: str = ""
+    #: A chance, and the dollar that buys it, cheapest first.
+    ladder: tuple[Rung, ...] = ()
+    #: How many other rosters this league's wire says the man clears the bar
+    #: for today. None when the caller did not count.
+    competition: int | None = None
 
 
 def value_rank(player_id: int, weights: Mapping[int, float]) -> int:
@@ -194,6 +448,47 @@ def value_rank(player_id: int, weights: Mapping[int, float]) -> int:
     return 1 + ahead
 
 
+def shadow_price(faab_remaining: int, weeks_covered: float, typical: float) -> float:
+    """What one FAAB dollar costs this roster, categories a week.
+
+    The budget left, spread over the weeks it has to cover, against what an
+    ordinary claim returns in a week: `faab_remaining / weeks_covered`
+    dollars buy one week, and one week is worth `typical`. A manager with no
+    money left has nothing to spend and no shadow price, which is 0.0 and a
+    ceiling of nothing.
+    """
+    if faab_remaining <= 0 or weeks_covered <= 0:
+        return 0.0
+    return typical * weeks_covered / faab_remaining
+
+
+def worth_of(per_week: float, faab_remaining: int, weeks_covered: float, typical: float) -> float:
+    """What a move worth `per_week` categories is worth, in dollars."""
+    rate = shadow_price(faab_remaining, weeks_covered, typical)
+    if rate <= 0.0:
+        return 0.0
+    return per_week / rate
+
+
+def ladder_for(
+    bucket: CurveBucket | None,
+    limit: int,
+    rungs: Sequence[float] = LADDER_RUNGS,
+) -> tuple[Rung, ...]:
+    """The rungs, each capped at `limit` and re-read at the dollar offered."""
+    if bucket is None:
+        return ()
+    return tuple(
+        Rung(
+            asked=asked,
+            amount=(offered := max(0, min(limit, bucket.rung(asked)))),
+            win_chance=bucket.chance(offered),
+            n=bucket.n,
+        )
+        for asked in rungs
+    )
+
+
 def recommend_bid(
     delta: float,
     hurdle: float,
@@ -202,6 +497,11 @@ def recommend_bid(
     weeks_remaining: float,
     total_weeks: float,
     fit: BidFit,
+    *,
+    per_week: float | None = None,
+    weeks_covered: float | None = None,
+    typical: float = TYPICAL_PICKUP,
+    competition: int | None = None,
 ) -> Bid:
     """What to bid on a move worth `delta`, for a player ranked `rank`.
 
@@ -209,10 +509,30 @@ def recommend_bid(
     week. The caps are the module docstring's: the pot, and the share of
     the pot proportional to the weeks left, rounded up so a single week
     can still buy something.
+
+    `per_week` is the move's net spread over the weeks it covers, which is
+    what the worth and the ceiling are priced off; it defaults to `delta`,
+    which is that number for every caller that passes one. `weeks_covered`
+    is the weeks the budget has to last, defaulting to the weeks after this
+    one plus this one. `competition` is how many other rosters the wire says
+    the man clears the bar for, counted by the caller that has the wire.
     """
     bucket = fit.bucket_for(rank)
     aggressive = hurdle > 0 and delta >= AGGRESSIVE_MULTIPLE * hurdle
     basis = "75th percentile" if aggressive else "median"
+    weekly = delta if per_week is None else per_week
+    covered = (weeks_remaining + 1.0) if weeks_covered is None else weeks_covered
+    rate = shadow_price(faab_remaining, covered, typical)
+    worth = max(0, math.floor(worth_of(weekly, faab_remaining, covered, typical)))
+    ceiling = max(0, math.floor(worth_of(weekly - hurdle, faab_remaining, covered, typical)))
+    share = share_cap(faab_remaining, weeks_remaining, total_weeks)
+    rate_note = (
+        f"a dollar costs {rate:.3f} categories a week: ${faab_remaining} left over "
+        f"{covered:.1f} weeks, against the {typical:.2f} an ordinary claim returns."
+        if rate > 0
+        else "no budget left, so no dollar has a price and the ceiling is $0."
+    )
+    ladder = ladder_for(fit.curve.bucket_for(bucket.label) if bucket else None, min(ceiling, share))
     if bucket is None:
         return Bid(
             amount=0,
@@ -225,10 +545,15 @@ def recommend_bid(
             sample=0,
             capped_by=None,
             note=fit.note,
+            worth_dollars=worth,
+            ceiling=ceiling,
+            rate=rate,
+            rate_note=rate_note,
+            ladder=ladder,
+            competition=competition,
         )
 
     uncapped = bucket.upper_quartile if aggressive else bucket.median
-    share = share_cap(faab_remaining, weeks_remaining, total_weeks)
     amount = max(0, round(uncapped))
     capped_by: str | None = None
     if amount > faab_remaining:
@@ -246,6 +571,12 @@ def recommend_bid(
         sample=bucket.n,
         capped_by=capped_by,
         note=fit.note,
+        worth_dollars=worth,
+        ceiling=ceiling,
+        rate=rate,
+        rate_note=rate_note,
+        ladder=ladder,
+        competition=competition,
     )
 
 
@@ -299,6 +630,35 @@ def _claim_count(session: Session, league_id: int) -> int:
 
 
 @dataclass(frozen=True)
+class RankedClaim:
+    """One winning claim, with the rank that buckets it and its whole field.
+
+    Public because two readers need exactly this ranking and must not each
+    build their own: the fit below, and `scripts/faab_bids.py`, which
+    measures the curve, the exchange rate and the replay off it.
+    """
+
+    season: int
+    league_season_id: int
+    day: int
+    player_id: int
+    bid: int
+    rank: int
+    #: Every bid that lost this player the same day (`LOST`).
+    losing_bids: tuple[int, ...] = ()
+
+    @property
+    def event(self) -> ClaimEvent:
+        return ClaimEvent(
+            day=self.day,
+            player_id=self.player_id,
+            winning_bid=self.bid,
+            losing_bids=self.losing_bids,
+            rank=self.rank,
+        )
+
+
+@dataclass(frozen=True)
 class _Claim:
     season: int
     league_season_id: int
@@ -339,17 +699,50 @@ def _claims(session: Session, league_id: int) -> list[_Claim]:
     ]
 
 
-def _fit(
+def _losing_bids(session: Session, league_id: int) -> dict[tuple[int, int, int], list[int]]:
+    """(league season, day, player) -> every bid that lost him that day."""
+    rows = session.execute(
+        select(
+            LeagueSeason.id,
+            Transaction.scoring_period,
+            TransactionItem.player_id,
+            Transaction.bid_amount,
+        )
+        .join(LeagueSeason, LeagueSeason.id == Transaction.league_season_id)
+        .join(TransactionItem, TransactionItem.transaction_id == Transaction.id)
+        .where(
+            LeagueSeason.league_id == league_id,
+            LeagueSeason.uses_faab.is_(True),
+            Transaction.type == WAIVER,
+            Transaction.status == LOST,
+            Transaction.bid_amount.is_not(None),
+            TransactionItem.item_type == "ADD",
+        )
+    ).all()
+    out: dict[tuple[int, int, int], list[int]] = {}
+    for ls_id, day, player_id, bid in rows:
+        out.setdefault((int(ls_id), int(day), int(player_id)), []).append(int(bid))
+    return out
+
+
+def ranked_claims(
     session: Session,
     league_season: LeagueSeason,
     override: Sequence[CategoryDistribution] | None = None,
-) -> BidFit:
+) -> tuple[RankedClaim, ...]:
+    """Every winning claim of every FAAB season this league has played, ranked.
+
+    The ranking is the module docstring's: the claimed player placed among
+    the free agents of the day he was claimed, by the knowable per-game
+    line's weight. Each claim carries the bids that lost him the same day, so
+    the win curve and the fit read one ranking and not two.
+    """
     claims = _claims(session, league_season.league_id)
-    seasons = tuple(sorted({claim.season for claim in claims}))
-    by_bucket: dict[str, list[int]] = {label: [] for label, _, _ in BUCKETS}
+    losing = _losing_bids(session, league_season.league_id)
     league_seasons: dict[int, LeagueSeason] = {}
     distributions: dict[int, Sequence[CategoryDistribution]] = {}
     ranked_days: dict[tuple[int, int], dict[int, float]] = {}
+    out: list[RankedClaim] = []
 
     for claim in claims:
         season_row = league_seasons.get(claim.league_season_id)
@@ -380,9 +773,33 @@ def _fit(
                 distributions[claim.league_season_id],
             )
             ranked_days[key] = weights
-        rank = value_rank(claim.player_id, weights)
+        out.append(
+            RankedClaim(
+                season=claim.season,
+                league_season_id=claim.league_season_id,
+                day=claim.day,
+                player_id=claim.player_id,
+                bid=claim.bid,
+                rank=value_rank(claim.player_id, weights),
+                losing_bids=tuple(
+                    sorted(losing.get((claim.league_season_id, claim.day, claim.player_id), ()))
+                ),
+            )
+        )
+    return tuple(out)
+
+
+def _fit(
+    session: Session,
+    league_season: LeagueSeason,
+    override: Sequence[CategoryDistribution] | None = None,
+) -> BidFit:
+    claims = ranked_claims(session, league_season, override)
+    seasons = tuple(sorted({claim.season for claim in claims}))
+    by_bucket: dict[str, list[int]] = {label: [] for label, _, _ in BUCKETS}
+    for claim in claims:
         for label, first, last in BUCKETS:
-            if rank >= first and (last is None or rank <= last):
+            if claim.rank >= first and (last is None or claim.rank <= last):
                 by_bucket[label].append(claim.bid)
                 break
 
@@ -396,6 +813,7 @@ def _fit(
         seasons=seasons,
         buckets=buckets,
         claims=sum(bucket.n for bucket in buckets),
+        curve=win_curve([claim.event for claim in claims]),
     )
 
 
