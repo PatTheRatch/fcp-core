@@ -206,8 +206,8 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `DELETE /connections/{connection_id}` | signed in, own only (404 otherwise) | revoke, and wipe the sealed login |
 | `POST /me/espn-identity` | signed in, rate-limited | your own SWID, sealed, to verify your claims |
 | `DELETE /me/espn-identity` | signed in | forget it |
-| `GET /invites/{token}` | signed in | the league an invite is for; the token is the rest of the credential |
-| `POST /invites/{token}/accept` | signed in | join that league as a member |
+| `GET /invites/{token}` | signed in, rate-limited | the league an invite is for; the token is the rest of the credential |
+| `POST /invites/{token}/accept` | signed in, rate-limited | join that league as a member |
 | `GET /pages/connections` | signed in (page) | old address: a 308 to `/account/connections` |
 | `GET /join/{token}` | signed in (page) | where an invite link lands; signed out, it goes to sign in and back |
 | `GET /leagues/{league_id}/seasons/{season}/teams/claimable` | league member | the season's teams, claimed or not; no owner is named |
@@ -394,6 +394,20 @@ friends is.
 
 ## Switching the VPS to accounts mode (at the cutover, not now)
 
+**docs/cutover.md is the runbook** and has the exact text to paste, the Caddy
+block, the DNS records and the rollback. What follows is the settings half of
+it, kept here because this is the document that explains them.
+
+**Check before you switch.** `python scripts/preflight_public.py` prints every
+condition below as pass or fail against the live settings, and never prints a
+secret: the auth mode, the public URL and that it is https, the owner's
+address, the service token, the secrets key, SMTP, that `FCP_API_URL` still
+points at the tailnet and not at the public name, that every route declares a
+check, the cookie's flags, that links are built on `FCP_PUBLIC_URL`, the rate
+limits, and the bearer path. `tests/test_public_ready.py` checks the same
+things against the running app, which is where a route added without a check
+is caught.
+
 The API stays tailnet-only until this is done. In order:
 
 1. Deploy, install the dependencies (`cryptography` is new), and run the
@@ -403,7 +417,8 @@ The API stays tailnet-only until this is done. In order:
      key", above). Can be done now, in single mode; it changes nothing
      until someone connects a league.
    - `FCP_OWNER_EMAIL=` Patrick's address (the one he will sign in with).
-   - `FCP_PUBLIC_URL=https://fcp.patrickmcdowell.dev`.
+   - `FCP_PUBLIC_URL=https://boxoutfantasy.com` (the site's own name since
+     the 2026-09-22 rename; fcp.patrickmcdowell.dev stays on the old stack).
    - `FCP_SMTP_HOST`, `FCP_EMAIL_FROM` (and the SMTP login) if not already
      set for the digest; sign-in links need only the host and the sender.
    - `FCP_SERVICE_TOKEN=` a fresh `python -c "import secrets;
@@ -413,10 +428,13 @@ The API stays tailnet-only until this is done. In order:
    - Last, `FCP_AUTH_MODE=accounts`, and restart the API.
 3. Run `scripts/warm_pages.py` once and check it prints HTTP 200 (not 401).
 4. Sign in at `/sign-in`, open the week page, check `/auth/me`.
-5. Then Caddy (step 5): route the domain to the API on localhost, run
+5. Then Caddy (step 5, docs/cutover.md): a block for boxoutfantasy.com that
+   proxies to the API on its tailnet address, which is where the container
+   can reach the host and where the scheduled scripts already call it. Run
    uvicorn with its default `--proxy-headers` so the client address the rate
    limit sees is the real one and the scheme is https (which sets the
-   cookie's `Secure` flag; `FCP_PUBLIC_URL` being https sets it too).
+   cookie's `Secure` flag; `FCP_PUBLIC_URL` being https sets it too, which is
+   what actually sets it here, since Caddy speaks plain http to the API).
 
 To go back, set `FCP_AUTH_MODE=single` and restart. Nothing is lost:
 sessions simply stop being asked for.
@@ -461,8 +479,11 @@ so nothing has to be rewritten.
 - **Rate limits.** In-process token buckets on `POST /auth/sign-in`: per
   address five links, then one a minute; per client address twenty, then one
   every ten seconds (`app/api/auth.py`, `SignInLimits`). Per user on
-  `POST /connections` (five, then one a minute) and `POST /me/espn-identity`
-  (ten, then one a minute) (`app/api/leagues_admin.py`). In memory, per
+  `POST /connections` (five, then one a minute), `POST /me/espn-identity`
+  (ten, then one a minute) and the two invite-token routes together (twenty,
+  then one every six seconds; added 2026-09-22 for the cutover, so a
+  signed-in member cannot work through tokens, though 256 random bits is the
+  real defence) (`app/api/leagues_admin.py`). In memory, per
   process, reset on restart: enough for one API process behind one proxy,
   which is what there is. Several processes would move them to the database.
 - **Nothing to enumerate.** Sign-in answers the same for every address.

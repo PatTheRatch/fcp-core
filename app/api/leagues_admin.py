@@ -108,11 +108,19 @@ TokenPath = Annotated[str, PathParam(max_length=200)]
 
 class AdminLimits:
     """Per user: five connection attempts, then one a minute (each one asks
-    ESPN); ten SWIDs, then one a minute. In memory, like sign-in's."""
+    ESPN); ten SWIDs, then one a minute; twenty invite tokens tried, then one
+    every six seconds. In memory, like sign-in's.
+
+    The invite bucket is not a defence against guessing a token -- a token is
+    256 random bits and nobody guesses one -- but it is the difference
+    between a signed-in member who tries and a signed-in member who can
+    hammer the route all day, and it costs nothing.
+    """
 
     def __init__(self) -> None:
         self.connect = TokenBucket(capacity=5, per_second=1 / 60)
         self.identity = TokenBucket(capacity=10, per_second=1 / 60)
+        self.invite = TokenBucket(capacity=20, per_second=1 / 6)
 
 
 def _limits(request: Request) -> AdminLimits:
@@ -121,6 +129,16 @@ def _limits(request: Request) -> AdminLimits:
         state.admin_limits = AdminLimits()
     found: AdminLimits = state.admin_limits
     return found
+
+
+def _spend_invite_try(request: Request, viewer: Viewer) -> None:
+    """One try at an invite token, charged to the caller; 429 when he is out.
+
+    Keyed by account rather than by token, because the thing being limited is
+    a caller working through tokens, not a token being looked at twice.
+    """
+    if not _limits(request).invite.allow(str(viewer.user_id)):
+        raise HTTPException(status_code=429, detail="too many invite links tried; wait a moment")
 
 
 def _user_id(viewer: Viewer) -> int:
@@ -469,9 +487,12 @@ def revoke_invite(league_id: int, invite_id: int, session: SessionDep) -> Invite
 
 
 @router.get("/invites/{token}", summary="The league an invite link is for")
-def show_invite(token: TokenPath, viewer: CurrentUser, session: SessionDep) -> InviteLeagueOut:
+def show_invite(
+    token: TokenPath, viewer: CurrentUser, session: SessionDep, request: Request
+) -> InviteLeagueOut:
     """Signed in, because a league's name is a member's to see; the token
-    itself is the rest of the credential."""
+    itself is the rest of the credential, so the tries are rate-limited."""
+    _spend_invite_try(request, viewer)
     invite = memberships.live_invite(session, token)
     if invite is None:
         raise HTTPException(status_code=404, detail=BAD_INVITE)
@@ -489,7 +510,10 @@ def show_invite(token: TokenPath, viewer: CurrentUser, session: SessionDep) -> I
 
 
 @router.post("/invites/{token}/accept", summary="Join the league an invite is for")
-def accept_invite(token: TokenPath, viewer: CurrentUser, session: SessionDep) -> JoinedOut:
+def accept_invite(
+    token: TokenPath, viewer: CurrentUser, session: SessionDep, request: Request
+) -> JoinedOut:
+    _spend_invite_try(request, viewer)
     accepted = memberships.accept_invite(session, token, _user_id(viewer))
     if accepted is None:
         session.rollback()
