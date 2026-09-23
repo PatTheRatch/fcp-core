@@ -595,12 +595,21 @@ function ordinal(place) {
 function finishHtml(side) {
   const f = side.finish;
   if (!f) return "";
+  // A tenth of a point rather than the whole point `pct` gives the standings.
+  // One man usually moves these odds by less than a point, and two figures
+  // that read "59% → 59%" would say the arithmetic failed rather than that
+  // the move is small; the band beside them is in tenths for the same reason.
+  const odds = (v) => (isNum(v) ? `${(v * 100).toFixed(1)}%` : dash);
   const was =
     `${record(f.record_before)} · ${ordinal(f.place_before)} · ` +
-    `playoffs ${pct(f.playoff_odds_before)}`;
+    `playoffs ${odds(f.playoff_odds_before)}`;
   const now =
-    `${record(f.record_after)} · ${ordinal(f.place_after)} · ${pct(f.playoff_odds_after)}`;
-  const band = `±${fixed(f.odds_band * 100, 1)} points on each`;
+    `${record(f.record_after)} · ${ordinal(f.place_after)} · ${odds(f.playoff_odds_after)}`;
+  // A tenth of a point, except when the band is under one and "±0.0 points"
+  // would read as a simulation that is exact, which is the opposite of what
+  // this is here to say.
+  const points = f.odds_band * 100;
+  const band = `±${fixed(points, points < 0.1 ? 2 : 1)} points on each`;
   const quiet = f.moved_more_than_the_band === false || f.readable === false;
   return (
     `<p class="whose" style="margin-top:20px">finish</p>` +
