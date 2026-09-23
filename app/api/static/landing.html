@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{brand}}</title>
-<meta name="description" content="Your ESPN fantasy basketball league, read in the nine categories.">
+<meta name="description" content="{{brand_tagline}}.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -13,40 +13,92 @@
 <body class="landing">
 <header class="shell"><nav class="nav" aria-label="Site">
   <a class="brand" href="/">{{brand}}</a>
-  <div class="end"><a class="navlink" href="/sign-in">Sign in</a></div>
+  <div class="end">
+    <a class="navlink" href="/sign-in">Sign in</a>
+    <button class="btn theme" id="theme" type="button" aria-pressed="false"
+      title="light or dark">Lights down</button>
+  </div>
 </nav></header>
 <div class="page">
 
 <header class="mast">
   <p class="eyebrow">Head-to-head, nine categories, on ESPN</p>
-  <h1>Your league, read properly</h1>
-  <p class="sub">{{brand}} reads your ESPN fantasy basketball league and lays it out
-    in the nine categories the league is actually played in: this week's matchups as they
-    stand, the table, the draft and what it was worth, and every season the league has kept.
-    For your own team, it works out the moves worth a look. You decide.</p>
+  <h1>{{brand}}</h1>
+  <p class="sub">{{brand_tagline}}. It reads your ESPN league — this week's matchups,
+    the table, the draft and what it was worth, every season the league has kept — and
+    for your own team it works out the moves worth a look, with what each one is worth
+    in categories a week.</p>
   <a class="cta" href="/sign-in">Sign in with your email</a>
+  <p class="sub small">League not connected yet? Ask whoever runs your league to connect
+    it, or connect it yourself once you are in.</p>
 </header>
 
-<section class="tiers">
-  <div>
-    <h2>The league</h2>
-    <p>Free for every member of a connected league: this week, the standings, the draft
-      board graded, and the history, owner against owner, back to the first season.</p>
-  </div>
-  <div>
-    <h2>Your team</h2>
-    <p>Private to the manager who claims it: the week and season plans, the moves worth a
-      look with what to bid, your own projections, and a morning digest.</p>
-  </div>
-  <div>
-    <h2>Getting in</h2>
-    <p>One member connects the league with his ESPN login and sends the rest an invite link.
-      Open yours, sign in with your email, and claim your team. No password, ever.</p>
+<!-- SCREENSHOT SLOT: one wide shot of This week, and one of a team's Week page at
+     phone width, go here once there are pages worth photographing. Nothing is
+     drawn in their place: an empty frame with "screenshot" written in it would be
+     the sort of thing this product does not do. -->
+
+<section class="measured">
+  <div class="shead"><h2>What it is for</h2>
+    <span class="tag">Measured, and written down</span></div>
+  <p class="lede">Every claim here was measured on eight seasons of one real league and
+    published before it was built into anything. The numbers are categories a week,
+    because that is what a nine-category head-to-head league is won in.</p>
+
+  <div class="claims">
+    <div>
+      <h3>The moves worth a look</h3>
+      <p class="fig num">+0.16</p>
+      <p>Categories a week the pickup recommender added over doing nothing, at its
+        0.20 bar. It names a move on about one decision in eight and says
+        <b>nothing clears the bar</b> the rest of the time, which is most of the time.</p>
+      <p class="src">Backtest over 616 team-decision points, 2026 season
+        · docs/pickups_backtest.md</p>
+    </div>
+    <div>
+      <h3>The open place</h3>
+      <p class="fig num">0.38 <span class="against">vs</span> 0.00</p>
+      <p>Categories a week a streamed place returns, against what the thirteenth man
+        a roster holds all year returns. Holding a man for a rainy day is the
+        expensive habit; the place itself is the asset.</p>
+      <p class="src">1,536 team-periods, 2019–2026 · docs/streaming_lane.md</p>
+    </div>
+    <div>
+      <h3>What it will not pretend</h3>
+      <p class="fig num">25 of 55</p>
+      <p>Past trades whose better side the evaluator picked — a coin. So a trade page
+        leads with what a deal does to each side's nine categories, one line at a
+        time, and prints that record under the number rather than beside it.</p>
+      <p class="src">55 deals over 6 seasons · docs/trades.md</p>
+    </div>
   </div>
 </section>
 
-<p class="foot">Built on ESPN's own data, read with a member's login; nothing is written back
-  to ESPN.</p>
+<p class="stance"><b>A tool, not gospel.</b> Every number comes with what it rests on
+  and what it does not know. Nothing here fills in a lineup, makes a claim or sends a
+  trade: it lays out the reasons and you decide.</p>
+
+<section class="needs">
+  <div class="shead"><h2>What it needs, and what it will not do</h2></div>
+  <div class="claims two">
+    <div>
+      <h3>From you</h3>
+      <p>An ESPN fantasy basketball league played head-to-head in the nine categories,
+        and an email address to sign in with. No password, ever: the link is the
+        sign-in. One member of the league connects it with his own ESPN login and
+        sends everyone else an invite.</p>
+    </div>
+    <div>
+      <h3>Not on your behalf</h3>
+      <p>Nothing here touches ESPN on your behalf. No add, no drop, no claim, no
+        trade, no lineup is ever submitted for you. It reads your league with a
+        member's login and writes back nothing at all.</p>
+    </div>
+  </div>
+</section>
+
+<p class="foot">{{brand}} · {{brand_domain}} · built on ESPN's own data, read with a
+  member's login; nothing is written back to ESPN.</p>
 
 </div>
 <script src="/pages/static/pages.js"></script>

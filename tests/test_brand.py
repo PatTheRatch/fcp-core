@@ -5,7 +5,7 @@ still the name of Patrick's own league, so the old string survives in the
 measurement notes and in ESPN's data on purpose. What must not survive is a
 *page* or a *mail* that says it: those are the product naming itself.
 
-So this module does two sweeps.
+So this module does two sweeps and a reading of the landing page.
 
 * **Every file the site serves**, filled as the routes fill it, must be clean.
   That catches a page whose masthead was missed.
@@ -13,6 +13,10 @@ So this module does two sweeps.
   everything, must be clean *and* must carry no `{{token}}` left unfilled.
   That catches a route that forgot `brand.fill`, which the file sweep cannot
   see.
+* **The landing page**, signed out, is the one page a stranger reads, so its
+  wiring is checked in full: the name, the tagline, the three measured
+  figures with their sources, the stance, the way in, and nothing that
+  fetches anybody's data.
 
 `FCP_*` settings, `fcp-core`, `fcp_session` and the rest are identifiers and
 are deliberately not matched: the pattern wants FCP as a word, and those all
@@ -177,3 +181,68 @@ def test_a_refused_page_and_a_dead_link_carry_the_name(
         assert brand.BRAND in dead.text
         assert offences(dead.text) == []
     built.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# the landing page
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def landing(seeded: sessionmaker[Session]) -> Iterator[str]:  # noqa: F811
+    """`/` with nobody signed in, which is accounts mode and no cookie."""
+    built = create_app()
+
+    def override() -> Iterator[Session]:
+        with seeded() as open_session:
+            yield open_session
+
+    built.dependency_overrides[get_session] = override
+    built.dependency_overrides[get_settings] = lambda: accounts_settings()
+    with TestClient(built) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        yield page.text
+    built.dependency_overrides.clear()
+
+
+def test_the_landing_page_names_itself(landing: str) -> None:
+    assert f"<title>{brand.BRAND}</title>" in landing
+    assert brand.BRAND_TAGLINE in landing
+    assert brand.BRAND_DOMAIN in landing
+    assert offences(landing) == []
+
+
+def test_the_landing_page_carries_the_measured_figures_and_their_sources(landing: str) -> None:
+    """Every claim on the one page a stranger reads cites the note it is from."""
+    for figure, source in (
+        ("+0.16", "docs/pickups_backtest.md"),
+        ("0.38", "docs/streaming_lane.md"),
+        ("25 of 55", "docs/trades.md"),
+    ):
+        assert figure in landing, figure
+        assert source in landing, source
+    assert "616 team-decision points" in landing
+    assert "1,536 team-periods" in landing
+
+
+def test_the_landing_page_states_the_stance_and_the_terms(landing: str) -> None:
+    assert "A tool, not gospel" in landing
+    assert "you decide" in landing
+    # What it needs, and the one promise about ESPN.
+    assert "nine categories" in landing
+    assert "Nothing here touches ESPN on your behalf." in landing
+    assert "no lineup is ever submitted for you" in landing
+
+
+def test_the_landing_page_offers_a_way_in_for_a_league_not_connected_yet(landing: str) -> None:
+    assert 'href="/sign-in"' in landing
+    assert "Sign in with your email" in landing
+    assert "Ask whoever runs your league to connect" in landing
+    assert "connect it yourself" in landing
+
+
+def test_the_landing_page_reads_nobody_s_data(landing: str) -> None:
+    assert "shell.js" not in landing
+    assert "/auth/me" not in landing
+    assert "SCREENSHOT SLOT" in landing, "the slot is marked rather than filled with a frame"
