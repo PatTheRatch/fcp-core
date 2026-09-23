@@ -393,8 +393,12 @@ cannot disagree about what a week is worth. It is a league-level stored
 report and a job of its own. It does **not** change any number here: the
 seam where a pickup's "without" could read the real opponent instead of the
 average one is named in that note and deliberately not taken. Its calibration
-says the per-category chances are overconfident, and prices the fix without
-applying it, because the function it would change is this one.
+found the per-category chances overconfident and priced the fix without
+applying it, because the function it would change is this one; the owner
+applied it on **2026-09-23** (`app.pickups.stream.SPREAD_SCALE` = 2.0,
+[`docs/spread_revision.md`](spread_revision.md)), so every chance and every
+net on this page is smaller now and the 0.20 bar catches fewer moves. The
+hurdles themselves were not moved with it.
 
 **As built, second pass** (2026-09-18): every `Swap` carries a `Judgement` too. Its week half is the streaming report's own head-to-head (`app.pickups.stream.week_deltas`, so the two halves of the recommender cannot disagree about what a week is worth) and its season half is the optimizer's Δ per week, which is already a with-and-without over the whole roster. `Swap.clears` reads the net spread over the weeks it covers (`Judgement.per_week`), so `SEASON_HURDLE_PAID` and `SEASON_HURDLE_FREE` keep the unit and the scale they were written in — categories a week — while the quantity they gate is now both horizons. `horizon` and `weeks_between` moved to `app/pickups/judge.py`, since the week's report needs the same horizon to know how many weeks a drop is charged over; they are re-exported here.
 

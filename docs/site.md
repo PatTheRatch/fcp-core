@@ -217,8 +217,9 @@ projection's own order, not the table's. Every column sorts on a click in
 both views. It reads `/projected`, which is the whole league in one answer
 and is the slow fetch, so the table is drawn first and the toggle appears
 when the projection lands; a season it cannot be built for simply has no
-toggle. The footnote prints the forecast's own record, which says plainly
-that it is overconfident.
+toggle. The footnote prints the forecast's own record, which since the spread
+was widened (2026-09-23, docs/spread_revision.md) says plainly that it now
+lands about where it says it will except at the two ends of the scale.
 
 **Draft.** Headline "The draft", "182 picks, $2796 spent. The dearest:
 Victor Wembanyama at $100, to Fantastic 5." A readout: picks, spent,

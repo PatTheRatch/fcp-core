@@ -168,8 +168,11 @@ question answered against the **real** opponent each week:
 
 It is drawn last, after the week itself, and is hidden entirely when the
 route cannot answer — a season with no schedule stored, or one that is over.
-The forecast's own record goes in the footnote, and it says plainly that the
-chances are overconfident: the section is a direction, not a prediction.
+The forecast's own record goes in the footnote. Since the spread was widened
+(2026-09-23, docs/spread_revision.md) it says the chances now land about where
+they claim to except at the two ends, and that a week five or more ahead is
+called right about 55% of the time: the section is still a direction rather
+than a prediction.
 
 ## What is on the season page
 
