@@ -768,21 +768,45 @@ details.disc .inside > .lede{margin-top:0}
   #tonight-grids.apart{grid-template-columns:minmax(0,var(--ours,1fr)) minmax(0,var(--theirs,1fr))}
 }
 
-/* A move worth a look: the two names, the number, the categories it moves,
+/* A move worth a look: the number, the two names, the categories it moves,
    and everything behind it one tap away. A rule over it, never a box; the
-   first one carries the accent rule the house gives a reader's own row. */
-.read{border-top:1px solid var(--rule);padding:14px 0 6px}
+   first one carries the accent rule the house gives a reader's own row.
+
+   The number is the punchline and is read first, so it is placed first
+   rather than printed larger: on a desk it takes a column of its own with
+   a rule down the side of it -- the masthead's own treatment of the days
+   left, which is the other figure on this page everything else is measured
+   against -- and on a phone it takes the line above the names. Its word
+   sits under it in the mono face, because "+0.90" alone is not a quantity
+   of anything. */
+.read{display:grid;grid-template-columns:minmax(0,1fr);border-top:1px solid var(--rule);
+  padding:14px 0 6px}
 .read:first-of-type{border-top:1px solid var(--rule-strong)}
 .read.top{border-left:2px solid var(--accent);padding-left:14px}
-.read .deal{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0;font-size:17px}
+.read .case{min-width:0}
+.read .gain{display:flex;align-items:baseline;gap:9px;margin:0 0 6px;
+  font-variant-numeric:tabular-nums}
+.read .gain b{font-family:var(--mono);font-weight:600;font-size:29px;line-height:1;
+  letter-spacing:-.01em}
+.read .gain.up b{color:var(--good)} .read .gain.down b{color:var(--stop)}
+.read .gain .unit{font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted)}
+@media (min-width:641px){
+  .read{grid-template-columns:7em minmax(0,1fr);column-gap:22px}
+  .read .gain{display:block;text-align:right;margin:0;padding:1px 22px 0 0;
+    border-right:1px solid var(--rule)}
+  .read .gain b{font-size:31px}
+  .read .gain .unit{display:block;margin-top:5px}
+}
+/* `deal` is also the trade builder's own block, which carries a rule over
+   it; here it is the line of names and carries none. It used to sit at the
+   top of the article, where that rule fell exactly on the article's own and
+   could not be seen. The number sits there now, so it can. */
+.read .deal{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0;padding:0;
+  border-top:0;font-size:17px}
 .read .verb{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
   font-size:11px;color:var(--faint)}
 .read .deal b{font-weight:600}
-.read .num{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:20px;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.read .num.up{color:var(--good)} .read .num.down{color:var(--stop)}
-.read .num .unit{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
-  font-weight:400;margin-left:5px}
 .read .moves{margin:7px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
   color:var(--faint)}
 .read .moves .up{color:var(--good)} .read .moves .down{color:var(--stop)}
@@ -861,9 +885,6 @@ details.disc .inside > .lede{margin-top:0}
      reads as a missing word, so the labels carry the break instead. */
   .standing{gap:4px 14px}
   .standing .sep{display:none}
-  /* The number is the move's, not the dropped man's: on a narrow screen it
-     takes a line of its own rather than trailing his name. */
-  .read .num{margin-left:0;flex-basis:100%}
 }
 
 /* ---- the footnote ------------------------------------------------------- */

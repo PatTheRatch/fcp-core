@@ -774,7 +774,14 @@ function movedWords(moved) {
   return parts.length ? parts.join(" &nbsp; ") : `<span class="w">moves nothing by a point</span>`;
 }
 
-/** One of the three: the deal, the number, what it moves, what it costs. */
+/** One of the three: the number, the deal, what it moves, what it costs.
+ *
+ *  The number comes first because it is the answer -- what the move is
+ *  worth, in categories, over both horizons -- and the two names are what
+ *  the answer is about. It is set apart rather than set large: its own
+ *  column on a desk with a rule down the side of it, the way the masthead
+ *  holds the days left, and its own line above the names on a phone. Add
+ *  and Drop are untouched. */
 function readHtml(move, today, index) {
   const bid = move.bid && move.bid.sample ? move.bid : null;
   const meta = [
@@ -796,11 +803,12 @@ function readHtml(move, today, index) {
       : `<span class="verb">Into</span> the open place`;
   return (
     `<article class="read${index === 0 ? " top" : ""}">` +
+    `<p class="gain ${move.net >= 0 ? "up" : "down"}"><b>${signed(move.net, 2)}</b>` +
+    `<span class="unit">categories</span></p>` +
+    `<div class="case">` +
     `<p class="deal"><span class="verb">Add</span> ` +
     `${cardName(move.add.espn_player_id, `<b>${escape(move.add.name)}</b>`)}` +
-    `<span class="faint">·</span>${drop}` +
-    `<span class="num ${move.net >= 0 ? "up" : "down"}">${signed(move.net, 2)}` +
-    `<span class="unit">categories</span></span></p>` +
+    `<span class="faint">·</span>${drop}</p>` +
     `<p class="moves">${movedWords(move.moved)}</p>` +
     `<p class="meta">${meta.join(" &middot; ")}</p>` +
     `<details class="disc"><summary>See why</summary><div class="inside">` +
@@ -810,7 +818,7 @@ function readHtml(move, today, index) {
       : "") +
     (move.bid ? `<p class="note">${bidNote(move.bid)}</p>` : "") +
     `</div></details>` +
-    `</article>`
+    `</div></article>`
   );
 }
 
