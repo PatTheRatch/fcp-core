@@ -605,6 +605,55 @@ class JudgementOut(BaseModel):
     )
 
 
+class FinishWeekOut(BaseModel):
+    """One remaining matchup, with the change and without it."""
+
+    period: int
+    days_remaining: int
+    in_play: bool = Field(description="The period being played now")
+    opponent_espn_team_id: int | None = Field(description="Null on a bye")
+    opponent_name: str | None
+    expected_before: float = Field(description="Expected categories won, as things stand")
+    expected_after: float
+    delta: float
+
+
+class FinishOut(BaseModel):
+    """Where a change leaves one team (`app.inseason.what_if`).
+
+    The projected-standings engine read twice -- as the league stands, and
+    with the change made -- on the same seed and the same simulation count,
+    every other roster untouched. A second lens and never a second bar:
+    nothing is labelled, recommended or refused on these numbers, and
+    `calibration_note` is the published record of the forecast behind them.
+    """
+
+    espn_team_id: int
+    team_name: str
+    record_before: list[float] = Field(description="Projected final [categories won, lost]")
+    record_after: list[float]
+    matchups_before: list[float] = Field(description="Mean simulated [won, lost, tied]")
+    matchups_after: list[float]
+    place_before: int = Field(description="Row in the projected table, 1 for first")
+    place_after: int
+    playoff_odds_before: float
+    playoff_odds_after: float
+    bye_odds_before: float | None = Field(description="Null where the format gives no bye")
+    bye_odds_after: float | None
+    seed_odds_before: list[float] = Field(description="P(each finishing place), first place first")
+    seed_odds_after: list[float]
+    weeks: list[FinishWeekOut]
+    n_sims: int
+    seed: int
+    odds_band: float = Field(
+        description="The 95% sampling band on one playoff-odds figure, from the simulation alone"
+    )
+    readable: bool = Field(description="False when the odds moved by less than that band")
+    noise_note: str
+    calibration_note: str = Field(description="What this forecast scored on a replayed season")
+    language: str = Field(description="That the finish is a second lens and not a second bar")
+
+
 class StreamMoveOut(BaseModel):
     """One move and what it does to the week (docs/pickups.md section 4.3)."""
 
@@ -1147,6 +1196,14 @@ class TradeSideOut(BaseModel):
     expected_per_week: float = Field(description="Categories this roster wins in a week, before")
     summary: str
     notes: list[str]
+    finish: FinishOut | None = Field(
+        default=None,
+        description=(
+            "Where this deal leaves the side: the projected record, the place and the "
+            "playoff odds before and after, from the projected-standings Monte Carlo "
+            "with both rosters changed at once. Null when the season cannot be projected"
+        ),
+    )
 
 
 class TradeOut(BaseModel):
@@ -1482,3 +1539,63 @@ class ProjectedOut(BaseModel):
         ),
     )
     stored: bool = Field(default=False, description="Answered from the morning's stored report")
+
+
+class WhatIfManOut(PickupPlayerOut):
+    """One man in a named change, with the starts he gets or was getting."""
+
+    starts: int = Field(
+        description=(
+            "Starts this period: after the change for a man arriving, before it for a "
+            "man leaving or going to injured reserve"
+        )
+    )
+
+
+class WhatIfWeekOut(BaseModel):
+    """The matchup in front of us, before the change and after it."""
+
+    matchup_period: int
+    opponent_espn_team_id: int | None = Field(description="Null on a bye")
+    opponent_name: str | None
+    days_remaining: int = Field(description="Days of the period still to play, today included")
+    before: dict[str, float] = Field(description="P(winning the category) as things stand")
+    after: dict[str, float]
+    expected_before: float
+    expected_after: float
+    delta: float = Field(description="Change in expected categories won this period")
+    moved: list[CategoryShiftOut] = Field(description="The categories that moved, largest first")
+    fills_empty_day: bool = Field(
+        description="The change seats a man on a day a lineup slot was going empty"
+    )
+
+
+class WhatIfOut(BaseModel):
+    """A pickup a manager named, in three layers (docs/what_if.md).
+
+    The week and the judgement are the recommender's own numbers for the
+    same move, built from the same functions on the same wire; the finish is
+    the new half, and it is a second lens rather than a second bar.
+    """
+
+    season: int
+    today: int = Field(description="The day it is judged on; nothing after it is read")
+    today_date: date | None
+    espn_team_id: int
+    team_name: str
+    adds: list[WhatIfManOut]
+    drops: list[WhatIfManOut]
+    to_ir: list[WhatIfManOut]
+    kind: str = Field(description='"swap", "add", "ir_move", or "" for any other shape')
+    week: WhatIfWeekOut
+    finish: FinishOut
+    judgement: JudgementOut = Field(description="The recommender's own, untouched")
+    net: float = Field(description="Categories the move is worth over both horizons")
+    hurdle: float
+    hurdle_source: str
+    hurdle_note: str
+    clears_hurdle: bool = Field(description="A label, not advice")
+    bid: BidOut | None = Field(description="What to pay, on a move that clears the bar")
+    pool_size: int = Field(description="Free agents the replacement charge was taken over")
+    historical_wire: bool
+    notes: list[str]

@@ -241,6 +241,10 @@ def trades(team: int, which: str = "rosters", league: int = LEAGUE_A) -> str:
     return f"/leagues/{league}/seasons/{SEASON}/teams/{team}/trades/{which}"
 
 
+def what_if(team: int, league: int = LEAGUE_A) -> str:
+    return f"/leagues/{league}/seasons/{SEASON}/teams/{team}/what-if"
+
+
 def week_page(team: int) -> str:
     return f"/l/{LEAGUE_A}/{SEASON}/team/{team}/week"
 
@@ -264,6 +268,7 @@ def test_signed_out_is_401_on_a_league_route(anon: TestClient) -> None:
     assert anon.get(today(3)).status_code == 401
     assert anon.get(trades(3)).status_code == 401
     assert anon.get(trades(3, "report")).status_code == 401
+    assert anon.get(what_if(3)).status_code == 401
     assert anon.get("/leagues").status_code == 401
     assert anon.get("/projections/sets").status_code == 401
     assert anon.get("/ingest-runs/health").status_code == 401
@@ -325,6 +330,11 @@ def test_a_manager_of_team_5_is_refused_team_3s_plan(sign_in: SignIn) -> None:
         his = bob.get(trades(5, which))
         assert his.status_code == 200
         assert his.json()["readiness"]["ready"] is False
+    # A hypothetical about a roster is that roster's plan, on the same layer.
+    shut_what_if = bob.get(what_if(3))
+    assert shut_what_if.status_code == 403
+    assert shut_what_if.json()["detail"] == "This team's plan is its manager's."
+    assert bob.get(what_if(5)).status_code == THROUGH
     # The league's pages, every team's scorecard among them, are shared.
     assert bob.get(f"/leagues/{LEAGUE_A}/seasons/{SEASON}/teams/3/scorecard").status_code != 403
     page = bob.get(week_page(3))
@@ -353,6 +363,7 @@ def test_the_entitlement_waits_on_billing(
     refused = alice.get(pickups(3))
     assert refused.status_code == 402
     assert alice.get(trades(3)).status_code == 402
+    assert alice.get(what_if(3)).status_code == 402
     assert alice.get(week_page(3)).status_code == 402
     # The free league pages do not ask.
     assert alice.get(standings(LEAGUE_A)).status_code == 200

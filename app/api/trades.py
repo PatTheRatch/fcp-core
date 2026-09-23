@@ -49,7 +49,7 @@ drop -- and a fill who is not on the wire, is named for a side that opens no
 place, is named twice over, or is named on both sides at once.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -75,8 +75,11 @@ from app.api.schemas import (
     TradeRostersOut,
     TradeSideOut,
 )
+from app.api.what_if import finish_out
 from app.db.models import LeagueSeason, Player, Team
+from app.draft.targets import CategoryDistribution, category_distributions
 from app.inseason.card import pro_team_name
+from app.inseason.what_if import Finish, trade_finishes
 from app.pickups.judge import Judgement
 from app.pickups.state import (
     RosteredPlayer,
@@ -346,6 +349,12 @@ def trade_report(
         int(other.espn_team_id): tuple(player_id for player_id, _name in their_fills),
     }
     floor, opened = _wire(session, league_season)
+    # Read once and handed to both halves. The league's measured weekly
+    # spreads are two thirds of what a projection costs
+    # (docs/projected_record.md section 6), and the finish layer runs two of
+    # them; letting each of the three read its own would be four seconds
+    # spent on the same answer.
+    distributions = category_distributions(session, league_season)
     try:
         report = evaluate_trade(
             session,
@@ -360,14 +369,45 @@ def trade_report(
             ).number,
             floor=floor,
             opened_place=opened,
+            distributions=distributions,
         )
     except ValueError as error:
         raise _bad(str(error)) from error
     return TradeReportOut(
         readiness=TradeReadinessOut(ready=True, missing=[], note=None),
-        trade=_trade_out(report, session, ours=int(team.espn_team_id)),
+        trade=_trade_out(
+            report,
+            session,
+            ours=int(team.espn_team_id),
+            finishes=_finishes(session, league_season, report, distributions),
+        ),
         calibration_note=_note(session, league_season),
     )
+
+
+def _finishes(
+    session: Session,
+    league_season: LeagueSeason,
+    report: TradeReport,
+    distributions: Sequence[CategoryDistribution],
+) -> dict[int, Finish]:
+    """Where the deal leaves both sides, or nothing when it cannot be projected.
+
+    A second lens on the same deal (`app.inseason.what_if`, docs/what_if.md):
+    the projected-standings engine run twice, once as the league stands and
+    once with both rosters changed at the same time, on the same seed. It is
+    beside the judgement and never instead of it -- no field is labelled
+    against it, and the bar on this page is still the one the deal's own
+    number is read on.
+
+    A season with no matchup period holding the day cannot be projected at
+    all, and that is not a reason to refuse a deal the rest of the page can
+    judge: the finish is simply absent and the page draws nothing.
+    """
+    try:
+        return trade_finishes(session, league_season, report, distributions=distributions)
+    except ValueError:
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +789,13 @@ def _espn_of(session: Session, player_ids: Sequence[int]) -> dict[int, int]:
     }
 
 
-def _trade_out(report: TradeReport, session: Session, *, ours: int) -> TradeOut:
+def _trade_out(
+    report: TradeReport,
+    session: Session,
+    *,
+    ours: int,
+    finishes: Mapping[int, Finish] | None = None,
+) -> TradeOut:
     cards = [
         card
         for side in report.sides
@@ -772,7 +818,7 @@ def _trade_out(report: TradeReport, session: Session, *, ours: int) -> TradeOut:
         first_scoring_period=report.first_scoring_period,
         last_scoring_period=report.last_scoring_period,
         weeks_remaining=report.weeks_remaining,
-        sides=[_side_out(side, espn) for side in sides],
+        sides=[_side_out(side, espn, (finishes or {}).get(side.team_id)) for side in sides],
         hurdle=report.hurdle,
         pool_size=report.pool_size,
         historical_wire=report.historical_wire,
@@ -784,8 +830,9 @@ def _card_espn_ids(session: Session, cards: Sequence[PlayerCard]) -> dict[int, i
     return _espn_of(session, [card.player_id for card in cards])
 
 
-def _side_out(side: SideReport, espn: dict[int, int]) -> TradeSideOut:
+def _side_out(side: SideReport, espn: dict[int, int], finish: Finish | None = None) -> TradeSideOut:
     return TradeSideOut(
+        finish=None if finish is None else finish_out(finish),
         espn_team_id=side.team_id,
         team_name=side.team_name,
         receives=[_card_out(card, espn) for card in side.receives],

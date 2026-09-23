@@ -31,6 +31,7 @@ from app.api import access
 from app.api import trades as routes
 from app.api.deps import get_session
 from app.db.models import LeagueSeason, Player, Team
+from app.inseason.projected_calibration import SHORT_NOTE
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from app.pickups.projection import clear_cache as clear_lines
@@ -378,6 +379,54 @@ def test_the_report_route_is_the_engines_payload_and_not_a_second_computation(
             assert (card["thin"], card["hurt"]) == (was.thin, was.hurt)
             assert card["games_so_far"] == was.games_so_far
             assert card["projection_source"] == was.projection_source
+
+
+def test_the_finish_layer_is_added_beside_every_field_and_changes_none_of_them(
+    client: TestClient, session: Session
+) -> None:
+    """Where the deal leaves both sides, and nothing else touched.
+
+    The finish is a second lens (docs/what_if.md): it goes on each side as
+    `finish` and no other field moves, which is checked by rebuilding the
+    payload the way the route built it before there was one and comparing the
+    two whole. If a future change to the finish layer disturbed so much as a
+    rounding, this is where it would show.
+    """
+    ls = stored_season(session, SEASON)
+    (star,) = ids(session, "Star")
+    (home_c,) = ids(session, "HomeC")
+    built = evaluate_trade(session, ls, TODAY, TeamOffer(HOME, (home_c,)), TeamOffer(AWAY, (star,)))
+    without = routes._trade_out(built, session, ours=HOME).model_dump(mode="json")
+
+    trade = client.get(
+        url("report"),
+        params={
+            "with_team": AWAY,
+            "give": list(espn(session, "HomeC")),
+            "get": list(espn(session, "Star")),
+            "today": TODAY,
+        },
+    ).json()["trade"]
+
+    stripped = {
+        **trade,
+        "sides": [{**side, "finish": None} for side in trade["sides"]],
+    }
+    assert stripped == without, "the finish is the only new field"
+
+    for side in trade["sides"]:
+        finish = side["finish"]
+        assert finish is not None
+        assert finish["espn_team_id"] == side["espn_team_id"]
+        assert finish["calibration_note"] == SHORT_NOTE
+        assert "second lens, not a second bar" in finish["language"]
+        assert finish["odds_band"] >= 0
+        assert sum(finish["seed_odds_before"]) == pytest.approx(1.0)
+        assert sum(finish["seed_odds_after"]) == pytest.approx(1.0)
+    # The deal happens to both sides at once, so the two finishes are read off
+    # one pair of tables: nobody can finish in the same seat as anybody else.
+    places = [side["finish"]["place_after"] for side in trade["sides"]]
+    assert len(set(places)) == len(places)
 
 
 def test_an_uneven_deal_names_the_drop_it_chose_and_the_one_it_was_given(

@@ -573,6 +573,45 @@ function nineHtml(side) {
 const shiftsOf = (side) =>
   (side.categories || []).map((view) => ({ abbreviation: view.abbreviation, delta: view.p_delta }));
 
+/** "3rd", the way the standings page numbers a place. */
+function ordinal(place) {
+  if (!isNum(place)) return dash;
+  const rest = place % 100;
+  const suffix =
+    rest >= 11 && rest <= 13 ? "th" : ["th", "st", "nd", "rd"][place % 10] || "th";
+  return `${place}${suffix}`;
+}
+
+/** Where the deal leaves this side: the projected record, the place and the
+ *  playoff odds, before and after (docs/what_if.md).
+ *
+ *  It sits under the nine and not beside the number on purpose. The number is
+ *  read against a bar; this is not. It is a second lens -- the same rosters
+ *  played out against the real opponent each week rather than a league-average
+ *  one -- and nothing on the page is labelled, recommended or refused on it.
+ *  So it comes with the simulation's own sampling band beside it and the
+ *  forecast's published record underneath, and when the odds moved by less
+ *  than the band it says so in those words. */
+function finishHtml(side) {
+  const f = side.finish;
+  if (!f) return "";
+  const was =
+    `${record(f.record_before)} · ${ordinal(f.place_before)} · ` +
+    `playoffs ${pct(f.playoff_odds_before)}`;
+  const now =
+    `${record(f.record_after)} · ${ordinal(f.place_after)} · ${pct(f.playoff_odds_after)}`;
+  const band = `±${fixed(f.odds_band * 100, 1)} points on each`;
+  const quiet = f.moved_more_than_the_band === false || f.readable === false;
+  return (
+    `<p class="whose" style="margin-top:20px">finish</p>` +
+    `<p class="hint"><span class="mono">Projected ${escape(was)}</span> → ` +
+    `<span class="mono"><b>${escape(now)}</b></span> ` +
+    `<span class="faint">(${escape(band)}${quiet ? ", so this is inside the noise" : ""})</span>` +
+    `</p>` +
+    `<p class="hint faint">${escape(f.calibration_note)}</p>`
+  );
+}
+
 function sideHtml(side, ours) {
   return (
     `<div class="side">` +
@@ -580,6 +619,7 @@ function sideHtml(side, ours) {
     `<p class="whose">${ours ? "our side" : "our estimate of their side, not what they think"}</p>` +
     `<div class="strip">${shiftStrip(shiftsOf(side))}</div>` +
     nineHtml(side) +
+    finishHtml(side) +
     `<p class="lede" style="margin-top:14px">${escape(side.summary)}</p>` +
     `</div>`
   );
@@ -745,7 +785,10 @@ function drawReport(report) {
   $("fit-lede").innerHTML =
     "What each roster posts in an ordinary week with the deal and without it, and the chance " +
     "of winning each category against the league's own measured spreads. This half is " +
-    "arithmetic about the rosters as they stand, not a forecast of who wins the trade.";
+    "arithmetic about the rosters as they stand, not a forecast of who wins the trade. " +
+    "Under each side, where the deal leaves it: the projected record, the place and the " +
+    "playoff odds, from playing every remaining week against the real opponent. That is a " +
+    "second lens and not a second bar &mdash; nothing here is labelled against it.";
   $("sides").innerHTML = report.sides
     .map((side, at) => sideHtml(side, at === 0))
     .join("");
