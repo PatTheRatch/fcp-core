@@ -531,8 +531,17 @@ class PlayerNewsOut(BaseModel):
     seen_at: datetime
 
 
+class RungOut(BaseModel):
+    """One step of the ladder: a chance, and the dollar that buys it."""
+
+    asked: float = Field(description="The chance this rung asked for: 0.50, 0.75 or 0.90")
+    amount: int
+    win_chance: float = Field(description="The chance at the dollar actually offered")
+    n: int = Field(description="Claim events the chance was read off")
+
+
 class BidOut(BaseModel):
-    """What to pay for a claim, and the history the number came from."""
+    """What to pay for a claim, what he is worth, and where both came from."""
 
     amount: int
     rank: int = Field(description="The added player's value rank on the wire today")
@@ -544,6 +553,15 @@ class BidOut(BaseModel):
     sample: int = Field(description="Winning bids in the bucket")
     capped_by: str | None
     note: str
+    worth_dollars: int = Field(
+        default=0, description="What the move is worth to this roster, at the budget's own rate"
+    )
+    ceiling: int = Field(
+        default=0, description="The dollar above which the move stops clearing the bar"
+    )
+    rate: float = Field(default=0.0, description="What one dollar costs, categories a week")
+    rate_note: str = Field(default="", description="Where that rate came from")
+    ladder: list[RungOut] = Field(default_factory=list, description="A chance and its dollar")
 
 
 class PickupPlayerOut(BaseModel):

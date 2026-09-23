@@ -63,6 +63,7 @@ from app.api.schemas import (
     GlanceOut,
     JudgementOut,
     PickupPlayerOut,
+    RungOut,
     ScheduleDayOut,
     ScheduleManOut,
     ScheduleOut,
@@ -448,6 +449,14 @@ def _bid_out(bid: Bid | None) -> BidOut | None:
         sample=bid.sample,
         capped_by=bid.capped_by,
         note=bid.note,
+        worth_dollars=bid.worth_dollars,
+        ceiling=bid.ceiling,
+        rate=bid.rate,
+        rate_note=bid.rate_note,
+        ladder=[
+            RungOut(asked=rung.asked, amount=rung.amount, win_chance=rung.win_chance, n=rung.n)
+            for rung in bid.ladder
+        ],
     )
 
 

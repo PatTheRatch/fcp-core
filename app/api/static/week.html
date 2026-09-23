@@ -725,8 +725,9 @@ function readHtml(move, today, index) {
   const meta = [
     `${move.add_starts} of ${move.add.games_remaining} games left`,
     bid
-      ? `bid $${bid.amount} (the ${escape(bid.basis)} of rank ${escape(bid.bucket)}, ` +
-        `$${bid.low}–$${bid.high})`
+      ? bidLadder(bid) ||
+        `bid $${bid.amount} (the ${escape(bid.basis)} of rank ${escape(bid.bucket)}, ` +
+          `$${bid.low}–$${bid.high})`
       : move.bid
         ? `bid: nothing to go on`
         : "",

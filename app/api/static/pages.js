@@ -309,15 +309,37 @@ function waiverNote(player, today) {
   return `, on waivers, clears ${weekday(player.waiver_clears_at)}`;
 }
 
-/** The bid, the bucket it came from, and what capped it. */
+/** The bid, the bucket it came from, what capped it, and what a dollar
+ *  costs you. The "see why" version: everything checkable. */
 function bidNote(bid) {
   if (!bid) return "";
   if (!bid.sample) return `bid: nothing to go on (${escape(bid.note)})`;
   const capped = bid.capped_by ? `, capped by ${escape(bid.capped_by)}` : "";
+  const worth =
+    bid.ceiling || bid.worth_dollars
+      ? ` Worth ~$${bid.worth_dollars} to you, and above $${bid.ceiling} he stops clearing ` +
+        `your bar — ${escape(bid.rate_note || "")}`
+      : "";
   return (
     `bid $${bid.amount}: the ${escape(bid.basis)} of rank ${escape(bid.bucket)} ` +
-    `($${bid.low}–$${bid.high} over ${count(bid.sample, "claim")}${capped})`
+    `($${bid.low}–$${bid.high} over ${count(bid.sample, "claim")}${capped}).${worth}`
   );
+}
+
+/** The ladder, in one line: what the tool bids, what each dollar wins, and
+ *  what the man is worth to this roster. Rungs that landed on the same dollar
+ *  are shown once — a cap pulls them together and three copies say nothing. */
+function bidLadder(bid) {
+  if (!bid || !bid.sample || !bid.ladder || !bid.ladder.length) return "";
+  const parts = [`bid $${bid.amount}`];
+  let last = null;
+  for (const rung of bid.ladder) {
+    if (rung.amount === last) continue;
+    last = rung.amount;
+    parts.push(`$${rung.amount} wins ~${Math.round(rung.win_chance * 100)}%`);
+  }
+  parts.push(`worth ~$${bid.worth_dollars} to you`);
+  return parts.join(" &middot; ");
 }
 
 /** The FAAB readout. Never a negative: `app/pickups/state.py` says why the

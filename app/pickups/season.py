@@ -604,6 +604,8 @@ def season_recommendations(
             weeks,
             total_weeks,
             faab_fit,
+            per_week=found.judgement.per_week,
+            weeks_covered=found.judgement.weeks_covered,
         )
         return replace(found, bid=bid)
 

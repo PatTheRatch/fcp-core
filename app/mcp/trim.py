@@ -116,17 +116,29 @@ def shifts(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
 
 def bid(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """What to pay, and the sample the figure was read off."""
+    """What to pay, what he is worth, and the sample both were read off.
+
+    The ladder is one line a rung -- the dollar, the chance it wins, and the
+    claims that chance was read off -- because a model asked "what should I
+    bid" needs the price of certainty and not a single verdict number.
+    """
     if row is None:
         return None
-    return {
+    out = {
         "amount": row["amount"],
         "basis": row["basis"],
         "bucket": row["bucket"],
         "range": [row["low"], row["high"]],
         "sample": row["sample"],
+        "worth_dollars": row.get("worth_dollars", 0),
+        "ceiling": row.get("ceiling", 0),
+        "ladder": [
+            [rung["amount"], n(rung["win_chance"]), rung["n"]] for rung in row.get("ladder", ())
+        ],
+        "ladder_reads": "[dollars, chance it wins, claim events behind the chance]",
         "note": row["note"],
     }
+    return out
 
 
 def stream_move(row: Mapping[str, Any]) -> dict[str, Any]:

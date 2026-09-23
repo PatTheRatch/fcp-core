@@ -1194,6 +1194,14 @@ def priced(
     the same per-game weight the fit ranks a historical wire by. The bid's
     share of the pot is the week's share of the period, since a streaming
     claim is bought for the days that are left.
+
+    `move.net` is the net over both horizons, which is what the choice
+    between the median and the 75th percentile has always read here. What
+    the man is worth in dollars is priced off the judgement's own `per_week`
+    and the weeks it covers, passed separately, because those two are the
+    budget's units and the net is not -- and the bar goes with them, as
+    `hurdle / weeks_covered`, which is `Move.clears`'s own test written in
+    those units rather than a second, stricter bar.
     """
     from app.pickups.bids import bid_fit, recommend_bid, value_rank
 
@@ -1214,6 +1222,9 @@ def priced(
             len(week.scoring_periods_remaining),
             PERIOD_DAYS,
             fit,
+            per_week=move.judgement.per_week,
+            weeks_covered=move.judgement.weeks_covered,
+            bar=hurdle / move.judgement.weeks_covered,
         )
         priced.append(replace(move, bid=bid))
     return tuple(priced)

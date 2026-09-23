@@ -426,6 +426,7 @@ def test_a_named_pickup_is_the_what_if_routes_own_answer(
         route["week"]["expected_after"]
     )
     assert answer["judgement"] == trim.judgement(route["judgement"])
+    assert answer["bid"] == trim.bid(route["bid"]), "the ladder too, or the lack of one"
     assert [man["name"] for man in answer["adds"]] == ["Wire"]
     assert [man["name"] for man in answer["drops"]] == ["HomeWeak"]
 
@@ -491,6 +492,9 @@ def test_a_week_report_is_the_pickup_routes_own_answer(
     assert answer["matchup_period"] == route["matchup_period"]
     assert answer["chance_by_category"] == trim.nine(route["probabilities"])
     assert len(answer["worth_a_look"]) == len(route["recommended"])
+    assert [move["bid"] for move in answer["worth_a_look"]] == [
+        trim.bid(move["bid"]) for move in route["recommended"]
+    ]
     assert answer["also_ranked"]["of"] == len(route["moves"])
     assert answer["roster_room"]["adds_left"] == route["adds_left"]
 

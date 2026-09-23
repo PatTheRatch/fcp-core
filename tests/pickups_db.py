@@ -275,6 +275,36 @@ def winning_bid(session: Session, team: Team, day: int, amount: int, who: Player
     session.flush()
 
 
+def losing_bid(session: Session, team: Team, day: int, amount: int, who: Player) -> None:
+    """A waiver claim by `team` that lost `who` to a higher bid the same day.
+
+    ESPN's own record of the losing side: the status it writes on a claim
+    whose player was gone by the time it was processed
+    (`app.pickups.bids.LOST`).
+    """
+    claim = Transaction(
+        league_season_id=team.league_season_id,
+        espn_transaction_id=f"lost-{day}-{team.id}-{who.id}-{amount}",
+        team_id=team.id,
+        type="WAIVER",
+        status="FAILED_INVALIDPLAYERSOURCE",
+        scoring_period=day,
+        bid_amount=amount,
+    )
+    session.add(claim)
+    session.flush()
+    session.add(
+        TransactionItem(
+            transaction_id=claim.id,
+            player_id=who.id,
+            item_type="ADD",
+            from_team_id=None,
+            to_team_id=team.id,
+        )
+    )
+    session.flush()
+
+
 def distribution(abbreviation: str, mean: float, spread: float) -> CategoryDistribution:
     return CategoryDistribution(
         abbreviation=abbreviation,
