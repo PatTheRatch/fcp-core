@@ -359,16 +359,18 @@ def test_a_recent_ingest_widens_player_stats_to_the_wire(session: Session) -> No
         boxes={},
         cards={300: fake_card(300, "Wire Guy", {5: BOX_LINE}, season=SEASON)},
     )
+    # This is the league's newest season, so even a full pass takes the wire
+    # (since 2026-09-23; a full pass over a played season still does not --
+    # tests/test_ingest.py holds that half).
     ingest_player_stats(session, league_season, espn, FULL_SCOPE)
     session.commit()
-    assert session.scalar(select(func.count()).select_from(PlayerGameStat)) == 0, (
-        "a full pass stays on the rostered players"
-    )
+    [line] = session.scalars(select(PlayerGameStat)).all()
+    assert (line.player.espn_player_id, line.scoring_period) == (300, 5)
 
     ingest_player_stats(session, league_season, espn, IngestScope(frozenset({1}), frozenset({5})))
     session.commit()
     [line] = session.scalars(select(PlayerGameStat)).all()
-    assert (line.player.espn_player_id, line.scoring_period) == (300, 5)
+    assert (line.player.espn_player_id, line.scoring_period) == (300, 5), "the same line, once"
 
 
 def test_the_status_pass_needs_no_ingest_first_but_reuses_its_season(session: Session) -> None:
