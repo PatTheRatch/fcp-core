@@ -52,6 +52,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.brand import BRAND
 from app.digest import Digest
 from app.mail.render import alert_html, button, digest_html, lines_html, plain_html
 from app.pickups.today import TodayReport
@@ -195,15 +196,15 @@ def lines_mail(league: str, text: str, *, when: str, public_url: str | None = No
     )
 
 
-SIGN_IN_SUBJECT = "Your FCP sign-in link"
-CONFIRM_SUBJECT = "Confirm this address for FCP alerts"
+SIGN_IN_SUBJECT = f"Your {BRAND} sign-in link"
+CONFIRM_SUBJECT = f"Confirm this address for {BRAND} alerts"
 
 
 def sign_in_mail(link: str, *, public_url: str | None = None) -> Mail:
     """The sign-in link: the same masthead and footer as the digest, the link
     as a button and as a plain URL under it, and the text part beside it."""
     text = (
-        "Sign in to FCP:\n\n"
+        f"Sign in to {BRAND}:\n\n"
         f"{link}\n\n"
         "The link works once, for 15 minutes. If you did not ask for it, "
         "ignore this email and nothing happens.\n"
@@ -219,7 +220,10 @@ def sign_in_mail(link: str, *, public_url: str | None = None) -> Mail:
     return Mail(
         subject=SIGN_IN_SUBJECT,
         text=text,
-        html=plain_html("Sign in", "Full Court Press", body, public_url=public_url),
+        # The eyebrow is "Your account", as the confirmation mail's is: the
+        # masthead's name under it is the product's now, and the two would
+        # otherwise read BOX OUT twice over.
+        html=plain_html("Sign in", "Your account", body, public_url=public_url),
         headers={},
     )
 
@@ -227,14 +231,15 @@ def sign_in_mail(link: str, *, public_url: str | None = None) -> Mail:
 def confirm_mail(link: str, *, public_url: str | None = None) -> Mail:
     """The link that confirms a new alert address."""
     text = (
-        "Someone (we hope you) asked for FCP's digest and alerts to come to this "
-        f"address. To confirm, open this link while signed in to FCP:\n\n{link}\n\n"
+        f"Someone (we hope you) asked for {BRAND}'s digest and alerts to come to this "
+        f"address. To confirm, open this link while signed in to {BRAND}:\n\n{link}\n\n"
         "It works once, for a day. If this was not you, ignore it and nothing is sent.\n"
     )
     body = (
         '<p style="margin:12px 0 0;font-family:Georgia,serif;font-size:15px;line-height:1.5;">'
-        "Someone (we hope you) asked for FCP&#8217;s digest and alerts to come to this "
-        "address. Open this while signed in to FCP to confirm it. It works once, for a day.</p>"
+        f"Someone (we hope you) asked for {BRAND}&#8217;s digest and alerts to come to this "
+        f"address. Open this while signed in to {BRAND} to confirm it. "
+        "It works once, for a day.</p>"
         + button(link, "Confirm this address")
         + '<p style="margin:12px 0 0;font-family:Georgia,serif;font-size:14px;'
         'line-height:1.5;color:#5E6167;">If this was not you, ignore it and nothing '

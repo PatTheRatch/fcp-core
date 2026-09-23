@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from datetime import date
 from html import escape
 
+from app.brand import BRAND
 from app.digest import Digest, Look, fix_words, mostly, today_head
 from app.inseason.changes import Change
 from app.mail import style as s
@@ -576,7 +577,7 @@ color:{s.FAINT};">{_h(why)}{tail}</p>
 # the whole page
 # ---------------------------------------------------------------------------
 
-WHY_DIGEST = "You get this because you confirmed this address for FCP's morning digest."
+WHY_DIGEST = f"You get this because you confirmed this address for {BRAND}'s morning digest."
 WHY_ALERT = "You get this because you asked to be told when a player of yours is ruled out."
 
 
@@ -881,11 +882,11 @@ def plain_html(title: str, eyebrow: str, body_html: str, *, public_url: str | No
     address-confirmation link. The same masthead and footer as the digest,
     because they are the same product's mail."""
     base = (public_url or "").rstrip("/")
-    links = [(f"{base}/", "Full Court Press")] if base else []
+    links = [(f"{base}/", BRAND)] if base else []
     return "".join(
         [
             _open(title, title),
-            _masthead(eyebrow, "FCP"),
+            _masthead(eyebrow, BRAND),
             _section(title, body_html),
             _footer(links, "You got this because someone asked for it at this address.", None),
             _close(),

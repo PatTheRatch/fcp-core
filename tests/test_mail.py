@@ -17,6 +17,7 @@ import re
 from datetime import UTC, datetime
 
 from app import mail as mail_module
+from app.brand import BRAND
 from app.digest import Digest, Standing
 from app.inseason import changes as feed
 from app.inseason.changes import Change, Person
@@ -391,7 +392,7 @@ def test_the_sign_in_mail_has_both_parts_and_the_link_twice() -> None:
 
     built = sign_in_mail(link, public_url=SITE)
 
-    assert built.subject == "Your FCP sign-in link"
+    assert built.subject == f"Your {BRAND} sign-in link"
     assert link in built.text
     assert built.html.count(link) == 2, "the button's href, and the URL under it"
     assert "Sign in" in built.html
@@ -405,6 +406,6 @@ def test_the_confirmation_mail_is_the_same_shape() -> None:
 
     built = confirm_mail(link, public_url=SITE)
 
-    assert built.subject == "Confirm this address for FCP alerts"
+    assert built.subject == f"Confirm this address for {BRAND} alerts"
     assert link in built.text and built.html.count(link) == 2
     assert built.headers["List-Unsubscribe"] == f"<{SITE}/account/alerts>"

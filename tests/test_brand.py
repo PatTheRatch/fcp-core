@@ -5,7 +5,7 @@ still the name of Patrick's own league, so the old string survives in the
 measurement notes and in ESPN's data on purpose. What must not survive is a
 *page* or a *mail* that says it: those are the product naming itself.
 
-So this module does two sweeps and a reading of the landing page.
+So this module does three sweeps and a reading of the landing page.
 
 * **Every file the site serves**, filled as the routes fill it, must be clean.
   That catches a page whose masthead was missed.
@@ -13,6 +13,8 @@ So this module does two sweeps and a reading of the landing page.
   everything, must be clean *and* must carry no `{{token}}` left unfilled.
   That catches a route that forgot `brand.fill`, which the file sweep cannot
   see.
+* **Every mail the server can build**, subject, HTML and text part, because
+  an email is a page too (docs/site.md) and is the one thing a reader keeps.
 * **The landing page**, signed out, is the one page a stranger reads, so its
   wiring is checked in full: the name, the tagline, the three measured
   figures with their sources, the stance, the way in, and nothing that
@@ -34,8 +36,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import brand
 from app.api.deps import get_session
 from app.config import get_settings
+from app.mail import Mail, alert_mail, confirm_mail, digest_mail, lines_mail, render, sign_in_mail
 from app.main import create_app
+from app.subscriptions import FULL, everything
 from tests.test_access import LEAGUE_A, SEASON, accounts_settings, seeded  # noqa: F401
+from tests.test_mail import SITE, _digest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -181,6 +186,54 @@ def test_a_refused_page_and_a_dead_link_carry_the_name(
         assert brand.BRAND in dead.text
         assert offences(dead.text) == []
     built.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# the mails
+# ---------------------------------------------------------------------------
+
+
+def every_mail() -> dict[str, Mail]:
+    """One of each, with no database behind them.
+
+    The digest and the alert are built from the same fixture
+    `tests/test_mail.py` uses, so this sweep and that module's are about the
+    same message.
+    """
+    link = "https://boxoutfantasy.com/auth/callback?token=a-token-that-goes-nowhere"
+    return {
+        "sign-in": sign_in_mail(link, public_url=SITE),
+        "confirm": confirm_mail(link, public_url=SITE),
+        "digest": digest_mail(_digest(), wanted=everything(FULL), public_url=SITE),
+        "alert": alert_mail(
+            "Through The Wire", "A Player is out", when="Wed 14 Jan, 09:00 UTC", public_url=SITE
+        ),
+        "league lines": lines_mail("Patriot Games", "9 moves", when="Wed 14 Jan", public_url=SITE),
+    }
+
+
+@pytest.mark.parametrize("which", sorted(every_mail()))
+def test_no_mail_says_the_old_name(which: str) -> None:
+    mail = every_mail()[which]
+    for part, text in (("subject", mail.subject), ("html", mail.html), ("text", mail.text)):
+        assert offences(text) == [], f"{which} {part}"
+
+
+def test_the_account_mail_names_the_product() -> None:
+    """The two mails a stranger reads before he has an account."""
+    mails = every_mail()
+    assert mails["sign-in"].subject == f"Your {brand.BRAND} sign-in link"
+    assert mails["confirm"].subject == f"Confirm this address for {brand.BRAND} alerts"
+    for which in ("sign-in", "confirm"):
+        assert brand.BRAND in mails[which].html
+        assert brand.BRAND in mails[which].text
+
+
+def test_the_digest_says_whose_digest_it_is() -> None:
+    """Its masthead is the league's and the team's; the line saying why it
+    arrived is the product's, and that is the only place it names itself."""
+    assert brand.BRAND in render.WHY_DIGEST
+    assert brand.BRAND in every_mail()["digest"].html
 
 
 # ---------------------------------------------------------------------------
