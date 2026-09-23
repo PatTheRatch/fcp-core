@@ -621,3 +621,25 @@ genuinely empty.
 lanes?" to **gate the place value on `adds_left`** is not built. 16.2% of
 team-periods have spent the budget and can run no lane at all, and the code
 still prices their opened places as though they could.
+
+
+---
+
+## As built, 2026-09-22: 0.38 is this league's number, not the code's
+
+`OPENED_PLACE = 0.38` is no longer a constant every league is charged. It is
+this league's `opened_place` row in `league_calibrations` (docs/intake.md),
+measured by exactly the chain above -- `measure_season` per season, the
+per-place samples pooled, the median with its IQR beside it -- and it is what
+the code still uses for any league that has not been measured, which is the
+honest thing to call a default rather than a fact.
+
+What changed here: `load_occupancy` and `measure_season` take a `league_id`,
+because a database now holds more than one league and a lane measured across
+two of them is a measurement of neither. Nothing else moved, and the number
+this document reports is the number the seeded row carries, to two decimals.
+
+A second league's own lane is measured by `intake_lane`, in about 96 seconds
+over eight seasons here, and the payload keeps the IQR, the held 13th man and
+the ordinary held place beside the headline -- because the caution this
+document draws is from the comparison and not from the number.

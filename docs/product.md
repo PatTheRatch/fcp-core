@@ -107,16 +107,38 @@ worth reading, or a lawyer's hour, before the first invoice.
    `espn_s2` and `SWID`), picks the league. The ingest backfills its seasons
    and the listener starts following it. Only this one connection is needed
    for the whole league: the ingest already reads every team.
-2. **He invites the league.** An invite link per league. A member signs up
+2. **The league is measured on its own history** (docs/intake.md, built
+   2026-09-22). Every number the recommendations lean on — what a pickup
+   returns, what an open roster place returns, the three bars a move has to
+   clear, and the trade number's own record — was measured on Full Court
+   Press and nowhere else, and a number measured on one league is not a fact
+   about another. So connecting a league puts a chain of jobs on the queue:
+   read every season ESPN will give us, store the NBA schedules behind them,
+   run each measurement on **its** history, and write to whoever connected it
+   with its own numbers in the message. It takes about two hours, most of it
+   the backtest, and it runs at the queue's lowest priority so nobody's
+   morning waits for it.
+
+   Until a number of its own exists, or where its history is too thin to
+   measure one, it falls back: first to the pool of leagues shaped like it,
+   then to ours. **Every page says which it is using**, the way it says where
+   a projection came from, and the connector can change any of the three bars
+   himself on the account page with a line of why.
+
+   A league this code does not model — points, rotisserie, any number of
+   categories but the nine — is refused here, with what it is scored on in
+   the sentence, and nothing else is enqueued. That is most public leagues
+   (docs/league_survey.md), so it is the common case and not an edge one.
+3. **He invites the league.** An invite link per league. A member signs up
    with his email, opens the link, and sees the league pages at once.
-3. **The member claims a team.** Verified one of two ways:
+4. **The member claims a team.** Verified one of two ways:
    - he connects his own ESPN too (optional), and the `SWID` matches the
      owner GUID stored on that team (`owners.espn_owner_id`), so the claim
      is automatic; or
    - whoever added the league approves the claim by hand.
    Until a claim is verified, the team's private pages stay closed. That is
    what stops someone claiming Through The Wire and reading its plan.
-4. **He sets his alerts.** Email by default (the SMTP channel already
+5. **He sets his alerts.** Email by default (the SMTP channel already
    exists), Telegram if he wants it.
 
 Co-managed teams: a team can have more than one verified manager, since

@@ -311,25 +311,36 @@ def lock_next(
 def fail_orphans(
     session: Session, at: datetime | None = None, *, only: ColumnElement[bool] | None = None
 ) -> int:
-    """Fail every queued job whose prerequisite failed. Does not commit."""
+    """Fail every queued job whose prerequisite failed. Does not commit.
+
+    **The whole way down a chain, not one link.** A chain is a line of jobs
+    each waiting on the one before it (the intake's eight, docs/intake.md),
+    and failing one link a pass would leave the last of them queued for two
+    minutes after the first failed. So this repeats until nothing more is
+    orphaned, which on a line of eight is eight passes over a handful of rows
+    and on the ordinary queue is one pass that finds nothing.
+    """
     at = at or now()
     prerequisite = aliased(Job)
-    orphans = session.scalars(
-        select(Job.id)
-        .where(
-            Job.state == QUEUED,
-            exists().where(prerequisite.id == Job.depends_on, prerequisite.state == FAILED),
-            _mine(only),
-        )
-        .with_for_update(skip_locked=True, of=Job)
-    ).all()
-    if orphans:
+    failed = 0
+    while True:
+        orphans = session.scalars(
+            select(Job.id)
+            .where(
+                Job.state == QUEUED,
+                exists().where(prerequisite.id == Job.depends_on, prerequisite.state == FAILED),
+                _mine(only),
+            )
+            .with_for_update(skip_locked=True, of=Job)
+        ).all()
+        if not orphans:
+            return failed
         session.execute(
             update(Job)
             .where(Job.id.in_(orphans))
             .values(state=FAILED, finished_at=at, last_error=GAVE_UP_ON_PREREQUISITE)
         )
-    return len(orphans)
+        failed += len(orphans)
 
 
 def reap(

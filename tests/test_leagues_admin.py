@@ -31,15 +31,17 @@ from pydantic import ValidationError
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import accounts, memberships, secrets_box
+from app import accounts, calibration, intake, memberships, secrets_box
 from app.api import access, leagues_admin
 from app.api.deps import get_session
 from app.config import Settings, get_settings
 from app.db.models import (
     Invite,
+    Job,
     League,
     LeagueConnection,
     LeagueSeason,
+    LeagueSeasonCategory,
     Owner,
     Team,
     TeamManager,
@@ -93,6 +95,19 @@ def _season(league: League, season: int, owners: dict[int, Owner]) -> LeagueSeas
         median_scoring=False,
         raw_settings={},
     )
+    # The nine, so this reads as a league the recommenders model: the intake
+    # refuses anything else, and the calibration routes below run on it.
+    for position, abbreviation in enumerate(
+        ("PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%")
+    ):
+        row.categories.append(
+            LeagueSeasonCategory(
+                stat_id=position,
+                abbreviation=abbreviation,
+                position=position,
+                is_reverse=abbreviation == "TO",
+            )
+        )
     for tid, owner in owners.items():
         row.teams.append(Team(espn_team_id=tid, name=f"Team {tid}", owners=[owner]))
     return row
@@ -837,3 +852,108 @@ def test_the_access_log_never_carries_an_invite(path: str, kept: str) -> None:
     line = record.getMessage()
     assert "abc-DEF_123" not in line
     assert kept in line
+
+
+# ---------------------------------------------------------------------------
+# your league's numbers (app.calibration, docs/intake.md)
+# ---------------------------------------------------------------------------
+
+
+def test_every_member_may_see_the_leagues_numbers(person: People, espn: object) -> None:
+    """They are what his own pages are built on, so he may look at them."""
+    alice = owner_of_stored(person)
+    bob = member(person, "bob@example.com", alice)
+    got = bob.get(f"/leagues/{STORED}/calibration")
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert [number["key"] for number in body["numbers"]] == list(calibration.KEYS)
+    assert all(number["note"] for number in body["numbers"]), "no number without its story"
+    assert body["progress"] == "not measured yet"
+    assert body["measuring"] is False
+
+
+def test_the_league_owner_sets_a_bar_and_the_reason_is_kept(
+    person: People, session: Session, espn: object
+) -> None:
+    alice = owner_of_stored(person)
+    done = alice.put(
+        f"/leagues/{STORED}/calibration/stream_hurdle",
+        json={"value": 0.35, "reason": "fewer moves; my FAAB is finite"},
+    )
+    assert done.status_code == 200, done.text
+    bar = next(n for n in done.json()["numbers"] if n["key"] == "stream_hurdle")
+    assert bar["value"] == pytest.approx(0.35)
+    assert bar["source"] == "owner"
+    assert bar["owner_reason"] == "fewer moves; my FAAB is finite"
+    assert bar["note"].startswith("your choice, ")
+    assert "fewer moves; my FAAB is finite" in bar["note"]
+
+    league = memberships.league_by_espn_id(session, STORED)
+    assert league is not None
+    kept = calibration.calibration(session, league.id, calibration.STREAM_HURDLE)
+    assert (kept.value, kept.source) == (0.35, calibration.OWNER)
+
+    gone = alice.delete(f"/leagues/{STORED}/calibration/stream_hurdle")
+    assert gone.status_code == 200
+    again = next(n for n in gone.json()["numbers"] if n["key"] == "stream_hurdle")
+    assert again["source"] == "default"
+
+
+def test_only_the_league_owner_may_set_a_bar_or_ask_for_a_measurement(
+    person: People, espn: object
+) -> None:
+    alice = owner_of_stored(person)
+    bob = member(person, "bob2@example.com", alice)
+    refused = bob.put(
+        f"/leagues/{STORED}/calibration/stream_hurdle", json={"value": 0.35, "reason": "mine"}
+    )
+    assert refused.status_code == 403, refused.text
+    assert bob.post(f"/leagues/{STORED}/calibration/measure").status_code == 403
+    assert bob.delete(f"/leagues/{STORED}/calibration/stream_hurdle").status_code == 403
+
+
+def test_a_measured_key_cannot_be_set_by_hand(person: People, espn: object) -> None:
+    """What a pickup returned is a measurement, not a choice about churn."""
+    alice = owner_of_stored(person)
+    refused = alice.put(
+        f"/leagues/{STORED}/calibration/typical_pickup", json={"value": 0.9, "reason": "no"}
+    )
+    assert refused.status_code == 422
+    assert "measured, not chosen" in refused.json()["detail"]
+
+
+def test_a_bar_outside_the_categories_a_week_is_refused(person: People, espn: object) -> None:
+    alice = owner_of_stored(person)
+    for value in (-0.1, 12.0):
+        refused = alice.put(
+            f"/leagues/{STORED}/calibration/stream_hurdle", json={"value": value, "reason": ""}
+        )
+        assert refused.status_code == 422, value
+    wordy = alice.put(
+        f"/leagues/{STORED}/calibration/stream_hurdle", json={"value": 0.2, "reason": "x" * 400}
+    )
+    assert wordy.status_code == 422
+
+
+def test_measuring_again_enqueues_the_chain_and_is_refused_twice(
+    person: People, session: Session, espn: object
+) -> None:
+    alice = owner_of_stored(person)
+    first = alice.post(f"/leagues/{STORED}/calibration/measure")
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["measuring"] is True
+    assert body["progress"] == "reading your seasons from ESPN"
+    assert body["can_measure"] is False
+    assert "already being measured" in str(body["refused"])
+
+    again = alice.post(f"/leagues/{STORED}/calibration/measure")
+    assert again.status_code == 429
+    assert "already being measured" in again.json()["detail"]
+
+    league = memberships.league_by_espn_id(session, STORED)
+    assert league is not None
+    queued = session.scalars(
+        select(Job.kind).where(Job.league_id == league.id, Job.kind.like("intake\\_%"))
+    ).all()
+    assert sorted(queued) == sorted(intake.STEPS)

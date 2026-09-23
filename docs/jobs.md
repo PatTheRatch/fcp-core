@@ -41,9 +41,32 @@ and each member's alerts on his own channels.
 | `digest` | a member (and his team) | the morning digest, or an alert between digests, emailed to his confirmed addresses |
 | `injury_backfill` | a season | a whole season of the NBA's official injury reports (docs/injuries.md); hours at the full cadence, which is why it is queued |
 | `injury_pass` | a season | the same, today only, for the season in progress |
+| the eight `intake_*` kinds | a league | one chain: every season ESPN will give us, the NBA schedules behind them, the four measurements on that league's own history, the pooled rows, and the email (docs/intake.md) |
 
-The last two belong to no league: the reports are the NBA's own, not
+The injury pair belong to no league: the reports are the NBA's own, not
 ESPN's, so both carry a `season` in their payload and no `league_id`.
+
+**The intake chain** is `intake_ingest`, `intake_schedule`,
+`intake_replacement`, `intake_lane`, `intake_hurdles`, `intake_trades`,
+`intake_pool` and `intake_done`, in that order, each `depends_on` the one
+before it. It is enqueued when a connection asks for an ingest and its league
+has never been measured, by `scripts/enqueue.py --intake`, or by the account
+page's button. docs/intake.md is the whole story, including what it refuses
+and what the email says.
+
+## Priority: the one thing that goes last
+
+`jobs.priority` is read **before** `run_after`: smaller runs first, and a job
+due an hour ago still waits behind one that fell due a second ago if its
+priority is higher. Everything is `NORMAL` (0). The one exception is
+`intake_hurdles`, which is `LOW` (100): it is about ninety minutes of
+category replay for one league, and a morning's precomputes must never be
+behind it. A long job pushed into the future with a later `run_after` would
+solve nothing -- it would eventually come due and then be in front of
+everything.
+
+`fail_orphans` walks a whole chain down, not one link a pass, so an eight-job
+line fails at once rather than over two minutes of polling.
 
 `state` goes `queued`, `running`, `done`; a failure goes back to `queued`
 with a later `run_after` (5 minutes, then 20) until the third try, then

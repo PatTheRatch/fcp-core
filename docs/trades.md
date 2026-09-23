@@ -1070,3 +1070,33 @@ fires) and a small "card" control of its own beside it carries `data-card`.
 Every other name is a `data-card` button: reachable from the keyboard,
 dismissed by Escape with the focus put back where it was, by a tap outside,
 or by scrolling away.
+
+
+---
+
+## As built, 2026-09-22: the record is per league, and it writes itself
+
+`PUBLISHED` and `CALIBRATION_NOTE` were this league's run, typed into the
+module, and the trade page printed the note verbatim for whatever league was
+being looked at. They are now this league's `trade_record` row
+(docs/intake.md) and the fallback for a league with no trades of its own to
+replay.
+
+The sentence is written by `app.trades.calibration.trade_note`, a function of
+a run's own figures: how many deals could be replayed, how many the evaluator
+called right, the exact binomial interval a fair coin gives over that many
+tosses, and what a consolidating deal is mis-priced by. Applied to the
+published run it returns `CALIBRATION_NOTE` character for character, which is
+what `tests/test_trades.py` holds it to, so this league's page cannot move.
+
+Two things it does that the constant could not. The verdict against the coin
+is **read off the interval** rather than asserted, so a league where the
+evaluator lands outside the range is told so in either direction. And the
+"one thing did get better" clause only appears where there is an earlier
+revision to compare against -- ours has one (R1's 0.389 against R2's 0.103),
+and a league measured once has no before, so its note says only where it
+stands.
+
+`rows_for_season` takes a `league_id`, for the same reason
+`streaming_lane.py` does. `intake_trades` runs the whole thing in about 58
+seconds over eight seasons here.

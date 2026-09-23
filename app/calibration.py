@@ -551,6 +551,11 @@ def write(
         )
     )
     session.flush()
+    if existing is not None:
+        # The upsert went round the identity map, so the row this session is
+        # holding is the one before it. Expiring it makes the read below the
+        # row that is actually there rather than the row that was.
+        session.expire(existing)
     written = stored(session, league_id, key)
     return _row_out(written) if written is not None else None
 
