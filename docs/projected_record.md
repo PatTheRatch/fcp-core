@@ -423,17 +423,22 @@ On the stored 2026 season, fourteen teams and eight remaining weeks
 
 | | seconds |
 |---|---|
-| cold, in a fresh session | **3.6** |
+| cold, in a fresh session | **3.3** |
 | warm, second call in the same session | **2.4** |
+| day 35 instead, fourteen weeks left | **3.0** |
 
-Of the cold time, about 1.2 s is `category_distributions` -- the 3.79 s the
+The third row is the point: the cost barely moves with the number of weeks,
+because what it pays for is per player and per team rather than per week.
+
+Of the cold time, about 2.1 s is `category_distributions` -- the 3.79 s the
 rehearsal measured is for a season with more results to average, and it is
 called **once** here rather than once per team per report kind, which is what
-`docs/inseason_rehearsal.md` finding 4 is about. The rest is one
-`load_team_week` per team, one `build_players` over the whole horizon for the
-league, one `per_game_line` per player (memoised on the day, so a man is
-priced once however many weeks he appears in), the seating -- fourteen teams
-times eight weeks times seven days -- and about a second of simulation.
+`docs/inseason_rehearsal.md` finding 4 is about, and it is nearly two thirds
+of the warm number. The rest is one `load_team_week` per team, one
+`build_players` over the whole horizon for the league, one `per_game_line`
+per player (memoised on the day, so a man is priced once however many weeks
+he appears in), the seating -- fourteen teams times eight weeks times seven
+days -- and the simulation.
 
 Three seconds is well inside what the morning job needs, and no further
 optimisation was done. The two things that would matter if it ever did not
