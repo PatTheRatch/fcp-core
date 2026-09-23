@@ -1604,6 +1604,45 @@ class TeamReport(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class LeagueReport(Base):
+    """A report that belongs to the league rather than to any one team.
+
+    One kind so far, `projected`: the projected standings
+    (docs/projected_record.md), every team's remaining weeks played against
+    each other, built once a morning by the `project_standings` job and read
+    by the Standings page, the This week page, every Week page and every
+    digest.
+
+    It is a table of its own rather than a nullable `team_id` on
+    `team_reports` because a league projection has no team: putting it there
+    would mean either a copy per team of the same payload, or a foreign key
+    that is usually null on a table whose whole shape says a report belongs
+    to a team. The freshness rule is the same one (`app.reports.fresh`): a
+    row counts as today's when it is for today's scoring period **and** was
+    built on today's date.
+    """
+
+    __tablename__ = "league_reports"
+    __table_args__ = (
+        CheckConstraint("kind IN ('projected')", name="ck_league_reports_kind"),
+        UniqueConstraint(
+            "league_season_id",
+            "kind",
+            "scoring_period",
+            name="uq_league_reports_season_kind_period",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    league_season_id: Mapped[int] = mapped_column(
+        ForeignKey("league_seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class NotificationChannel(Base):
     """Where one member's digest and alerts go: an email address.
 

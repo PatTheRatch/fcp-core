@@ -73,6 +73,12 @@ log = logging.getLogger("fcp.jobs")
 INGEST = "ingest"
 STATUS_PASS = "status_pass"
 PRECOMPUTE = "precompute"
+#: The league's projected standings, built once a morning for the whole
+#: league (`app.inseason.projected`, docs/projected_record.md). It runs after
+#: the status pass and before the per-team precomputes: it is one job for
+#: fourteen teams rather than fourteen, and the pages that read it are the
+#: free ones, which should not be waiting on a reader's own clock.
+PROJECT_STANDINGS = "project_standings"
 DIGEST = "digest"
 #: The NBA's official injury reports (docs/injuries.md). Both belong to no
 #: league -- the reports are the league's own, not ESPN's -- so they carry a
@@ -108,6 +114,7 @@ KINDS = (
     INGEST,
     STATUS_PASS,
     PRECOMPUTE,
+    PROJECT_STANDINGS,
     DIGEST,
     INJURY_BACKFILL,
     INJURY_PASS,

@@ -48,6 +48,7 @@ from app.db.models import (
     Job,
     League,
     LeagueConnection,
+    LeagueReport,
     NotificationChannel,
     PlayerStatusSnapshot,
     Team,
@@ -66,6 +67,7 @@ from app.job_kinds import (
     run_digest,
     run_pass,
     run_precompute,
+    run_project_standings,
 )
 from app.main import create_app
 from app.pickups.bids import clear_cache
@@ -695,6 +697,78 @@ def test_a_stored_report_from_an_earlier_day_is_not_served(
     assert client.get(_url("glance")).json()["stored"] is False
 
 
+def _projected_url(today: int | None = None) -> str:
+    tail = f"?today={today}" if today is not None else ""
+    return f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/projected{tail}"
+
+
+def test_the_projection_job_stores_the_league_report_and_the_routes_read_it(
+    factory: sessionmaker[Session], client: TestClient
+) -> None:
+    """One job for the league, one row, and both routes answer from it.
+
+    The team route is the league answer narrowed, so marking the stored row
+    has to show through both of them -- which is the check that the slice is
+    taken rather than computed a second time.
+    """
+    with factory() as session:
+        home = _seed_a_season(session)
+        league_pk = int(home.league_season.league_id)
+        season_pk = int(home.league_season_id)
+        calendar = season_calendar(session, SEASON)
+        assert calendar is not None
+        today = calendar.scoring_period_on(date.today())
+    live = client.get(_projected_url(today)).json()
+    assert live["stored"] is False
+
+    job = jobs.JobRef(1, jobs.PROJECT_STANDINGS, league_pk, None, None, 1, {})
+    note = run_project_standings(factory, job, settings_for())
+    assert note.startswith(f"stored the projection for day {today}:")
+
+    with factory() as session:
+        rows = session.scalars(select(LeagueReport)).all()
+        assert len(rows) == 1, "one row for the league, not one per team"
+        row = rows[0]
+        assert row.kind == reports.PROJECTED
+        assert row.league_season_id == season_pk
+        assert row.scoring_period == today
+        assert row.payload == live, "what is stored is what the route says"
+        # Mark it, so an answer from the store is unmistakable.
+        row.payload = {**row.payload, "tiebreak": "the stored row"}
+        session.commit()
+
+    served = client.get(_projected_url()).json()
+    assert served["stored"] is True and served["tiebreak"] == "the stored row"
+    narrowed = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/teams/1/projected").json()
+    assert narrowed["tiebreak"] == "the stored row", "the slice comes off the same row"
+    assert len(narrowed["teams"]) == 1
+
+    other_day = today - 1
+    assert client.get(_projected_url(other_day)).json()["stored"] is False
+
+
+def test_a_stored_projection_from_an_earlier_day_is_not_served(
+    factory: sessionmaker[Session], client: TestClient
+) -> None:
+    with factory() as session:
+        home = _seed_a_season(session)
+        calendar = season_calendar(session, SEASON)
+        assert calendar is not None
+        today = calendar.scoring_period_on(date.today())
+        reports.store_league(
+            session,
+            int(home.league_season_id),
+            reports.PROJECTED,
+            today,
+            {"tiebreak": "stale"},
+            built_at=datetime.now(UTC) - timedelta(days=2),
+        )
+        session.commit()
+    body = client.get(_projected_url()).json()
+    assert body["stored"] is False, "last week's row for the same clamped day is stale"
+    assert body["tiebreak"] != "stale"
+
+
 # ---------------------------------------------------------------------------
 # the digest job
 # ---------------------------------------------------------------------------
@@ -992,13 +1066,26 @@ def test_single_modes_schedule_is_the_env_league_and_the_owners_team(
             session, settings, "report", NOW.replace(hour=22, minute=30)
         )
         assert [job.kind for job in nightly] == ["ingest", "status_pass"]
-        assert [job.kind for job in morning] == ["status_pass", "precompute", "digest"]
+        assert [job.kind for job in morning] == [
+            "status_pass",
+            "project_standings",
+            "precompute",
+            "digest",
+        ]
         assert [job.kind for job in report] == ["status_pass", "digest"]
         rows = {row.id: row for row in session.scalars(select(Job)).all()}
-        digest = rows[morning[2].id]
+        digest = rows[morning[3].id]
         owner = accounts.user_by_email(session, "owner@example.com")
         assert owner is not None and digest.user_id == owner.id and digest.team_id == home.id
-        assert rows[morning[1].id].team_id == home.id
+        assert rows[morning[2].id].team_id == home.id
+        # The order the morning wants, which a worker taking jobs in order
+        # follows: the pass, then the league's projection, then each team's
+        # reports, then the message that reads both.
+        due = {job.kind: rows[job.id].run_after for job in morning}
+        assert due["status_pass"] < due["project_standings"] < due["precompute"] < due["digest"]
+        projection = next(job for job in morning if job.kind == "project_standings")
+        assert rows[projection.id].team_id is None, "it belongs to the league, not a team"
+        assert rows[projection.id].depends_on == morning[0].id
         assert rows[report[1].id].payload["mode"] == "alert"
         again = schedule.enqueue_schedule(
             session, settings, "morning", NOW.replace(hour=15, minute=4)

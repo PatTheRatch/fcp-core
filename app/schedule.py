@@ -6,14 +6,15 @@ timers that run today (`app.listener.status.PASS_SCHEDULE`):
 | label | UTC | per league | then, after it |
 |---|---|---|---|
 | nightly | 09:00 | `ingest`, spread over `NIGHT_WINDOW` | its `status_pass` (nightly) |
-| morning | 15:00 | `status_pass` (morning) | `precompute` per claimed team, `digest` per member |
+| morning | 15:00 | `status_pass` (morning) | the projection, a `precompute` per team, a `digest` |
 | report | 22:30 | `status_pass` (report) | an alert `digest` per member with a team |
 | late | 00:30 | `status_pass` (late) | the same |
 
 Everything after the pass `depends_on` it, so when a pass fails for good the
 digest does not go out, which is what `scripts/scheduled_status.sh` does
-today. The precomputes are due a second before the digests, so a worker
-taking jobs in order builds the reports first.
+today. The three follow-ons are a second apart, so a worker taking jobs in
+order does them in the order they are wanted: the league's projection, then
+each team's reports, then the messages that read both.
 
 WHICH LEAGUES
 
@@ -317,12 +318,24 @@ def enqueue_schedule(
         if season_row is None:
             continue
         if label == "morning":
+            # The league's projection first: one job for every team, where a
+            # precompute is one job per team, and the free pages read it.
+            out.append(
+                jobs.enqueue(
+                    session,
+                    jobs.PROJECT_STANDINGS,
+                    run_after=base + STEP,
+                    label=label,
+                    league_id=league.league_pk,
+                    depends_on=passed.id,
+                )
+            )
             for team_pk in claimed_teams(session, league, season_row, settings):
                 out.append(
                     jobs.enqueue(
                         session,
                         jobs.PRECOMPUTE,
-                        run_after=base + STEP,
+                        run_after=base + 2 * STEP,
                         label=label,
                         league_id=league.league_pk,
                         team_id=team_pk,
@@ -337,7 +350,7 @@ def enqueue_schedule(
                 jobs.enqueue(
                     session,
                     jobs.DIGEST,
-                    run_after=base + 2 * STEP,
+                    run_after=base + 3 * STEP,
                     label=label,
                     league_id=league.league_pk,
                     team_id=person.team_pk,

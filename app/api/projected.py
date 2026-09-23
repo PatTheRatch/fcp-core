@@ -44,9 +44,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from app import reports
 from app.api.access import LEAGUE_MEMBER, TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
-from app.api.pickups import TodayQuery, _day, _ready
+from app.api.pickups import TODAY, TodayQuery, _day, _ready
 from app.api.schemas import ProjectedOut, ProjectedTeamOut, ProjectedWeekOut
 from app.inseason.projected import Projection, TeamOutlook, Week, project_standings
 from app.inseason.projected_calibration import CALIBRATION_NOTE
@@ -128,12 +129,19 @@ def _projection(
 ) -> ProjectedOut:
     """The projection asked for: the stored one when it is fresh, else built.
 
-    The store is `app.reports.fresh_league` and lands with the morning job;
-    until then every answer is built here, which takes a few seconds for a
-    fourteen-team league (docs/projected_record.md, "Timing").
+    "Fresh" is the day asked for being today's and the row having been built
+    today, which is `app.reports.fresh_league` and the rule the pickup routes
+    use. Nothing here writes a row, so a reader never races the morning job;
+    a build takes a few seconds for a fourteen-team league
+    (docs/projected_record.md, "Timing").
     """
     calendar = _ready(session, league_season)
     day = _day(calendar, today)
+    on = TODAY()
+    if day == calendar.scoring_period_on(on):
+        row = reports.fresh_league(session, league_season.id, reports.PROJECTED, day, on=on)
+        if row is not None:
+            return ProjectedOut.model_validate({**dict(row.payload), "stored": True})
     try:
         body = build_projected(session, league_season, day)
     except ValueError as error:

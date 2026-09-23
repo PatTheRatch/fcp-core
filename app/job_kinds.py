@@ -13,6 +13,11 @@ they are enqueued is `app.schedule`.
   (`run_wire_pass`, and "One listener league" in docs/jobs.md for why).
 * `precompute`: one team's day, week and season reports for today, stored
   in `team_reports` for the pages and routes to read (`app.reports`).
+* `project_standings`: one league's projected standings for today, stored in
+  `league_reports` (`app.inseason.projected`, docs/projected_record.md). One
+  job for the whole league rather than one per team, and due before the
+  precomputes: it is what the free Standings and This week pages read, and
+  the precomputes are the slow ones.
 * `digest`: one member's morning digest, or an alert between digests, mailed
   to his verified addresses. The server's owner also gets the `.env`
   recipients, and his digest of the tracked team marks the events it reports
@@ -324,6 +329,57 @@ def run_precompute(
     if not built:
         return f"day {day} is in no matchup period; nothing stored"
     return f"stored {', '.join(built)} for day {day}"
+
+
+# ---------------------------------------------------------------------------
+# the projected standings
+# ---------------------------------------------------------------------------
+
+
+def run_project_standings(
+    factory: sessionmaker[Session],
+    job: JobRef,
+    settings: Settings,
+    today: date | None = None,
+) -> str | None:
+    """Build and store one league season's projected standings for today.
+
+    One job for the whole league rather than one per team: the projection is
+    every team's remaining weeks played against each other, so a per-team job
+    would do the same work fourteen times and could give fourteen answers.
+    It runs after the morning `status_pass` and before the per-team
+    precomputes, because those are the slow ones and the free pages read this.
+
+    A season with nothing to build from yet, or a day in no matchup period,
+    is not a failure: the note says so, and the routes build live as before.
+    """
+    from app.api.pickups import readiness
+    from app.api.projected import build_projected
+
+    on = today or date.today()
+    with factory() as session:
+        league = session.get(League, job.league_id) if job.league_id is not None else None
+        if league is None:
+            raise JobError("the league is not stored", retry=False)
+        listener = settings.espn_league_id is not None and int(league.espn_league_id) == int(
+            settings.espn_league_id
+        )
+        season_row = listened_season(session, league, listener=listener)
+        if season_row is None:
+            return "the league has no season stored yet; nothing to project"
+        calendar, missing = readiness(session, season_row)
+        if missing or calendar is None:
+            return "nothing to project yet: " + " and ".join(missing)
+        day = calendar.scoring_period_on(on)
+        try:
+            payload = build_projected(session, season_row, day)
+        except ValueError as error:
+            return f"day {day} cannot be projected: {error}"
+        reports.store_league(session, season_row.id, reports.PROJECTED, day, payload)
+        session.commit()
+        teams = len(payload.get("teams", []))
+        weeks = len(payload.get("periods", []))
+    return f"stored the projection for day {day}: {teams} teams over {weeks} week(s)"
 
 
 # ---------------------------------------------------------------------------
@@ -742,6 +798,9 @@ def handlers(settings: Settings | None = None) -> dict[str, jobs.Handler]:
         jobs.STATUS_PASS: lambda factory, job: run_pass(factory, job, current()),
         jobs.PRECOMPUTE: lambda factory, job: run_precompute(
             factory, job, payload_day(job, "today")
+        ),
+        jobs.PROJECT_STANDINGS: lambda factory, job: run_project_standings(
+            factory, job, current(), payload_day(job, "today")
         ),
         jobs.DIGEST: lambda factory, job: run_digest(
             factory, job, current(), payload_moment(job, "now")
