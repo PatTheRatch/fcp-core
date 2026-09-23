@@ -57,7 +57,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from espn_api.basketball.constant import PRO_TEAM_MAP
 from sqlalchemy import select
@@ -112,6 +112,11 @@ class Game:
     opponent_pro_team_id: int
     opponent: str
     home: bool
+    #: Tip-off, as the stored schedule has it (UTC). None when the row this
+    #: was built from carried no time; every reader that wants to print a
+    #: clock has to put it in the reader's own zone, which is why the moment
+    #: travels rather than a formatted string.
+    at: datetime | None = None
 
     def describe(self) -> str:
         return f"{'vs' if self.home else 'at'} {self.opponent}"
@@ -531,7 +536,12 @@ def _games_today(
     if not wanted:
         return {}
     rows = session.execute(
-        select(ProTeamGame.pro_team_id, ProTeamGame.opponent_pro_team_id, ProTeamGame.home).where(
+        select(
+            ProTeamGame.pro_team_id,
+            ProTeamGame.opponent_pro_team_id,
+            ProTeamGame.home,
+            ProTeamGame.game_at,
+        ).where(
             ProTeamGame.season == season,
             ProTeamGame.scoring_period == today,
             ProTeamGame.pro_team_id.in_(wanted),
@@ -542,8 +552,9 @@ def _games_today(
             opponent_pro_team_id=int(opponent),
             opponent=str(PRO_TEAM_MAP.get(int(opponent), "?")),
             home=bool(home),
+            at=game_at,
         )
-        for pro_team_id, opponent, home in rows
+        for pro_team_id, opponent, home, game_at in rows
     }
 
 

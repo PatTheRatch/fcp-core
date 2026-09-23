@@ -47,6 +47,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Annotated, Any
 
+from espn_api.basketball.constant import PRO_TEAM_MAP
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -399,6 +400,10 @@ def _player_out(player: RosteredPlayer, espn: dict[int, int]) -> PickupPlayerOut
         espn_player_id=espn.get(player.player_id, player.player_id),
         name=player.name,
         pro_team_id=player.pro_team_id,
+        # The mark a page sets beside his name. ESPN's own table, the one
+        # `app.pickups.today` already reads to write "at MIL", so the two
+        # abbreviations on a row can never come from two different places.
+        pro_team=PRO_TEAM_MAP.get(int(player.pro_team_id)),
         position=player.position,
         injury_status=player.injury_status,
         expected_return_date=player.expected_return_date,
@@ -521,6 +526,7 @@ def _day_out(player: DayPlayer, espn: dict[int, int]) -> TodayPlayerOut:
                 opponent=player.game.opponent,
                 home=player.game.home,
                 describe=player.game.describe(),
+                at=player.game.at,
             )
         ),
         status=player.status,

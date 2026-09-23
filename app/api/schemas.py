@@ -552,6 +552,14 @@ class PickupPlayerOut(BaseModel):
     espn_player_id: int
     name: str
     pro_team_id: int
+    pro_team: str | None = Field(
+        default=None,
+        description=(
+            "His NBA team's abbreviation, e.g. DET. The mark a page sets beside his name, "
+            "so no reader has to carry ESPN's team table; null for a stored report built "
+            "before the field existed, or a team id ESPN has no abbreviation for"
+        ),
+    )
     position: str | None
     injury_status: str | None
     expected_return_date: date | None
@@ -792,6 +800,13 @@ class TodayGameOut(BaseModel):
     opponent: str = Field(description="The opponent's abbreviation, e.g. MIL")
     home: bool
     describe: str = Field(description='The whole thing in three words: "at MIL"')
+    at: datetime | None = Field(
+        default=None,
+        description=(
+            "Tip-off, from the stored schedule. A moment and not a clock: every reader "
+            "prints it in its own zone. Null for a stored report built before the field"
+        ),
+    )
 
 
 class TodayPlayerOut(PickupPlayerOut):
@@ -1395,4 +1410,12 @@ class ProjectedOut(BaseModel):
     source_note: str
     basis: str
     calibration_note: str = Field(description="What this forecast scored on a replayed season")
+    calibration_short: str = Field(
+        default="",
+        description=(
+            "The same record in one sentence (`projected_calibration.SHORT_NOTE`), for a "
+            "page that prints the projected finish on one line and keeps the full note "
+            "a tap away. Empty for a stored report built before the field existed"
+        ),
+    )
     stored: bool = Field(default=False, description="Answered from the morning's stored report")

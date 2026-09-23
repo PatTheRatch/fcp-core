@@ -10,6 +10,7 @@ season the listener has never run for.
 from collections.abc import Iterator
 
 import pytest
+from espn_api.basketball.constant import PRO_TEAM_MAP
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,6 +21,7 @@ from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
     configure,
+    day_date,
     eligible,
     games,
     on_the_wire,
@@ -240,6 +242,34 @@ def test_the_today_route_reports_the_lineup_and_says_where_it_came_from(
     assert body["fix"] == [], "what they set fills as much of the lineup as anything could"
     assert body["projected"]["PTS"] > 0
     assert "ESPN" in body["source_note"]
+
+
+def test_a_man_carries_his_nba_team_and_his_tip_off(client: TestClient) -> None:
+    """The two marks a game sheet sets beside a name, and neither is a new
+    number (docs/in_season_pages.md, "The game sheet").
+
+    `pro_team` is ESPN's own team table, the one the day's report already
+    reads to write "at HOU", so a page does not have to carry the table to
+    put a mark beside a name; `game.at` is the moment the stored schedule
+    holds, and goes out as a moment rather than a clock because the same
+    report is read in three time zones. Both travel on every report a player
+    appears in, including the week's.
+    """
+    body = client.get(today_url(), params={"today": 1}).json()
+
+    seated = body["lineup"][0]["player"]
+    assert seated["pro_team"] == PRO_TEAM_MAP[10] == "HOU"
+    # The seeded schedule tips off at 23:00 UTC on the day itself.
+    assert seated["game"]["at"].startswith(f"{day_date(1).isoformat()}T23:00")
+    assert seated["game"]["describe"] == "vs ?", "the opponent is a team ESPN has no name for"
+
+    week = client.get(url(), params={"today": 1}).json()
+    star = next(move for move in week["moves"] if move["add"]["name"] == "Star")
+    assert star["add"]["pro_team"] == PRO_TEAM_MAP[20]
+    assert star["drop"]["pro_team"] == PRO_TEAM_MAP[10]
+
+    season = client.get(url(which="season"), params={"today": 1}).json()
+    assert season["drops"][0]["player"]["pro_team"] == PRO_TEAM_MAP[10]
 
 
 def test_an_unknown_team_is_404(client: TestClient) -> None:

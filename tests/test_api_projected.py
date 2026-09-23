@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
-from app.inseason.projected_calibration import CALIBRATION_NOTE
+from app.inseason.projected_calibration import CALIBRATION_NOTE, SHORT_NOTE
 from app.main import create_app
 from tests.pickups_db import (
     ANY,
@@ -168,6 +168,7 @@ def test_the_team_route_is_the_league_answer_narrowed(client: TestClient) -> Non
     # Everything outside `teams` is the league's and travels with the slice.
     assert slice_["tiebreak"] == whole["tiebreak"]
     assert slice_["periods"] == whole["periods"]
+    assert slice_["calibration_short"] == whole["calibration_short"]
 
 
 def test_every_answer_carries_its_record_and_its_source(client: TestClient) -> None:
@@ -175,6 +176,11 @@ def test_every_answer_carries_its_record_and_its_source(client: TestClient) -> N
     body = client.get(league_url(), params={"today": 1}).json()
 
     assert body["calibration_note"] == CALIBRATION_NOTE
+    # The same record in one line, for a page that prints the projected
+    # finish on one line and keeps the whole note a tap away. Verbatim from
+    # the constant, so the two can never say different numbers.
+    assert body["calibration_short"] == SHORT_NOTE
+    assert "7.4" in body["calibration_short"], "and it is the same number the long one gives"
     assert body["source_note"]
     assert body["basis"].startswith("rosters and box scores as of scoring period 1")
     assert body["n_sims"] > 0

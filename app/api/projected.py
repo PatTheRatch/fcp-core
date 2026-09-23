@@ -50,7 +50,7 @@ from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.pickups import TODAY, TodayQuery, _day, _ready
 from app.api.schemas import ProjectedOut, ProjectedTeamOut, ProjectedWeekOut
 from app.inseason.projected import Projection, TeamOutlook, Week, project_standings
-from app.inseason.projected_calibration import CALIBRATION_NOTE
+from app.inseason.projected_calibration import CALIBRATION_NOTE, SHORT_NOTE
 
 router = APIRouter(tags=["projected"])
 
@@ -121,6 +121,7 @@ def _out(report: Projection) -> ProjectedOut:
         source_note=report.source_note,
         basis=report.basis,
         calibration_note=CALIBRATION_NOTE,
+        calibration_short=SHORT_NOTE,
     )
 
 
@@ -141,7 +142,12 @@ def _projection(
     if day == calendar.scoring_period_on(on):
         row = reports.fresh_league(session, league_season.id, reports.PROJECTED, day, on=on)
         if row is not None:
-            return ProjectedOut.model_validate({**dict(row.payload), "stored": True})
+            # `calibration_short` is a constant of this build, not something the
+            # run worked out, so a row stored before the field existed still
+            # gets the sentence rather than an empty line on the page.
+            return ProjectedOut.model_validate(
+                {"calibration_short": SHORT_NOTE, **dict(row.payload), "stored": True}
+            )
     try:
         body = build_projected(session, league_season, day)
     except ValueError as error:
