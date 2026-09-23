@@ -992,8 +992,10 @@ function drawSeason(projection) {
   const ordinal = (n) =>
     `${n}${["th", "st", "nd", "rd"][(n % 100 >= 11 && n % 100 <= 13) || n % 10 > 3 ? 0 : n % 10]}`;
   $("standing").innerHTML =
-    `<span class="k">Projected finish</span> ${record(team.projected_record)}` +
-    `<span class="sep">·</span>${escape(ordinal(likeliest.place))} most often` +
+    // Each piece is its own flex item: on a phone the separators are hidden
+    // and the gap does their job, which bare text nodes would not get.
+    `<span class="k">Projected finish</span><span>${record(team.projected_record)}</span>` +
+    `<span class="sep">·</span><span>${escape(ordinal(likeliest.place))} most often</span>` +
     `<span class="sep">·</span><span class="k">playoff odds</span>` +
     `<span class="odds">${pct(team.playoff_odds)}</span>`;
   $("season-note").textContent = projection.calibration_short || "";
