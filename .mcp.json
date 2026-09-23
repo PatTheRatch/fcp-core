@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "box-out": {
+      "command": "./.venv/bin/python",
+      "args": ["scripts/mcp_server.py", "--stdio"],
+      "env": {
+        "PYTHONPATH": ".",
+        "BOX_OUT_TOKEN": "${BOX_OUT_TOKEN}"
+      }
+    }
+  }
+}

@@ -270,9 +270,12 @@ def build_server(
         description=(
             "What changed in the league in a window: injuries and status "
             "changes, adds, drops, claims with what they cost, and trades, each "
-            "as one sentence, newest first. With no window it is the last "
-            "twenty-four hours. `team_id` only flags which of them are that "
-            "team's own and its opponent's. Every member may read all of it."
+            "as one sentence, newest first. With no window at all it is the "
+            "last twenty-four hours of real time, which is empty on a season "
+            "stored months ago: pass `today` (a scoring period) to get that "
+            "day and the one before it, or `since`/`until` as ISO moments. "
+            "`team_id` only flags which of them are that team's own and its "
+            "opponent's. Every member may read all of it."
         )
     )
     def what_changed(
@@ -282,9 +285,11 @@ def build_server(
         team_id: int | None = None,
         since: str | None = None,
         until: str | None = None,
+        today: int | None = None,
     ) -> dict[str, Any]:
         return run(
-            ctx, lambda s, v: tools.what_changed(s, v, league_id, season, team_id, since, until)
+            ctx,
+            lambda s, v: tools.what_changed(s, v, league_id, season, team_id, since, until, today),
         )
 
     @mcp.tool(

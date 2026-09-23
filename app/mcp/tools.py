@@ -23,7 +23,7 @@ model can say "of 412 free agents" and be right.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
 from fastapi import HTTPException
@@ -576,9 +576,23 @@ def what_changed(
     team_id: int | None = None,
     since: str | None = None,
     until: str | None = None,
+    today: int | None = None,
 ) -> dict[str, Any]:
-    """The league's news in a window: injuries, adds, drops, claims and trades."""
+    """The league's news in a window: injuries, adds, drops, claims and trades.
+
+    `today` is a scoring period, and it is there because the obvious question
+    on a replayed day -- "what changed before day 52?" -- has the wrong
+    answer without it. The route's default window is the last twenty-four
+    hours of real time, which on a season stored months ago is empty and
+    says nothing. Given a day, the window is that day and the one before it,
+    which is what the This week page shows.
+    """
     found = league_member(session, viewer, league_id, season)
+    if today is not None and since is None and until is None:
+        calendar = season_calendar(session, season)
+        if calendar is not None:
+            end = datetime.combine(calendar.date_of(today), time.max, tzinfo=UTC)
+            since, until = (end - timedelta(days=2)).isoformat(), end.isoformat()
     try:
         answer = changes_api.list_changes(
             found,
