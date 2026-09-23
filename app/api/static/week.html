@@ -110,6 +110,35 @@
     </details>
   </section>
 
+  <!-- 4b. What if: the manager's own read, under ours. He names the move and
+       the route answers it in the same three layers -- the nine this week,
+       the judgement against the same bar, and where the season finishes.
+       Until Run it is a heading and a form, and nothing has been fetched. -->
+  <section id="whatif-section">
+    <div class="shead"><h2>What if</h2><span class="tag" id="whatif-tag"></span></div>
+    <p class="lede" id="whatif-lede"></p>
+    <form class="whatif" id="whatif-form" autocomplete="off">
+      <div class="room" id="whatif-add-room">
+        <span class="k">Add</span>
+        <span class="chosen" id="whatif-add-name"></span>
+        <details class="disc" id="whatif-wire">
+          <summary>Off the wire <span class="n" id="whatif-wire-n"></span></summary>
+          <div class="inside"><ul class="wire" id="whatif-pool"></ul></div>
+        </details>
+      </div>
+      <p class="room"><label for="whatif-drop">Drop</label>
+        <select id="whatif-drop"></select></p>
+      <p class="room" id="whatif-ir-room" hidden><label for="whatif-ir">To IR</label>
+        <select id="whatif-ir"></select></p>
+      <p class="doing">
+        <button class="cta" id="whatif-run" type="submit">Run</button>
+        <span class="working" id="whatif-working"></span>
+      </p>
+    </form>
+    <p class="warnline" id="whatif-failed" hidden></p>
+    <div id="whatif-answer"></div>
+  </section>
+
   <!-- 5. The schedule: the period across, both sides down, a real table. -->
   <section id="sched-section">
     <div class="shead"><h2>Schedule</h2><span class="tag" id="sched-tag"></span></div>
@@ -215,6 +244,11 @@
 const WHERE = place();
 let CONTEXT = null;
 let REPORT = null;
+/* The day's own report, kept because it is the only thing on the page that
+   carries the whole roster -- the lineup, the bench, the men with no game
+   and injured reserve -- and the What if form's Drop chooser is drawn from
+   it rather than from a fetch of its own. */
+let TODAY = null;
 /* The opponent's stored daily lineups for the period, indexed by day: the
    other side of Tonight, which is a fact about what they have set rather
    than anything this page works out. The schedule sheet used to be drawn
@@ -778,6 +812,417 @@ function drawRead(report) {
   wireCards($("read"));
 }
 
+/* ---- what if ------------------------------------------------------------
+   The manager's own read, under ours. He names a man off the wire and the
+   man going out for him, and `/what-if` answers in the same three layers
+   the plan above is written in: the nine this week before and after, the
+   judgement -- the recommender's own numbers, through the same `judged()`
+   every other move on this page goes through, against the same bar -- and
+   where the season finishes.
+
+   Nothing is fetched until it is asked for. The wire is read the first time
+   the chooser is opened, and the move is judged only on Run, so what this
+   section costs a first load is a heading and a form. The first Run in a
+   fresh server process takes about half a minute, because the league's
+   whole FAAB history is built once to price a bid; the button says so.
+
+   The finish is a second lens and not a second bar (docs/what_if.md). The
+   route sends those words and the lede prints them. Nothing in this section
+   is ranked, hidden or labelled against it. */
+
+/** The move being asked about. `add` keeps the name as well as the id, so a
+ *  form restored from the last visit can say who it holds before the wire
+ *  has been read. */
+const WHATIF = { add: null, addName: "", drop: null, toIr: null };
+/** The wire, once it has been read, and whether a read is under way. */
+let WHATIF_POOL = null;
+let WHATIF_READING = false;
+let WHATIF_RUNNING = false;
+
+/** Where the last move asked about is kept. Per team, because a move is a
+ *  question about one roster. Wrapped: a private window merely forgets. */
+const whatIfKey = () => `fcp-whatif-${WHERE.league}-${WHERE.season}-${WHERE.team}`;
+
+function rememberWhatIf() {
+  try {
+    window.localStorage.setItem(
+      whatIfKey(),
+      JSON.stringify({
+        add: WHATIF.add,
+        addName: WHATIF.addName,
+        drop: WHATIF.drop,
+        toIr: WHATIF.toIr,
+      }),
+    );
+  } catch (error) {
+    /* private window, or a full store: the form simply starts empty */
+  }
+}
+
+function recallWhatIf() {
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(whatIfKey()) || "null");
+    if (!kept || typeof kept !== "object") return;
+    WHATIF.add = isNum(kept.add) ? kept.add : null;
+    WHATIF.addName = typeof kept.addName === "string" ? kept.addName : "";
+    WHATIF.drop = isNum(kept.drop) ? kept.drop : null;
+    WHATIF.toIr = isNum(kept.toIr) ? kept.toIr : null;
+  } catch (error) {
+    /* nothing kept, or something else wrote over it */
+  }
+}
+
+/** Every man the day's own report says this team holds: the lineup, the
+ *  bench, the men with no game, and injured reserve. */
+function heldMen() {
+  if (!TODAY) return [];
+  return [
+    ...(TODAY.lineup || []).map((seat) => seat.player).filter(Boolean),
+    ...(TODAY.benched || []).map((one) => one.player).filter(Boolean),
+    ...(TODAY.idle || []),
+    ...(TODAY.injured_reserve || []),
+  ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+/** One option of a chooser over the roster. A man on injured reserve is
+ *  marked and cannot be picked: he keeps his roster place and is not
+ *  started, so he is not a drop, which is the engine's own rule. */
+function rosterOption(player, chosen, mark) {
+  const flags = [
+    player.position || "",
+    player.on_ir ? "injured reserve" : "",
+    !player.on_ir && player.injury_status && player.injury_status !== "ACTIVE"
+      ? String(player.injury_status).replace(/_/g, " ").toLowerCase()
+      : "",
+  ].filter(Boolean);
+  return (
+    `<option value="${player.espn_player_id}"` +
+    `${player.espn_player_id === chosen ? " selected" : ""}` +
+    `${mark && player.on_ir ? " disabled" : ""}>` +
+    `${escape(player.name)}${flags.length ? ` — ${escape(flags.join(", "))}` : ""}</option>`
+  );
+}
+
+/** A row of the wire: what he gives an ordinary place, what he is, and his
+ *  week in the nine, with his card beside the row -- the trade page's own
+ *  chooser, sorted by value, because a straight pickup has no deal to price
+ *  a man against. */
+function wireRow(man, chosen) {
+  const flags = [];
+  if (man.hurt) {
+    flags.push(
+      `<span class="badge hurt">${escape(String(man.injury_status || "hurt").toLowerCase())}` +
+      `${man.expected_return_date ? `, back ${escape(dayName(man.expected_return_date))}` : ""}` +
+      `</span>`,
+    );
+  }
+  if (man.on_waivers) {
+    flags.push(
+      `<span class="badge waivers">on waivers` +
+      `${man.waiver_clears_at ? `, clears ${escape(weekday(man.waiver_clears_at))}` : ""}` +
+      `</span>`,
+    );
+  }
+  const meta = [man.position || "", man.pro_team || "", `${man.games_left}g`]
+    .filter(Boolean)
+    .join(" · ");
+  const strip = stripHtml(
+    Object.fromEntries(CATS.map((cat) => [cat, { text: showCat(cat, man.weekly[cat]) }])),
+  );
+  return (
+    `<li><button type="button" class="fill" data-id="${man.espn_player_id}" ` +
+    `aria-pressed="${chosen ? "true" : "false"}">` +
+    `<span class="who">${escape(man.name)}${flags.join("")}</span>` +
+    `<span class="worth ${man.value >= 0 ? "up" : "down"}">${signed(man.value, 2)}</span>` +
+    `<span class="meta">${escape(meta)} &middot; a week to an average team</span>` +
+    `<span class="strip">${strip}</span></button>` +
+    `<button type="button" class="info" data-card="${man.espn_player_id}" ` +
+    `aria-label="Card for ${escape(man.name)}">card</button></li>`
+  );
+}
+
+function drawWire() {
+  if (WHATIF_POOL === null) {
+    $("whatif-pool").innerHTML = WHATIF_READING
+      ? `<li class="empty">Reading who is available on this day…</li>`
+      : `<li class="empty">The wire has not been read yet.</li>`;
+    return;
+  }
+  const men = [...WHATIF_POOL.candidates].sort((a, b) => b.value - a.value);
+  $("whatif-wire-n").textContent = `${men.length} of ${WHATIF_POOL.pool_size}, best first`;
+  $("whatif-pool").innerHTML = men.length
+    ? men.map((man) => wireRow(man, man.espn_player_id === WHATIF.add)).join("")
+    : `<li class="empty">Nobody is on the wire on this day.</li>`;
+  $("whatif-pool")
+    .querySelectorAll(".fill")
+    .forEach((button) => {
+      button.onclick = () => {
+        const id = Number(button.dataset.id);
+        const man = men.find((each) => each.espn_player_id === id);
+        const same = WHATIF.add === id;
+        WHATIF.add = same ? null : id;
+        WHATIF.addName = same || !man ? "" : man.name;
+        rememberWhatIf();
+        if (!same) $("whatif-wire").open = false;
+        drawWire();
+        whatIfReady();
+      };
+    });
+  wireCards($("whatif-pool"));
+}
+
+/** The wire, read once, the first time the chooser is opened. The pool route
+ *  is the trade page's and wants a deal to price *worth* against; a straight
+ *  pickup has none, so the other team is only there to satisfy the route and
+ *  the column read off it is `value`, the league standard. */
+async function readWire() {
+  if (WHATIF_POOL !== null || WHATIF_READING) return;
+  const other = ((CONTEXT && CONTEXT.teams) || []).find(
+    (team) => team.espn_team_id !== Number(WHERE.team),
+  );
+  if (!other) return;
+  WHATIF_READING = true;
+  drawWire();
+  const query = params(WHERE, { with_team: other.espn_team_id, side: "ours" });
+  const got = await get(
+    `/leagues/${WHERE.league}/seasons/${WHERE.season}/teams/${WHERE.team}/trades/pool${query}`,
+    { quiet: true },
+  );
+  WHATIF_READING = false;
+  WHATIF_POOL = got.ok && got.body.readiness.ready ? got.body : { candidates: [], pool_size: 0 };
+  drawWire();
+}
+
+/** Run is for a named pickup: a drop with nobody coming in is not a
+ *  comparison, and the route refuses it rather than answering it. */
+function whatIfReady() {
+  const man = WHATIF.addName || (WHATIF.add === null ? "" : `player ${WHATIF.add}`);
+  $("whatif-add-name").innerHTML = man
+    ? `<b>${escape(man)}</b>`
+    : `<span class="none">nobody yet</span>`;
+  $("whatif-run").disabled = WHATIF_RUNNING || WHATIF.add === null;
+}
+
+function drawWhatIf(report) {
+  recallWhatIf();
+  $("whatif-tag").textContent = "your own move";
+  $("whatif-lede").innerHTML =
+    `Name a move of your own and it is judged the way the plan above is: what it does to the ` +
+    `nine this week, what it is worth over both horizons against the same ` +
+    `<b>${fixed(report.hurdle, 2)}</b> bar, and where the season finishes. Nothing is read ` +
+    `until you tap Run.`;
+
+  const held = heldMen();
+  const out = held.filter(
+    (player) => !player.on_ir && String(player.injury_status || "").toUpperCase() === "OUT",
+  );
+  if (!held.length) {
+    // The day's own report is the only roster the page holds; without it
+    // there is nobody to name, and the form says so rather than showing an
+    // empty chooser.
+    $("whatif-drop").innerHTML = `<option value="">the day's roster could not be read</option>`;
+    $("whatif-drop").disabled = true;
+    WHATIF.drop = null;
+  } else {
+    $("whatif-drop").disabled = false;
+    $("whatif-drop").innerHTML =
+      `<option value="">nobody — into an open place</option>` +
+      held.map((player) => rosterOption(player, WHATIF.drop, true)).join("");
+    if ($("whatif-drop").value === "") WHATIF.drop = null;
+  }
+
+  // Injured reserve is offered only where the league has a place free and
+  // the roster holds a man ESPN has ruled out, which is the only man ESPN's
+  // injured reserve will take.
+  const irOffered = Boolean(report.ir_slot_free) && out.length > 0;
+  $("whatif-ir-room").hidden = !irOffered;
+  if (!irOffered) {
+    WHATIF.toIr = null;
+  } else {
+    $("whatif-ir").innerHTML =
+      `<option value="">nobody</option>` +
+      out.map((player) => rosterOption(player, WHATIF.toIr, false)).join("");
+    if ($("whatif-ir").value === "") WHATIF.toIr = null;
+  }
+
+  // A drop and an injured-reserve move are alternatives, not a pair: one man
+  // arriving fills one place, and naming both leaves the roster short, which
+  // the route refuses. Picking either clears the other.
+  $("whatif-drop").onchange = () => {
+    WHATIF.drop = $("whatif-drop").value === "" ? null : Number($("whatif-drop").value);
+    if (WHATIF.drop !== null && irOffered) {
+      WHATIF.toIr = null;
+      $("whatif-ir").value = "";
+    }
+    rememberWhatIf();
+  };
+  if (irOffered) {
+    $("whatif-ir").onchange = () => {
+      WHATIF.toIr = $("whatif-ir").value === "" ? null : Number($("whatif-ir").value);
+      if (WHATIF.toIr !== null) {
+        WHATIF.drop = null;
+        $("whatif-drop").value = "";
+      }
+      rememberWhatIf();
+    };
+  }
+
+  $("whatif-wire").ontoggle = () => {
+    if ($("whatif-wire").open) readWire();
+  };
+  $("whatif-form").onsubmit = (event) => {
+    event.preventDefault();
+    runWhatIf();
+  };
+  drawWire();
+  whatIfReady();
+}
+
+/** The nine after the change, in the same three bands The nine draws, with
+ *  the categories the change moved marked: the chance it leaves each at, and
+ *  under a moved one what it was and how far it went, in points of
+ *  probability. The cells are cells and not the buttons up the page: there
+ *  is no second pair of projected totals behind a hypothetical to open. */
+function whatIfBandHtml(which, cats, week, moved) {
+  const [word, range] = BAND_WORDS[which];
+  const cells = cats
+    .map((cat) => {
+      const after = week.after ? week.after[cat] : undefined;
+      const shift = moved[cat];
+      const points = shift ? shift.delta * 100 : 0;
+      const tone = !shift ? "" : points > 0.5 ? "up" : points < -0.5 ? "down" : "";
+      const mark = shift
+        ? `<span class="mv ${tone}">was ${pct(shift.before)} &middot; ${signed(points, 0)}</span>`
+        : "";
+      return (
+        `<div class="cell${shift ? " moved" : ""}">` +
+        `<span class="lab">${escape(cat)}</span><b>${pct(after)}</b>${mark}</div>`
+      );
+    })
+    .join("");
+  return (
+    `<div class="band ${which}">` +
+    `<p class="blab">${escape(word)} <span class="n">${escape(range)}</span></p>` +
+    (cats.length
+      ? `<div class="pulse">${cells}</div>`
+      : `<p class="empty bandempty">None this week.</p>`) +
+    `</div>`
+  );
+}
+
+function whatIfWeekHtml(week) {
+  const moved = {};
+  (week.moved || []).forEach((shift) => {
+    moved[shift.abbreviation] = shift;
+  });
+  const grouped = { yours: [], swing: [], theirs: [] };
+  CATS.forEach((cat) => grouped[bandOf(week.after ? week.after[cat] : undefined)].push(cat));
+  const against =
+    week.opponent_name === null || week.opponent_name === undefined
+      ? "on a bye"
+      : `vs ${escape(week.opponent_name)}`;
+  return (
+    `<p class="whose">this week</p>` +
+    `<p class="hint">Period ${week.matchup_period}, ${against}, ` +
+    `${count(week.days_remaining, "day")} left. Expected categories ` +
+    `<b>${fixed(week.expected_before, 2)}</b> → <b>${fixed(week.expected_after, 2)}</b>, ` +
+    `<b>${signed(week.delta, 3)}</b>.` +
+    (week.fills_empty_day
+      ? ` It seats a man on a day a starting place was going empty.`
+      : "") +
+    `</p>` +
+    whatIfBandHtml("swing", grouped.swing, week, moved) +
+    whatIfBandHtml("yours", grouped.yours, week, moved) +
+    whatIfBandHtml("theirs", grouped.theirs, week, moved)
+  );
+}
+
+/** The judgement, in the page's own article and through the page's own
+ *  helper: the same numbers, the same bar and the same words as every move
+ *  in The read. A bar labels and hides nothing, so a move under it is
+ *  printed in full with its number. */
+function whatIfNumberHtml(a) {
+  const add = a.adds[0];
+  const drop = a.drops[0];
+  const hurt = a.to_ir[0];
+  const what = [
+    `Add ${cardName(add.espn_player_id, `<b>${escape(add.name)}</b>`)} ` +
+      `(${add.starts} of ${add.games_remaining} games)`,
+    drop
+      ? `drop ${cardName(drop.espn_player_id, `<b>${escape(drop.name)}</b>`)} ` +
+        `(${drop.starts} of ${drop.games_remaining})`
+      : hurt
+        ? `${cardName(hurt.espn_player_id, `<b>${escape(hurt.name)}</b>`)} to injured reserve`
+        : "into the open place",
+  ].join(", ");
+  const priced = bidNote(a.bid);
+  return (
+    `<p class="whose" style="margin-top:20px">the number</p>` +
+    `<article class="move"><div class="head">` +
+    `<span class="what">${what}${waiverNote(add, a.today)}</span>` +
+    `<span class="mark ${a.clears_hurdle ? "clears" : ""}">` +
+    `${a.clears_hurdle ? "clears the bar" : "below the bar"}</span>` +
+    `<span class="net ${a.net >= 0 ? "up" : "down"}">${signed(a.net, 3)}</span>` +
+    `</div>` +
+    judged(a.judgement) +
+    `<p class="why">The bar is <b>${fixed(a.hurdle, 2)}</b> categories, from ` +
+    `${escape(a.hurdle_source)}: ${escape(a.hurdle_note)}.</p>` +
+    (priced ? `<p class="note">${priced}</p>` : "") +
+    `</article>`
+  );
+}
+
+function drawWhatIfAnswer(a) {
+  $("whatif-tag").textContent = `judged on day ${a.today}`;
+  // The route's own sentence about what the finish is, in the section's
+  // lede, where a reader meets it before the figure it is about.
+  const said = a.finish.language;
+  $("whatif-lede").innerHTML =
+    `${escape(said.charAt(0).toUpperCase() + said.slice(1))} ` +
+    `Change either chooser and tap Run again.`;
+  // A finish the simulation cannot resolve is said in the route's words
+  // rather than left as two percentages a tenth of a point apart.
+  const quiet = (a.notes || []).filter((note) => note.indexOf("sampling band") >= 0);
+  $("whatif-answer").innerHTML =
+    whatIfWeekHtml(a.week) +
+    whatIfNumberHtml(a) +
+    finishHtml(a.finish) +
+    quiet.map((note) => `<p class="hint faint">${escape(note)}.</p>`).join("");
+  wireCards($("whatif-answer"));
+}
+
+async function runWhatIf() {
+  if (WHATIF_RUNNING || WHATIF.add === null) return;
+  WHATIF_RUNNING = true;
+  whatIfReady();
+  $("whatif-failed").hidden = true;
+  $("whatif-tag").textContent = "working";
+  $("whatif-working").textContent =
+    "Judging this move: the week, the weeks after it, and ten thousand seasons either way. " +
+    "The first one of these can take half a minute.";
+  const extra = { add: WHATIF.add };
+  if (WHATIF.drop !== null) extra.drop = WHATIF.drop;
+  if (WHATIF.toIr !== null) extra.to_ir = WHATIF.toIr;
+  const got = await get(
+    `/leagues/${WHERE.league}/seasons/${WHERE.season}/teams/${WHERE.team}/what-if` +
+      params(WHERE, extra),
+    { quiet: true },
+  );
+  WHATIF_RUNNING = false;
+  $("whatif-working").textContent = "";
+  whatIfReady();
+  if (!got.ok) {
+    // Every way a change cannot be made comes back as one sentence a manager
+    // can act on. It is printed as it is sent: the page has nothing to add.
+    $("whatif-answer").innerHTML = "";
+    $("whatif-tag").textContent = "not a move that can be made";
+    $("whatif-failed").hidden = false;
+    $("whatif-failed").textContent = got.detail;
+    return;
+  }
+  drawWhatIfAnswer(got.body);
+}
+
 /* ---- the schedule -------------------------------------------------------
    The period across and both sides down, from the week report's own games
    table (`schedule`): the games each side has on each day by men who are not
@@ -1029,8 +1474,6 @@ function drawSeason(projection) {
 
   const places = team.finishes.map((share, place) => ({ place: place + 1, share }));
   const likeliest = places.reduce((best, row) => (row.share > best.share ? row : best), places[0]);
-  const ordinal = (n) =>
-    `${n}${["th", "st", "nd", "rd"][(n % 100 >= 11 && n % 100 <= 13) || n % 10 > 3 ? 0 : n % 10]}`;
   $("standing").innerHTML =
     // Each piece is its own flex item: on a phone the separators are hidden
     // and the gap does their job, which bare text nodes would not get.
@@ -1241,7 +1684,8 @@ async function start() {
   if (CONTEXT) $("title").textContent = nameOf(Number(WHERE.team));
   const period = CONTEXT && CONTEXT.period ? CONTEXT.period.period : null;
   const news = drawChanged(WHERE.team === null ? null : Number(WHERE.team));
-  drawTonight(today.ok ? today.body : null);
+  TODAY = today.ok ? today.body : null;
+  drawTonight(TODAY);
 
   const report = await asked.report;
   if (!report.ok) {
@@ -1255,6 +1699,7 @@ async function start() {
   drawMatchup(REPORT);
   drawBands(REPORT);
   drawRead(REPORT);
+  drawWhatIf(REPORT);
   drawSchedule(REPORT);
   drawMore(REPORT);
   drawFoot();

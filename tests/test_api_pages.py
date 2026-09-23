@@ -299,6 +299,58 @@ def test_the_week_page_keeps_everything_it_used_to_show(client: TestClient) -> N
     assert "BAND_YOURS" in page and "display choice" in page, "the bands are a choice about ink"
 
 
+def test_the_week_page_lets_a_manager_name_his_own_move(client: TestClient) -> None:
+    """The What if form (docs/what_if.md section 7).
+
+    It sits directly under The read, because it is the manager's own read.
+    The three layers are drawn out of things the page already has -- the
+    nine's bands, the shared `judged()` and the finish block the trade page
+    draws -- so what is checked here is that it calls the right two routes,
+    carries `?today=` on both, and reaches for those three.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+
+    order = ["read-section", "whatif-section", "sched-section"]
+    assert [page.index(name) for name in order] == sorted(page.index(name) for name in order)
+    assert "/what-if` +\n      params(WHERE, extra)" in page, "the route, with the same ?today="
+    assert "/trades/pool${query}" in page and "with_team: other.espn_team_id" in page
+    assert "judged(a.judgement)" in page, "the judgement is the page's own helper, untouched"
+    assert "finishHtml(a.finish)" in page, "and the finish is the trade page's own block"
+    assert "whatIfBandHtml(" in page, "the nine before and after, in the bands above"
+    assert "a.finish.language" in page, "the route's own words about what the finish is"
+    assert 'id="whatif-failed"' in page and 'class="warnline" id="whatif-failed"' in page
+
+
+def test_the_what_if_form_fetches_nothing_until_it_is_asked(client: TestClient) -> None:
+    """The first load keeps its height: a heading, a form and nothing else.
+
+    The wire is read the first time the chooser is opened and the move is
+    judged only on Run, so neither fetch may be reachable from `start()`.
+    The last move asked about is kept in localStorage, wrapped, so a private
+    window merely forgets it.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+    start = page.split("async function start()")[1]
+
+    assert "readWire(" not in start and "runWhatIf(" not in start
+    assert 'if ($("whatif-wire").open) readWire();' in page, "the wire waits to be opened"
+    assert "onsubmit" in page and "runWhatIf();" in page, "and the move waits for Run"
+    assert "localStorage.setItem(\n      whatIfKey()" in page
+    assert page.count("catch (error)") >= 2, "every store is wrapped"
+
+
+def test_the_finish_block_is_written_once_for_both_pages(client: TestClient) -> None:
+    """One function, in the shared script: the trade page draws a deal's
+    finish and the week page a what-if's, and the two cannot drift."""
+    script = client.get("/pages/static/pages.js").text
+    trades = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/trades").text
+
+    assert "function finishHtml(f)" in script
+    assert "so this is inside the noise" in script
+    assert "function finishHtml" not in trades, "the trade page no longer has one of its own"
+    assert "finishHtml(side.finish)" in trades
+
+
 def test_the_lineup_grid_is_styled_in_both_themes_and_at_phone_width(
     client: TestClient,
 ) -> None:

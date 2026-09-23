@@ -88,6 +88,39 @@ it. It is headed *The read* and never "Box Out says" or "the call": a tool,
 not gospel. What did not clear the bar is not hidden — it is under More,
 every move of it, each marked *clears the bar* or *below the bar*.
 
+**4b. What if.** Directly under The read, because it is the manager's own
+read. He names a man off the wire and the man going out for him, and the
+answer is the same three layers as the plan above
+([`what_if.md`](what_if.md) §7): the nine this week with the categories the
+move touched marked in the bands, the judgement — the recommender's own
+numbers, through the same `judged()` every other move on this page goes
+through, against the same bar — and where the season finishes, in the same
+block the trade page draws.
+
+**Nothing is fetched until it is asked for.** The wire is read the first
+time the chooser is opened; the move is judged only on **Run**. So what the
+section costs a first load is a heading and a form: 363 px of 2,992 at 1280
+and 441 px of 4,107 at 390. The first Run in a fresh server process takes
+about half a minute, because the league's whole FAAB history is built once
+to price a bid (`what_if.md` §4), and the button says so while it waits.
+
+**Drop** is a chooser over the roster the day's own report already carries,
+so it costs no fetch; a man on injured reserve is marked and cannot be
+picked, because he keeps his roster place and is not a drop. **To IR** is
+offered only where the league has a place free and the roster holds a man
+ESPN has ruled out, and it clears the drop, because naming both leaves the
+roster a place short. **Add** is the trade page's own chooser over
+`trades/pool`, sorted by **value** — what a man gives an ordinary place —
+because a straight pickup has no deal to price *worth* against.
+
+The finish is **a second lens and not a second bar**. The route sends those
+words as `finish.language` and the section's lede prints them; nothing here
+is ranked, hidden or labelled against it, and a finish the simulation cannot
+resolve says so in the route's own sentence rather than leaving two
+percentages a tenth of a point apart to speak for themselves. A change that
+cannot be made is the route's 422 sentence in the warn line, which is the
+one other thing on this page stated as a mistake.
+
 **5. Schedule.** The period's days across, **you** and **them** down, as a
 real table, and a **Total** column at the right for the days still to play.
 
@@ -387,6 +420,17 @@ The game sheet adds two more of the league's own, and no new route:
 
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/lineups?period=&started=true
     /leagues/{league_id}/seasons/{season}/changes?since=&until=&team_id=
+
+What if adds two the week page did not call before, neither of them new and
+neither of them fetched on load:
+
+    /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/pool?with_team=&side=ours
+    /leagues/{league_id}/seasons/{season}/teams/{team_id}/what-if?add=&drop=&to_ir=
+
+The pool is the trade page's, and it wants a deal to price *worth* against;
+a straight pickup has none, so the other team on the query is only there to
+satisfy the route and the column the chooser sorts and shows is `value`.
+Both carry `?today=` exactly as every other fetch on the page does.
 
 `/lineups` is league scope (docs/accounts.md: every team's stored lineups
 are a member's to read), which is what lets the sheet show the other side of

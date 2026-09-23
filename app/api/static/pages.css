@@ -673,6 +673,40 @@ details.disc .inside > .lede{margin-top:0}
 .band.theirs .pulse b{color:var(--stop)}
 .band.swing .pulse b{color:var(--accent)}
 .empty.bandempty{padding:4px 0 0;font-size:14px}
+/* The same strip under a What if answer, where a cell is a cell and not a
+   button: there is no second pair of projected totals behind a hypothetical
+   to open. A category the move moved takes the tint a tapped cell takes,
+   and says underneath what it was and how far it went -- a sign and a word
+   before a colour, for a reader who sees no colour. */
+.pulse .cell{display:block;width:100%;text-align:right;border-right:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);padding:7px 9px 6px}
+.pulse .cell.moved{background:var(--accent-soft)}
+.pulse .mv{display:block;margin-top:2px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.02em;color:var(--faint);white-space:nowrap}
+.pulse .mv.up{color:var(--good)} .pulse .mv.down{color:var(--stop)}
+
+/* ---- what if: a move the manager names ----------------------------------
+   Three choices and a button, so the section adds a heading and a form to
+   the first load and nothing else. The wire sits behind a disclosure and is
+   not read until it is opened; nothing is judged until Run. The answer is
+   drawn in furniture the page already has -- the bands above, a move's own
+   article, the finish block the trade page draws -- so there is very little
+   here beyond the form itself. */
+.whatif .room{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
+.whatif .room > label,.whatif .room > .k{flex:0 0 4.5em;font-family:var(--display);
+  text-transform:uppercase;letter-spacing:.09em;font-size:11px;color:var(--faint)}
+.whatif .room select{flex:1 1 15em}
+.whatif .room select[disabled]{color:var(--faint)}
+.whatif .chosen{flex:1 1 15em;color:var(--ink);font-size:16px;overflow-wrap:anywhere}
+.whatif .chosen .none{color:var(--faint);font-style:italic}
+.whatif details.disc{flex:1 1 100%;margin-top:2px;border-top:0}
+.whatif details.disc > summary{padding:4px 0}
+.whatif .wire{max-height:340px;margin-top:0}
+.whatif .doing{margin-top:20px}
+.whatif .doing .working{flex:1 1 16em;line-height:1.7}
+#whatif-answer:not(:empty){margin-top:26px;border-top:1px solid var(--rule);padding-top:16px}
+#whatif-answer .move:first-of-type{border-top:1px solid var(--rule)}
+#whatif-answer .band{margin-top:12px}
 
 /* What one category opens: both sides' projected totals and the chance, the
    numbers the page already holds, with the bar the tale of the tape drew. */

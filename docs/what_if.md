@@ -3,8 +3,8 @@
 **League:** Full Court Press (ESPN 3853870), nine-category H2H
 **Written:** 2026-09-23, alongside the build
 **Status:** built (`app/inseason/what_if.py`, `app/api/what_if.py`, the trade
-page's Finish block, the `what_if` MCP tool). The Week page's form is the one
-piece not built; §7 says exactly what it should call and render.
+page's Finish block, the `what_if` MCP tool, and the Week page's **What if**
+form — §7, added the same day).
 **Companions:** [`pickups.md`](pickups.md) §4.3-4.5 (the week report and its
 bar), [`trades.md`](trades.md) §1 and §6, [`projected_record.md`](projected_record.md)
 §2-§3 (the engine the finish comes from, and the seam this takes),
@@ -350,55 +350,83 @@ the wire's replacement named.
 
 ---
 
-## 7. The Week page: what it should call and render
+## 7. The Week page: what it calls and renders
 
-**Not built.** The Week page was being redesigned by another hand while this
-was written, and `app/api/static/week.html` and `app/api/static/pages.css`
-were deliberately not touched. This is the whole of what the redesign has to
-add.
+**Built**, 2026-09-23, in `app/api/static/week.html` and the shared
+`pages.js`. It went in directly under **The read**, which is where the
+redesign put the plan, because a move the manager names is his own read and
+belongs beside ours rather than beside the rest of the season. The rest of
+this section is what it calls and draws, as built.
 
-A **"What if"** form under Today and above (or beside) "Rest of season". Two
-pickers and a button:
+A **"What if"** form: two pickers, one more where the league allows it, and
+a button:
 
-* **Drop** — a select over the team's own roster. The week report the page
-  already fetches carries every rostered man; nothing new has to be read.
-* **Add** — a select over the wire. Read it from
+* **Drop** — a select over the team's own roster, drawn from the day's own
+  report (`/today`), which the page fetches first and which is the only
+  thing on it carrying every rostered man: the lineup, the bench, the men
+  with no game and injured reserve. Nothing new is read. A man on injured
+  reserve is marked and cannot be picked, because he keeps his roster place
+  and is not a drop, which is `_check`'s own rule (§1, §6).
+* **Add** — a chooser over the wire, from
   `GET .../teams/{team_id}/trades/pool?with_team={any other team}&side=ours`,
   which is the sorted pool the trade page's chooser already draws: each row
   carries `name`, `position`, `pro_team`, `games_left`, `value` (what he gives
   an ordinary place, the league standard) and `weekly` (his nine), plus `hurt`
-  and `on_waivers` badges. Sorted best first. The pool route needs a deal to
-  price *worth* against; for a straight pickup the `value` column is the one to
-  sort and show, and `worth` can be ignored.
-* Optionally **to IR**, shown only when the week report says `ir_slot_free`
-  and the roster holds a man whose `injury_status` is OUT.
+  and `on_waivers` badges. The pool route needs a deal to price *worth*
+  against; a straight pickup has none, so the list is re-sorted and shown by
+  `value` and `worth` is ignored. It is the trade page's own row, markup and
+  CSS, with the shared player card beside the name.
+* **to IR**, shown only when the week report says `ir_slot_free` and the
+  roster holds a man whose `injury_status` is OUT. Picking it clears the
+  drop and picking a drop clears it: one man arriving fills one place, and
+  naming both leaves the roster short, which the route refuses.
 
-Then `GET .../teams/{team_id}/what-if?drop={espn_id}&add={espn_id}&today={day}`
-— carrying `?today=` exactly as every other fetch on the page does — and
-render the answer in the same three-layer shape as the trades block:
+**Nothing is fetched until it is asked for.** The wire is read the first
+time the chooser is opened, and the move is judged only on **Run**, so the
+section costs a first load a heading and a form and no request at all — 363
+px of 2,992 at 1280, 441 px of 4,107 at 390. The cold call of §4 is real and
+the button says so while it waits.
 
-1. **This week.** `week.before` / `week.after`, drawn with the page's existing
-   nine-category strip and the same before→after arrows the trade page uses;
-   `week.moved` is the list already sorted by size of change.
-   `week.expected_before` → `week.expected_after`, and `week.days_remaining`.
-   `week.fills_empty_day` is worth a line when true.
+Run calls
+`GET .../teams/{team_id}/what-if?drop={espn_id}&add={espn_id}&today={day}`
+— carrying `?today=` exactly as every other fetch on the page does — and the
+answer is drawn in the same three layers as the trades block:
+
+1. **This week.** `week.after` in the three bands the page's own **The nine**
+   draws, with the categories in `week.moved` tinted and carrying what each
+   was and how far it went in points of probability, under the figure. A sign
+   and a word before a colour: the strip is read by people who see no colour.
+   Above it `week.expected_before` → `week.expected_after`, the delta, the
+   opponent and `week.days_remaining`, and `week.fills_empty_day` as a clause
+   when it is true.
 2. **The number.** `judgement` through the page's existing `judged()` helper
-   (it is the same `JudgementOut` shape the week report's moves carry), plus
-   `net`, `clears_hurdle` against `hurdle`, `hurdle_source` / `hurdle_note`
-   for where the bar came from, and `bid` when there is one.
-3. **Finish.** The same compact block the trade page draws
-   (`finishHtml` in `app/api/static/trades.html`, which is fifteen lines and
-   uses no CSS the page does not already have):
+   (it is the same `JudgementOut` shape the week report's moves carry), in
+   the page's own `article.move`, plus `net`, `clears_hurdle` against
+   `hurdle` as the same *clears the bar* / *below the bar* label the list
+   under More uses, `hurdle_source` / `hurdle_note` for where the bar came
+   from, and `bid` when there is one.
+3. **Finish.** The same compact block the trade page draws — `finishHtml`,
+   now in `app/api/static/pages.js` so both pages draw one implementation:
    `Projected 94.6-76.4 · 3rd · playoffs 92.7% → 94.7-76.3 · 3rd · 92.9%`,
-   the band in brackets with "so this is inside the noise" when
-   `moved_more_than_the_band` is false, and `finish.calibration_note`
-   underneath in faint type. `finish.weeks` is the week-by-week list, which
-   the page's existing "Rest of season" table can show a second column on.
+   the band in brackets with "so this is inside the noise" when the odds
+   moved by less than it, and `finish.calibration_note` underneath in faint
+   type. Where they did, the route's own sentence from `notes` follows it, so
+   a finish the simulation cannot resolve is said in words and not left to
+   two percentages a tenth of a point apart.
 
-The lede has to say, in the page's own voice, that the finish is a second lens
-and not a second bar — the route sends those words as `finish.language`.
+The section's lede carries `finish.language` verbatim once an answer is in
+hand: the finish is a second lens and not a second bar. Nothing in the
+section is re-sorted, hidden, ranked or labelled on it.
 
-Nothing on the page should be re-sorted, hidden or recommended on the finish.
+A change that cannot be made is the route's 422 sentence, printed as it is
+sent, in the warn line — the one other thing on this page stated as a
+mistake. The form keeps its last drop and add in `localStorage`, wrapped, so
+a re-run after a reload is one tap and a private window merely forgets.
+
+`finish.weeks` is **not** drawn. The page's "Rest of season" table is built
+from `/projected` under More and a second column on it would have to be
+un-drawn on every new Run; the week-by-week list is on the payload for
+whoever wants it next.
 
 ---
 
@@ -439,7 +467,7 @@ Nothing on the page should be re-sorted, hidden or recommended on the finish.
 
 ## 9. Not done
 
-- **The Week page's form.** §7.
+- **The week-by-week list on the Week page.** §7.
 - **More than one hypothetical at once.** "Which of these three pickups helps
   my finish most" would be one projection per candidate; at 0.7 s each that is
   affordable for a handful and not for a search, and nothing has measured
