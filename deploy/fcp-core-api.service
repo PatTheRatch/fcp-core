@@ -9,9 +9,15 @@
 # Logs:     journalctl -u fcp-core-api -f
 # Remove:   sudo systemctl disable --now fcp-core-api.service
 #
-# There is no authentication on this service. It binds the Tailscale address
-# and nothing else, which is what keeps it private. Do not put it behind a
-# public reverse proxy without adding auth first.
+# The bind address is what keeps this private in single mode
+# (FCP_AUTH_MODE=single): every request is the owner and nothing is checked,
+# so it listens on the Tailscale address and nowhere else.
+#
+# In accounts mode (FCP_AUTH_MODE=accounts) sign-in and the scope checks are
+# enforced on every route, and Caddy may answer for the public name and proxy
+# to this same tailnet address -- which is what the container on this host
+# can reach. The bind does not change either way. Before switching, run
+# `scripts/preflight_public.py` and follow docs/cutover.md.
 
 [Unit]
 Description=fcp-core - read-only API (tailnet only)

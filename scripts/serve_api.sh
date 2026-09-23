@@ -1,13 +1,18 @@
 #!/bin/sh
 # Serve the read-only API on the Tailscale interface only.
 #
-# The bind address is the point. There is no authentication on this API, and
-# it reports league members' data, so it listens on the tailnet address and
-# nowhere else. Binding 0.0.0.0 here would publish every endpoint to the
-# internet; nothing in the code would stop it.
+# The bind address is the point. In single mode there is no authentication on
+# this API and it reports league members' data, so it listens on the tailnet
+# address and nowhere else. Binding 0.0.0.0 here would publish every endpoint
+# to the internet; nothing in the code would stop it.
 #
 # Falls back to loopback if Tailscale cannot be read, which fails closed:
 # unreachable from elsewhere rather than accidentally open.
+#
+# The bind stays the same in accounts mode, where the checks are enforced:
+# Caddy answers for the public name and proxies to this tailnet address,
+# which is what the container on the VPS can reach, and the scheduled scripts
+# keep calling it here directly (docs/cutover.md).
 
 set -eu
 
