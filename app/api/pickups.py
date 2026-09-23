@@ -63,8 +63,12 @@ from app.api.schemas import (
     GlanceOut,
     JudgementOut,
     PickupPlayerOut,
+    ScheduleDayOut,
+    ScheduleManOut,
+    ScheduleOut,
     SeasonReportOut,
     SeasonSwapOut,
+    SideGamesOut,
     StashCandidateOut,
     StreamMoveOut,
     StreamReportOut,
@@ -89,7 +93,7 @@ from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
 from app.pickups.state import RosteredPlayer, SeasonCalendar, season_calendar
-from app.pickups.stream import CategoryShift, Move, StreamReport
+from app.pickups.stream import CategoryShift, Move, Schedule, SideGames, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
 from app.pickups.today import Benched, DayPlayer, Misstart, Seat, TodayReport
 from app.pickups.today import today_lineup as build_today
@@ -367,6 +371,10 @@ def _stream_players(report: StreamReport) -> list[RosteredPlayer]:
         found.extend(player for player in (move.add, move.drop, move.to_ir) if player is not None)
     for day in report.empty_days:
         found.extend(day.fillers)
+    for games in report.schedule.days:
+        for side in (games.mine, games.theirs):
+            if side is not None:
+                found.extend(man.player for man in side.men)
     return found
 
 
@@ -477,6 +485,35 @@ def _move_out(move: Move, hurdle: float, espn: dict[int, int]) -> StreamMoveOut:
     )
 
 
+def _side_out(side: SideGames, espn: dict[int, int]) -> SideGamesOut:
+    return SideGamesOut(
+        games=side.games,
+        seated=side.seated,
+        open_places=side.open_places,
+        men=[
+            ScheduleManOut(**_player_out(man.player, espn).model_dump(), seated=man.seated)
+            for man in side.men
+        ],
+    )
+
+
+def _schedule_out(schedule: Schedule, espn: dict[int, int]) -> ScheduleOut:
+    """The games table as the page reads it: the days, then the two totals."""
+    theirs = schedule.theirs_total
+    return ScheduleOut(
+        days=[
+            ScheduleDayOut(
+                scoring_period=day.scoring_period,
+                mine=_side_out(day.mine, espn),
+                theirs=None if day.theirs is None else _side_out(day.theirs, espn),
+            )
+            for day in schedule.days
+        ],
+        mine_total=_side_out(schedule.mine_total, espn),
+        theirs_total=None if theirs is None else _side_out(theirs, espn),
+    )
+
+
 def _stream_out(
     report: StreamReport, espn: dict[int, int], bars: calibration.Bars
 ) -> StreamReportOut:
@@ -499,6 +536,7 @@ def _stream_out(
             )
             for day in report.empty_days
         ],
+        schedule=_schedule_out(report.schedule, espn),
         outlook=_judgement_out(report.outlook),
         hurdle=report.hurdle,
         hurdle_source=bars.stream_hurdle.source,

@@ -629,6 +629,62 @@ class EmptyDayOut(BaseModel):
     fillers: list[PickupPlayerOut]
 
 
+class ScheduleManOut(PickupPlayerOut):
+    """A man with a game on a day of the schedule, and whether he starts."""
+
+    seated: bool = Field(
+        description="Whether the lineup can seat him that day; false is a game that will not count"
+    )
+
+
+class SideGamesOut(BaseModel):
+    """One side's games on one day, or its total over the days left."""
+
+    games: int = Field(
+        description=(
+            "Men on that roster with a game that day who are not ruled out of it; injured "
+            "reserve is left out, and an OUT man counts no day before his expected return"
+        )
+    )
+    seated: int = Field(
+        description=(
+            "How many of those games the lineup can start, by the same seating the week is "
+            "projected from. Fewer than `games` when there are more games than places"
+        )
+    )
+    open_places: int = Field(
+        description="Starting places no man of this roster can fill; slot-days on a total"
+    )
+    men: list[ScheduleManOut] = Field(
+        default_factory=list,
+        description=(
+            "Every man the `games` count counted, best first, each marked with whether he "
+            "got a place. Empty on a total"
+        ),
+    )
+
+
+class ScheduleDayOut(BaseModel):
+    scoring_period: int
+    mine: SideGamesOut
+    theirs: SideGamesOut | None = Field(default=None, description="Null on a bye")
+
+
+class ScheduleOut(BaseModel):
+    """The week's games day by day, read off the projection itself.
+
+    Only the days still to play: a day already played is in the matchup
+    period's own days and not here. Empty on a report stored before the
+    field existed.
+    """
+
+    days: list[ScheduleDayOut] = Field(default_factory=list)
+    mine_total: SideGamesOut = Field(
+        default_factory=lambda: SideGamesOut(games=0, seated=0, open_places=0)
+    )
+    theirs_total: SideGamesOut | None = None
+
+
 class GlanceOut(BaseModel):
     """A team's week at a glance: what the free This week page shows its
     manager, from the week report, without the plan."""
@@ -663,6 +719,13 @@ class StreamReportOut(BaseModel):
         )
     )
     empty_days: list[EmptyDayOut]
+    schedule: ScheduleOut = Field(
+        default_factory=ScheduleOut,
+        description=(
+            "Games and starts day by day for both sides, over the days left. Empty on a "
+            "report stored before the field existed"
+        ),
+    )
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle: float
     hurdle_source: str = Field(

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
+from app.api.schemas import StreamReportOut
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from tests.pickups_db import (
@@ -176,6 +177,50 @@ def test_the_stream_route_carries_the_judgement_and_the_projected_record(
     moved = judgement["record_with"][0] - judgement["record_without"][0]
     assert moved == pytest.approx(round(judgement["delta_total"], 1), abs=0.11)
     assert judgement["measured"] is True
+
+
+def test_the_stream_route_carries_the_weeks_games_day_by_day(client: TestClient) -> None:
+    """What the week page's schedule grid draws: games, starts and the places
+    neither roster can fill, for both sides, with the week's totals."""
+    body = client.get(url(), params={"today": 1}).json()
+    schedule = body["schedule"]
+
+    assert [day["scoring_period"] for day in schedule["days"]] == body[
+        "scoring_periods_remaining"
+    ], "the days still to play, in order"
+    first = schedule["days"][0]
+    assert (first["mine"]["games"], first["mine"]["seated"]) == (4, 3), (
+        "four men play, three starting places: one game of the four will not count"
+    )
+    assert first["mine"]["open_places"] == 0
+    assert (first["theirs"]["games"], first["theirs"]["seated"]) == (1, 1)
+    assert first["theirs"]["open_places"] == 2
+
+    men = first["mine"]["men"]
+    assert [man["name"] for man in men] == ["A", "B", "C", "Weak"], "best first"
+    assert [man["seated"] for man in men] == [True, True, True, False]
+    assert all(man["espn_player_id"] > 0 for man in men), "players go out as ESPN ids"
+
+    assert schedule["mine_total"] == {"games": 28, "seated": 21, "open_places": 0, "men": []}
+    assert schedule["theirs_total"] == {"games": 7, "seated": 7, "open_places": 14, "men": []}
+    for side in ("mine", "theirs"):
+        for key in ("games", "seated", "open_places"):
+            assert schedule[f"{side}_total"][key] == sum(day[side][key] for day in schedule["days"])
+
+
+def test_a_report_stored_before_the_schedule_existed_still_validates(
+    client: TestClient,
+) -> None:
+    """The field is additive: a row the precompute wrote yesterday is served
+    as it always was, with an empty table rather than a 500."""
+    body = client.get(url(), params={"today": 1}).json()
+    del body["schedule"]
+
+    out = StreamReportOut.model_validate(body)
+
+    assert out.schedule.days == []
+    assert out.schedule.mine_total.games == 0
+    assert out.schedule.theirs_total is None
 
 
 def test_the_season_route_reports_the_drops_and_the_churn(client: TestClient) -> None:

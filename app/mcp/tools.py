@@ -325,6 +325,7 @@ def week_report(
             }
             for day in body["empty_days"]
         ],
+        "schedule": trim.schedule(body.get("schedule")),
         "season_outlook_with_no_move": trim.judgement(body["outlook"]),
         "hurdle": trim.n(body["hurdle"]),
         "roster_room": {

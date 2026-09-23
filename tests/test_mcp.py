@@ -478,6 +478,40 @@ def test_every_tool_carries_its_provenance(server: MCPServer, league: dict[str, 
     assert deal["trade_record"], "the record travels with the number"
 
 
+def test_the_week_report_carries_the_schedule_a_line_a_day(
+    server: MCPServer, session: Session, league: dict[str, Any]
+) -> None:
+    """Three numbers a side a day, and no names: the count is the answer to
+    "how many games have I left", and the men are on the page."""
+    answer = call(
+        server,
+        "week_report",
+        {"league_id": LEAGUE_ID, "season": SEASON, "team_id": HOME, "today": TODAY},
+    )
+    route = pickups_api.stream_report(
+        league["ls"], league["home"], session, today=TODAY
+    ).model_dump(mode="json")["schedule"]
+
+    schedule = answer["schedule"]
+    assert [day["scoring_period"] for day in schedule["days"]] == [
+        day["scoring_period"] for day in route["days"]
+    ]
+    for line, day in zip(schedule["days"], route["days"], strict=True):
+        assert line["mine"] == [
+            day["mine"]["games"],
+            day["mine"]["seated"],
+            day["mine"]["open_places"],
+        ]
+        assert line["theirs"] == [
+            day["theirs"]["games"],
+            day["theirs"]["seated"],
+            day["theirs"]["open_places"],
+        ]
+    assert schedule["mine_total"][0] == route["mine_total"]["games"]
+    assert schedule["mine_total"][1] == sum(day["mine"]["seated"] for day in route["days"])
+    assert "seated is what will count" in schedule["reads"]
+
+
 def test_the_week_report_says_where_its_bar_came_from(
     server: MCPServer, league: dict[str, Any]
 ) -> None:

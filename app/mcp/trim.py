@@ -169,6 +169,38 @@ def stream_move_brief(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def schedule(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The week's games day by day, one line a day and no names.
+
+    Three numbers a side is the whole of it: the games men who are not ruled
+    out have that day, how many of them the lineup seats, and the starting
+    places nobody can fill. The men behind each number are on the report the
+    page draws; a model asking "how many games do I have left" wants the
+    count, and the names are what `week_lineup` is for.
+    """
+    if not row:
+        return None
+
+    def side(each: Mapping[str, Any] | None) -> list[int] | None:
+        if each is None:
+            return None
+        return [each["games"], each["seated"], each["open_places"]]
+
+    return {
+        "reads": "[games, seated, open_places] a side; seated is what will count",
+        "days": [
+            {
+                "scoring_period": day["scoring_period"],
+                "mine": side(day["mine"]),
+                "theirs": side(day.get("theirs")),
+            }
+            for day in row.get("days", [])
+        ],
+        "mine_total": side(row.get("mine_total")),
+        "theirs_total": side(row.get("theirs_total")),
+    }
+
+
 def season_swap(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """One rest-of-season move: who goes, who comes, and what it buys a week."""
     if row is None:
