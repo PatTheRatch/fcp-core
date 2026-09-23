@@ -20,11 +20,20 @@ claim returns (`app.scoring.replacement.TYPICAL_PICKUP`, 0.06 categories a
 week). So
 
     worth_dollars = per_week / TYPICAL_PICKUP * (faab_remaining / weeks_covered)
-    ceiling       = (per_week - hurdle) / TYPICAL_PICKUP * (faab_remaining / weeks_covered)
+    ceiling       = (per_week - bar) / TYPICAL_PICKUP * (faab_remaining / weeks_covered)
 
 `worth_dollars` is what the move is worth; `ceiling` is the dollar above
 which paying for it no longer clears the bar, since a dollar charges the
 place `TYPICAL_PICKUP * weeks_covered / faab_remaining` categories a week.
+
+`bar` is the caller's own hurdle expressed in categories a week, and it
+exists because this codebase has two bars: the rest-of-season report reads
+`Judgement.per_week` against its hurdle, and the week report reads the net
+over both horizons against its own (`stream.Move.clears`). The same bar in
+the second case is `hurdle / weeks_covered`, which is the identical test
+written in the units the worth is priced in. Nothing here moves a bar; it
+translates one, so that "above this dollar he stops clearing your bar" means
+the bar the page beside it is showing.
 
 It is the shadow price rather than the league's measured going rate for two
 reasons. It is specific to you -- two managers with the same roster and
@@ -59,14 +68,20 @@ always had. A rung the caps pull down reports the chance at the dollar
 actually offered, not at the dollar it asked for, so the ladder never
 promises a chance the number beside it does not buy.
 
-WHO ELSE WANTS HIM
+WHO ELSE WANTS HIM, AND WHY NOTHING ASKS
 
 `competition` is how many of the other rosters in the league would take the
-man -- into an open place, or over the cheapest man they hold -- judged on
-the season term alone against each roster's own wire replacement. It is
-counted by the caller that already has the wire and handed in, because this
-module prices one move and does not read fourteen rosters. It labels; it
-hides nothing and it moves no number.
+man -- into an open place, or over the cheapest man they hold. The field is
+here and no caller fills it, on purpose. Measured over every 2026 claim
+(docs/faab.md section 5) the count adds **r = 0.05** to what the rank bucket
+already says about the winning bid, and it is 0 or 13 on nine claims in ten,
+because every roster's wire replacement is nearly the same number and the
+question collapses to "is he the best man left on the wire" -- which is his
+rank again. A signal that repeats the rank at the price of thirteen spot
+books a request is not worth a request, so nothing counts it and the field
+stays `None`. It is kept rather than deleted because the next FAAB season
+may say something different, and the definition should not have to be
+invented twice.
 
 `amount` is still the market number: the median or 75th percentile winning
 bid of the rank bucket. docs/faab.md section 0 is where it would change, and
@@ -192,6 +207,12 @@ LADDER_RUNGS: tuple[float, ...] = (0.50, 0.75, 0.90)
 #: over. Recorded here because the published rate is quoted in these units;
 #: the rule's own shadow price is per week and needs no window.
 RATE_WINDOW_DAYS = 30
+
+#: Slack when a dollar figure is rounded down. `(0.30 - 0.20) / 0.06 * 12` is
+#: 19.999999999999996 in binary floating point, and a ceiling of $19 where the
+#: arithmetic plainly says $20 would be a defect in the reader's eyes rather
+#: than in the float's.
+DOLLAR_EPSILON = 1e-9
 
 #: The most a win curve is drawn out to. Above the highest bid this league
 #: has ever recorded every curve is flat at 1.0, so the table stops there.
@@ -426,8 +447,8 @@ class Bid:
     rate_note: str = ""
     #: A chance, and the dollar that buys it, cheapest first.
     ladder: tuple[Rung, ...] = ()
-    #: How many other rosters this league's wire says the man clears the bar
-    #: for today. None when the caller did not count.
+    #: How many other rosters would take the man. Always None today: the
+    #: module docstring says what the measurement found and why nothing counts.
     competition: int | None = None
 
 
@@ -470,6 +491,11 @@ def worth_of(per_week: float, faab_remaining: int, weeks_covered: float, typical
     return per_week / rate
 
 
+def dollars(value: float) -> int:
+    """A dollar figure rounded down, never below nothing, float slack forgiven."""
+    return max(0, math.floor(value + DOLLAR_EPSILON))
+
+
 def ladder_for(
     bucket: CurveBucket | None,
     limit: int,
@@ -500,6 +526,7 @@ def recommend_bid(
     *,
     per_week: float | None = None,
     weeks_covered: float | None = None,
+    bar: float | None = None,
     typical: float = TYPICAL_PICKUP,
     competition: int | None = None,
 ) -> Bid:
@@ -514,17 +541,20 @@ def recommend_bid(
     what the worth and the ceiling are priced off; it defaults to `delta`,
     which is that number for every caller that passes one. `weeks_covered`
     is the weeks the budget has to last, defaulting to the weeks after this
-    one plus this one. `competition` is how many other rosters the wire says
-    the man clears the bar for, counted by the caller that has the wire.
+    one plus this one. `bar` is the caller's own hurdle in categories a week,
+    which defaults to `hurdle` and is the module docstring's translation for
+    a caller whose bar is on the net. `competition` is how many other rosters
+    would take the man; nothing fills it, and the module docstring says why.
     """
     bucket = fit.bucket_for(rank)
     aggressive = hurdle > 0 and delta >= AGGRESSIVE_MULTIPLE * hurdle
     basis = "75th percentile" if aggressive else "median"
     weekly = delta if per_week is None else per_week
     covered = (weeks_remaining + 1.0) if weeks_covered is None else weeks_covered
+    against = hurdle if bar is None else bar
     rate = shadow_price(faab_remaining, covered, typical)
-    worth = max(0, math.floor(worth_of(weekly, faab_remaining, covered, typical)))
-    ceiling = max(0, math.floor(worth_of(weekly - hurdle, faab_remaining, covered, typical)))
+    worth = dollars(worth_of(weekly, faab_remaining, covered, typical))
+    ceiling = dollars(worth_of(weekly - against, faab_remaining, covered, typical))
     share = share_cap(faab_remaining, weeks_remaining, total_weeks)
     rate_note = (
         f"a dollar costs {rate:.3f} categories a week: ${faab_remaining} left over "

@@ -357,5 +357,6 @@ notes and measurements live in `docs/`:
 | docs/in_season_pages.md | the week, season and index pages the API serves |
 | docs/pickups.md | the listener, the digest and the pickup recommender, with as-built notes |
 | docs/pickups_backtest.md | the recommender replayed on every 2026 team, scored in categories |
+| docs/faab.md | what a FAAB dollar buys here: the win curve, the exchange rate, and what the man is worth to you |
 | docs/projection_sources.md | ESPN, BBM and uploaded projections, and the gate on paid numbers |
 | docs/week_predictor.md | the end-of-week matchup predictor, designed, not built |

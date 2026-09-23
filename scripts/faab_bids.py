@@ -161,6 +161,7 @@ from app.pickups.bids import (
     RankedClaim,
     WinCurve,
     _bucket,
+    dollars,
     ranked_claims,
     share_cap,
     win_curve,
@@ -757,10 +758,8 @@ def measure(
                 skipped += 1
                 continue
             per_week, weeks_covered, faab = judged
-            worth = max(0, math.floor(worth_of(per_week, faab, weeks_covered, TYPICAL_PICKUP)))
-            ceiling = max(
-                0, math.floor(worth_of(per_week - HURDLE, faab, weeks_covered, TYPICAL_PICKUP))
-            )
+            worth = dollars(worth_of(per_week, faab, weeks_covered, TYPICAL_PICKUP))
+            ceiling = dollars(worth_of(per_week - HURDLE, faab, weeks_covered, TYPICAL_PICKUP))
             share = share_cap(faab, weeks_between(day, last_day), total_weeks)
             cap = max(0, min(ceiling, share))
             counted: tuple[int | None, int | None] = (
@@ -955,38 +954,49 @@ def build(run: Run, *, label: str) -> str:
         "## 0. What the replay decided about `amount`",
         "",
     ]
+    floored = sum(1 for row in rows if row.ceiling <= 0)
     if beats:
         out += [
             "**Declared revision.** The ladder's 75% rung delivered "
             f"{plain(ladder.per_dollar)} categories a dollar against the market bid's "
             f"{plain(market.per_dollar)} on the same {len(rows)} claims, so `amount` becomes "
-            "that rung. The before and after are section 5's table.",
+            "that rung. The before and after are section 6's table.",
         ]
     else:
-        ladder_rate = (
-            "spent nothing at all, so it has no rate"
-            if not ladder.dollars
-            else f"delivered {plain(ladder.per_dollar)} categories a dollar"
-        )
-        market_rate = (
-            "spent nothing either"
-            if not market.dollars
-            else f"delivered {plain(market.per_dollar)} categories a dollar "
-            f"on ${market.dollars:,.0f}"
-        )
         out += [
-            "**No revision. `amount` is unchanged.** On the same "
-            f"{len(rows)} claims the ladder's 75% rung {ladder_rate}, and the market bid now "
-            f"shipped {market_rate}. The declared rule was that `amount` moves only if the "
-            "ladder beats it on delivered value per dollar, and it did not, so the market "
-            "number stays exactly where it was. What ships beside it is the rest of the rule "
-            "-- the worth, the ceiling, the ladder and the competition count -- which are new "
-            "information and not a new verdict.",
+            "**No revision. `amount` is unchanged**, which is the declared outcome when the "
+            "ladder does not beat it.",
+            "",
+            "The reason is worth stating plainly, because it is the finding and not a "
+            f"technicality. **On {floored} of {len(rows)} claims the ceiling was $0**: the move "
+            "did not clear the bar for the team that actually made it, at any price, so every "
+            "rung of the value rule was a free claim. Over all "
+            f"{len(rows)} claims the ladder's 75% rung offered ${ladder.dollars:,.0f} in total "
+            f"and took {ladder.won:.0f} of them; the market bid now shipped offered "
+            f"${market.dollars:,.0f} and took {market.won:.0f}; the managers themselves paid "
+            f"${actual.dollars:,.0f} and took all {actual.asked}.",
+            "",
+            "**Delivered categories per dollar, the headline this run was declared on:** the "
+            f"ladder {plain(ladder.per_dollar)}, the market bid {plain(market.per_dollar)}, "
+            f"what managers paid {plain(actual.per_dollar)}, on the same {len(rows)} claims. "
+            f"The ladder's figure is a ratio over ${ladder.dollars:,.0f} and says nothing about "
+            "the rule. What it does say is that the rule declined to pay, and a rule that "
+            "declines to pay cannot be shown to spend better. So the market number stays "
+            "exactly where it was.",
+            "",
+            "**All three delivered negative categories.** Per claim taken: the ladder "
+            f"{num(ladder.per_claim)}, the market bid {num(market.per_claim)}, the managers "
+            f"{num(actual.per_claim)}. That is the league's own record rather than this rule's "
+            "-- `docs/pickups_backtest.md` measures the same 2026 swaps at -0.56 categories "
+            "over thirty days -- and it is the reason the ceiling is $0 so often.",
+            "",
+            "**What ships, then.** The worth, the ceiling and the ladder, which are new "
+            "information beside the market number and not a new verdict. On a move the reports "
+            "actually name the ceiling is always above $0, because a bid is only attached to a "
+            "move that clears the bar; it is the claims this league really made that do not. "
+            "The competition count does not ship, and section 5 says why.",
         ]
     out += [
-        "",
-        f"What managers actually paid, for comparison: {plain(actual.per_dollar)} categories a "
-        f"dollar over ${actual.dollars:,.0f} on those claims.",
         "",
         "## 1. Limitations, stated before conclusions",
         "",
@@ -1098,6 +1108,13 @@ def build(run: Run, *, label: str) -> str:
         for row in counted:
             by_count[row.competition or 0].append(row.claim.bid)
         clears_total = sum(row.clears_for or 0 for row in counted)
+        biggest = max(by_count) if by_count else 0
+        binary = (
+            sum(len(bids) for count, bids in by_count.items() if count in (0, biggest))
+            / len(counted)
+            if counted
+            else 0.0
+        )
         out += [
             "How many of the other rosters would have taken the claimed man -- into an open "
             "place, or over the cheapest man they held -- against what he actually cost.",
@@ -1131,11 +1148,21 @@ def build(run: Run, *, label: str) -> str:
             f"**r = {plain(within, 2)}** once each rank bucket's own mean is removed -- which "
             "is the number that says whether competition knows anything the bucket did not.",
             "",
-            f"**The stricter reading**, how many of those rosters the man also clears the paid "
+            f"**The count is nearly binary**: 0 or {biggest} on {pct(binary)} of claims, and "
+            "the reason is structural. Every roster's wire replacement is very nearly the same "
+            "number on a given day -- the best free agent left, floored at the typical pickup "
+            '-- so "would this roster take him" collapses into "is he better than the best '
+            'other man on the wire", which is his rank again. That is why it adds '
+            f"{plain(within, 2)} to what the bucket already knew.",
+            "",
+            "**The stricter reading**, how many of those rosters the man also clears the paid "
             f"bar of {HURDLE:.2f} categories a week for, summed over every claim: "
-            f"**{clears_total}**. On the season term alone no claimed man in this league clears "
-            "that bar for anybody very often, which is the same fact section 6 reports about "
-            "the team that actually made the claim.",
+            f"**{clears_total}**.",
+            "",
+            "**So it does not ship.** A count that repeats the rank, at the price of thirteen "
+            "spot books a request, is not worth a request. `Bid.competition` exists and stays "
+            "`None`; the definition is kept so the next FAAB season does not have to invent it "
+            "again.",
             "",
         ]
     else:
@@ -1196,6 +1223,9 @@ def build(run: Run, *, label: str) -> str:
         "than a week's head-to-head per roster per claim.",
         "- Claims with two drops are excluded: the backtest's baseline population is one-for-one "
         "swaps, and that is the move the recommender names.",
+        "- The competition count is measured and **not wired**. The declared rule said it "
+        "labels and moves no number; the measurement says it repeats the rank. Both are "
+        "reasons not to spend thirteen spot books a request on it.",
         "- Nothing is refitted after the run. The rule in section 2 is the rule that ran.",
         "",
     ]
