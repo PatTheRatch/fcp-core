@@ -1,8 +1,7 @@
 # The co-manager: everything the site knows, as tools a model can call
 
-**Written:** 2026-09-23. **Status:** built and exercised in process and over
-stdio; the three live conversations the brief asked for are **not run** —
-see "What has not been run".
+**Written:** 2026-09-23. **Status:** built, exercised in process and over
+stdio, and driven for real in three conversations — see "The live run".
 
 Code: `app/mcp/` (`scope.py`, `provenance.py`, `trim.py`, `tools.py`,
 `server.py`), the entry point `scripts/mcp_server.py`, the tokens
