@@ -290,10 +290,13 @@ page spends and takes out of the address bar.
 
 "What goes in it", per league: the topics one to a row with a line saying
 what each one puts in the message, and above them the two cadence questions
-— the morning digest at all, and being interrupted between them. Ticking
-anything writes the whole block back, so what is saved is always what is on
-the screen, and the page says so when every topic is off. This is where the
-email's own "Manage your alerts" link lands (`#wants`).
+— the morning digest at all, and being interrupted between them. Between
+the two, **Email length**: compact (the default) or full, the one setting
+that says how much of each section is written rather than which sections
+there are (docs/jobs.md, "The two forms"). Ticking anything writes the whole
+block back, so what is saved is always what is on the screen, and the page
+says so when every topic is off. This is where the email's own "Manage your
+alerts" link lands (`#wants`).
 
 Then, for the server's owner only, "The server's own recipients": the
 addresses in `FCP_EMAIL_TO`, which are his. Reads `GET /me/channels`,
@@ -301,8 +304,9 @@ addresses in `FCP_EMAIL_TO`, which are his. Reads `GET /me/channels`,
 `POST /me/channels`, `POST /me/channels/verify`,
 `DELETE /me/channels/{id}` and `PUT /me/subscriptions/{league_id}`.
 
-**The email is a page too.** The morning digest is the house style in an
-inbox (`app/mail/`, and docs/jobs.md's "The shape of the message"): the same
+**The email is a page too, and a shorter one.** The morning digest is the
+house style in an inbox, compact by default and full as an option
+(`app/mail/`, and docs/jobs.md's "The two forms"): the same
 light palette written as literal colours, the same masthead and rules, the
 same nine categories in the same order, the same "worth a look" and "nothing
 clears the bar". It cannot share `pages.css` — an email client does not

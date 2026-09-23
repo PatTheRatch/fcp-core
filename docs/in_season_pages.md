@@ -191,9 +191,25 @@ the shade it is handed and does not know the difference.
 docs/jobs.md's "The shape of the message"). It carries the same masthead,
 the same rules and no boxes, the same burnt-orange accent, the same nine in
 the same order, and the same language: **worth a look**, **nothing clears
-the bar**, never *recommended*. Its sections are Today's lineup, This week,
-The season, What changed and Standings — exactly the topics the reader
-switched on, and nothing else.
+the bar**, never *recommended*.
+
+**It is not the pages pasted into an inbox** (2026-09-23). A page is read
+for as long as it is worth reading; an email has to answer "is there
+anything to do today?" in ten seconds. So the email has two forms
+(docs/jobs.md, "The two forms"), and the one everybody gets is **compact**:
+four sections on about one screen — **Tonight** (the lineup grid and the one
+thing to fix), **Worth a look** (the moves that clear the bar, one line
+each, then a count and a link for what is under it), **Since yesterday**
+(counts that link into this page's What changed, with an injury on his
+roster said in full) and **Standing** (one line). The **full** form is the
+long message — Today's lineup, This week, The season, What changed and
+Standings — and is a setting on the Alerts page.
+
+Two rules the pages and the email now share. **A move is named once**: the
+season's best is very often the week's best again, and saying it twice with
+two numbers reads as the product contradicting itself. And **what is under
+the bar is labelled, never hidden** — on a page that is a row with its
+reason; in an email it is a count with somewhere to go and read it.
 
 It cannot use `pages.css`. An email client fetches no stylesheet, knows no
 custom property, runs no script, loads no web font, and in Outlook's case

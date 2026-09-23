@@ -206,11 +206,11 @@ mode, plus any address he confirms.
 
 ## Subscriptions: what a member wants to hear about
 
-`digest_subscriptions` (migration `0025`), a row per (member, league):
-`topics`, a JSONB map of topic name to on, and two columns, `morning` and
-`alerts`. `app/subscriptions.py` is the vocabulary; the page is the "What
-goes in it" block on Account, Alerts, and the routes are
-`GET /me/subscriptions` and `PUT /me/subscriptions/{league_id}`.
+`digest_subscriptions` (migrations `0025` and `0026`), a row per (member,
+league): `topics`, a JSONB map of topic name to on, and three columns,
+`morning`, `alerts` and `length`. `app/subscriptions.py` is the vocabulary;
+the page is the "What goes in it" block on Account, Alerts, and the routes
+are `GET /me/subscriptions` and `PUT /me/subscriptions/{league_id}`.
 
 | topic | what it puts in the email |
 |---|---|
@@ -223,8 +223,10 @@ goes in it" block on Account, Alerts, and the routes are
 | `trades` | trades and proposals, and the block once there is one |
 | `standings` | my place, my record, the projected finish once it exists |
 
-`morning` and `alerts` are not topics: they say whether a message is sent at
-all. An alert is filtered by the same topics the digest is — today
+`morning`, `alerts` and `length` are not topics: the first two say whether a
+message is sent at all, and the third how much of each section is written
+out ("compact", the default, or "full"; above, "The two forms"). An alert is
+filtered by the same topics the digest is — today
 `build_alert` names men on the reader's own roster, so it rides on
 `my_team`; an alert about the opponent, when there is one to send, rides on
 `opponent` like every other line of the feed.
@@ -296,16 +298,80 @@ still holding it.
   address that fails is named in the job's note by its masked form, never
   with the error; all failing is a failure, retried.
 
+## The two forms: compact by default, full as an option
+
+**Decided 2026-09-23.** The email's job is "is there anything to do today?",
+answered in ten seconds, with a link for the rest. It should read like the
+subject line expanded, not like the pages. As it stood it was the site
+pasted into an inbox: nine phone screens on 2026 day 107, with the empty SF
+slot and the one move that clears the bar sitting above twenty $1 waiver
+claims by other teams, three under-the-bar moves with a paragraph each, a
+season section that repeated the week's move, and lines of slot codes.
+
+**The compact form** is one screen, and it is what everybody gets unless he
+says otherwise. In order, and nothing else:
+
+1. **The masthead** — team, league, the day and its date.
+2. **Tonight** — the lineup grid, which is the one table worth its space,
+   and the fix-this line when there is one (the rest are "(and N more)" on
+   that same line). No list of men sitting with no game, no sentence about
+   the roster being short: one line, "N places nobody can fill tonight".
+3. **Worth a look** — the moves that clear the bar, **one line each**, at
+   most three: "Add Dylan Cardwell, drop Dennis Schroder · +0.37 · mostly
+   BLK, FG%". Then one line for everything left out — "3 more under the bar
+   → see the week". Empty days are one line and no slot codes: "3 days this
+   week with an empty place → plan the week".
+4. **Since yesterday** — one line of counts from his subscribed topics, "2
+   on your roster · 1 on your opponent's · 19 around the league", each a
+   link to the What-changed section of the league's page; then, in full, a
+   status change on his roster or his opponent's, and a trade he is in,
+   because those are the news worth the space. Everything else is a count.
+5. **Standing** — one line: his place, his two records, and the projected
+   finish, which is still the marked slot until that work lands.
+6. The footer, as before.
+
+**A move appears once.** The week's plan and the rest-of-season search run
+over the same wire, so the season's best is very often the week's best
+again. When it is, it is not printed twice; when the season names a
+different man, he gets his own line with "(season)" on it. This holds in
+both forms: the long one says "The move under This week is the season's
+too, at +0.25 a week" rather than repeating the row.
+
+**A bar labels and never hides** — but in an email, what is under the bar is
+a count and a link, not a paragraph.
+
+**The full form** is the long message, kept, with three fixes it gets
+whether or not anyone chooses it: a move never appears twice; an
+under-the-bar move is one line rather than a paragraph of both horizons and
+both records; and the "sitting, no game" list is gone from both parts.
+
+**The choice is `length` on `digest_subscriptions`** (migration `0026`),
+"compact" or "full", beside the topics on the Alerts page. The job honours
+it, and so does `scripts/digest.py --full`. Every existing row and every
+member without one is compact. The owner's tracked team in single mode
+keeps every *topic* on whatever is stored, and still reads his length: that
+rule is about nothing being silently missing, and a count with a link
+misses nothing. The alert between digests is already short and does not
+read it.
+
+**Nothing in the compact form is computed differently.** It is the same
+`Digest`, rendered with less of it, and `tests/test_digest.py` asserts that
+every measurement in the compact email also appears in the full one.
+
 ## The shape of the message
 
 The digest is sent as one `multipart/alternative` email (`app/mail/`): a
 text part and an HTML part, both built from one `Digest`, so the two cannot
-disagree.
+disagree, and both in the length he chose.
 
-**The text part is `Digest.render()`**, unchanged in order and wording: what
-`--dry-run` prints, what the tests hold line for line, and what a reader in
-a terminal client sees. It gained two sections, `THE SEASON` and
-`STANDINGS`, after the churn line.
+**The text part is `Digest.render()`**: what `--dry-run` prints, what the
+tests hold line for line, and what a reader in a terminal client sees.
+`render(compact=True)` is the short form, and it follows the HTML part's
+choice, because the two are halves of one message. The long form's order is
+the one this message has always had, with `THE SEASON` and `STANDINGS`
+after the churn line. **The league section is appended to the long text
+only**: the compact form has the league's traffic as a count and a link, and
+forty lines of it under a one-screen message would undo the whole point.
 
 **The HTML part is the email as a page in the house style**
 (`app/mail/render.py`, palette and faces in `app/mail/style.py`): a 600px
@@ -318,13 +384,14 @@ exactly the sections the reader subscribed to, in the topics' own order:
    roster short at three UT slots printed the same sentence three times,
    which reads as a fault rather than a fact.
 2. **This week** — the moves that clear the bar, each with its number and one
-   line of reason; the nearest ones that did not are shown and labelled
-   "under the bar", because a bar labels and never hides. Deduplicated by
-   the man coming in: the plan judges its second move with the first already
-   made, so the same add otherwise appears twice with two different numbers,
-   which read as the bar contradicting itself.
+   line of reason; the nearest ones that did not are named on **one line
+   each** and labelled "under the bar", because a bar labels and never
+   hides. Deduplicated by the man coming in: the plan judges its second move
+   with the first already made, so the same add otherwise appears twice with
+   two different numbers, which read as the bar contradicting itself.
 3. **The season** — where the season ends on this roster, and the one move
-   over the rest of it.
+   over the rest of it, unless that move is the week's, which is named once
+   (above, "The two forms").
 4. **What changed** — the feed's own sentences, grouped by day, filtered by
    his topics. The five feed topics are five ways into one section, not five
    sections; a lede says which of them he holds.
@@ -383,10 +450,12 @@ parts.
 ## Looking at it without sending
 
     python scripts/digest.py --season 2026 --on 2026-02-04 --html OUT.html
+    python scripts/digest.py --season 2026 --on 2026-02-04 --full --html OUT.html
     python scripts/notify_test.py --preview DIR
 
 The first writes the HTML part of exactly the message that would go out and
-opens no connection (`--dry-run` still prints the text part). The second
+opens no connection (`--dry-run` still prints the text part); without
+`--full` that is the compact form, which is what a member gets. The third
 writes the sign-in and confirmation mail, HTML and text, with a sample link
 that goes nowhere. Neither sends anything.
 
@@ -518,5 +587,12 @@ live, as before. The migration need not be undone; if it must be,
 - **What is in it is the member's**, per league, as a small set of named
   topics ("Subscriptions"), stored as a JSONB map so a new topic needs no
   migration and no backfill.
+- **How long it is, is the member's too** (2026-09-23), and compact is the
+  default for everybody ("The two forms"). A column rather than a topic,
+  because it says how the message is written and not whether a section is in
+  it; a value this version does not know reads as compact.
+- **The compact form leaves nothing out that a count and a link do not
+  cover.** That is what makes it safe as a default, and why the owner's own
+  digest in single mode takes it too while keeping every topic on.
 - **The watchdog emails the connector every day the league is stale**, a
   daily reminder rather than one message that is easy to miss.
