@@ -177,6 +177,20 @@ def my_leagues(session: Session, viewer: Viewer) -> dict[str, Any]:
     }
 
 
+def _team_name(session: Session, found: LeagueSeason, espn_team_id: int | None) -> str | None:
+    """A team's name in THIS season. Names change between years, and `my_leagues`
+    gives only the newest season's, so a model left to map an id to a name
+    called a 2026 opponent by another team's 2027 name (2026-09-23)."""
+    if espn_team_id is None:
+        return None
+    name = session.scalar(
+        select(Team.name).where(
+            Team.league_season_id == found.id, Team.espn_team_id == int(espn_team_id)
+        )
+    )
+    return str(name) if name is not None else None
+
+
 def _manages(session: Session, viewer: Viewer, league_id: int, season: int, team_id: int) -> bool:
     from app.api import access
 
@@ -316,6 +330,7 @@ def week_report(
         "matchup_period": body["matchup_period"],
         "days_left": body["scoring_periods_remaining"],
         "opponent_espn_team_id": body["opponent_espn_team_id"],
+        "opponent": _team_name(session, found, body["opponent_espn_team_id"]),
         "expected_categories_won": trim.n(body["expected_wins"]),
         "chance_by_category": trim.nine(body["probabilities"]),
         "projected": trim.nine(body["projected"]),
