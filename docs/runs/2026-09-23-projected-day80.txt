@@ -1,0 +1,29 @@
+PROJECTED STANDINGS  2026, day 80 (Thu 08 Jan 2026), matchup period 12
+  8 weeks left; ordered by matchups won, then fewest lost, then categories won
+
+   team                                 now   projected    categories  playoffs   BYE
+1  Brighton Bears                       9-2    15.1-3.9    102.7-68.3      100%    72%
+2  Through The Wire                     9-2    13.6-5.4    101.6-69.4      100%    25%
+3  The Infirmary                        8-3    12.3-6.7     91.4-79.6       98%     3%
+4  Masters of their Domains             6-5    10.2-8.8     90.8-80.2       83%     0%
+5  Fantastic 5                          6-5    10.0-9.0     93.0-78.0       80%     0%
+6  Foxes ShutUpNDribble                 7-4    10.1-8.9     83.8-87.2       70%     0%
+7  LeBron's Load Management LLC         6-5     9.5-9.5     85.2-85.8       58%     0%
+8  BC KO                                5-6    9.0-10.0     79.4-91.6       34%     0%
+9  Uncle Dennis's Phone                 5-6    8.7-10.3     81.8-89.2       31%     0%
+10 Fast and Curryous                    5-6    8.4-10.6     81.7-89.3       25%     0%
+11 Ben's Need Some VC                   4-7    7.6-11.4     77.4-93.6        9%     0%
+12 Optimize the MVPs                    2-9    7.0-12.0     81.8-89.2        8%     0%
+13 Chat GTP inspired                    3-8    6.4-12.6     77.3-93.7        2%     0%
+14 Brockley Heat                        2-9    5.2-13.8    69.1-101.9        0%     0%
+
+  the playoff pairings depend on seeding that has not been decided, so only
+  the regular season is projected; the playoff odds come from the simulated
+  table
+  7 of 14 teams make the playoffs.
+  Made at the halfway mark of 2026, this projection's final records were off
+  by 7.2 categories on average.
+
+  weekly spreads from this league's own results (2024, 2025, 2026), periods of 7 days; projections from the 2026 season's stored box scores
+  rosters and box scores as of scoring period 80 (08 Jan 2026)
+  10000 simulated seasons, seed 3853870

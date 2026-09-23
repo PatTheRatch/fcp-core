@@ -5,7 +5,7 @@
 **Status:** built (`app/inseason/projected.py`, `app/api/projected.py`,
 `scripts/projected.py`, `scripts/projected_calibration.py`, the Standings and
 This week pages, the Week page's "Rest of season" section, the digest's
-Standing line). The calibration below is the run of 2026-09-22.
+Standing line). The calibration below is the run of 2026-09-23.
 **Companions:** [`pickups.md`](pickups.md) §4.4-4.5 (the one-team projected
 record), [`trades.md`](trades.md) §1 and §7 (each side's record, and how a
 forecast's own record is published), [`site.md`](site.md),
@@ -13,108 +13,158 @@ forecast's own record is published), [`site.md`](site.md),
 
 ---
 
-## 0. The answer, up front: it is overconfident, and the page says so
+## 0. The answer, up front: it is about as sure as it ought to be, except at the ends
+
+### Revision R3, applied 2026-09-23: the spread was widened by two
+
+**What changed.** `app.pickups.stream.SPREAD_SCALE`, a new constant, is 2.0,
+and `head_to_head` multiplies every weekly spread by it. The measured spread
+is one *team's* total over a period; what decides a category is the
+*difference* between two of them, and the model had been using the first for
+the second.
+
+**Why, and declared when.** The run of 2026-09-22, written up below as it
+stood, found the forecast badly overconfident and priced the fix at three
+factors without making it. Patrick chose **2.0** on **2026-09-23**, before
+this run started and on the evidence already published: sqrt(2) is the
+principled number for two *independent* totals and closes about half the gap,
+2.0 closes nearly all of it, and the rest is within-week dependence between
+the categories and a roster's own form. The factor was not moved afterwards,
+and no hurdle, no `OPENED_PLACE`, no `TYPICAL_PICKUP` and no part of the bid
+model was touched. That is the rule of §7 of `docs/trades.md` kept: nothing is
+tuned on the run that scores it.
+
+**Before and after.** Brier **0.2288 -> 0.2179**. The two rows a manager
+feels: what it called at 15% used to happen 30% of the time and now happens
+15%; what it called at 85% used to happen 71% and now happens 85%. The
+matchup-winner hit rate barely moved, 0.580 -> 0.584, which is the right
+shape -- widening a spread changes how sure the forecast is, not which side it
+points at. The projected-record error improved a little at all three marks,
+7.4 -> 7.2 at the halfway mark.
+
+**What it is not.** This run is **by construction the same evidence** as the
+widened row of the table the last run published, not a new test of it: the
+same season, the same thirty-eight checkpoints, the same spreads, the same
+scoring. It reproduces 0.2179 exactly, which is the check that the constant
+went where the diagnostic went and nowhere else. The out-of-sample question is
+the trade calibration (`docs/trades.md` §7, six seasons) and the 2026 pickup
+replay (`docs/pickups_backtest.md`); both were re-run whole on the same day.
+The one-paragraph version for a manager is `docs/spread_revision.md`.
+
+**Not applied to the draft.** `app/draft/optimizer.py` and
+`app/draft/targets.py` use the same measured spreads for a different question
+-- a whole season against the field, not a week against one known opponent --
+and whether they want the same factor is its own measurement. They were not
+changed.
+
+---
 
 The forecast was replayed against 2026 from thirty-eight mornings -- the first
 day and the midpoint of each of the nineteen regular-season weeks -- with only
 what was on record that day. It made 47,880 per-category calls about every
-week still to play. **It is clearly overconfident.**
+week still to play. **It now lands about where it says it will, except at the
+two ends, which it rarely reaches.**
 
-| it said | it happened | calls |
-|---|---|---|
-| 5% | 19% | 3,872 |
-| 15% | 30% | 4,317 |
-| 25% | 37% | 4,921 |
-| 35% | 41% | 5,182 |
-| 45% | 48% | 5,648 |
-| 55% | 52% | 5,648 |
-| 65% | 59% | 5,182 |
-| 75% | 63% | 4,921 |
-| 85% | 71% | 4,317 |
-| 95% | 81% | 3,872 |
+| it said | it happened | calls | calls before R3 |
+|---|---|---|---|
+| 5% | 20% | 317 | 3,872 |
+| 15% | 15% | 1,455 | 4,317 |
+| 25% | 24% | 4,093 | 4,921 |
+| 35% | 36% | 7,585 | 5,182 |
+| 45% | 45% | 10,490 | 5,648 |
+| 55% | 55% | 10,490 | 5,648 |
+| 65% | 65% | 7,585 | 5,182 |
+| 75% | 76% | 4,093 | 4,921 |
+| 85% | 85% | 1,455 | 4,317 |
+| 95% | 80% | 317 | 3,872 |
 
-Every row is pulled toward the middle, in both directions, at every distance.
-The Brier score is **0.2288** where a forecast that said "coin" to everything
-scores 0.2500. So: it knows which side is better and does not know how much
-better. That is the headline, and it is on the page in those words.
+The Brier score is **0.2179** where a forecast that said "coin" to everything
+scores 0.2500. The last column is the rest of the finding: the wide model puts
+two thirds of its calls in the four middle bands and almost none past 90%, so
+the rows that are still wrong are the rows it hardly ever writes. 317 calls of
+47,880 sit above 90%, against 3,872 before.
 
 **It is much better about the week in front of it.** Brier by how far ahead
-the week is: 0.173 for the week being played, 0.216 for the next, 0.224,
-0.224, 0.225, and then flat at about 0.24 from five weeks out -- barely better
+the week is: 0.178 for the week being played, 0.210 for the next, 0.215,
+0.215, 0.215, and then flat at about 0.23 from five weeks out -- barely better
 than a coin. The matchup-winner hit rate does the same, over 5,320 team-weeks
 (both sides of each matchup):
 
 | weeks ahead | 0 | 1 | 2 | 3 | 4 | 5+ |
 |---|---|---|---|---|---|---|
-| hit rate | 0.684 | 0.635 | 0.605 | 0.585 | 0.581 | ~0.55 |
+| hit rate | 0.684 | 0.647 | 0.630 | 0.585 | 0.590 | ~0.55 |
 
 **The record it projects is worth more than the chances behind it.** Mean
 absolute error of a team's projected final category record, of the 171 a
 nineteen-week season contests:
 
-| made at | mean error | worst |
-|---|---|---|
-| the quarter mark (period 5) | **8.7** | 16.6 |
-| the halfway mark (period 10) | **7.4** | 13.6 |
-| the three-quarter mark (period 14) | **4.9** | 12.2 |
+| made at | mean error | worst | mean before R3 |
+|---|---|---|---|
+| the quarter mark (period 5) | **8.4** | 15.5 | 8.7 |
+| the halfway mark (period 10) | **7.2** | 13.3 | 7.4 |
+| the three-quarter mark (period 14) | **4.8** | 12.7 | 4.9 |
 
-Seven and a half categories of 171 is a bit over four percent, and about four
-tenths of a category for each week still to be played. The one-line note on
-every page is the halfway figure, from
+Seven categories of 171 is a bit over four percent, and about four tenths of a
+category for each week still to be played. The one-line note on every page is
+the halfway figure, from
 `app.inseason.projected_calibration.RECORD_ERROR["half"]` with a guard test on
 the sentence.
 
-**The playoff odds are honest at the ends and poor in the middle.**
+**The playoff odds are honest at the ends and poor in the middle, and the poor
+band has moved.**
 
 | it said | it happened | teams |
 |---|---|---|
-| 2% | 8% | 126 |
-| 16% | 25% | 36 |
-| 25% | 32% | 53 |
-| 35% | 45% | 33 |
-| 45% | 38% | 37 |
-| 55% | **30%** | 23 |
-| 65% | 46% | 26 |
-| 75% | 68% | 25 |
-| 86% | 67% | 18 |
-| 98% | 99% | 155 |
+| 3% | 10% | 105 |
+| 15% | 23% | 39 |
+| 26% | 24% | 41 |
+| 35% | 27% | 49 |
+| 45% | 33% | 46 |
+| 55% | 57% | 35 |
+| 65% | **50%** | 42 |
+| 76% | 70% | 20 |
+| 85% | 97% | 31 |
+| 98% | 100% | 124 |
 
-Teams given better than 90% made it 99% of the time; teams given 50-60% made
-it 30%. That middle band is exactly the band a manager in a fight actually
-reads, and it is the weakest part of the whole thing.
+Teams given better than 90% made it every time; teams given 60-70% made it
+half the time. The 50-60% band, which was the worst row of the run before this
+one at 30%, now reads 57%. The middle is still where the error lives, and it
+is exactly the band a manager in a fight actually reads.
 
-### The proposal, priced and not applied
+### The proposal, applied 2026-09-23
 
-The variance model was **not** tuned on this run, and nothing in the shipped
-code was changed after seeing it. That is the rule the trade calibration set
-(`docs/trades.md` §7) and it is kept here: a model fitted on the run that
-scores it has not been scored.
+The variance model was **not** tuned on the run that found the fault, and
+nothing in the shipped code was changed until the owner had chosen a number
+and said so. That is the rule the trade calibration set (`docs/trades.md` §7):
+a model fitted on the run that scores it has not been scored.
 
-The diagnostic is in the script (`--sigma-scale`, which widens every weekly
-spread by a factor and is never shipped). Re-running the same thirty-eight
-mornings:
+What the run of 2026-09-22 priced, with the diagnostic in the script
+(`--sigma-scale`, which since R3 multiplies **on top of** the shipped factor,
+so the 1.0 row is now `--sigma-scale 0.5`):
 
 | spread widened by | Brier | 15% band happened | 35% | 65% | 85% |
 |---|---|---|---|---|---|
-| 1.0 (shipped) | 0.2288 | 30% | 41% | 59% | 71% |
+| 1.0 (shipped before R3) | 0.2288 | 30% | 41% | 59% | 71% |
 | sqrt(2) | 0.2202 | 22% | 39% | 62% | 78% |
-| **2.0** | **0.2179** | **15%** | **36%** | **65%** | **85%** |
+| **2.0 (shipped since R3)** | **0.2179** | **15%** | **36%** | **65%** | **85%** |
 
 At **two**, the table is calibrated almost everywhere. sqrt(2) is the
 principled number -- the spread of the difference between two independent team
 totals -- and it closes about half the gap; two closes nearly all of it, which
 says the remaining half is something else (the categories are not independent
 of each other within a week, and a roster's own week-to-week form varies more
-than the league's cross-sectional spread suggests).
+than the league's cross-sectional spread suggests). The owner took the number
+that calibrates the table over the number the theory alone gives, knowing
+which was which.
 
-**Proposed, for a separate decision:** widen the sigma in
-`app.pickups.stream.head_to_head` by a factor between sqrt(2) and 2. It is not
-this module's to change, because that one function is also what the pickup
-judgement, the streaming hurdle (`STREAM_HURDLE`), the bid sizing and the
-trade evaluator are priced on. Moving it moves every one of those numbers and
-needs their calibrations re-run. `app.inseason.projected_calibration.WIDENED`
-records the three Brier scores so the proposal does not have to be re-measured
-to be discussed, and a test asserts the shipped scale is still 1.0.
+That is a change to `app.pickups.stream.head_to_head`, which is also what the
+pickup judgement, the streaming hurdle (`STREAM_HURDLE`), the bid sizing and
+the trade evaluator are priced on. Moving it moved every one of those numbers,
+so all three calibrations were re-run whole on 2026-09-23 and republished
+whichever way they fell.
+`app.inseason.projected_calibration.WIDENED` keeps all three measured factors,
+`SHIPPED_SCALE` records which one the product is, and a test holds those two
+and `app.pickups.stream.SPREAD_SCALE` to the same number.
 
 ### The day-80 sense check
 
@@ -123,28 +173,32 @@ against how 2026 really finished:
 
 | projected | team | projected cats | real cats | err | real place |
 |---|---|---|---|---|---|
-| 1 | Brighton Bears | 106.9-64.1 | 90.0-81.0 | **+16.9** | 4 |
-| 2 | Through The Wire | 102.9-68.1 | 107.5-63.5 | -4.6 | 1 |
-| 3 | The Infirmary | 91.5-79.5 | 95.0-76.0 | -3.5 | 2 |
-| 4 | Masters of their Domains | 91.7-79.3 | 88.5-82.5 | +3.2 | 6 |
+| 1 | Brighton Bears | 102.7-68.3 | 90.0-81.0 | **+12.7** | 4 |
+| 2 | Through The Wire | 101.6-69.4 | 107.5-63.5 | -5.9 | 1 |
+| 3 | The Infirmary | 91.4-79.6 | 95.0-76.0 | -3.6 | 2 |
+| 4 | Masters of their Domains | 90.8-80.2 | 88.5-82.5 | +2.3 | 6 |
 | 5 | Fantastic 5 | 93.0-78.0 | 99.5-71.5 | -6.5 | 5 |
-| 6 | Foxes ShutUpNDribble | 82.4-88.6 | 95.0-76.0 | -12.6 | 3 |
-| 7 | LeBron's Load Management LLC | 84.0-87.0 | 72.5-98.5 | +11.5 | 12 |
-| 8 | BC KO | 79.8-91.2 | 76.0-95.0 | +3.8 | 11 |
-| 9 | Uncle Dennis's Phone | 80.8-90.2 | 83.0-88.0 | -2.2 | 9 |
-| 10 | Optimize the MVPs | 84.0-87.0 | 89.0-82.0 | -5.0 | 7 |
-| 11 | Fast and Curryous | 80.1-90.9 | 79.0-92.0 | +1.1 | 10 |
-| 12 | Ben's Need Some VC | 76.6-94.4 | 70.0-101.0 | +6.6 | 13 |
-| 13 | Chat GTP inspired | 76.0-95.0 | 86.0-85.0 | -10.0 | 8 |
-| 14 | Brockley Heat | 67.3-103.7 | 66.0-105.0 | +1.3 | 14 |
+| 6 | Foxes ShutUpNDribble | 83.8-87.2 | 95.0-76.0 | -11.2 | 3 |
+| 7 | LeBron's Load Management LLC | 85.2-85.8 | 72.5-98.5 | **+12.7** | 12 |
+| 8 | BC KO | 79.4-91.6 | 76.0-95.0 | +3.4 | 11 |
+| 9 | Uncle Dennis's Phone | 81.8-89.2 | 83.0-88.0 | -1.2 | 9 |
+| 10 | Fast and Curryous | 81.7-89.3 | 79.0-92.0 | +2.7 | 10 |
+| 11 | Ben's Need Some VC | 77.4-93.6 | 70.0-101.0 | +7.4 | 13 |
+| 12 | Optimize the MVPs | 81.8-89.2 | 89.0-82.0 | -7.2 | 7 |
+| 13 | Chat GTP inspired | 77.3-93.7 | 86.0-85.0 | -8.7 | 8 |
+| 14 | Brockley Heat | 69.1-101.9 | 66.0-105.0 | +3.1 | 14 |
 
-Mean absolute error 6.3 categories; mean place error 2.0; **six of the seven
-teams it put in the playoff places really made it**. The two big misses are
-the two a manager would notice: Brighton Bears, whose roster on day 80 was
-much better than its season turned out to be, and LeBron's Load Management,
-which it flattered by eleven categories. Note this table is the *shipped*
-call, which reads the league's weekly spreads including 2026's own later weeks
-(see §4); the calibration's own numbers are the leak-free ones.
+Mean absolute error 6.3 categories, exactly what it was before R3; mean place
+error 2.1 against 2.0; **six of the seven teams it put in the playoff places
+really made it**, as before. The visible change is the compression: the
+projected records are pulled toward 85.5-85.5, the top team from 106.9 to
+102.7 and the bottom from 67.3 to 69.1, because every week's expected wins is
+now nearer 4.5. The two big misses are the two a manager would notice -- 
+Brighton Bears, whose roster on day 80 was much better than its season turned
+out to be, and LeBron's Load Management, which it flattered. Note this table
+is the *shipped* call, which reads the league's weekly spreads including
+2026's own later weeks (see §4); the calibration's own numbers are the
+leak-free ones.
 
 ---
 
@@ -219,11 +273,14 @@ tests pin it.
 
 `app.pickups.stream.head_to_head`, imported. For each category:
 
-    P = Phi( (total_mine - total_theirs) / (spread * sqrt(days_left / period_days)) )
+    P = Phi( (total_mine - total_theirs)
+             / (spread * SPREAD_SCALE * sqrt(days_left / period_days)) )
 
 `spread` is `app.draft.targets.CategoryDistribution.spread`, the standard
 deviation of one team's total in that category over a period of the ordinary
-length, measured on this league's own results. Turnovers are inverted. FG% and
+length, measured on this league's own results. `SPREAD_SCALE` is 2.0 since
+revision R3 (§0), which is what turns a one-team spread into the spread of the
+difference between two. Turnovers are inverted. FG% and
 FT% are rates rebuilt from the projected makes and attempts
 (`CategoryLine.totals`), never averaged across a roster or a week. With no
 days left the category is settled outright, and a level one is a coin --
@@ -231,16 +288,21 @@ which is exactly how `app.scoring.league.category_record` counts a tie, half
 to each side, so the forecast and the record it is scored against count a tie
 the same way.
 
-**The variance model is the one judgement call in this module**, and §0 shows
-it is the thing that is wrong. It is stated in full in the module docstring.
-The two choices in it:
+**The variance model is the one judgement call in this module**, and §0 is
+where it is argued. It is stated in full in the module docstring. The two
+choices in it:
 
-1. The spread is **one team's**, not the spread of the difference between
-   two. Keeping it is what stops this page and the week page disagreeing
-   about what a week is worth. §0 prices the alternative.
+1. The spread is one team's, **doubled** (`SPREAD_SCALE`, revision R3). It was
+   one team's undoubled until 2026-09-23, which is the fault §0 found: a
+   category is decided by the difference between two totals and was being
+   judged against the wobble of one. The factor lives in
+   `app.pickups.stream`, not here, which is what stops this page and the week
+   page disagreeing about what a week is worth.
 2. The nine categories are drawn **independently** in the simulation. They
    are not: a roster with four games on Sunday gains in most of them at once.
-   So the spread of simulated outcomes is narrower than the truth.
+   So the spread of simulated outcomes is narrower than the truth. This one
+   is still open; part of what the factor of two buys over sqrt(2) is
+   standing in for it.
 
 ### The record
 
@@ -388,8 +450,13 @@ change rather than beside it.
 
 ```
 python scripts/projected_calibration.py --season 2026 --sims 2000 --json out.json
-python scripts/projected_calibration.py --season 2026 --sigma-scale 2.0   # diagnostic
+python scripts/projected_calibration.py --season 2026 --sigma-scale 0.5   # the pre-R3 model
 ```
+
+`--sigma-scale` multiplies **on top of** `app.pickups.stream.SPREAD_SCALE`, so
+a plain run is the product exactly as it ships and the run prints the
+effective factor it applied. The full output of the published run is in
+`docs/runs/2026-09-23-projected-calibration.txt`, with its JSON beside it.
 
 Read-only. For each regular-season matchup period it rebuilds the whole
 projection twice -- the morning the period began and again at its midpoint --
@@ -474,10 +541,12 @@ Player names carry the shared card, as everywhere else on the site.
 
 ## 8. Decisions taken here
 
-1. **The variance model is `stream.head_to_head`, unchanged.** A second model
-   would disagree with the week page invisibly. §0 says it is wrong and
-   prices the fix; the fix is a separate decision because four other numbers
-   are priced on the same function.
+1. **The variance model is `stream.head_to_head`, and it is the only one.** A
+   second model would disagree with the week page invisibly. §0 found the one
+   it had was too narrow; the fix was taken as its own decision on 2026-09-23
+   (revision R3) and applied in that function, so the week page, the pickup
+   judgement, the bid sizing, the trade evaluator and this page all moved
+   together or not at all.
 2. **A `league_reports` table, not a scope on `team_reports`.** §3.
 3. **The regular season only, during the regular season.** §2. A stored
    bracket from a played season is hindsight.

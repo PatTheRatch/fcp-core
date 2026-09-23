@@ -28,6 +28,7 @@ from app.db.models import (
 from app.inseason import projected as projected_module
 from app.inseason import projected_calibration as calibration
 from app.inseason.projected import bye_seats, final_table, project_standings
+from app.pickups import stream
 from app.pickups.stream import head_to_head
 from app.scoring.lines import CategoryLine
 from tests.pickups_db import (
@@ -533,6 +534,15 @@ def test_a_season_with_no_matchup_periods_refuses(session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _pct(value: float) -> int:
+    """A share as a whole percent, rounded the way a person writes it.
+
+    Half up, not Python's half-to-even: the note says 0.355 is "36%", and a
+    guard that read it as 35% would fail on the sentence a reader agrees with.
+    """
+    return int(value * 100 + 0.5)
+
+
 def test_the_published_note_says_what_the_published_numbers_say() -> None:
     """The pages print these two sentences verbatim, so they must not drift.
 
@@ -542,23 +552,36 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     beside them, and keeps the jargon out of them.
     """
     # The one line on the page, and the number it quotes.
-    assert calibration.RECORD_ERROR["half"] == pytest.approx(7.4)
-    assert "7.4 categories" in calibration.SHORT_NOTE
+    assert calibration.RECORD_ERROR["half"] == pytest.approx(7.2)
+    assert "7.2 categories" in calibration.SHORT_NOTE
     assert "halfway mark" in calibration.SHORT_NOTE
 
-    # The long note's four claims, each against its own constant.
+    # The long note's claims, each against its own constant. Since the spread
+    # was widened (2026-09-23) the note quotes the bands the forecast actually
+    # lives in rather than the ends it now almost never reaches.
     assert f"{calibration.N_CATEGORY_CALLS:,} calls" in calibration.CALIBRATION_NOTE
-    worst = calibration.CATEGORY_RELIABILITY[-1]
-    assert worst.band == (0.9, 1.0)
-    assert round(worst.predicted * 100) == 95
-    assert round(worst.happened * 100) == 81
-    assert "a 95% chance were won 81%" in calibration.CALIBRATION_NOTE
+    bands = {row.band: row for row in calibration.CATEGORY_RELIABILITY}
+    for low, said, happened in ((0.1, 15, 15), (0.3, 35, 36), (0.6, 65, 65), (0.8, 85, 85)):
+        row = bands[(low, round(low + 0.1, 1))]
+        assert _pct(low + 0.05) == said, "the note names the band by its middle"
+        assert _pct(row.happened) == happened
+    assert "gave a 15% chance were won 15%" in calibration.CALIBRATION_NOTE
+    assert "ones it gave 35% were won 36%" in calibration.CALIBRATION_NOTE
+    assert "65% were won 65%, and 85% were won 85%" in calibration.CALIBRATION_NOTE
+
+    # The one end it still overclaims, and how little of its weight is there.
+    cocky = calibration.CATEGORY_RELIABILITY[-1]
+    assert cocky.band == (0.9, 1.0)
+    assert _pct(cocky.happened) == 80
+    assert cocky.n < bands[(0.4, 0.5)].n / 10, "the wide model rarely goes there"
+    assert "above 90% come in about 80% of the time" in calibration.CALIBRATION_NOTE
+
     best_odds = calibration.PLAYOFF_RELIABILITY[-1]
-    assert round(best_odds.happened * 100) == 99
-    assert "better than 90% made it 99%" in calibration.CALIBRATION_NOTE
-    middling = next(row for row in calibration.PLAYOFF_RELIABILITY if row.band == (0.5, 0.6))
-    assert round(middling.happened * 100) == 30
-    assert "given 50-60% made it 30%" in calibration.CALIBRATION_NOTE
+    assert _pct(best_odds.happened) == 100
+    assert "better than 90% made it every time" in calibration.CALIBRATION_NOTE
+    middling = next(row for row in calibration.PLAYOFF_RELIABILITY if row.band == (0.6, 0.7))
+    assert _pct(middling.happened) == 50
+    assert "given 60-70% made it 50%" in calibration.CALIBRATION_NOTE
 
     # It is worse than a coin at nothing, and it does not claim to be better
     # than the run says.
@@ -571,16 +594,19 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
         assert verdict not in calibration.CALIBRATION_NOTE.lower()
 
 
-def test_the_diagnostic_widenings_are_recorded_but_not_shipped() -> None:
-    """The proposal is priced in the constants and applied nowhere.
+def test_the_shipped_widening_is_the_one_the_published_score_was_earned_on() -> None:
+    """The published score and the model that earned it cannot drift apart.
 
-    `docs/projected_record.md` proposes widening the weekly spread; this is
-    the guard that nobody quietly did it. The shipped model is
-    `app.pickups.stream.head_to_head` on the league's measured spread, which
-    is scale 1.0, and the calibration's own entry for 1.0 is the published
-    Brier score.
+    This used to be the guard that nobody had quietly widened the spread. The
+    owner widened it on 2026-09-23 and the whole calibration was re-run on it
+    (docs/spread_revision.md), so the guard is now the other way round: the
+    factor the engine ships, the factor this module says it ships, and the
+    factor whose score is published all have to be the same one.
     """
-    assert calibration.WIDENED[1.0] == calibration.BRIER
-    assert calibration.WIDENED[2.0] < calibration.WIDENED[1.0], "the proposal is an improvement"
-    # And the engine has no scale of its own to have been turned.
+    assert stream.SPREAD_SCALE == calibration.SHIPPED_SCALE
+    assert calibration.WIDENED[calibration.SHIPPED_SCALE] == calibration.BRIER
+    # The other two rows are the diagnostics it was chosen against, and the
+    # choice is only defensible while they are worse.
+    assert calibration.WIDENED[2.0] < calibration.WIDENED[1.4142] < calibration.WIDENED[1.0]
+    # And the engine still has no second scale of its own to have been turned.
     assert not hasattr(projected_module, "SIGMA_SCALE")
