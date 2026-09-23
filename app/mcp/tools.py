@@ -95,7 +95,9 @@ MAX_DAYS = 90
 #: a model is most likely to reach for a verdict.
 LABEL_ONLY = (
     "`clears_hurdle` is a label, not advice: a move under the bar is still "
-    "here, with its number. The manager decides."
+    "here, with its number. A move that fills an empty day clears on any "
+    "positive net, so it can carry the label with a net under the bar; the "
+    "net is the number to read. The manager decides."
 )
 OTHER_SIDE = (
     "the other side's numbers are our estimate of his roster's needs, made "

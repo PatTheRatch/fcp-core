@@ -351,31 +351,52 @@ the league or the team exists.
 The SDK prefixes a tool error with "Error executing tool `<name>`:", so the
 sentence arrives inside that. Everything after the colon is ours.
 
-## What has not been run
+## The live run, 2026-09-23
 
-**The three live conversations are not in this document.** The brief asked
-for "what should I do on day 52?", "judge Turner for Queta with Foxes" and
-"what's a streaming spot worth in this league and why?" to be driven in a
-Claude Code session and transcribed, with a report on whether the model
-quoted a number no tool returned. In the environment this was built in, a
-nested `claude -p` cannot authenticate (`OAuth session expired and could not
-be refreshed`) and the `ANTHROPIC_API_KEY` in `.env` is rejected with a 401,
-so no model could be driven against the server.
+The three conversations the brief asked for were driven on 2026-09-23 from
+the owner's laptop, in `claude -p` with `.mcp.json`, `--strict-mcp-config`,
+only `mcp__box-out__*` allowed, and `skills/box-out-co-manager/SKILL.md`
+appended to the system prompt, against the local database on the stored
+2026 season. Each transcript was then read tool call by tool call, and
+**every number the model stated was compared with the tool results it had
+been given.** The transcripts are the session's stream-json files; the
+check was by hand.
 
-What **was** verified: the server starts, connects and registers every
-tool and the prompt inside a real Claude Code session
-(`"mcp_servers":[{"name":"box-out","status":"connected"}]`, every
-`mcp__box-out__*` tool, `/mcp__box-out__co_manager`, and the skill
-discovered); the whole surface answers over stdio through the SDK's own
-client (`tests/test_mcp_access.py`); and every tool's answer matches the
-route's for a known deal and a known day (`tests/test_mcp.py`). The
-three questions were also driven through the tools directly, on the stored
-2026 season, and every number a co-manager would need was in the results —
-but that exercises the tools, not the model's discipline, which is the thing
-the live run existed to measure.
+| question | tools called | turns | numbers stated | not in a tool result |
+|---|---|---|---|---|
+| "day 52 — what should I do today and this week?" | `my_leagues`, `league_context`, `todays_lineup`, `week_report`, `what_changed` | 8 | 5.24 expected wins, nine chances, two moves' nets and bids, 42 FAAB, 0 of 7 adds, 95.8–75.2, three bars with their sources and dates, eight league moves | **none** |
+| "judge Turner for Queta with Foxes" | `league_context`, `my_leagues`, `season_report`, `todays_lineup` ×2, `judge_trade` | 10 | nine categories before/after with chances, both sides' per-week and season numbers, playoff-weeks split, both men's worth/games/playoff games, the 25-of-55 record | **none** |
+| "what's a streaming spot worth here and why?" | `my_leagues`, `league_context` | 4 | 0.38 (n=1,536), 0.06 (n=924), the three bars, roster shape, FAAB budget | **none** |
 
-**Until that run happens, the claim "the model never quotes a number no tool
-returned" is a design intention and not a measurement.**
+**So the claim is now a measurement, on three conversations:** the model
+quoted no number a tool had not returned. It also did three things the
+skill asks for without being prompted: it named the source and sample of
+every calibration number ("measured on this league, 924 adds"; "your own
+choice, dated 2026-09-18"); it called the other side of the trade "as our
+projections estimate his roster's needs — never his opinion"; and it ended
+each answer with a line that nothing here reaches ESPN.
+
+Two things worth knowing from the transcripts:
+
+- In conversation 1 the model noticed that Gary Trent Jr. for Jordan Walsh
+  is labelled `clears_hurdle: true` at a net of 0.024, under the 0.20 bar,
+  and said so rather than smoothing it over. The label is by design
+  (`app.pickups.stream.Move.clears`: a move that fills an empty day clears
+  on any positive net), but the payload did not say so; `LABEL_ONLY` now
+  does.
+- In conversation 2 it dated the 0.20 bar to 2026-09-18 (the week bar's
+  date) where `judge_trade`'s provenance cites the season bar, dated
+  2026-09-21. Same value, same source, wrong date — a misreading of two
+  entries with the same number, not an invented one.
+
+Cost, for the in-site bot's pricing: 0.73, 0.88 and 0.55 dollars a
+conversation on the model the CLI runs, of which nearly all is cached
+input; 4,100, 3,626 and 2,525 output tokens. Wall time 87, 85 and 33
+seconds.
+
+**Three conversations is a smoke test, not a study.** What it rules out is
+the failure the design exists to prevent showing up on the first three
+questions a manager would ask; it does not rule it out on the tenth.
 
 ## Decisions
 
