@@ -170,6 +170,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/contested-claims` | league member | |
 | `GET /leagues/{league_id}/seasons/{season}/events` | league member | the listener's status changes |
 | `GET /leagues/{league_id}/seasons/{season}/changes` | league member | what changed: injuries, adds, drops, claims and trades, all of it league-visible already. `team_id` only flags which of them are a team's own and its opponent's, so it adds no check |
+| `GET /leagues/{league_id}/seasons/{season}/projected` | league member | the projected standings: every team's remaining weeks head to head, the projected record and the odds of each finishing place (docs/projected_record.md). Nothing in it is a plan -- the remaining schedule is on the Standings page already -- and a projection only one manager could see would be worth less to everyone |
 | `GET /leagues/{league_id}/seasons/{season}/streaks` | league member | narratives |
 | `GET /leagues/{league_id}/seasons/{season}/category-profiles` | league member | narratives |
 | `GET /leagues/{league_id}/seasons/{season}/bench-leaderboard` | league member | narratives |
@@ -192,6 +193,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream` | team manager + entitled | the week plan |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season` | team manager + entitled | the season plan, drops and bids |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/glance` | team manager | the free This week page's look at his own week: expected categories and the projected record, not the plan (step 4) |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/projected` | team manager + entitled | the league projection narrowed to one team: its weeks and its finish distribution, for the Week page's "Rest of season". The same scope as that page; it carries nothing the league route does not |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/rosters` | team manager + entitled | both rosters as they stood on the day, for the trade builder's pickers |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/pool` | team manager + entitled | the wire on the day, ranked by what each man would be worth in the place this deal opens |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/report` | team manager + entitled | a proposed trade judged from both sides (docs/trades.md) |

@@ -1329,3 +1329,70 @@ class ChangesOut(BaseModel):
     items: list[ChangeOut]
     total: int = Field(description="Changes in the window, before `limit`")
     limit: int
+
+
+class ProjectedWeekOut(BaseModel):
+    """One remaining matchup, from one team's side (app/inseason/projected.py)."""
+
+    period: int
+    first_scoring_period: int
+    final_scoring_period: int
+    days_remaining: int = Field(description="Days of the period still to play, today included")
+    in_play: bool = Field(description="The period being played now, whose totals include so far")
+    opponent_espn_team_id: int | None = Field(description="Null on a bye")
+    opponent_name: str | None
+    probabilities: dict[str, float] = Field(
+        description="P(this team wins the category); {} on a bye"
+    )
+    expected_wins: float = Field(description="The nine chances summed; zero on a bye")
+    projected: dict[str, float] = Field(description="This side's projected raw counts this period")
+    opponent_projected: dict[str, float]
+
+
+class ProjectedTeamOut(BaseModel):
+    """One team's rest of season and where it ends up."""
+
+    espn_team_id: int
+    name: str
+    banked_won: float = Field(description="Categories won in regular-season weeks already settled")
+    banked_lost: float
+    banked_matchups: list[int] = Field(description="Matchups won, lost and tied so far")
+    expected_won: float = Field(description="Categories expected over the weeks left")
+    expected_lost: float
+    projected_record: list[float] = Field(description="Banked plus expected: won, lost")
+    projected_matchups: list[float] = Field(description="Mean simulated final record: W, L, T")
+    weeks: list[ProjectedWeekOut]
+    finishes: list[float] = Field(description="P(finishing in each place), first place first")
+    playoff_odds: float
+    bye_odds: float | None = Field(description="Null where the format gives no first-round bye")
+
+
+class ProjectedOut(BaseModel):
+    """The league's projected standings (docs/projected_record.md).
+
+    A forecast with its reasons and its record: every number here is built
+    from today's rosters, the NBA schedule and the league's own matchup
+    schedule, and `calibration_note` is what the same method scored when it
+    was replayed against a season already played.
+    """
+
+    league_id: int
+    season: int
+    as_of: int = Field(description="The scoring period this was built for")
+    as_of_date: date | None
+    matchup_period: int
+    teams: list[ProjectedTeamOut] = Field(description="In projected order, first place first")
+    periods: list[int] = Field(description="Matchup periods projected, ascending")
+    playoff_team_count: int
+    bye_count: int = Field(description="Seeds that skip the first round; 0 when there are none")
+    playoffs_projected: bool
+    playoff_note: str = Field(
+        description="Why the playoff rounds were left out; '' when they were not"
+    )
+    tiebreak: str = Field(description="How the table is ordered, in words")
+    n_sims: int
+    seed: int
+    source_note: str
+    basis: str
+    calibration_note: str = Field(description="What this forecast scored on a replayed season")
+    stored: bool = Field(default=False, description="Answered from the morning's stored report")
