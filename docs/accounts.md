@@ -83,11 +83,19 @@ before migrations 0018 and 0019 have run, single mode logs a warning and
 serves as before rather than failing.
 
 **`accounts`**. Everything is enforced. A request is signed in by the
-cookie, or by `Authorization: Bearer <FCP_SERVICE_TOKEN>`, which is the
-owner, for the scheduled scripts (`scripts/warm_pages.py` sends it when it
-is set). A bearer that is not the service token is a 401, never a fallback
-to the cookie. In this mode the owner is an ordinary user with the owner's
-claims: his own team's plan, and not every team's.
+cookie, by a member's own machine token (`Authorization: Bearer bo_…`, minted
+on the account page, `app/api_tokens.py`, docs/mcp.md), or by
+`Authorization: Bearer <FCP_SERVICE_TOKEN>`, which is the owner, for the
+scheduled scripts (`scripts/warm_pages.py` sends it when it is set). A bearer
+that is neither is a 401, never a fallback to the cookie. In this mode the
+owner is an ordinary user with the owner's claims: his own team's plan, and
+not every team's.
+
+**A machine token carries no scope.** It acts as the man who made it,
+through the same dependencies above, so it reads his leagues and his teams'
+plans and nothing else. Only its sha256 is stored and it is shown once. That
+is what lets a co-manager read for a member without a second answer to "who
+may open what" (docs/mcp.md).
 
 ## The checks
 
@@ -144,6 +152,9 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `DELETE /me/channels/{channel_id}` | signed in, own only (404 otherwise) | disable, and wipe the sealed target |
 | `GET /me/subscriptions` | signed in, own only | what goes in his email, per league he is a member of |
 | `PUT /me/subscriptions/{league_id}` | signed in, member of that league (404 otherwise) | choose it: the topics, the morning digest, the alerts |
+| `GET /me/api-tokens` | signed in, own only | his machine tokens, never their secrets (docs/mcp.md) |
+| `POST /me/api-tokens` | signed in, rate-limited | mint one; the token is in this answer and nowhere else |
+| `DELETE /me/api-tokens/{token_id}` | signed in, own only (404 otherwise) | revoke one of his own |
 | `GET /leagues` | signed in, filtered | lists only the leagues the caller is a member of (single mode: all) |
 | `GET /ingest-runs` | signed in | ingest history, no league member's data |
 | `GET /ingest-runs/health` | signed in | whether the data is current |

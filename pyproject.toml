@@ -52,11 +52,21 @@ opt = [
 injuries = [
     "pdfplumber>=0.11",
 ]
+# The co-manager's tool surface (app/mcp/, scripts/mcp_server.py,
+# docs/mcp.md): the official Model Context Protocol SDK. Nothing the API,
+# the ingest or the reports do imports it, so a server that only serves
+# pages does not need it. Version 2 is the one whose server class is
+# `MCPServer` and whose `Client` connects to a server in-process for a test.
+mcp = [
+    "mcp>=2.2,<3",
+]
 dev = [
     "pytest>=8.0",
     "httpx2>=0.1",
     "ruff>=0.6",
     "mypy>=1.11",
+    # tests/test_mcp.py drives the tool surface with the SDK's own client.
+    "mcp>=2.2,<3",
 ]
 
 [build-system]

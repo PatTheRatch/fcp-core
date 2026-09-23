@@ -22,6 +22,7 @@ from app.api.projections import router as projections_router
 from app.api.scorecard import router as scorecard_router
 from app.api.site import router as site_router
 from app.api.teams import router as teams_router
+from app.api.tokens import router as tokens_router
 from app.api.trades import router as trades_router
 from app.api.transactions import router as transactions_router
 
@@ -127,4 +128,5 @@ def create_app() -> FastAPI:
     app.include_router(site_router)
     app.include_router(channels_router)
     app.include_router(changes_router)
+    app.include_router(tokens_router)
     return app

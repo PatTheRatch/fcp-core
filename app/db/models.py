@@ -1321,6 +1321,32 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ApiToken(Base):
+    """A manager's own machine token: what a tool sends instead of a cookie.
+
+    Only the sha256 is stored, as a session's is, and the token itself is
+    shown once when it is made. It carries no scope: it acts as its owner
+    through the same checks every route declares, so it sees exactly what he
+    sees in a browser (`app.api_tokens`, docs/mcp.md).
+    """
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: What its owner called it, so he can tell two of them apart.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: Written at most every few minutes, so a conversation is not a write a call.
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Entitlement(Base):
     """A user's right to the paid tier: which tier, where it came from, until when.
 

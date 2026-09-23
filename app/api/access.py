@@ -29,9 +29,12 @@ written all the same (`app.accounts.ensure_owner`), so /auth/me tells the
 truth and the switch to accounts mode finds them already there.
 
 `FCP_AUTH_MODE=accounts` enforces everything. A request is signed in by the
-`fcp_session` cookie, or by `Authorization: Bearer <FCP_SERVICE_TOKEN>`,
-which is the owner for the scheduled scripts. In this mode the owner is an
-ordinary user with the owner's claims: his own team's plan, not everyone's.
+`fcp_session` cookie, by `Authorization: Bearer <a manager's own token>`
+(`app/api_tokens.py`: minted on the account page, prefixed `bo_`, and
+carrying no scope of its own -- it is that manager, through these same
+checks), or by `Authorization: Bearer <FCP_SERVICE_TOKEN>`, which is the
+owner for the scheduled scripts. In this mode the owner is an ordinary user
+with the owner's claims: his own team's plan, not everyone's.
 
 THE ENTITLEMENT
 
@@ -53,7 +56,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from app import accounts, brand
+from app import accounts, api_tokens, brand
 from app.api.deps import LeagueIdPath, SeasonPath, SessionDep, TeamIdPath
 from app.config import Settings, get_settings
 from app.db.models import User
@@ -131,11 +134,20 @@ def resolve_viewer(request: Request, session: Session, settings: Settings) -> Vi
     authorization = request.headers.get("authorization", "")
     scheme, _, presented = authorization.partition(" ")
     if scheme.lower() == "bearer":
-        # A bearer that is not the service token is refused outright rather
-        # than falling back to the cookie: a script with a stale token should
-        # hear so, not quietly act as whoever last used the browser.
-        expected = settings.fcp_service_token
+        # A bearer that is neither a live token of a member's nor the service
+        # token is refused outright rather than falling back to the cookie: a
+        # script with a stale token should hear so, not quietly act as
+        # whoever last used the browser.
         presented = presented.strip()
+        if api_tokens.looks_like_one(presented):
+            # A manager's own machine token. It carries no scope: it is him,
+            # through the same checks below (app/api_tokens.py, docs/mcp.md).
+            holder = api_tokens.user_for_token(session, presented)
+            if holder is None:
+                return None
+            owns = settings.fcp_owner_email is not None and holder.email == owner_email(settings)
+            return Viewer(holder.id, holder.email, is_owner=owns, all_access=False, via="token")
+        expected = settings.fcp_service_token
         if expected and presented and accounts.same_secret(presented, expected):
             owner = _owner(session, settings)
             return Viewer(owner.id, owner.email, is_owner=True, all_access=False, via="service")

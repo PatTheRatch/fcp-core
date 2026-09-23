@@ -41,7 +41,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/season` | My team, Season: the rest-of-season report | the team's verified manager, entitled | `season.html` |
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
 | `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
-| `/account/connections` | Connections: connect a league, invites, claims, your SWID | anyone signed in | `connections.html` |
+| `/account/connections` | Connections: connect a league, invites, claims, your league's numbers, your machine tokens, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
 | `/account/alerts` | Alerts: your own address (add, confirm, disable), what goes in your email per league, and the server's recipients for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
@@ -334,7 +334,15 @@ says it is reading the wire while the builder stays usable.
 
 **Connections.** Step 2's page, restyled into the shell with section rules:
 connect a league, your connections, leagues you own (invites, claims to
-decide), your ESPN SWID. Nothing typed there is ever shown back.
+decide), your league's numbers, **tools that read for you** and your ESPN
+SWID. Nothing typed there is ever shown back.
+
+"Tools that read for you" is where a manager makes a machine token
+(docs/mcp.md): a name, a button, and the token written to the page once,
+because the answer that made it is the only one that carries it. Under it,
+his tokens with when each was made and last used, and a Revoke beside each
+live one. The line above says what a token can do, which is read the pages
+he can read and nothing else.
 
 **Projections.** "Your sets": a table of the reader's own uploaded sets
 (name, season, players, uploaded, where from), or "None yet. Without one,

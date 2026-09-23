@@ -68,6 +68,21 @@
   <p class="lede" id="identified" hidden></p>
 </section>
 
+<section>
+  <div class="shead"><h2>Tools that read for you</h2><span class="tag">one token, shown once</span></div>
+  <p class="lede">A token lets a tool — the co-manager in Claude, say — read the same pages
+    you read, and nothing more: your leagues, your teams' plans, the numbers behind them.
+    It can add nobody, drop nobody and bid on nobody. Copy it when it appears; it is not
+    shown again. Revoke one here and it stops working at once.</p>
+  <form class="signin" id="mint" autocomplete="off">
+    <label class="eyebrow" for="tokenname">What it is for</label>
+    <input id="tokenname" maxlength="60" placeholder="Claude on my laptop" required>
+    <button class="btn" type="submit">Make a token</button>
+  </form>
+  <p class="lede mono" id="minted" hidden></p>
+  <div id="tokens"><p class="empty">Loading…</p></div>
+</section>
+
 <p class="foot">Nothing on this page is ever shown back: not the cookies, not the SWID.
   <span class="mono">docs/accounts.md</span> says where each is kept and who can open it.</p>
 
@@ -300,6 +315,46 @@ $("connect").onsubmit = async (event) => {
   loadOwned();
 };
 
+/* The tokens. The secret is in the answer to the POST that made it and in no
+   other answer, so it is written to the page once, there, and the listing
+   below it never has one to show. */
+async function loadTokens() {
+  const box = $("tokens");
+  box.replaceChildren();
+  const got = await call("GET", "/me/api-tokens");
+  const rows = got.ok ? got.data : [];
+  if (!rows.length) {
+    box.append(el("p", "No tokens yet. Nothing reads for you until you make one.", "empty"));
+    return;
+  }
+  for (const t of rows) {
+    const line = el("p", "", "lede");
+    line.append(el("b", t.name), " ");
+    const when = new Date(t.created_at).toLocaleDateString();
+    const used = t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "never used";
+    if (t.revoked_at) {
+      line.append(`made ${when}, ${used} — revoked.`);
+    } else {
+      line.append(`made ${when}, ${used}. `);
+      line.append(button("Revoke", async () => {
+        await call("DELETE", `/me/api-tokens/${t.id}`);
+        loadTokens();
+      }));
+    }
+    box.append(line);
+  }
+}
+
+$("mint").onsubmit = async (event) => {
+  event.preventDefault();
+  const name = $("tokenname").value.trim();
+  const done = await call("POST", "/me/api-tokens", { name });
+  if (!done.ok) return say("minted", done.detail);
+  $("tokenname").value = "";
+  say("minted", `${done.data.token} — ${done.data.note}`);
+  loadTokens();
+};
+
 $("identity").onsubmit = async (event) => {
   event.preventDefault();
   const swid = $("myswid").value;
@@ -314,6 +369,7 @@ startTheme();
 loadConnections();
 loadOwned();
 loadNumbers();
+loadTokens();
 </script>
 </body>
 </html>
