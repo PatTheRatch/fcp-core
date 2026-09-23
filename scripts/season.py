@@ -25,6 +25,7 @@ from pathlib import Path
 # which is the production one when a worktree borrows /opt/fcp-core/.venv.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app import calibration
 from app.config import get_settings
 from app.db.session import make_engine, make_session_factory
 from app.inseason.startable import team_by_name, team_names
@@ -75,7 +76,15 @@ def render(
     season: int,
     team_name: str,
     when: date | None,
+    hurdle_note: str = "",
 ) -> str:
+    """The rest-of-season report as a page of text.
+
+    `hurdle_note` says where the bar came from, and is printed under it the
+    way a projection's `source_note` is printed: a bar labels, and a bar
+    whose provenance is hidden is a bar asking to be trusted
+    (`app.calibration`, docs/intake.md).
+    """
     out: list[str] = []
     add = out.append
     dated = f", {when.isoformat()}" if when is not None else ""
@@ -92,6 +101,10 @@ def render(
         f"{_faab(report.faab_remaining, report.faab_overspent)}, "
         f"{_adds(report.adds_used, report.adds_budget)}, "
         f"{_wire(report.pool_size, report.historical_wire)}"
+    )
+    add(
+        f"bars {report.hurdle_paid:.2f} a claim / {report.hurdle_free:.2f} a free add"
+        + (f" - {hurdle_note}" if hurdle_note else "")
     )
     add(f"adds in the last {report.churn.days} days: {report.churn.adds}")
     add(f"  {report.churn.finding}")
@@ -214,9 +227,18 @@ def main() -> int:
                 args.today if args.today is not None else calendar.scoring_period_on(date.today())
             )
 
+            bars = calibration.bars(session, int(league_season.league_id))
             try:
                 report = season_recommendations(
-                    session, league_season, team.espn_team_id, today, tilt=not args.no_tilt
+                    session,
+                    league_season,
+                    team.espn_team_id,
+                    today,
+                    tilt=not args.no_tilt,
+                    hurdle_paid=bars.season_hurdle_paid.number,
+                    hurdle_free=bars.season_hurdle_free.number,
+                    floor=bars.typical_pickup.number,
+                    opened=bars.opened_place.number,
                 )
             except ValueError as error:
                 print(str(error), file=sys.stderr)
@@ -226,6 +248,7 @@ def main() -> int:
                 season=args.season,
                 team_name=team.name,
                 when=calendar.date_of(report.today),
+                hurdle_note=bars.season_hurdle_paid.note,
             )
         print(text)
         print("")

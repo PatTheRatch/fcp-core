@@ -31,6 +31,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app import calibration
 from app.config import get_settings
 from app.db.models import League, LeagueSeason, Team
 from app.db.session import make_engine, make_session_factory
@@ -150,7 +151,15 @@ def render(
     team_name: str,
     opponent_name: str | None,
     when: date | None,
+    hurdle_note: str = "",
 ) -> str:
+    """The week's report as a page of text.
+
+    `hurdle_note` says where the bar came from, and is printed under it the
+    way a projection's `source_note` is printed: a bar labels, and a bar
+    whose provenance is hidden is a bar asking to be trusted
+    (`app.calibration`, docs/intake.md).
+    """
     out: list[str] = []
     add = out.append
     first, last = report.scoring_periods_remaining[0], report.scoring_periods_remaining[-1]
@@ -172,6 +181,7 @@ def render(
         f"{_adds(report.adds_used, report.adds_budget)}, "
         f"{_wire(report.pool_size, report.historical_wire)}"
     )
+    add(f"bar {report.hurdle:.2f} a week" + (f" - {hurdle_note}" if hurdle_note else ""))
     outlook = report.outlook
     add(
         f"season so far: {_record(outlook.banked)} in categories; projected to end "
@@ -278,9 +288,17 @@ def main() -> int:
                 args.today if args.today is not None else calendar.scoring_period_on(date.today())
             )
 
+            bars = calibration.bars(session, int(league_season.league_id))
             try:
                 report = stream_recommendations(
-                    session, league_season, team.espn_team_id, today, tilt=not args.no_tilt
+                    session,
+                    league_season,
+                    team.espn_team_id,
+                    today,
+                    tilt=not args.no_tilt,
+                    hurdle=bars.stream_hurdle.number,
+                    floor=bars.typical_pickup.number,
+                    opened=bars.opened_place.number,
                 )
             except ValueError as error:
                 print(str(error), file=sys.stderr)
@@ -292,6 +310,7 @@ def main() -> int:
                 team_name=team.name,
                 opponent_name=names.get(report.opponent_team_id or -1),
                 when=calendar.date_of(today),
+                hurdle_note=bars.stream_hurdle.note,
             )
         print(text)
         print("")

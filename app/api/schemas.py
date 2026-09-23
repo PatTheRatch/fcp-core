@@ -657,6 +657,20 @@ class StreamReportOut(BaseModel):
     empty_days: list[EmptyDayOut]
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle: float
+    hurdle_source: str = Field(
+        default="default",
+        description=(
+            "Where the bar came from: `owner` (this league's manager set it), `measured` "
+            "(this league's own backtest), `pooled` (leagues like this one) or `default`"
+        ),
+    )
+    hurdle_note: str = Field(
+        default="",
+        description=(
+            "The one sentence a page prints under the bar, the way a projection's "
+            "`source_note` is printed: 'measured on this league, 616 decision points'"
+        ),
+    )
     pool_size: int = Field(description="Free agents evaluated")
     historical_wire: bool = Field(
         description=(
@@ -738,6 +752,17 @@ class SeasonReportOut(BaseModel):
     outlook: JudgementOut = Field(description="The season as it stands, with no move")
     hurdle_paid: float
     hurdle_free: float
+    hurdle_source: str = Field(
+        default="default",
+        description=(
+            "Where the two bars came from: `owner`, `measured`, `pooled` or `default` "
+            "(`app.calibration`, docs/intake.md)"
+        ),
+    )
+    hurdle_note: str = Field(
+        default="",
+        description="The one sentence a page prints under them",
+    )
     pool_size: int = Field(description="Free agents evaluated")
     historical_wire: bool = Field(
         description=(

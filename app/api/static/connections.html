@@ -48,6 +48,15 @@
 </section>
 
 <section>
+  <div class="shead"><h2>Your league's numbers</h2><span class="tag">measured on your own history</span></div>
+  <p class="lede">Every number on your pages leans on these. Each one says where it came
+    from: measured on your league, the pool of leagues like yours, or the default until
+    your league has enough history. A bar labels a move and never hides one, so a move
+    under the bar is still shown with its number.</p>
+  <div id="numbers"><p class="empty">Loading…</p></div>
+</section>
+
+<section>
   <div class="shead"><h2>Your ESPN account</h2><span class="tag">to verify your claims</span></div>
   <p class="lede">Optional. Your SWID alone (never espn_s2): when it is an owner of the
     team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
@@ -140,6 +149,87 @@ async function loadOwned() {
   for (const league of owned) box.append(await ownedLeague(league.espn_league_id));
 }
 
+/* Your league's numbers (docs/intake.md). Every league the viewer is in, not
+   only the ones he owns: they are what his own pages are built on. Setting a
+   bar and asking for a re-measurement are the league owner's, and the server
+   is what says so -- the buttons are simply not drawn for anyone else. */
+
+const NUMBER = (n) => (n === null || n === undefined ? "—" : n.toFixed(2));
+
+async function loadNumbers() {
+  const box = $("numbers");
+  const me = await call("GET", "/auth/me");
+  box.replaceChildren();
+  const leagues = me.data.leagues || [];
+  if (!leagues.length) return box.append(el("p", "None: connect a league above.", "empty"));
+  for (const league of leagues) {
+    const got = await call("GET", `/leagues/${league.espn_league_id}/calibration`);
+    if (!got.ok) continue;
+    box.append(leagueNumbers(league, got.data));
+  }
+}
+
+function leagueNumbers(league, data) {
+  const part = el("div");
+  part.append(el("h3", league.league_name || `League ${data.espn_league_id}`, "eyebrow"));
+
+  const state = el("p", "", "lede");
+  state.append(data.measuring ? `Measuring now: ${data.progress}.` : `${data.progress}.`);
+  if (league.role === "owner") {
+    const again = button("Measure again", async () => {
+      const done = await call("POST", `/leagues/${data.espn_league_id}/calibration/measure`);
+      state.append(" ", el("span", done.ok ? "Queued." : done.detail));
+      loadNumbers();
+    });
+    again.disabled = !data.can_measure;
+    if (!data.can_measure && data.refused) again.title = data.refused;
+    state.append(" ", again);
+    if (!data.can_measure && data.refused) state.append(` (${data.refused})`);
+  }
+  part.append(state);
+
+  for (const number of data.numbers) part.append(numberLine(data, number, league.role));
+  return part;
+}
+
+function numberLine(data, number, role) {
+  const line = el("p", "", "lede");
+  line.append(el("b", number.title), ": ");
+  line.append(number.value === null ? "—" : NUMBER(number.value));
+  line.append(` · ${number.source} · ${number.note}`);
+  if (number.measured_value !== null && number.measured_value !== undefined) {
+    line.append(
+      ` (your own measurement: ${NUMBER(number.measured_value)} on ` +
+        `${number.measured_n} ${number.unit}, minimum ${number.minimum})`,
+    );
+  }
+  if (role === "owner" && number.settable) {
+    const field = document.createElement("input");
+    field.inputMode = "decimal";
+    field.size = 5;
+    field.value = number.value === null ? "" : NUMBER(number.value);
+    const why = document.createElement("input");
+    why.size = 30;
+    why.placeholder = "one line of why";
+    line.append(" ", field, " ", why, " ");
+    line.append(button("Set", async () => {
+      const done = await call("PUT", `/leagues/${data.espn_league_id}/calibration/${number.key}`, {
+        value: Number(field.value),
+        reason: why.value,
+      });
+      if (!done.ok) return line.append(" ", el("span", done.detail));
+      loadNumbers();
+    }));
+    if (number.source === "owner") {
+      line.append(" ", button("Use the measurement", async () => {
+        await call("DELETE", `/leagues/${data.espn_league_id}/calibration/${number.key}`);
+        loadNumbers();
+      }));
+    }
+  }
+  return line;
+}
+
 async function ownedLeague(id) {
   const part = el("div");
   part.append(el("h3", `League ${id}`, "eyebrow"));
@@ -223,6 +313,7 @@ $("identity").onsubmit = async (event) => {
 startTheme();
 loadConnections();
 loadOwned();
+loadNumbers();
 </script>
 </body>
 </html>

@@ -51,7 +51,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import reports
+from app import calibration, reports
 from app.api.access import TEAM_MANAGER, TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
@@ -178,15 +178,38 @@ def build_payload(
 
     The precompute job stores exactly this, so a stored answer and a live
     one cannot drift apart.
+
+    **The bars are this league's** (`app.calibration`, docs/intake.md): its
+    own measured ones, or the ones its manager chose, or the pool of leagues
+    like it, or the defaults -- and whichever it is travels with the report
+    as `hurdle_source` and `hurdle_note`, so the page can say it.
     """
     espn_team_id = int(team.espn_team_id)
+    bars = calibration.bars(session, int(league_season.league_id))
     out: StreamReportOut | SeasonReportOut | TodayReportOut
     if kind == reports.STREAM:
-        stream = build_stream(session, league_season, espn_team_id, day)
-        out = _stream_out(stream, _espn_ids(session, _stream_players(stream)))
+        stream = build_stream(
+            session,
+            league_season,
+            espn_team_id,
+            day,
+            hurdle=bars.stream_hurdle.number,
+            floor=bars.typical_pickup.number,
+            opened=bars.opened_place.number,
+        )
+        out = _stream_out(stream, _espn_ids(session, _stream_players(stream)), bars)
     elif kind == reports.SEASON:
-        season = build_season(session, league_season, espn_team_id, day)
-        out = _season_out(season, _espn_ids(session, _season_players(season)))
+        season = build_season(
+            session,
+            league_season,
+            espn_team_id,
+            day,
+            hurdle_paid=bars.season_hurdle_paid.number,
+            hurdle_free=bars.season_hurdle_free.number,
+            floor=bars.typical_pickup.number,
+            opened=bars.opened_place.number,
+        )
+        out = _season_out(season, _espn_ids(session, _season_players(season)), bars)
     elif kind == reports.TODAY:
         lineup = build_today(session, league_season, espn_team_id, day)
         out = _today_out(lineup, _espn_ids(session, _today_players(lineup)), _source(league_season))
@@ -444,7 +467,9 @@ def _move_out(move: Move, hurdle: float, espn: dict[int, int]) -> StreamMoveOut:
     )
 
 
-def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
+def _stream_out(
+    report: StreamReport, espn: dict[int, int], bars: calibration.Bars
+) -> StreamReportOut:
     return StreamReportOut(
         espn_team_id=report.team_id,
         matchup_period=report.matchup_period,
@@ -466,6 +491,8 @@ def _stream_out(report: StreamReport, espn: dict[int, int]) -> StreamReportOut:
         ],
         outlook=_judgement_out(report.outlook),
         hurdle=report.hurdle,
+        hurdle_source=bars.stream_hurdle.source,
+        hurdle_note=bars.stream_hurdle.note,
         pool_size=report.pool_size,
         historical_wire=report.historical_wire,
         faab_remaining=report.faab_remaining,
@@ -575,7 +602,9 @@ def _stash_out(stash: StashCandidate, espn: dict[int, int]) -> StashCandidateOut
     )
 
 
-def _season_out(report: SeasonReport, espn: dict[int, int]) -> SeasonReportOut:
+def _season_out(
+    report: SeasonReport, espn: dict[int, int], bars: calibration.Bars
+) -> SeasonReportOut:
     def out(swap: Swap | None) -> SeasonSwapOut | None:
         return _swap_out(swap, report, espn) if swap is not None else None
 
@@ -600,6 +629,8 @@ def _season_out(report: SeasonReport, espn: dict[int, int]) -> SeasonReportOut:
         outlook=_judgement_out(report.outlook),
         hurdle_paid=report.hurdle_paid,
         hurdle_free=report.hurdle_free,
+        hurdle_source=bars.season_hurdle_paid.source,
+        hurdle_note=bars.season_hurdle_paid.note,
         pool_size=report.pool_size,
         historical_wire=report.historical_wire,
         faab_remaining=report.faab_remaining,

@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import calibration
 from app.config import get_settings
 from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
@@ -243,7 +244,15 @@ def render(
     *,
     ours: int,
     when: date | None,
+    record_note: str = "",
 ) -> str:
+    """The deal as a page of text.
+
+    `record_note` is this league's own account of what the headline number
+    has been measured at (`app.calibration`, docs/intake.md), printed under
+    it exactly as the trade page prints it. Empty prints nothing rather than
+    a claim nobody has measured.
+    """
     out: list[str] = []
     add = out.append
     names = " <-> ".join(side.team_name for side in report.sides)
@@ -268,6 +277,10 @@ def render(
         "Both numbers are ours: the other side is judged on our projections and the same "
         "league standard, which is an estimate of his roster's needs and not his opinion."
     )
+    if record_note:
+        add("")
+        add("How much to trust the number:")
+        add(f"  {record_note}")
     return "\n".join(out)
 
 
@@ -413,6 +426,7 @@ def main() -> int:
 
             drops = {ours.espn_team_id: our_drops, theirs.espn_team_id: their_drops}
             fills = {ours.espn_team_id: our_fills, theirs.espn_team_id: their_fills}
+            bars = calibration.bars(session, int(league_season.league_id))
             try:
                 report = evaluate_trade(
                     session,
@@ -426,11 +440,19 @@ def main() -> int:
                         args.review_days if args.review_days is not None else TRADE_REVIEW_DAYS
                     ),
                     tilt=not args.no_tilt,
+                    hurdle=bars.season_hurdle_paid.number,
+                    floor=bars.typical_pickup.number,
+                    opened_place=bars.opened_place.number,
                 )
             except ValueError as error:
                 print(str(error), file=sys.stderr)
                 return 1
-            text = render(report, ours=ours.espn_team_id, when=calendar.date_of(report.today))
+            text = render(
+                report,
+                ours=ours.espn_team_id,
+                when=calendar.date_of(report.today),
+                record_note=bars.trade_record.note,
+            )
         print(text)
         print("")
         print("Read-only; nothing was written.")

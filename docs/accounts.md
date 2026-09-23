@@ -219,6 +219,10 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/claims` | league owner | claims waiting on a decision, with who made each |
 | `POST /leagues/{league_id}/claims/{claim_id}/approve` | league owner | verify a claim by hand |
 | `POST /leagues/{league_id}/claims/{claim_id}/reject` | league owner | refuse a claim, or take a verified manager off |
+| `GET /leagues/{league_id}/calibration` | league member | the league's own measured numbers and where each came from (docs/intake.md); every member's pages are built on them, so every member may look |
+| `PUT /leagues/{league_id}/calibration/{key}` | league owner | set one of the three bars himself, with a line of why; the other three keys are refused |
+| `DELETE /leagues/{league_id}/calibration/{key}` | league owner | forget his own bar and use the measurement again |
+| `POST /leagues/{league_id}/calibration/measure` | league owner | put the intake chain on the queue; once a day, never while one is running |
 
 FastAPI's own `/docs`, `/redoc` and `/openapi.json` stay open: they
 describe the routes and carry no data.

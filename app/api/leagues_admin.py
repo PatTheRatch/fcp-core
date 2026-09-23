@@ -17,6 +17,10 @@ route's scope. The database half is `app.memberships`.
     POST   /leagues/{league_id}/claims/{id}/approve | /reject   (owner)
     POST   /me/espn-identity  {swid}           your own SWID, to verify your claims
     DELETE /me/espn-identity
+    GET    /leagues/{league_id}/calibration            your league's numbers
+    PUT    /leagues/{league_id}/calibration/{key}      (owner) set a bar, with a reason
+    DELETE /leagues/{league_id}/calibration/{key}      (owner) go back to the measurement
+    POST   /leagues/{league_id}/calibration/measure    (owner) measure again
     GET    /join/{token}, /pages/claim/{league_id}/{season}  (the pages; see app/api/site.py)
 
 SECRETS
@@ -48,7 +52,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import accounts, memberships, secrets_box
+from app import accounts, calibration, intake, memberships, secrets_box
 from app.accounts import now
 from app.api.access import (
     LEAGUE_MEMBER_PAGE,
@@ -75,6 +79,14 @@ STATIC = Path(__file__).parent / "static"
 #: The longest cookie value accepted. ESPN's espn_s2 is a few hundred
 #: characters; anything past this is not one.
 MAX_COOKIE = 2048
+
+#: The highest bar a manager may set, in categories a week. Nine categories
+#: are contested in a week, so a bar of nine says "never recommend anything";
+#: past that it is not a bar, it is a typing mistake.
+MAX_BAR = 9.0
+#: The longest reason kept with a bar. It is one line under a number on a
+#: page, not an essay, and it is printed back to every member of the league.
+MAX_REASON = 200
 
 NO_KEY = "Connecting a league is not set up on this server yet (no secrets key)."
 NO_ACCOUNT = "accounts are not set up on this server yet"
@@ -652,6 +664,195 @@ def forget_identity(viewer: CurrentUser, session: SessionDep) -> dict[str, bool]
     forgot = memberships.forget_identity(session, _user_id(viewer))
     session.commit()
     return {"forgotten": forgot}
+
+
+# ---------------------------------------------------------------------------
+# your league's numbers (app.calibration, docs/intake.md)
+# ---------------------------------------------------------------------------
+
+
+class CalibrationOut(BaseModel):
+    """One number as the account page shows it.
+
+    `value`, `source`, `n` and `measured_at` are the row actually in use;
+    `measured_value` and `measured_n` are this league's own measurement when
+    something else is being used over it -- the manager's own choice, or the
+    fallback because the sample is under `minimum`. Both are shown, because
+    the page's job is to say what is being used and what else is known.
+    """
+
+    key: str
+    title: str
+    unit: str
+    minimum: int
+    value: float | None
+    source: str
+    n: int
+    note: str
+    measured_at: datetime | None
+    #: True for the three bars a league owner may set himself.
+    settable: bool
+    #: This league's own measurement, when it is not the one in use.
+    measured_value: float | None = None
+    measured_n: int | None = None
+    #: The reason the manager gave, when he set this one.
+    owner_reason: str | None = None
+
+
+class CalibrationListOut(BaseModel):
+    espn_league_id: int
+    numbers: list[CalibrationOut]
+    #: True while the intake chain is working on this league.
+    measuring: bool
+    #: What it is doing, or how it ended: one plain sentence.
+    progress: str
+    #: When the newest chain was asked for, for the once-a-day limit.
+    last_measured_at: datetime | None
+    #: False when asking again would be refused (running, or already today).
+    can_measure: bool
+    #: Why not, when `can_measure` is false.
+    refused: str | None = None
+
+
+class OwnerBarIn(BaseModel):
+    value: float
+    #: One line of why, kept and printed with the number.
+    reason: str = ""
+
+
+def _calibration_out(listed: calibration.Listed) -> CalibrationOut:
+    used = listed.used
+    # This league's own measurement is shown beside the number only when it
+    # is not the number: because its manager chose a bar over it, or because
+    # the sample is under the key's minimum and the fallback is being used.
+    mine = listed.measured if used.source != calibration.MEASURED else None
+    return CalibrationOut(
+        key=listed.key,
+        title=listed.title,
+        unit=listed.unit,
+        minimum=listed.minimum,
+        value=used.value,
+        source=used.source,
+        n=used.n,
+        note=used.note,
+        measured_at=used.measured_at,
+        settable=listed.key in calibration.OWNER_SETTABLE,
+        measured_value=mine.value if mine is not None else None,
+        measured_n=mine.n if mine is not None else None,
+        owner_reason=(
+            str(listed.owner.payload.get("reason") or "") or None
+            if listed.owner is not None
+            else None
+        ),
+    )
+
+
+def _calibration_list(session: Session, league: League) -> CalibrationListOut:
+    state = intake.progress(session, league.id)
+    refused: str | None = None
+    if state.running:
+        refused = f"already being measured: {state.words}"
+    else:
+        started = intake.last_started(session, league.id)
+        if started is not None and now() - started < intake.AGAIN_AFTER:
+            refused = "measured today; it can be measured again tomorrow"
+    return CalibrationListOut(
+        espn_league_id=int(league.espn_league_id),
+        numbers=[_calibration_out(listed) for listed in calibration.listing(session, league.id)],
+        measuring=state.running,
+        progress=state.words,
+        last_measured_at=state.finished_at,
+        can_measure=refused is None,
+        refused=refused,
+    )
+
+
+@router.get(
+    "/leagues/{league_id}/calibration",
+    summary="Your league's own numbers, and where each one came from",
+)
+def league_calibration(
+    league_id: int, viewer: LeagueMember, session: SessionDep
+) -> CalibrationListOut:
+    """Every member of the league may see them: they are what his pages are
+    built on, and a bar nobody can look at is a bar asking to be trusted."""
+    return _calibration_list(session, _league(session, league_id))
+
+
+@router.put(
+    "/leagues/{league_id}/calibration/{key}",
+    summary="Set one of the three bars yourself, with a line of why",
+    dependencies=[LEAGUE_OWNER],
+)
+def set_calibration(
+    league_id: int, key: str, body: OwnerBarIn, session: SessionDep
+) -> CalibrationListOut:
+    """The league's owner choosing a bar. The other three keys are refused.
+
+    A bar is a choice about how much churn a manager wants, and the sweep
+    only ever recommends one; what a pickup returned and what a trade number
+    has done are measurements of what happened, and nothing here offers to
+    overrule a measurement.
+    """
+    if key not in calibration.OWNER_SETTABLE:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{key} is measured, not chosen: only "
+                f"{', '.join(calibration.OWNER_SETTABLE)} can be set by hand"
+            ),
+        )
+    if not 0.0 <= body.value <= MAX_BAR:
+        raise HTTPException(
+            status_code=422, detail=f"a bar is between 0 and {MAX_BAR:.1f} categories a week"
+        )
+    if len(body.reason) > MAX_REASON:
+        raise HTTPException(
+            status_code=422, detail=f"keep the reason under {MAX_REASON} characters"
+        )
+    league = _league(session, league_id)
+    calibration.set_by_owner(session, league.id, key, value=float(body.value), reason=body.reason)
+    session.commit()
+    log.info("league %s: %s set by its owner", league_id, key)
+    return _calibration_list(session, league)
+
+
+@router.delete(
+    "/leagues/{league_id}/calibration/{key}",
+    summary="Forget your own bar, and use the measurement again",
+    dependencies=[LEAGUE_OWNER],
+)
+def clear_calibration(league_id: int, key: str, session: SessionDep) -> CalibrationListOut:
+    league = _league(session, league_id)
+    calibration.forget_owner(session, league.id, key)
+    session.commit()
+    return _calibration_list(session, league)
+
+
+@router.post(
+    "/leagues/{league_id}/calibration/measure",
+    summary="Measure this league's numbers again",
+)
+def measure_again(league_id: int, viewer: LeagueOwner, session: SessionDep) -> CalibrationListOut:
+    """Put the intake chain on the queue (docs/intake.md).
+
+    Once a day, and never while one is running: the sweep alone is an hour
+    and a half, and nothing about a league's own history changes fast enough
+    for a second run in a day to say anything new. A league this code does
+    not model is refused here rather than three jobs later.
+    """
+    league = _league(session, league_id)
+    refused = intake.refusal(session, league.id)
+    if refused is not None:
+        raise HTTPException(status_code=422, detail=refused.reason)
+    try:
+        intake.enqueue_intake(session, league.id, user_id=viewer.user_id)
+    except intake.IntakeRefusedError as no:
+        session.rollback()
+        raise HTTPException(status_code=429, detail=str(no)) from None
+    session.commit()
+    log.info("league %s: measured again, asked by user %s", league_id, viewer.user_id)
+    return _calibration_list(session, league)
 
 
 # ---------------------------------------------------------------------------

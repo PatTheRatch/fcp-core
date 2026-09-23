@@ -88,6 +88,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import calibration
 from app.db.models import (
     League,
     LeagueSeason,
@@ -991,8 +992,15 @@ def week_block(
         calendar = season_calendar(session, season)
         if calendar is None:
             return None, None, [f"  no NBA schedule stored for {season}, so no plan today"]
+        bars = calibration.bars(session, int(league_season.league_id))
         report = stream_recommendations(
-            session, league_season, espn_team_id, calendar.scoring_period_on(on)
+            session,
+            league_season,
+            espn_team_id,
+            calendar.scoring_period_on(on),
+            hurdle=bars.stream_hurdle.number,
+            floor=bars.typical_pickup.number,
+            opened=bars.opened_place.number,
         )
         opponent = _team_names(session, league_season).get(report.opponent_team_id or -1)
     except ValueError as error:
@@ -1116,8 +1124,16 @@ def season_outlook(
         calendar = season_calendar(session, season)
         if calendar is None:
             return None, [f"  no NBA schedule stored for {season}, so no season view today"]
+        bars = calibration.bars(session, int(league_season.league_id))
         report = season_recommendations(
-            session, league_season, espn_team_id, calendar.scoring_period_on(on)
+            session,
+            league_season,
+            espn_team_id,
+            calendar.scoring_period_on(on),
+            hurdle_paid=bars.season_hurdle_paid.number,
+            hurdle_free=bars.season_hurdle_free.number,
+            floor=bars.typical_pickup.number,
+            opened=bars.opened_place.number,
         )
     except ValueError as error:
         return None, [f"  no season view today: {error}"]

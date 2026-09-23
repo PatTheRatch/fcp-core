@@ -56,6 +56,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import calibration
 from app.api import pickups
 from app.api.access import TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
@@ -204,7 +205,7 @@ def trade_rosters(
         today_date=calendar.date_of(day) if calendar is not None else None,
         readiness=ready,
         teams=teams,
-        calibration_note=CALIBRATION_NOTE,
+        calibration_note=_note(session, league_season),
     )
 
 
@@ -241,7 +242,7 @@ def trade_pool(
     calendar, missing = pickups.readiness(session, league_season)
     day = _day(calendar, today)
     if missing:
-        return _empty_pool(league_season, team, day, missing)
+        return _empty_pool(session, league_season, team, day, missing)
     other = _other_team(session, league_season, team, with_team)
     if other is None:
         raise _bad(NO_OTHER_TEAM)
@@ -258,6 +259,7 @@ def trade_pool(
 
     drops = {int(team.espn_team_id): our_drops, int(other.espn_team_id): their_drops}
     for_team = int(team.espn_team_id) if side == "ours" else int(other.espn_team_id)
+    floor, opened = _wire(session, league_season)
     try:
         pool = fill_pool(
             session,
@@ -268,6 +270,8 @@ def trade_pool(
             for_team=for_team,
             drops={who: named for who, named in drops.items() if named},
             limit=limit,
+            floor=floor,
+            opened_place=opened,
         )
     except ValueError as error:
         raise _bad(str(error)) from error
@@ -309,7 +313,7 @@ def trade_report(
         return TradeReportOut(
             readiness=_readiness(league_season, missing),
             trade=None,
-            calibration_note=CALIBRATION_NOTE,
+            calibration_note=_note(session, league_season),
         )
     day = _day(calendar, today)
     other = _other_team(session, league_season, team, with_team)
@@ -341,6 +345,7 @@ def trade_report(
         int(team.espn_team_id): tuple(player_id for player_id, _name in our_fills),
         int(other.espn_team_id): tuple(player_id for player_id, _name in their_fills),
     }
+    floor, opened = _wire(session, league_season)
     try:
         report = evaluate_trade(
             session,
@@ -350,13 +355,18 @@ def trade_report(
             TeamOffer(team_id=int(other.espn_team_id), gives=got),
             drops={who: named for who, named in drops.items() if named},
             fills={who: named for who, named in fills.items() if named},
+            hurdle=calibration.calibration(
+                session, int(league_season.league_id), calibration.SEASON_HURDLE_PAID
+            ).number,
+            floor=floor,
+            opened_place=opened,
         )
     except ValueError as error:
         raise _bad(str(error)) from error
     return TradeReportOut(
         readiness=TradeReadinessOut(ready=True, missing=[], note=None),
         trade=_trade_out(report, session, ours=int(team.espn_team_id)),
-        calibration_note=CALIBRATION_NOTE,
+        calibration_note=_note(session, league_season),
     )
 
 
@@ -616,8 +626,36 @@ def _espn_ids(session: Session, players: Sequence[RosteredPlayer]) -> dict[int, 
     return _espn_of(session, [player.player_id for player in players])
 
 
+def _note(session: Session, league_season: LeagueSeason) -> str:
+    """This league's own record of the trade number, as the page prints it.
+
+    `app.calibration`, docs/intake.md: a league measured on its own trades
+    carries its own sentence, written by the same code that wrote ours
+    (`app.trades.calibration.trade_note`), and a league that has not been
+    measured yet falls back through the pool to `CALIBRATION_NOTE`, which is
+    what every page printed before these numbers became rows. The constant is
+    still imported, because it is still the fallback's words.
+    """
+    found = calibration.calibration(session, int(league_season.league_id), calibration.TRADE_RECORD)
+    return found.note or CALIBRATION_NOTE
+
+
+def _wire(session: Session, league_season: LeagueSeason) -> tuple[float, float]:
+    """This league's two measurements of the wire: (one add, an open place).
+
+    What one add returns and what a place left open and streamed returns are
+    two different questions with two different answers (docs/intake.md), and
+    a trade that consolidates turns on the second of them.
+    """
+    league_id = int(league_season.league_id)
+    return (
+        calibration.calibration(session, league_id, calibration.TYPICAL_PICKUP).number,
+        calibration.calibration(session, league_id, calibration.OPENED_PLACE).number,
+    )
+
+
 def _empty_pool(
-    league_season: LeagueSeason, team: Team, day: int, missing: list[str]
+    session: Session, league_season: LeagueSeason, team: Team, day: int, missing: list[str]
 ) -> TradeFillPoolOut:
     """A season with no wire to read: the same answer the other two give."""
     return TradeFillPoolOut(
@@ -635,7 +673,7 @@ def _empty_pool(
         historical_wire=False,
         measured=False,
         candidates=[],
-        calibration_note=CALIBRATION_NOTE,
+        calibration_note=_note(session, league_season),
     )
 
 
@@ -667,7 +705,7 @@ def _pool_out(
         candidates=[
             _candidate_out(candidate, espn, pool.categories) for candidate in pool.candidates
         ],
-        calibration_note=CALIBRATION_NOTE,
+        calibration_note=_note(session, league_season),
     )
 
 
