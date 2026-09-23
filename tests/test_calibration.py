@@ -308,9 +308,9 @@ def test_no_relationship_is_fitted_across_settings_yet(session: Session) -> None
 
 
 def _migration() -> Any:
-    """Migration 0026, loaded by path: its name is not an identifier."""
-    path = REPO_ROOT / "migrations" / "versions" / "0026_league_calibrations.py"
-    spec = importlib.util.spec_from_file_location("seed_0026", path)
+    """Migration 0027, loaded by path: its name is not an identifier."""
+    path = REPO_ROOT / "migrations" / "versions" / "0027_league_calibrations.py"
+    spec = importlib.util.spec_from_file_location("seed_0027", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

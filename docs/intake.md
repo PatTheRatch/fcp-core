@@ -8,7 +8,7 @@ Code: `app/calibration.py` (the table and the accessor), `app/intake/`
 `app/job_kinds.py` (the eight new kinds and the queue's priority),
 `app/schedule.py` (the trigger), `app/api/leagues_admin.py` and
 `app/api/static/connections.html` (the account page); migration
-`0026_league_calibrations`. Tests: `tests/test_calibration.py`,
+`0027_league_calibrations`. Tests: `tests/test_calibration.py`,
 `tests/test_intake.py`.
 
 ## Why
@@ -256,7 +256,7 @@ On the VPS, as `aisha` in `/opt/fcp-core`, at a quiet moment:
 ```
 git pull
 ./.venv/bin/pip install -q -e ".[dev]"
-./.venv/bin/python -m alembic upgrade head        # 0026
+./.venv/bin/python -m alembic upgrade head        # 0027
 sudo systemctl restart fcp-core-api.service
 sudo systemctl restart fcp-core-worker.service    # if the queue is switched on
 ```

@@ -163,7 +163,7 @@ class Default:
 #: The numbers as `app/scoring/replacement.py`, `app/pickups/stream.py`,
 #: `app/pickups/season.py` and `app/trades/calibration.py` held them on
 #: 2026-09-22, every one of them measured on Full Court Press alone. Moving
-#: them here changed no value: `migrations/versions/0026_league_calibrations.py`
+#: them here changed no value: `migrations/versions/0027_league_calibrations.py`
 #: seeds that league with exactly these, so its pages print what they printed.
 DEFAULTS: Mapping[str, Default] = {
     TYPICAL_PICKUP: Default(
