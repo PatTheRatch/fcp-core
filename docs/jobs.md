@@ -107,6 +107,14 @@ the label from the clock the way the listener's pass does):
 | `report` | 22:30 | `status_pass` (report) | an alert `digest` per member with a team |
 | `late` | 00:30 | `status_pass` (late) | the same |
 
+**And one `injury_pass` a label** on `morning`, `report` and `late` (not
+`nightly`: at nine UTC the league has published nothing yet), league-
+independent since the reports are the NBA's. Each pass asks for today's
+snapshots published up to its own clock and keeps what an earlier pass
+stored, so the three of them hold the whole day's cadence between them —
+the intraday record `docs/availability.md` §4 had only seventeen dates of.
+Since 2026-09-23.
+
 **Which leagues:** every league with a live connection, and `ESPN_LEAGUE_ID`
 whenever its `.env` login is set, read with the `.env` cookies when it has
 no connection of its own. The `.env` league is scheduled in both modes: it

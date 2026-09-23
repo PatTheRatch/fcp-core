@@ -202,12 +202,18 @@ def load_days(
     dry_run: bool = False,
     skip_loaded: bool = False,
     counts: Counts | None = None,
+    until: datetime | None = None,
     log: Any = None,
 ) -> Counts:
     """Fetch, read and store every chosen snapshot of these dates.
 
     The caller may pass the `Counts` in rather than take it back, so that a
     run which dies halfway still records what it managed before it died.
+
+    `until` drops the snapshots after that moment: a pass run at three in the
+    afternoon asks for the day's reports published so far, not the evening's
+    that do not exist yet, which under `all` would be seventy fetches of
+    nothing four times a day.
     """
     import requests
 
@@ -220,6 +226,8 @@ def load_days(
 
     for day in days:
         times = injury_reports.snapshot_times(day, which=which)
+        if until is not None:
+            times = [at for at in times if at <= until]
         with factory() as session:
             already = loaded_stamps(session, day) if skip_loaded else set()
         fetched = missing = 0
@@ -264,6 +272,7 @@ def run_backfill(
     dry_run: bool = False,
     skip_loaded: bool = False,
     mode: str = BACKFILL,
+    until: datetime | None = None,
     log: Any = None,
 ) -> Counts:
     """A recorded load: the loop above, with a row in `injury_report_runs`."""
@@ -284,6 +293,7 @@ def run_backfill(
                 dry_run=dry_run,
                 skip_loaded=skip_loaded,
                 counts=counts,
+                until=until,
                 log=log,
             )
         finally:

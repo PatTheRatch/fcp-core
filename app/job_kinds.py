@@ -684,12 +684,22 @@ def _load(
     days: list[date],
     which: str,
     mode: str,
+    skip_loaded: bool = False,
+    until: datetime | None = None,
 ) -> str:
     try:
         import pdfplumber  # noqa: F401
     except ImportError:
         raise JobError(NO_PARSER, retry=False) from None
-    counts = injury_backfill.run_backfill(factory, season=season, days=days, which=which, mode=mode)
+    counts = injury_backfill.run_backfill(
+        factory,
+        season=season,
+        days=days,
+        which=which,
+        mode=mode,
+        skip_loaded=skip_loaded,
+        until=until,
+    )
     rate = "" if counts.match_rate is None else f", {counts.match_rate:.1%} of names placed"
     return (
         f"{counts.dates} dates, {counts.snapshots_fetched} snapshots, {counts.inserted} rows{rate}"
@@ -722,16 +732,24 @@ def run_injury_pass(factory: sessionmaker[Session], job: JobRef, today: date | N
     report to fetch and is not a failure.
     """
     season = _payload_season(job)
-    day = today or datetime.now(UTC).astimezone(injury_reports.ET).date()
+    now = datetime.now(UTC).astimezone(injury_reports.ET)
+    day = today or now.date()
     days = _injury_days(factory, season, only=day)
     if not days:
         return "no NBA games that day; nothing to fetch"
+    # A live pass asks only for what the league has published so far and
+    # keeps what an earlier pass of the same day already stored: four passes
+    # a day then hold every snapshot of the day between them, which is the
+    # intraday record the availability study (docs/availability.md §4) had
+    # only seventeen dates of. A rehearsal names its day and takes it whole.
     return _load(
         factory,
         season=season,
         days=days,
         which=str(job.payload.get("snapshots", "all")),
         mode=injury_backfill.PASS,
+        skip_loaded=True,
+        until=None if today else now,
     )
 
 

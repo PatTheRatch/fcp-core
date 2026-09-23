@@ -281,3 +281,28 @@ def test_a_job_with_no_season_or_no_schedule_fails_without_retrying(
         handlers()[jobs.INJURY_BACKFILL](factory, a_job(jobs.INJURY_BACKFILL, {"season": 2019}))
     assert no_schedule.value.message == NO_SCHEDULE
     assert no_schedule.value.retry is False
+
+
+def test_a_live_pass_asks_only_for_what_is_published_and_keeps_what_it_has(
+    factory: sessionmaker[Session], served: list[datetime]
+) -> None:
+    """Four passes a day hold the whole day between them: each asks for the
+    snapshots up to its own clock and skips the ones an earlier pass stored."""
+    noon = datetime.combine(DAYS[1], datetime.min.time(), tzinfo=ET).replace(hour=12)
+    injury_backfill.load_days(factory, [DAYS[1]], which="all", until=noon)
+    asked_first = list(served)
+    assert asked_first and all(at <= noon for at in asked_first), "nothing after the clock"
+    assert len(asked_first) < len(injury_reports.snapshot_times(DAYS[1], which="all"))
+    with factory() as session:
+        rows_after_first = session.scalar(select(func.count()).select_from(InjuryReport))
+
+    evening = noon.replace(hour=20)
+    counts = injury_backfill.load_days(
+        factory, [DAYS[1]], which="all", until=evening, skip_loaded=True
+    )
+    assert counts.snapshots_skipped == len(asked_first), "the morning's snapshots are kept"
+    assert counts.snapshots_fetched > 0, "the afternoon's are new"
+    with factory() as session:
+        rows_after_second = session.scalar(select(func.count()).select_from(InjuryReport))
+    assert rows_after_second is not None and rows_after_first is not None
+    assert rows_after_second > rows_after_first

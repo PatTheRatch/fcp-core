@@ -1068,16 +1068,17 @@ def test_single_modes_schedule_is_the_env_league_and_the_owners_team(
         assert [job.kind for job in nightly] == ["ingest", "status_pass"]
         assert [job.kind for job in morning] == [
             "status_pass",
+            "injury_pass",
             "project_standings",
             "precompute",
             "digest",
         ]
-        assert [job.kind for job in report] == ["status_pass", "digest"]
+        assert [job.kind for job in report] == ["status_pass", "injury_pass", "digest"]
         rows = {row.id: row for row in session.scalars(select(Job)).all()}
-        digest = rows[morning[3].id]
+        digest = rows[morning[4].id]
         owner = accounts.user_by_email(session, "owner@example.com")
         assert owner is not None and digest.user_id == owner.id and digest.team_id == home.id
-        assert rows[morning[2].id].team_id == home.id
+        assert rows[morning[3].id].team_id == home.id
         # The order the morning wants, which a worker taking jobs in order
         # follows: the pass, then the league's projection, then each team's
         # reports, then the message that reads both.
@@ -1086,7 +1087,7 @@ def test_single_modes_schedule_is_the_env_league_and_the_owners_team(
         projection = next(job for job in morning if job.kind == "project_standings")
         assert rows[projection.id].team_id is None, "it belongs to the league, not a team"
         assert rows[projection.id].depends_on == morning[0].id
-        assert rows[report[1].id].payload["mode"] == "alert"
+        assert rows[report[2].id].payload["mode"] == "alert"
         again = schedule.enqueue_schedule(
             session, settings, "morning", NOW.replace(hour=15, minute=4)
         )
@@ -1229,3 +1230,35 @@ def test_the_worker_check_appears_only_once_the_queue_is_in_use(
         assert running is not None and running.quiet is False
         late = worker_check(session, now=now + timedelta(hours=3))
         assert late is not None and late.quiet is True
+
+
+def test_every_daytime_label_enqueues_one_injury_pass(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The NBA's reports are league-independent, so a label enqueues one pass,
+    whole-day, deduped -- and the nightly label none, since at nine UTC the
+    league has published nothing yet."""
+    fake_login = ESPNSettings(
+        espn_league_id=LEAGUE_ID,
+        espn_swid="{X}",
+        espn_s2="Y",
+        espn_season=None,
+        fcp_tracked_team_id=1,
+    )
+    monkeypatch.setattr(schedule, "get_espn_settings", lambda: fake_login)
+    settings = settings_for(fcp_auth_mode="single", espn_league_id=LEAGUE_ID, fcp_tracked_team_id=1)
+    with factory() as session:
+        league_season(session, season=SEASON)
+        snapshot(session, player(session, "Anyone"), pro_team_id=10, on_team_id=1, season=SEASON)
+        session.commit()
+        for label in ("morning", "report", "late"):
+            first = schedule.enqueue_schedule(session, settings, label, NOW)
+            passes = [job for job in first if job.kind == jobs.INJURY_PASS]
+            assert len(passes) == 1, label
+            stored = session.get(Job, passes[0].id)
+            assert stored is not None and stored.league_id is None
+            assert stored.payload["snapshots"] == "all" and "season" in stored.payload
+            again = schedule.enqueue_schedule(session, settings, label, NOW + timedelta(minutes=2))
+            assert not any(job.created for job in again if job.kind == jobs.INJURY_PASS)
+        nightly = schedule.enqueue_schedule(session, settings, "nightly", NOW + timedelta(hours=1))
+        assert not any(job.kind == jobs.INJURY_PASS for job in nightly)

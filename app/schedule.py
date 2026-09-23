@@ -317,6 +317,19 @@ def enqueue_schedule(
         )
         if season_row is None:
             continue
+        # The league's injury reports for today, every label: the NBA
+        # publishes them through the day and a pass keeps what it has, so
+        # four passes hold the whole day between them. League-independent
+        # (the reports are the NBA's), so one job a label, deduped on it.
+        out.append(
+            jobs.enqueue(
+                session,
+                jobs.INJURY_PASS,
+                run_after=base,
+                label=label,
+                payload={"season": int(season_row.season), "snapshots": "all"},
+            )
+        )
         if label == "morning":
             # The league's projection first: one job for every team, where a
             # precompute is one job per team, and the free pages read it.

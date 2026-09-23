@@ -316,6 +316,15 @@ is `app/injury_backfill.py`; the `injury_backfill` and `injury_pass` job kinds
 call the same function, so a run from the queue and a run from the terminal do
 the same thing.
 
+**The pass is scheduled** (since 2026-09-23): the `morning`, `report` and
+`late` labels each enqueue one `injury_pass` for the live season with
+`snapshots: all`, and a live pass asks only for the snapshots published up to
+its own clock (`until`) and skips the ones already stored (`skip_loaded`), so
+the three passes hold every quarter-hour of the day between them. That is the
+full-cadence season the availability study asked for and did not have
+(`docs/availability.md`, limitation 7): after a season of it, "Questionable at
+nine, what by tip-off" has a real sample. docs/jobs.md has the label table.
+
 **Throttle:** one request at a time, 1.5 seconds apart (`--delay`), three
 tries with a 5s then 20s backoff. **Resume:** the unique key makes it
 idempotent, so an interrupted run is resumed by running it again;
