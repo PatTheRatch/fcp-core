@@ -1,0 +1,80 @@
+season 2026: 14 teams x 44 decision points
+  calendar: SeasonCalendar(first_scoring_period=1, first_date=datetime.date(2025, 10, 21), last_scoring_period=174)
+  replay: 11530 started lines, 20495 box scores, 22 periods, 9 categories
+-- replaying with tilt=on
+   ... 25/616 decision points
+   ... 50/616 decision points
+   ... 75/616 decision points
+   ... 125/616 decision points
+   ... 150/616 decision points
+   ... 175/616 decision points
+   ... 200/616 decision points
+   ... 225/616 decision points
+   ... 250/616 decision points
+   ... 275/616 decision points
+   ... 300/616 decision points
+   ... 325/616 decision points
+   ... 350/616 decision points
+   ... 375/616 decision points
+   ... 400/616 decision points
+   ... 425/616 decision points
+   ... 450/616 decision points
+   ... 475/616 decision points
+   ... 500/616 decision points
+   ... 525/616 decision points
+   ... 550/616 decision points
+   ... 575/616 decision points
+   ... 600/616 decision points
+   lineup re-solve against the manager's own: +0.02 categories a period (median +0.00, 602 periods)
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+-- replaying with tilt=off
+   ... 25/616 decision points
+   ... 50/616 decision points
+   ... 75/616 decision points
+   ... 125/616 decision points
+   ... 150/616 decision points
+   ... 175/616 decision points
+   ... 200/616 decision points
+   ... 225/616 decision points
+   ... 250/616 decision points
+   ... 275/616 decision points
+   ... 300/616 decision points
+   ... 325/616 decision points
+   ... 350/616 decision points
+   ... 375/616 decision points
+   ... 400/616 decision points
+   ... 425/616 decision points
+   ... 450/616 decision points
+   ... 475/616 decision points
+   ... 500/616 decision points
+   ... 525/616 decision points
+   ... 550/616 decision points
+   ... 575/616 decision points
+   ... 600/616 decision points
+   lineup re-solve against the manager's own: +0.02 categories a period (median +0.00, 602 periods)
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.05 n=570 mean=+0.133 win=80.7% nomove=5.3% claimed=+0.069 zero=52.3% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.10 n=551 mean=+0.136 win=80.9% nomove=8.5% claimed=+0.071 zero=52.3% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.15 n=542 mean=+0.140 win=81.0% nomove=10.0% claimed=+0.072 zero=52.0% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.05/0.02 n=524 mean=+0.982 win=76.0% nomove=13.0% claimed=+1.132 zero=14.3%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.10/0.05 n=445 mean=+1.075 win=77.3% nomove=26.1% claimed=+1.276 zero=15.1%
+   stream 0.20 n=531 mean=+0.132 win=80.8% nomove=11.8% claimed=+0.072 zero=52.2% | season 0.20/0.10 n=289 mean=+1.317 win=80.3% nomove=52.0% claimed=+1.620 zero=13.5%
+baseline: n=1120 week=+0.050 season=-0.558 share>=0=84.2%
+wrote docs/pickups_backtest.md
+runtime: 6532s

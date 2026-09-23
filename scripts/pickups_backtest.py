@@ -1391,6 +1391,9 @@ def report(
     )
     lines.append("")
 
+    lines.append(SPREAD_REVISION)
+    lines.append("")
+
     lines.append("## 1. What is measured, and in what")
     lines.append("")
     lines.append(
@@ -1707,6 +1710,73 @@ def report(
     lines.append("")
     return "\n".join(lines) + "\n"
 
+
+#: What widening the weekly spread cost and bought, measured on the run that
+#: followed it. Written here rather than by hand in the document, for the same
+#: reason `HURDLES_APPLIED` is: a paragraph typed into the markdown does not
+#: survive the next run.
+SPREAD_REVISION = (
+    "## 0. Revision, 2026-09-23: the weekly spread was widened by two\n"
+    "\n"
+    "**What changed.** `app.pickups.stream.SPREAD_SCALE` is 2.0 since that "
+    "morning. The league's measured spread is one *team's* total over a period; "
+    "a category is decided by the *difference* between two of them, and the "
+    "model had been using the first for the second "
+    "(`docs/projected_record.md` section 0, `docs/spread_revision.md`). Every "
+    "chance in the recommender comes from that one function, so every `net` in "
+    "the tables below is a different number from the run before.\n"
+    "\n"
+    "**Declared when.** The factor was the owner's, chosen on 2026-09-22's "
+    "published evidence and fixed before this replay started. No hurdle moved "
+    "with it, and this script still changes no constant.\n"
+    "\n"
+    "**At the owner's own hurdles (stream 0.20, season 0.20/0.10), before and "
+    "after:**\n"
+    "\n"
+    "| | moves named | categories delivered | share >= 0 | no-move |\n"
+    "|---|---|---|---|---|\n"
+    "| streaming, before | 536 of 602 | +0.16 a matchup | 82.3% | 11.0% |\n"
+    "| streaming, **after** | **531 of 602** | **+0.13 a matchup** | **80.8%** "
+    "| **11.8%** |\n"
+    "| rest of season, before | 307 | +1.21 over 30 days | 78.2% | 49.0% |\n"
+    "| rest of season, **after** | **289** | **+1.32 over 30 days** | **80.3%** "
+    "| **52.0%** |\n"
+    "\n"
+    "**The streaming half got slightly worse and the season half slightly "
+    "better, and neither is claimed as a finding.** The bar names about the "
+    "same number of moves; what changed is *which* move the search puts first, "
+    "because the ranking reads the net and the net moved. On this replay the "
+    "moves it now names delivered +0.13 a matchup against +0.16, at a win rate "
+    "of 80.8% against 82.3%. Over roughly 530 moves this run does not separate "
+    "that from noise, and it is published because it is what the run says "
+    "rather than because it means anything. The claim fell with it -- +0.07 "
+    "against +0.09 -- so the calibration ratio went the other way, 1.82 against "
+    "1.75: the tool is still delivering more than it promises on a stream, and "
+    "promises less than it did.\n"
+    "\n"
+    "**What the sweep now picks is what it picked before, and what is "
+    "shipped.** Streaming: no setting qualifies, for the same reason as ever "
+    "-- an empty day filled is recommended whenever it helps at all, so the "
+    "no-move rate never clears 20% at any hurdle. Rest of season: **0.20 paid "
+    "/ 0.10 free**, which is the pair already set. Nothing here asks the owner "
+    "to move anything.\n"
+    "\n"
+    "**The baseline is identical**, as it must be: 1,120 of the league's own "
+    "swaps, +0.050 a week, -0.558 over thirty days, 84.2% at or above zero. It "
+    "is real moves scored by the replay and reads no model at all, so it is the "
+    "check that the scoring machinery did not move underneath the comparison.\n"
+    "\n"
+    "**What a manager sees on the page** is in `scripts/spread_census.py`, "
+    "which re-runs these same 602 decision points at both scales and counts "
+    "rather than scores. Of the five moves the search ranks, 3.99 cleared the "
+    "0.20 bar per team-week before and 4.02 after -- the same list. The numbers "
+    "beside them are a third smaller: mean net +0.287 to +0.221, median +0.172 "
+    "to +0.107, ninetieth percentile +0.434 to +0.289. And the week itself "
+    "compresses toward a coin: the spread of `expected_wins` falls from 1.16 to "
+    "0.91 and its average distance from 4.5 from 0.88 to 0.61.\n"
+    "\n"
+    "6532s against 5138s, on a machine also running the census."
+)
 
 #: What the exclusive boundary cost, measured once when it was adopted. A
 #: record for the next reader of the tables above, which are not the tables
