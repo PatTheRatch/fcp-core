@@ -382,6 +382,20 @@ Report the single best swap and the best two-swap, each with Δ `expected_wins` 
 
 **As built** (2026-09-18, `app/pickups/season.py`, `scripts/season.py`): the optimizer is asked the same question three ways rather than once. `locked` is the roster less the men a move would drop, `excluded` is those men, `starts` is the current roster and `roster_slots` is exactly the places the move leaves open, so a single swap's answer is the exact best replacement rather than a local search's. `minimum_bid=0` and `restarts=0` go with `budget=0`: a floor of a dollar a place under a budget of nothing leaves a roster short, and a shuffled start would only cost time when all but one or two places are locked. The three drop candidates are the same computation read from the other end, so the best swap and the cheapest drop are one number. The horizon is the rest of the **regular season** from the stored matchup periods, or the playoff periods once it is over, and `weeks_remaining` is its days over seven; `rest_of_season_line` counts each man's games over the same window, so the weekly line is games a week over the stretch the report plans for. The pool is ranked by the rest-of-season line's `weight` rather than `value_players`, which needs no z-score pool and is the ordering `stream` and `bids` already use. A move that drops a player is charged the paid hurdle, an add into an open place the free one, which is the note's rule stated in terms of the move rather than the waiver state. Every move that clears its hurdle carries a `Bid` (§4.5). A stash's healthy value counts every game his NBA team has left, ignoring the injury, because that is the question a stash asks.
 
+**The projected record, league-wide** (2026-09-22, `app/inseason/projected.py`,
+[`docs/projected_record.md`](projected_record.md)). The record a `Judgement`
+carries is this team against a **league-average** opponent, which is all a
+one-team question needs. The same arithmetic run for every team at once, and
+against the **real** opponent each week from the stored matchup schedule, is
+the projected standings: the same seating (`stream.seat`), the same
+head-to-head (`stream.head_to_head`) and the same `banked_record`, so the two
+cannot disagree about what a week is worth. It is a league-level stored
+report and a job of its own. It does **not** change any number here: the
+seam where a pickup's "without" could read the real opponent instead of the
+average one is named in that note and deliberately not taken. Its calibration
+says the per-category chances are overconfident, and prices the fix without
+applying it, because the function it would change is this one.
+
 **As built, second pass** (2026-09-18): every `Swap` carries a `Judgement` too. Its week half is the streaming report's own head-to-head (`app.pickups.stream.week_deltas`, so the two halves of the recommender cannot disagree about what a week is worth) and its season half is the optimizer's Δ per week, which is already a with-and-without over the whole roster. `Swap.clears` reads the net spread over the weeks it covers (`Judgement.per_week`), so `SEASON_HURDLE_PAID` and `SEASON_HURDLE_FREE` keep the unit and the scale they were written in — categories a week — while the quantity they gate is now both horizons. `horizon` and `weeks_between` moved to `app/pickups/judge.py`, since the week's report needs the same horizon to know how many weeks a drop is charged over; they are re-exported here.
 
 ### 4.5 What to bid: `app/pickups/bids.py`

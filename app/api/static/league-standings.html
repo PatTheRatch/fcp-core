@@ -83,29 +83,38 @@ const run = (n, word) => (isNum(n) && n > 0 ? `${n} ${word}` : dash);
    which way the first click on it goes. */
 
 function columns(view, extra) {
+  const soonView = view === "soon";
+  /* In the projected view the "now" columns are the record **as it stood on
+     the day the projection was made**, not the season's final one. On a live
+     morning those are the same thing; on a replayed day (`?today=` a past
+     day) they are not, and showing a finished season's record beside a
+     projection from January would be two different questions in one row. */
+  const banked = (r) => (soonView && r.soon ? r.soon.banked_matchups : null);
   const base = [
     { head: "", cls: "rank", cell: (r, i) => `<td class="rank">${i + 1}</td>`, sort: null },
     { head: "Team", cls: "l", cell: (r) => r.nameCell, sort: (r) => r.name, best: "up" },
     {
-      head: "Matchups",
-      cell: (r) => `<td>${wlt(r.matchups_won, r.matchups_lost, r.matchups_tied)}</td>`,
-      sort: (r) => r.matchups_won,
+      head: soonView ? "Matchups so far" : "Matchups",
+      cell: (r) => {
+        const now = banked(r);
+        return now
+          ? `<td>${wlt(now[0], now[1], now[2])}</td>`
+          : `<td>${wlt(r.matchups_won, r.matchups_lost, r.matchups_tied)}</td>`;
+      },
+      sort: (r) => (banked(r) ? banked(r)[0] : r.matchups_won),
       best: "down",
     },
     {
-      head: "Categories",
-      cell: (r) => `<td>${wlt(r.categories_won, r.categories_lost, r.categories_tied)}</td>`,
-      sort: (r) => r.categories_won,
-      best: "down",
-    },
-    {
-      head: "Cat. share",
-      cell: (r) => `<td>${isNum(r.share) ? r.share.toFixed(3).replace(/^0/, "") : dash}</td>`,
-      sort: (r) => r.share,
+      head: soonView ? "Categories so far" : "Categories",
+      cell: (r) =>
+        soonView && r.soon
+          ? `<td>${record([r.soon.banked_won, r.soon.banked_lost])}</td>`
+          : `<td>${wlt(r.categories_won, r.categories_lost, r.categories_tied)}</td>`,
+      sort: (r) => (soonView && r.soon ? r.soon.banked_won : r.categories_won),
       best: "down",
     },
   ];
-  if (view === "soon") {
+  if (soonView) {
     const byes = extra && extra.bye_count > 0;
     const soon = [
       {
@@ -144,6 +153,12 @@ function columns(view, extra) {
   }
   return [
     ...base,
+    {
+      head: "Cat. share",
+      cell: (r) => `<td>${isNum(r.share) ? r.share.toFixed(3).replace(/^0/, "") : dash}</td>`,
+      sort: (r) => r.share,
+      best: "down",
+    },
     {
       head: "Best run",
       cell: (r) => `<td>${r.streak ? run(r.streak.longest_win_streak, "won") : dash}</td>`,
@@ -220,7 +235,18 @@ function prepare(ctx, standings, streaks, projection) {
 
 function ordered(cols) {
   const rows = STATE.rows.slice();
-  if (STATE.sort === null) return rows;
+  if (STATE.sort === null) {
+    // The projected view's own order is the API's, which is where the
+    // simulation put each team; the page never re-sorts a projection into
+    // the order of a season that has not been played.
+    if (STATE.view === "soon" && STATE.projection) {
+      const at = new Map(STATE.projection.teams.map((t, i) => [t.espn_team_id, i]));
+      return rows.sort(
+        (a, b) => (at.get(a.espn_team_id) ?? 99) - (at.get(b.espn_team_id) ?? 99),
+      );
+    }
+    return rows;
+  }
   const column = cols[STATE.sort.at];
   if (!column || !column.sort) return rows;
   const sign = STATE.sort.down ? -1 : 1;
@@ -314,10 +340,14 @@ function projectedLede() {
 async function start() {
   startTheme();
   const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
-  const [standings, streaks, projection, ctx] = await Promise.all([
+  // The projection is the slow one -- it plays out every team's remaining
+  // weeks, and takes seconds when the morning has not stored one -- so the
+  // table is drawn without waiting for it and the view appears when it
+  // lands. A page that waited would be blank for the whole build.
+  const asked = get(`${base}/projected${params(WHERE)}`, { quiet: true });
+  const [standings, streaks, ctx] = await Promise.all([
     get(`${base}/standings`),
     get(`${base}/streaks`),
-    get(`${base}/projected${params(WHERE)}`, { quiet: true }),
     SHELL,
   ]);
   document.title = `Standings · ${leagueName(ctx, WHERE.league)}`;
@@ -333,21 +363,28 @@ async function start() {
   $("sub").innerHTML = played
     ? `${count(rows.length, "team")}. The regular season's matchups, byes left out.`
     : `${count(rows.length, "team")}, and no matchup decided yet this season.`;
-  STATE.projection = projection.ok ? projection.body : null;
-  STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], STATE.projection);
-  if (STATE.projection) $("views").hidden = false;
+  STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], null);
   draw();
   wireTable();
-  $("foot").innerHTML =
+  const FOOT =
     `Refreshed at <b>${clock()}</b>. Read-only. A tie breaks a run rather than extending it, ` +
     `so "5 won" is five wins in a row.` +
-    (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`) +
-    (STATE.projection
-      ? `<br>The projection is a forecast, built on day <b>${STATE.projection.as_of}</b> from ` +
-        `${escape(STATE.projection.source_note)}. ${escape(STATE.projection.playoff_note ||
-        "")}<br>${escape(STATE.projection.calibration_note)}`
-      : "");
+    (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`);
+  $("foot").innerHTML = FOOT;
   $("body").hidden = false;
+
+  const projection = await asked;
+  if (!projection.ok) return;
+  STATE.projection = projection.body;
+  STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], STATE.projection);
+  $("views").hidden = false;
+  draw();
+  $("foot").innerHTML =
+    FOOT +
+    `<br>The projection is a forecast, built on day <b>${STATE.projection.as_of}</b> from ` +
+    `${escape(STATE.projection.source_note)}. ` +
+    `${escape(STATE.projection.playoff_note || "")}` +
+    `<br>${escape(STATE.projection.calibration_note)}`;
 }
 
 start();

@@ -166,6 +166,15 @@ count between them, a line ("Final: Masters of their Domains won 5–4", or
 shaded where that side is winning the category. The reader's matchup is
 first with the accent rule. A bye says so.
 
+Under each matchup, once the projection can be built, **the chances**: the
+nine as a shaded strip from the first side's point of view, and the
+categories each side is expected to end the period with ("Fantastic 5 3.28
+of 9 · Through The Wire 5.72"). A period being played says how many days are
+left and that the figures are on what is already posted plus what the
+rosters add; a period still to come says it is on the rosters as they stand
+today. From `/projected` (docs/projected_record.md), the same answer the
+Standings page's Projected view draws, so the two cannot disagree.
+
 Then **What changed**: the league's news over that day and the day before
 it, a day at a time and newest first — injuries and status changes, adds,
 drops, claims with what they cost, and trades — each one sentence with the
@@ -195,6 +204,21 @@ of categories won, the longest winning and losing runs, the run the season
 ended on (W2, L1), the final finish (#1). The reader's team is shaded, and
 its name opens his week; in single mode every team's does. Reads
 `/standings` and `/streaks`.
+
+Two views of that one table, chosen by a toggle under the lede (added
+2026-09-22, docs/projected_record.md). **As it stands** is the above.
+**Projected** is where the season is heading: the record so far *as it stood
+on the day the projection was made*, then the projected matchup record, the
+projected category record and the odds of making the playoffs, with a bye
+column where the format has one. Tapping a playoff figure opens the odds of
+each individual place under that team's row, as a row of little bars, rather
+than putting fourteen more columns on a phone. The projected view is in the
+projection's own order, not the table's. Every column sorts on a click in
+both views. It reads `/projected`, which is the whole league in one answer
+and is the slow fetch, so the table is drawn first and the toggle appears
+when the projection lands; a season it cannot be built for simply has no
+toggle. The footnote prints the forecast's own record, which says plainly
+that it is overconfident.
 
 **Draft.** Headline "The draft", "182 picks, $2796 spent. The dearest:
 Victor Wembanyama at $100, to Fantastic 5." A readout: picks, spent,
@@ -232,6 +256,14 @@ lineup, a man with a game carrying the accent. It reads a route of its own,
 with the rest of the page: the week searches the whole wire and takes the
 better part of half a minute, and the lineup is what the reader came for.
 A day no NBA team plays says so in one line and draws no grid.
+
+It ends with **Rest of season** (added 2026-09-22, docs/projected_record.md):
+every week still to play with its opponent, the categories expected and the
+nine chances; then where the season ends up, as a bar a place, with the
+playoff odds and the bye odds under it. It reads
+`teams/{team_id}/projected`, which is the league projection narrowed to this
+team rather than a second computation, so the Week page and the Standings
+page always agree.
 
 **My team: Moves.** The team's name; "The season's moves, graded in
 categories a week. The league's median pickup was worth 0.072 categories a

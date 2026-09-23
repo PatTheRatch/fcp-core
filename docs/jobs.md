@@ -15,8 +15,8 @@ Code: `app/jobs.py` (the queue), `app/job_kinds.py` (what each job does),
 `app/watchdog.py`; `scripts/worker.py`, `scripts/enqueue.py`,
 `scripts/scheduled_enqueue.sh`; `deploy/fcp-core-worker.service`,
 `deploy/fcp-core-enqueue.{service,timer}`; migrations
-`0020_jobs_reports_channels`, `0024_email_only_channels` and
-`0025_digest_subscriptions`. Tests: `tests/test_jobs.py`,
+`0020_jobs_reports_channels`, `0024_email_only_channels`,
+`0025_digest_subscriptions` and `0028_league_reports`. Tests: `tests/test_jobs.py`,
 `tests/test_channels.py`, `tests/test_subscriptions.py`,
 `tests/test_mail.py`.
 
@@ -38,6 +38,7 @@ and each member's alerts on his own channels.
 | `ingest` | a league | the trailing ten days and next season's settings, what `scheduled_ingest.sh` does, with the league's own login; a league never ingested is backfilled, every season ESPN holds |
 | `status_pass` | a league | the listener's pass (below, "One listener league") |
 | `precompute` | a team | its day, week and season reports for today, stored in `team_reports` |
+| `project_standings` | a league | the projected standings for today, stored in `league_reports` (docs/projected_record.md) |
 | `digest` | a member (and his team) | the morning digest, or an alert between digests, emailed to his confirmed addresses |
 | `injury_backfill` | a season | a whole season of the NBA's official injury reports (docs/injuries.md); hours at the full cadence, which is why it is queued |
 | `injury_pass` | a season | the same, today only, for the season in progress |
@@ -102,7 +103,7 @@ the label from the clock the way the listener's pass does):
 | label | UTC (as today) | per league | then, after it |
 |---|---|---|---|
 | `nightly` | 09:00 | `ingest`, spread over 09:00-09:30 | its `status_pass` (nightly) |
-| `morning` | 15:00 | `status_pass` (morning) | a `precompute` per claimed team, then a `digest` per member |
+| `morning` | 15:00 | `status_pass` (morning) | `project_standings` for the league, then a `precompute` per claimed team, then a `digest` per member |
 | `report` | 22:30 | `status_pass` (report) | an alert `digest` per member with a team |
 | `late` | 00:30 | `status_pass` (late) | the same |
 
@@ -195,6 +196,31 @@ docs/site.md flagged as the thing that would break when billing went on.
 under today's timers; once the precompute runs it is unnecessary (the pages
 read the stored rows), and the switched-over units do not run it.
 
+**`league_reports` is the league's own** (2026-09-22, migration `0028`,
+docs/projected_record.md). The projected standings are every team's
+remaining weeks played against each other, so they belong to no team: one
+row per (league season, kind, scoring period), written by the
+`project_standings` job and read by `/projected`, by
+`/teams/{id}/projected`, by the Standings and This week pages and by every
+digest's Standing line. A row in `team_reports` would have meant either
+fourteen copies of one payload or a foreign key that is usually null;
+everything else about the two tables is the same, including the "built today
+for today's period" freshness rule and the rule that only the job writes.
+
+It is due **before** the precomputes, a second after the status pass it
+waits on. Three reasons: it is one job for the whole league where a
+precompute is one per team; the free Standings and This week pages read it,
+and they should not be the ones waiting; and the digests read it, so it has
+to exist before the messages are built. It costs a few seconds for a
+fourteen-team league, against twenty to forty for one team's precompute.
+
+**The seam that is not taken yet.** A precompute's "projected record with
+and without" is still against a league-average opponent
+(`app.pickups.judge`). It could read this row instead and get the real
+opponent each week. That would move every pickup and trade number on the
+site, so it is a decision of its own with its own backtest, and it is named
+in docs/projected_record.md rather than done here.
+
 ## Members' channels
 
 **Everything goes by email** (2026-09-22). A member's digest, his alerts and
@@ -244,7 +270,7 @@ are `GET /me/subscriptions` and `PUT /me/subscriptions/{league_id}`.
 | `league_transactions` | every add, drop, claim and trade in the league |
 | `league_injuries` | every status change in the league |
 | `trades` | trades and proposals, and the block once there is one |
-| `standings` | my place, my record, the projected finish once it exists |
+| `standings` | my place, my record, and where the projection puts me |
 
 `morning`, `alerts` and `length` are not topics: the first two say whether a
 message is sent at all, and the third how much of each section is written
@@ -265,7 +291,7 @@ should be silently missing.
 
 **Nothing was backfilled.** No row means the defaults, and one appears the
 first time he changes something. A JSONB map rather than a column each
-because the topics will change — the trade block and the projected finish
+because the topics will change — the trade block
 are in the list and are not built — and a topic should not need a migration
 to appear or a backfill to default. An unknown key is dropped on the way out
 and a missing one takes its default, so a row written by an older version
@@ -350,7 +376,11 @@ says otherwise. In order, and nothing else:
    status change on his roster or his opponent's, and a trade he is in,
    because those are the news worth the space. Everything else is a count.
 5. **Standing** — one line: his place, his two records, and the projected
-   finish, which is still the marked slot until that work lands.
+   finish: where the morning's stored league projection puts him, his
+   projected category record and his playoff odds (docs/projected_record.md).
+   Read from the stored row rather than worked out in the message, so it is
+   the number the Standings page prints. "Not built yet" when the morning's
+   job has not run.
 6. The footer, as before.
 
 **A move appears once.** The week's plan and the rest-of-season search run
@@ -418,8 +448,8 @@ exactly the sections the reader subscribed to, in the topics' own order:
 4. **What changed** — the feed's own sentences, grouped by day, filtered by
    his topics. The five feed topics are five ways into one section, not five
    sections; a lede says which of them he holds.
-5. **Standings and projections** — his place and his two records, and a
-   marked slot where the projected finish will go.
+5. **Standings and projections** — his place, his two records, and where
+   the projection puts him at the end of it.
 
 Then a footer: the pages this came from (`FCP_PUBLIC_URL`), one line of why
 he got it, and a link to manage his alerts.

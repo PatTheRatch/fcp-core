@@ -150,6 +150,27 @@ feed has no ESPN id for — a leg of a trade recovered from the rosters rather
 than from the ledger — is left as plain text rather than given a trigger
 that would answer nothing.
 
+## Rest of season, at the foot of the week page
+
+Added 2026-09-22 (docs/projected_record.md). Under "The season, as it
+stands", which is this team against a league-average opponent, sits the same
+question answered against the **real** opponent each week:
+
+* a line of three numbers that add up — banked so far, expected from here,
+  projected to end;
+* a table, a week a row: the matchup period, who it is against, the
+  categories expected, and the nine chances, each shaded up or down. The
+  week being played carries the accent and the word "now";
+* **Where it finishes**: a bar a place, only the places with at least half a
+  percent, then the playoff odds, the bye odds where the format has one, how
+  the table is ordered and how many seasons were simulated;
+* the line saying the playoff rounds were not projected, and why.
+
+It is drawn last, after the week itself, and is hidden entirely when the
+route cannot answer — a season with no schedule stored, or one that is over.
+The forecast's own record goes in the footnote, and it says plainly that the
+chances are overconfident: the section is a direction, not a prediction.
+
 ## What is on the season page
 
 The outlook (the projected record, the weeks left, an ordinary week's odds
@@ -224,15 +245,24 @@ sign and an arrow as well as a colour, exactly as the trade page has them.
 ## What the pages fetch
 
 The reports come from the routes that already existed, unchanged, plus the
-day's own:
+day's own and the rest of the season:
 
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/today
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/stream
     /leagues/{league_id}/seasons/{season}/teams/{team_id}/pickups/season
+    /leagues/{league_id}/seasons/{season}/teams/{team_id}/projected
 
 `/today` is the same scope as the other two (the team's verified manager,
 entitled) and carries its own `source_note`, so the Today section can say
 where its numbers came from without waiting on `pages/context`.
+
+`/projected` is the same scope again, and is the league's projection
+narrowed to this team (docs/projected_record.md): its remaining weeks and
+its finish distribution. The league page's own `/projected` -- the same
+payload with every team in it -- is a member's, and is what the Standings
+page's Projected view and the This week page's chances are drawn from. Both
+answer from the morning's stored row when there is one and build live
+otherwise, exactly as the two pickup routes do.
 
 Everything else comes from one small route added with the pages:
 
