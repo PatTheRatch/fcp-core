@@ -6,7 +6,7 @@
 **Instrument:** `transactions` · `transaction_items` · `daily_lineup_slots` · `player_season_stats`
 **Currency:** categories a week, the `pickup_values` lens, via `scripts/pickups_backtest.py`'s `Replay`
 **Reproduce:** `cd /home/aisha/fcp-core-keep && PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/keepers.py`
-**Read-only:** every query is a SELECT. Nothing is written to the database. Runtime 472s for all eight seasons.
+**Read-only:** every query is a SELECT. Nothing is written to the database. Runtime 496s for all eight seasons (472s before this revision added the hold definition beside the 30-day one — §2a-hold reuses the same `Replay`, so the extra cost is small).
 
 > **Note on the reproduce line.** The house style sources `.env` before running
 > (`set -a && . ./.env && set +a`). That fails against this worktree's `.env` —
@@ -211,27 +211,112 @@ therefore "would the bar have passed this outcome", **not** "what did the
 recommender say that morning", and for 2019–2025 it cannot be done at all,
 because those seasons have no stored wire and no projection to decide from.
 
+### 9. The hold definition sits beside the 30-day one, never replacing it, and its denominator answers a different question
+
+The owner caught a real flaw in §6's four-of-eight-weeks test within minutes
+of the first publish, on his own claim: a man claimed while injured or with
+no role yet spends his early weeks unable to clear any bar at all, by
+construction, however good he later turns out to be (§5a works this through
+for Brandon Miller). A **second** test, `deserved_hold`
+(`Raw.deserved_hold`, `scripts/keepers.py`), is scored over the man's own
+**actual continuous hold** — the same run-based stay §1 already computes —
+rather than a fixed thirty days, so a stash's dead early weeks are outnumbered
+by the weeks he actually played once his role arrived, instead of being the
+whole sample.
+
+**The test, exactly.** Each whole matchup period the hold touches is scored
+the identical way §2a already scores a week: `Replay.delta` with the claim
+undone and the sign flipped, against the wire's replacement level **on the
+claim day** — the same bar the 30-day test uses, so the two are reading the
+same currency and the same hurdle, just over a different stretch of weeks. A
+period counts as **available** only if he played at least one game in the
+days of it his hold actually covered — a period only partly touched by the
+hold (its first or last) is judged over the days he actually held it, not
+the whole period. **Deserved over the hold** = above replacement in at least
+half his available periods
+(rounded up: three available periods needs two above, not one), with at
+least two available periods. Both constants —
+`HOLD_MIN_AVAILABLE = 2` and the half-rounded-up fraction — are declared in
+`scripts/keepers.py` before this section's numbers were produced and were not
+adjusted afterward, including after they turned out not to rescue Brandon
+Miller's own claim (§5a).
+
+**Why "played a game", not the injury reports.** `app/injuries.py`'s
+point-in-time status (`docs/injuries.md`) would be the more precise
+availability signal, but it only covers 2022–2026; 2019–2021 have no injury
+reports at all (docs/injuries.md, "The older seasons ... are not loaded" for
+anything before 2022, and no NBA report existed before the 2021-22 season).
+A rule that only works on five of eight seasons cannot be the rule this
+census runs on every season the same way, so `deserved_hold` uses
+`player_game_stats.played` instead — the one signal every season has. The
+injury reports are still used, but only as *context*, never as the test
+itself: `--why` and §5b's stash table print the league's own status line on
+the claim morning where it exists (2022+) and say `no injury-report coverage
+before 2022` where it does not.
+
+**What each definition's denominator can and cannot say.** The 30-day test's
+1.6% is a rate over every claim this census can score (6,524 of 6,646
+attributed adds, §Decisions 13) — it asks "of the claims this league actually
+made, how many would have looked deserved after a fixed, decision-relevant
+window", and a claim dropped on day one is a zero in that denominator exactly
+as it should be. The hold test cannot be read the same way: its window
+*is* how long the man was actually kept, which is not knowable at the moment
+of the claim, so a man dropped after one bad week and a man dropped after one
+*good* week both get exactly one period to their name, scored on whatever
+that period happened to hold. `deserved_hold` therefore answers "was the
+decision to keep him this long vindicated", not "was this claim, at the
+moment it was made, a good bet" — the 30-day test's question. Both
+definitions are published over the same population (`ranked`, claims with a
+single dropped man) so the side-by-side comparison in §2a-hold is apples to
+apples, but neither is a replacement for the other and the doc says which
+question each one answers everywhere it is quoted.
+
+### 10. Brandon Miller's own claim has no matched drop, and is invisible to every share in this document except the one built to find it
+
+Miller's 2026 claim (tx 8299, day 23, Through The Wire, $2) carries an `ADD`
+item and **no `DROP` item at all** — Through The Wire had an open roster
+place, not a man to cut. §Decisions 13 excludes exactly this shape of claim
+(`dropped_value` cannot be computed, so it is not in `ranked`) from every
+percentage in §§1–5, the same rule that has governed this document since its
+first publish. That means Miller is not merely failing the four-of-eight
+test by construction (§5a) — under the existing convention he is not counted
+by *either* test at all, and would not appear in this document even as a
+"no". `scripts/keepers.py --why 512` (or any player id) carves a single
+target out of that rule so `--why` and the worked example in §5a can still
+show his real accounting; nothing else in the document's published shares
+changes, and no other no-drop claim is added back into `ranked`. This is a
+second, blunter version of the flaw the owner found: a stash into an open
+slot is not just hard to call "deserved" — as scored today, it is invisible.
+
 ---
 
 ## The answer, up front
 
 **Of the 1,145 executed 2026 adds the census can attribute to a roster run,
-8.6% were still on the adding team's roster 30 days later, 4.1% were above
+8.6% were still on the adding team's roster 30 days later, 1.3% were above
 replacement for four of the next eight weeks, and the median man was held 3
-days.**
+days — and 9.3% deserved over the hold (104).**
 
 That is the success check, and every part of it is recomputable from
 `transactions`, `transaction_items` and `daily_lineup_slots`. The 30-day share
-is the **run-based, continuous** reading (§Limitations 1); the 4.1% is
+is the **run-based, continuous** reading (§Limitations 1); the 1.3% is
 **15 of the 1,115 claims that carry a single dropped man** and can therefore be
-scored in the product's currency (§Limitations 6, §Decisions 13).
+scored in the product's currency (§Limitations 6, §Decisions 13) — this
+paragraph previously misquoted that figure as 4.1%, the `≥60d` column from
+§1's retention table, and it is corrected here. The 9.3% is **104 of the same
+1,115**, over the man's actual hold rather than a fixed thirty days
+(§Limitations 9, §2a-hold): 97 claims the 30-day reading missed and 7 that
+clear both.
 
 **The plain reading.** A waiver add in this league is a three-day rental. The
 median man is gone inside a week; **68.5% of all 6,646 adds 2019–2026 were
 dropped within seven days**, and only **10.7%** were ever held in one
 uninterrupted spell past thirty. Of the 6,524 adds that can be scored in the
 product's own currency, **1.6% deserved to stay** by the four-of-eight-weeks
-bar, **27.5% returned more than zero categories over the next 30 days**, and
+bar and **10.7% deserved over the hold** — the man's own continuous stay,
+scored the same way (§2a-hold; 652 of the 6,524 clear the hold and miss the
+30-day bar, 59 run the other way). **27.5% returned more than zero categories
+over the next 30 days**, and
 the median returned **exactly zero** — he was worth nothing at all to the
 roster that claimed him. The league's own swaps, measured by the backtest,
 lose 0.56 categories over thirty days; this study says why: the man is almost
@@ -394,6 +479,203 @@ Note the shape of 2026: it has one of the *better* `deserved` shares (1.3%
 against a pooled 1.6%) while having the worst median 30-day value on record.
 The `deserved` bar can be cleared on a lucky fortnight late in the season,
 which is what happened — see §5.
+
+### 2a-hold. A second bar, over the man's actual hold, never replacing the first
+
+§2a's four-of-eight-weeks test cannot pass a claim whose early weeks were
+dead — hurt, or no role yet — however good he turns out to be, because those
+weeks are scored anyway and count against him (§Limitations 9). `deserved_hold`
+is the same machinery (`Replay.delta`, the claim undone and sign-flipped,
+against the claim day's wire) scored over the man's own **continuous hold**
+instead: above replacement in at least half his available periods (a period
+counts if he played a game in the days of it he held), needing at least two
+available periods. Both constants (`HOLD_MIN_AVAILABLE = 2`, "at least half"
+rounded up) are declared in `scripts/keepers.py` before this run and were not
+tuned afterward — including after they turned out not to rescue Brandon
+Miller's own claim (§5a).
+
+Published over the same population as §2a (`ranked`, claims with a single
+dropped man, §Decisions 13):
+
+| season | n | deserved 30d | deserved hold | reclassified | reverse | med avail | med above | med hold value |
+|---|---|---|---|---|---|---|---|---|
+| 2019 | 688 | 0.7% | 11.9% | 77 | 0 | 1.00 | 0.00 | 0.00 |
+| 2020 | 572 | 1.7% | 13.5% | 73 | 6 | 1.00 | 0.00 | 0.00 |
+| 2021 | 803 | 1.2% | 9.7% | 72 | 4 | 1.00 | 0.00 | 0.00 |
+| 2022 | 768 | 2.1% | 11.2% | 79 | 9 | 1.00 | 0.00 | 0.00 |
+| 2023 | 590 | 2.0% | 13.9% | 76 | 6 | 1.00 | 0.00 | 0.00 |
+| 2024 | 895 | 0.6% | 9.6% | 82 | 1 | 1.00 | 0.00 | 0.00 |
+| 2025 | 1093 | 3.0% | 9.5% | 96 | 25 | 1.00 | 0.00 | 0.00 |
+| **2026** | **1115** | **1.3%** | **9.3%** | **97** | **8** | **1.00** | **0.00** | **0.00** |
+| **pooled** | **6524** | **1.6%** | **10.7%** | **652** | **59** | — | — | — |
+
+"Reclassified" is every claim that **fails** the 30-day test and **passes**
+the hold test; "reverse" is the other way — passed 30 days, failed the hold
+(§2a-hold's "one-good-week men", below). The median row is 1.00/0.00/0.00 in
+every season because the median claim is held only a few days (§1): most
+claims give the hold test exactly one available period to work with, and the
+plain count the brief asks for — periods above replacement, and the hold's
+total realised value — is genuinely zero for the median man, on both tests
+alike. **The hold test roughly triples the pooled deserved share (1.6% →
+10.7%), and almost all of the movement is new claims the 30-day test missed
+by construction, not claims it got wrong the other way**: 652 reclassified
+against 59 reverse, an 11-to-1 ratio.
+
+**What the product should carry, and why.** The two tests answer different
+questions (§Limitations 9) and neither should replace the other on the page.
+But for a manager deciding what a claim's actual stay was worth after the
+fact — the rest-of-season report's own use case — `deserved_hold` is the
+truer number: it does not fail a man for being hurt when he was claimed, and
+it is scored over the days the roster actually had him rather than a window
+picked for census convenience. The 30-day test should stay as the
+decision-time reading (what does four weeks in, judged the same way every
+time, tell a manager considering a claim right now); the hold test should be
+the retrospective one (was keeping this man, for as long as he was kept,
+vindicated). The 1.6% headline undercounts "deserved" by roughly two thirds
+against the hold reading, and Brandon Miller's own claim is the reason this
+document exists — but, worked through below, the hold test does not rescue
+it either.
+
+**2026 reclassified — failed the 30-day test, passed the hold test (n=97):**
+
+| day | player | team | paid | held d | avail/periods | above | hold value |
+|---|---|---|---|---|---|---|---|
+| 1 | Grayson Allen | Masters of their Domains | $0 | 12 | 2/2 | 2 | 2.00 |
+| 2 | Brice Sensabaugh | BC KO | $10 | 10 | 2/2 | 1 | 0.50 |
+| 4 | Tre Jones | Fantastic 5 | $2 | 10 | 2/2 | 1 | 1.00 |
+| 5 | Nickeil Alexander-Walker | Fantastic 5 | $1 | 156 | 22/22 | 11 | 17.50 |
+| 5 | Aaron Wiggins | The Infirmary | $0 | 6 | 2/2 | 1 | 0.00 |
+| 6 | Wendell Carter Jr. | Fast and Curryous | $5 | 21 | 3/4 | 2 | 0.50 |
+| 6 | Jaime Jaquez Jr. | Uncle Dennis's Phone | $0 | 6 | 2/2 | 1 | 1.00 |
+| 7 | Quentin Grimes | Foxes ShutUpNDribble | $6 | 20 | 3/3 | 2 | 3.00 |
+| 7 | Keldon Johnson | Fast and Curryous | $1 | 10 | 2/2 | 1 | 0.00 |
+| 8 | Josh Minott | Masters of their Domains | $0 | 20 | 3/3 | 2 | 1.00 |
+| 10 | Jarace Walker | Through The Wire | $5 | 7 | 2/2 | 1 | 1.00 |
+| 10 | Dillon Brooks | LeBron's Load Management LLC | $0 | 70 | 10/11 | 5 | 3.50 |
+| 12 | Miles McBride | Chat GTP inspired | $2 | 3 | 2/2 | 1 | 0.50 |
+| 12 | Mike Conley | BC KO | $0 | 3 | 2/2 | 2 | 2.00 |
+| 14 | Bennedict Mathurin | Through The Wire | $5 | 31 | 3/5 | 2 | 1.50 |
+| 18 | Jaylon Tyson | BC KO | $1 | 13 | 2/3 | 2 | 1.50 |
+| 19 | Isaiah Jackson | BC KO | $4 | 8 | 2/2 | 1 | 0.50 |
+| 20 | Trendon Watford | Through The Wire | $6 | 3 | 2/2 | 1 | 0.50 |
+| 25 | Duncan Robinson | Fantastic 5 | $0 | 17 | 3/3 | 2 | 2.50 |
+| 27 | Andre Drummond | Fast and Curryous | $1 | 13 | 2/3 | 1 | 1.00 |
+| 31 | Ausar Thompson | Foxes ShutUpNDribble | $21 | 7 | 2/2 | 1 | 0.50 |
+| 32 | Daniel Gafford | Foxes ShutUpNDribble | $6 | 4 | 2/2 | 1 | 1.00 |
+| 33 | Tobias Harris | Fantastic 5 | $2 | 41 | 7/7 | 4 | 5.00 |
+| 37 | Saddiq Bey | Masters of their Domains | $1 | 38 | 6/6 | 4 | 4.00 |
+| 40 | Kris Dunn | Masters of their Domains | $2 | 6 | 2/2 | 1 | 1.00 |
+| 41 | Josh Okogie | Ben's Need Some VC | $0 | 4 | 2/2 | 1 | 0.50 |
+| 42 | Wendell Carter Jr. | BC KO | $3 | 13 | 2/2 | 1 | 1.00 |
+| 44 | Bobby Portis | Brockley Heat | $0 | 117 | 16/16 | 10 | 8.50 |
+| 45 | Aaron Wiggins | Ben's Need Some VC | $0 | 12 | 2/3 | 1 | 1.00 |
+| 45 | Kyle Filipowski | Fantastic 5 | $0 | 9 | 2/2 | 1 | 2.00 |
+| 47 | Justin Champagnie | Brockley Heat | $0 | 23 | 4/4 | 3 | 2.50 |
+| 48 | Pat Spencer | Chat GTP inspired | $0 | 8 | 2/2 | 1 | 1.00 |
+| 53 | Jalen Smith | Masters of their Domains | $0 | 6 | 2/2 | 1 | 0.50 |
+| 55 | Dominick Barlow | BC KO | $0 | 19 | 4/4 | 2 | 2.00 |
+| 61 | Jordan Poole | Ben's Need Some VC | $12 | 38 | 6/7 | 3 | 3.00 |
+| 61 | Bub Carrington | Chat GTP inspired | $0 | 48 | 8/8 | 4 | 0.50 |
+| 66 | Tim Hardaway Jr. | Foxes ShutUpNDribble | $0 | 5 | 2/2 | 1 | 1.00 |
+| 68 | Egor Demin | Through The Wire | $0 | 9 | 2/2 | 1 | 0.50 |
+| 70 | Aaron Nesmith | Chat GTP inspired | $5 | 40 | 6/6 | 3 | 3.50 |
+| 73 | Isaiah Collier | Foxes ShutUpNDribble | $0 | 8 | 2/2 | 1 | 1.00 |
+| 75 | Sam Hauser | LeBron's Load Management LLC | $0 | 3 | 2/2 | 1 | 1.00 |
+| 75 | Sandro Mamukelashvili | Brighton Bears | $0 | 6 | 2/2 | 1 | 0.00 |
+| 76 | Goga Bitadze | BC KO | $0 | 4 | 2/2 | 1 | 1.00 |
+| 76 | Marvin Bagley III | BC KO | $2 | 7 | 2/2 | 1 | 0.50 |
+| 77 | Brice Sensabaugh | Brockley Heat | $1 | 84 | 11/11 | 6 | 6.50 |
+| 78 | Sam Merrill | Foxes ShutUpNDribble | $0 | 9 | 2/2 | 1 | 1.00 |
+| 82 | Nikola Jovic | LeBron's Load Management LLC | $0 | 5 | 2/2 | 1 | −1.00 |
+| 83 | Dominick Barlow | Fast and Curryous | $0 | 2 | 2/2 | 1 | 1.00 |
+| 85 | Aaron Wiggins | LeBron's Load Management LLC | $0 | 13 | 2/2 | 2 | 1.50 |
+| 86 | Miles McBride | BC KO | $3 | 9 | 2/2 | 1 | 0.50 |
+| 87 | Anfernee Simons | Optimize the MVPs | $1 | 7 | 2/2 | 1 | 2.50 |
+| 89 | Day'Ron Sharpe | LeBron's Load Management LLC | $0 | 6 | 2/2 | 1 | 0.50 |
+| 91 | Sam Hauser | The Infirmary | $3 | 10 | 2/2 | 2 | 1.50 |
+| 92 | Malik Monk | BC KO | $0 | 13 | 2/2 | 1 | 0.50 |
+| 92 | Moses Moody | Chat GTP inspired | $3 | 15 | 3/3 | 2 | 2.00 |
+| 94 | Tre Johnson | LeBron's Load Management LLC | $0 | 11 | 2/2 | 1 | 0.50 |
+| 95 | Egor Demin | Masters of their Domains | $1 | 5 | 2/2 | 1 | 1.00 |
+| 96 | Miles McBride | BC KO | $0 | 7 | 2/2 | 1 | 1.00 |
+| 99 | Bilal Coulibaly | Through The Wire | $1 | 8 | 2/2 | 1 | 1.00 |
+| 100 | Klay Thompson | BC KO | $0 | 9 | 2/2 | 1 | 0.00 |
+| 103 | Nikola Jovic | BC KO | $1 | 4 | 2/2 | 1 | 0.50 |
+| 103 | Ty Jerome | Through The Wire | $0 | 30 | 4/4 | 2 | 1.50 |
+| 103 | Jock Landale | Optimize the MVPs | $0 | 3 | 2/2 | 1 | 0.50 |
+| 105 | Davion Mitchell | Fast and Curryous | $5 | 22 | 2/3 | 1 | 1.00 |
+| 105 | Herbert Jones | BC KO | $1 | 8 | 2/2 | 1 | 0.50 |
+| 107 | Robert Williams III | Ben's Need Some VC | $0 | 22 | 2/3 | 1 | 1.50 |
+| 108 | Max Christie | Through The Wire | $2 | 6 | 2/2 | 1 | 0.50 |
+| 109 | Taylor Hendricks | Masters of their Domains | $3 | 4 | 2/2 | 1 | −0.50 |
+| 109 | Scoot Henderson | Optimize the MVPs | $1 | 25 | 3/4 | 3 | 2.50 |
+| 111 | Landry Shamet | LeBron's Load Management LLC | $0 | 4 | 2/2 | 2 | 1.50 |
+| 122 | Dominick Barlow | BC KO | $0 | 6 | 2/2 | 1 | −0.50 |
+| 123 | Moussa Diabate | Through The Wire | $0 | 13 | 2/3 | 2 | 2.00 |
+| 125 | Andrew Nembhard | BC KO | $0 | 25 | 4/5 | 2 | 2.00 |
+| 125 | Jared McCain | Optimize the MVPs | $0 | 16 | 4/4 | 3 | 2.50 |
+| 126 | Herbert Jones | Masters of their Domains | $0 | 14 | 2/2 | 1 | 1.00 |
+| 126 | Moses Moody | Masters of their Domains | $1 | 13 | 2/2 | 1 | 1.00 |
+| 128 | Scotty Pippen Jr. | Ben's Need Some VC | $0 | 11 | 2/2 | 1 | −0.50 |
+| 129 | Jayson Tatum | Optimize the MVPs | $0 | 32 | 4/5 | 2 | 1.00 |
+| 130 | Gui Santos | Brighton Bears | $2 | 31 | 5/5 | 3 | 2.00 |
+| 131 | Bilal Coulibaly | Fast and Curryous | $0 | 4 | 2/2 | 1 | 0.50 |
+| 131 | Davion Mitchell | Fast and Curryous | $2 | 4 | 2/2 | 2 | 2.50 |
+| 134 | Nic Claxton | Ben's Need Some VC | $0 | 12 | 2/2 | 1 | −0.50 |
+| 138 | Cedric Coward | Chat GTP inspired | $0 | 22 | 4/4 | 2 | −0.50 |
+| 139 | Keon Ellis | Brighton Bears | $0 | 2 | 2/2 | 1 | 0.50 |
+| 142 | Kris Dunn | Brighton Bears | $1 | 19 | 3/3 | 2 | 1.50 |
+| 142 | Kevin Porter Jr. | Through The Wire | $0 | 19 | 2/3 | 1 | 1.00 |
+| 143 | Danny Wolf | Through The Wire | $0 | 11 | 2/2 | 1 | 2.00 |
+| 145 | Daeqwon Plowden | BC KO | $0 | 9 | 2/2 | 1 | 0.50 |
+| 146 | John Collins | Brighton Bears | $7 | 15 | 2/3 | 1 | 0.50 |
+| 146 | Khris Middleton | Fantastic 5 | $1 | 2 | 2/2 | 1 | 0.50 |
+| 146 | Herbert Jones | Through The Wire | $0 | 15 | 2/3 | 1 | 2.50 |
+| 147 | Isaiah Jackson | Through The Wire | $0 | 8 | 2/2 | 1 | 2.50 |
+| 148 | Cameron Payne | Fantastic 5 | $1 | 9 | 2/2 | 1 | 0.50 |
+| 149 | Sandro Mamukelashvili | Fantastic 5 | $1 | 12 | 2/2 | 1 | 0.50 |
+| 149 | Walter Clayton Jr. | Through The Wire | $0 | 12 | 2/2 | 1 | 0.00 |
+| 150 | Maxime Raynaud | BC KO | $5 | 11 | 2/2 | 1 | 1.00 |
+| 153 | Matisse Thybulle | Fantastic 5 | $3 | 2 | 2/2 | 1 | 0.50 |
+
+**2026 reverse — passed the 30-day test, failed the hold test, the
+one-good-week men (n=8):**
+
+| day | player | team | paid | held d | avail/periods | above | hold value |
+|---|---|---|---|---|---|---|---|
+| 72 | De'Anthony Melton | Masters of their Domains | $0 | 1 | 1/1 | 1 | 0.50 |
+| 123 | Derrick Jones Jr. | The Infirmary | $0 | 3 | 1/1 | 1 | 1.00 |
+| 154 | Andrew Wiggins | The Infirmary | $10 | 7 | 1/1 | 1 | 1.00 |
+| 154 | Daniss Jenkins | Masters of their Domains | $1 | 7 | 1/1 | 1 | 1.00 |
+| 154 | Jaime Jaquez Jr. | Brighton Bears | $0 | 7 | 1/1 | 1 | 1.00 |
+| 154 | Tre Jones | Fantastic 5 | $1 | 7 | 1/1 | 1 | 1.00 |
+| 155 | Daeqwon Plowden | Masters of their Domains | $0 | 6 | 1/1 | 1 | 1.00 |
+| 160 | Gary Trent Jr. | The Infirmary | $5 | 1 | 1/1 | 1 | 1.00 |
+
+Every row reads `1/1` in `avail/periods`, and that is the whole mechanism:
+the 30-day test is a **sustained hypothetical** — it scores what the claim
+would have returned had it stayed in the lineup the full 30 days, whatever
+actually happened to the real roster — so a man genuinely dropped after
+three days (Derrick Jones Jr.) or one (De'Anthony Melton, Gary Trent Jr.)
+can still clear four-of-eight on the strength of games he played for his own
+NBA team while hypothetically still rostered. `deserved_hold` scores none of
+that: it only ever sees the periods his **actual** hold touched, and
+`HOLD_MIN_AVAILABLE = 2` means a hold with a single available period cannot
+pass regardless of how good that period was. Six of these eight are exactly
+six of the nine after-day-150 claims §Limitations 6 already flagged as
+thin (Andrew Wiggins, Daniss Jenkins, Jaime Jaquez Jr.'s day-154 claim, Tre
+Jones, Daeqwon Plowden, Gary Trent Jr.); the other three from that group of
+nine — Mitchell Robinson, Ziaire Williams and Cameron Johnson, all claimed
+day 153 — clear the hold test too and are not reversed. The remaining two
+reverse rows, Melton and Derrick Jones Jr., were among the six claims
+§5 said "survive" striking the nine — real, short, genuinely productive
+stays that the hold test still will not call consistent on one data point.
+The hold test is not more lenient than the 30-day one in general
+(§2a-hold's pooled ratio is 11 reclassified for every 1 reverse) — it is
+*less* lenient specifically for a short, lucky stay, because a short hold
+gives the consistency test almost no room to be wrong, and `deserved_30`'s
+own sustained-hypothetical framing can credit a man for weeks he was never
+actually rostered for.
 
 ### 2b. Did he finish the season as a top-100 man?
 
@@ -722,6 +1004,104 @@ injury status and `expected_return_date` and the box-score minutes. It does
 not store **depth-chart position**, and that is the variable all three of the
 large returns were actually a bet on.
 
+### 5a. Brandon Miller, the claim this study was built to explain
+
+The owner's own claim, worked through in full with `scripts/keepers.py --why
+512`. **Through The Wire claimed Brandon Miller on day 23 of 2026 for $2,
+while the league's own injury report had
+him `Out`** (a left shoulder subluxation, `docs/injuries.md`'s own worked
+example). He returned to Charlotte's lineup around day 33, was held without
+a gap through the end of the season — **138 days, censored, run_30 = true**
+— and by the box score played the way the brief describes: a starter's
+role, every week, through the playoffs.
+
+**Why the 30-day test fails him, exactly.** The claim's own transaction (tx
+8299) carries an `ADD` item and no `DROP` — Through The Wire had an open
+roster place, not a man to cut, so this is also §Limitations 10's case: he
+is invisible to every published share in this document except the one built
+to find him. Scored anyway, his 30-day window touches five whole periods
+(4–8), the wire's replacement on day 23 was **0.20 categories a week** —
+near the top of the 0.17–0.21 range every season runs in — and he clears it
+in exactly **one of five: period 8 (+1.00)**. Periods 4–7 read `-0.00`
+because he had not returned yet or had just returned into a below-replacement
+week. `beat_30 = 1`, the bar for a five-period claim is `min(4, 5) = 4`, and
+**`deserved_30 = False`.** Four of five dead periods from a stash the
+30-day test cannot see coming is exactly the flaw the owner caught.
+
+**Why the hold test does not rescue him either, and that is the honest
+finding.** Scored over his full 138-day hold (periods 4–22), one period
+(4, the week of the claim itself) has no game and is unavailable; the other
+**18 are available**, and he is above the same 0.20 bar in **7** of them
+(periods 8, 9, 12, 13, 15, 16, 21 — +1.00, +1.00, +1.50, +0.50, +2.00,
++1.00, +1.00) and at or below it in the other 11, several of them small
+losses (period 19: −1.00, period 22: −1.00). `HOLD_MIN_AVAILABLE = 2` is
+cleared easily; the "at least half" bar needs `⌈18/2⌉ = 9` and he has 7.
+**`deserved_hold = False.`** The hold's total realised value is **+5.00
+categories over 138 days** — genuinely positive, and higher on average
+(≈0.28/period) than the 0.20 bar — but "above replacement on average" and
+"above replacement in most weeks" are different questions, and §2a-hold's
+plain-count columns exist precisely so a reader can see both: a man can
+carry real positive value and still not read as *consistently* better than
+the wire, which is what "deserved to stay" asks.
+
+**Two things this document owes the number, not just the man.** First, the
+open-slot claim means the counterfactual `Replay` scores is not "Miller
+against the man he replaced" — there was no man — it is "Miller against
+Through The Wire's own bench reseated without him," so a deep roster that
+could partly cover his box score with its own bench makes his marginal
+category-swing smaller than his box score alone would suggest; this is a
+real property of the currency (§Limitations 5), not an error. Second,
+**category scoring is not points scoring**: 20/5/3.5/3+ threes/a steal a
+night is a real NBA season, and it still nets below-replacement weeks in a
+nine-category league once turnovers and shooting percentage are in the
+ledger — which is exactly why this product scores in categories rather than
+a composite, and exactly the gap this document's Limitations 5 warned the
+lens can produce. **The reclassified 97 are real evidence the 30-day test
+is too strict on a stash. Brandon Miller's own claim is evidence the hold
+test is not a rubber stamp** — it was declared before the run and it says
+no to the claim that prompted it.
+
+### 5b. The other 2026 stashes
+
+Every 2026 claim made while the league's own report had the man `Out`, or
+with no game at all in the claim's own matchup period — the same two
+signals Miller's claim carries, found across the whole season rather than
+one man: **133 of the 1,115 ranked claims**, 104 with no report at all that
+morning (most of these are simply a day off between games, not an
+injury — `unreported` is not evidence of health, §Limitations 9), 23
+flagged `Out`, 4 `Questionable` and 2 `Available`. 128 of the 133 had zero
+games in their own claim period.
+
+**Not one of the 133 clears the 30-day test.** `deserved_30` is `False` on
+every single row — the strongest confirmation this document has that "a
+stash can never pass the 30-day test" is not a one-man anecdote. Of the same
+133, **8 clear the hold test**:
+
+| day | player | team | paid | status | held d | avail/periods | above | hold value |
+|---|---|---|---|---|---|---|---|---|
+| 6 | Wendell Carter Jr. | Fast and Curryous | $5 | unreported | 21 | 3/4 | 2 | 0.50 |
+| 10 | Dillon Brooks | LeBron's Load Management LLC | $0 | unreported | 70 | 10/11 | 5 | 3.50 |
+| 14 | Bennedict Mathurin | Through The Wire | $5 | Out | 31 | 3/5 | 2 | 1.50 |
+| 27 | Andre Drummond | Fast and Curryous | $1 | unreported | 13 | 2/3 | 1 | 1.00 |
+| 123 | Moussa Diabate | Through The Wire | $0 | unreported | 13 | 2/3 | 2 | 2.00 |
+| 129 | Jayson Tatum | Optimize the MVPs | $0 | unreported | 32 | 4/5 | 2 | 1.00 |
+| 146 | John Collins | Brighton Bears | $7 | unreported | 15 | 2/3 | 1 | 0.50 |
+| 146 | Herbert Jones | Through The Wire | $0 | unreported | 15 | 2/3 | 1 | 2.50 |
+
+Jayson Tatum belongs on this list for the reason that makes the point
+sharpest: a star coming back from an Achilles tear, claimed off the wire
+for $0 with no games yet in his return period, invisible to the 30-day
+test by exactly the same construction as Miller — and the hold test, over
+his actual 32-day stay, correctly reads him as kept for a reason (4 of 5
+available periods above replacement). The other 125 stash claims are mostly
+what a stash usually is: **95 of the 133 returned exactly zero hold value**
+and only 23 returned positive value at all, so the hold test rescuing 8 of
+133 (6.0%) rather than a much larger share says the test is not simply
+crediting every stash — it is crediting the ones that, once available, were
+actually good, which is the whole design (§2a-hold). The full 133-row table
+is `scripts/keepers.py`'s own `== 5b. ==` output and is not re-typed in
+full here.
+
 ---
 
 ## What this means for the product
@@ -853,11 +1233,41 @@ Every judgement call this study made, so a reviewer can attack it.
 16. **All eight seasons were run in full — no sampling.** The brief allowed
     running 2026 in full and the rest at a stated sample if the census were too
     slow. With the lens memoized per period length it is not: the whole
-    2019–2026 census, 6,779 adds and 6,524 scored claims, completes in **472
-    seconds**. Every number in this document is the full run, and there is no
-    sample limitation to declare.
+    2019–2026 census, 6,779 adds and 6,524 scored claims, completed in **472
+    seconds** on first publish and **496 seconds** once the hold definition
+    was scored alongside it (§Limitations 9) — the same `Replay`, so the
+    extra cost is one more `delta` call a period rather than a second pass.
+    Every number in this document is the full run, and there is no sample
+    limitation to declare.
 17. **The success-check sentence's "N" is 1,145** — the census's attributed
     2026 population — and §Limitations 3 names the one-add difference a
     lineup-only replica can produce (1,146) with its cause and its size
     (8.65% against 8.64%). A reviewer recomputing X from the tables should get
     8.6% either way; D is 3 days on both.
+18. **The hold definition's constants were declared in `scripts/keepers.py`
+    (`HOLD_MIN_AVAILABLE = 2`, "at least half" of available periods, rounded
+    up) before this revision's eight-season run, and were not changed
+    afterward** — including after they turned out not to reclassify Brandon
+    Miller's own claim (§5a). Declaring, then running once, is the whole
+    point of a constant a reviewer can attack: it would have been easy to
+    lower the bar until Miller passed, and that was not done.
+19. **Availability, for the hold test, is "played at least one game", not
+    the injury reports.** `app/injuries.py`'s point-in-time status is the
+    more precise signal but only covers 2022–2026 (docs/injuries.md); a test
+    that must run the same way on all eight seasons cannot use a signal five
+    of them do not have. The injury reports are still read, but only as
+    context for `--why` and §5b, never as part of either "deserved" test
+    (§Limitations 9).
+20. **`--why PLAYER_ID` carves that one player's claims out of the "single
+    dropped man" population so they are scored even with no matched drop**
+    (`scripts/keepers.py`'s section-2 loop). This exists because Brandon
+    Miller's own claim has no `DROP` item (§Limitations 10) and would
+    otherwise be scored nowhere in this document; no other no-drop claim is
+    added back into `ranked`, and every published share in §§1–5 is
+    unchanged by this carve-out.
+21. **The success-check sentence now also states the hold figure (9.3%,
+    104 of 1,115) and its own previous "4.1%" is corrected to 1.3%** — that
+    was always the `≥60d` column of §1's retention table, mis-copied into
+    the sentence about §2a's four-of-eight test, and is fixed here rather
+    than carried forward silently because the gate this document's revision
+    is held to is exactly "can a reviewer recompute this sentence."

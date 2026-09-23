@@ -72,6 +72,25 @@ have -- stated in the doc's limitations, because it makes a late claim easier
 to call deserved than the same man claimed in November. On 2026 that is nine
 of the fifteen deserving claims, which the doc's section 5 works through.
 
+WHAT DESERVED **OVER THE HOLD** MEANS (section 2a-hold, `Raw.deserved_hold`).
+A second definition, beside the first and never replacing it. The 30-day test
+above cannot pass a claim whose early weeks were dead -- hurt, or no role yet
+-- because those weeks are scored anyway and count against him; that flaw is
+by construction, not a coincidence, and it is the one the owner caught on his
+own 2026 claim (Brandon Miller, docs/keepers.md section 5a). `deserved_hold`
+scores the identical swap the identical way, `Replay.delta` with the claim
+undone and sign-flipped against the claim day's wire, but over the man's own
+**continuous hold** (the run-based stay section 1 already computes) instead
+of a fixed thirty days: above replacement in at least half his *available*
+periods -- a period counts if he played a game in the days of it his hold
+covered -- needing at least `HOLD_MIN_AVAILABLE` available periods first. Both
+constants are declared before the run and not tuned after, including after
+they turned out not to reclassify Miller's own claim. `--why PLAYER_ID` prints
+the full period-by-period accounting for one player's claims, the 30-day
+window and the hold both, and scores even a claim with no matched `DROP` item
+(an add into an open roster slot -- Miller's own claim is exactly this shape,
+and is otherwise invisible to every published share in this document).
+
 BY WHAT WAS KNOWN AT THE CLAIM (section 3). Retention and deserved shares cut
 by his value rank at the time of the claim (`app.pickups.bids.value_rank` and
 its `BUCKETS`), by FAAB paid (2026, the only FAAB season), and by month. The
@@ -105,6 +124,7 @@ READ-ONLY. Every query is a SELECT; nothing is written anywhere.
 from __future__ import annotations
 
 import argparse
+import math
 import statistics
 import sys
 import time
@@ -132,9 +152,11 @@ from sqlalchemy.orm import Session
 from app.db.models import LeagueSeason
 from app.db.session import make_engine, make_session_factory
 from app.draft.targets import CategoryDistribution
+from app.injuries import morning_of, status_as_of, statuses_as_of
 from app.pickups.bids import BUCKETS, free_agents_on, value_rank
 from app.pickups.judge import Standard, standard_lens
 from app.pickups.projection import per_game_line
+from app.pickups.state import season_calendar
 from app.scoring.replacement import ADD_TYPES, TYPICAL_PICKUP
 
 #: Slots that mean "not on the roster". ESPN writes `BE` for a rostered man out
@@ -153,6 +175,17 @@ STREAM_DAYS = 7
 #: wire in.
 WEEKS = 8
 WEEKS_NEEDED = 4
+
+#: The "deserved over the hold" test (docs/keepers.md section 2a): scored over
+#: the man's own continuous hold rather than a fixed 30-day window. A period
+#: counts only if he played at least one game in it during the hold -- the
+#: "played a game" rule, chosen over reading `app.injuries` because the
+#: injury reports only cover 2022-2026 and this test has to run on all eight
+#: seasons the same way (docs/injuries.md). He must clear at least this many
+#: available periods, and beat his claim day's wire in at least half of them,
+#: rounded up so an odd count needs a majority rather than a tie. Declared
+#: before the eight-season run, not tuned after it.
+HOLD_MIN_AVAILABLE = 2
 
 #: The 30-day window the repo's other studies score delivered value over.
 SEASON_WINDOW = 30
@@ -347,6 +380,16 @@ class Raw:
     dropped_value: float | None = None
     #: The wire's replacement level on the claim day, categories a week.
     replacement: float = 0.0
+    # -- the hold, filled by `score_claims()` --
+    #: Value per whole matchup period touched by the man's actual continuous
+    #: hold (claim day through the run's last day), in period order.
+    hold_periods: tuple[float, ...] = ()
+    #: Those periods' numbers, same order as `hold_periods`.
+    hold_period_numbers: tuple[int, ...] = ()
+    #: Whether he played at least one game in that period, during the days of
+    #: it he was actually held -- the availability rule `HOLD_MIN_AVAILABLE`
+    #: is judged over.
+    hold_available: tuple[bool, ...] = ()
     # -- what was knowable --
     rank: int = 0
     bucket: str = ""
@@ -372,6 +415,44 @@ class Raw:
         lower bar than the same claim made in November.
         """
         return self.beat_30 >= min(WEEKS_NEEDED, self.windows_30)
+
+    @property
+    def available_hold(self) -> int:
+        """Periods of the hold he played at least one game in."""
+        return sum(1 for available in self.hold_available if available)
+
+    @property
+    def above_hold(self) -> int:
+        """Available periods of the hold he beat his claim day's wire in.
+
+        An unavailable period (no game) never counts for or against him --
+        it is dropped from both the numerator and the denominator, which is
+        the whole point of the availability test.
+        """
+        return sum(
+            1
+            for value, available in zip(self.hold_periods, self.hold_available, strict=True)
+            if available and value > self.replacement
+        )
+
+    @property
+    def hold_total(self) -> float:
+        """Realised value over the whole hold, categories (every period, not
+        just the available ones -- this is the plain count the brief asks
+        for beside the deserved test)."""
+        return sum(self.hold_periods)
+
+    @property
+    def deserved_hold(self) -> bool:
+        """Above replacement in at least half his available hold periods.
+
+        Needs at least `HOLD_MIN_AVAILABLE` available periods first -- a man
+        with one available week is not a big enough sample to call deserved
+        either way, whatever that week did. "At least half" rounds up: three
+        available periods needs two above, not one.
+        """
+        available = self.available_hold
+        return available >= HOLD_MIN_AVAILABLE and self.above_hold >= math.ceil(available / 2)
 
     @property
     def top_100(self) -> bool:
@@ -613,27 +694,36 @@ def score_claims(
     The per-period split is what the "deserved" test reads: a claim's weeks are
     the periods the 30-day window touches, and his value in each is compared
     against his claim day's wire replacement level.
+
+    The same pass also scores the man's **actual continuous hold** (claim day
+    through the last day of the run `retention()` attributed to this claim,
+    already computed by the time this is called), period by period, the
+    identical way -- claim undone, sign flipped, same `Replay.delta` call,
+    just a different `to_day`. This is `deserved_hold`'s raw material
+    (`Raw.hold_periods`, `Raw.hold_available`); it does not replace
+    `weekly_30`/`value_30`, it sits beside them. Reusing this one `Replay`
+    load is why both definitions together still finish in one pass rather
+    than two.
     """
     if not claims:
         return
     with bt.patched_state():
         replay = bt.Replay.load(session, league_row(session, calendar))
         for claim in claims:
-            windows = replay.touched(claim.day, claim.day + SEASON_WINDOW)
-            if not windows:
-                continue
             added = [claim.player]
             dropped = [claim.dropped] if claim.dropped is not None else []
             # The claim undone: take the added man out, put the dropped man
             # back -- the same call `league_baseline` makes, sign flipped.
             end = claim.day + SEASON_WINDOW
-            values = [
-                -replay.delta(claim.team, window, claim.day, end, added, dropped)
-                for window in windows
-            ]
-            claim.weekly_30 = tuple(values)
-            claim.weekly_30_periods = tuple(window.period for window in windows)
-            claim.value_30 = sum(values)
+            windows = replay.touched(claim.day, end)
+            if windows:
+                values = [
+                    -replay.delta(claim.team, window, claim.day, end, added, dropped)
+                    for window in windows
+                ]
+                claim.weekly_30 = tuple(values)
+                claim.weekly_30_periods = tuple(window.period for window in windows)
+                claim.value_30 = sum(values)
             if claim.dropped is not None:
                 # The dropped man over the same window, scored the other way
                 # round: drop him (he leaves), add nobody. Read as what he was
@@ -641,6 +731,26 @@ def score_claims(
                 claim.dropped_value = sum(
                     -replay.delta(claim.team, window, claim.day, end, [claim.dropped], [])
                     for window in windows
+                )
+
+            # The hold: the same swap, the same sign flip, over the man's own
+            # continuous run instead of a fixed thirty days.
+            hold_end = claim.day + claim.days - 1
+            hold_windows = replay.touched(claim.day, hold_end)
+            if hold_windows:
+                claim.hold_periods = tuple(
+                    -replay.delta(claim.team, window, claim.day, hold_end, added, dropped)
+                    for window in hold_windows
+                )
+                claim.hold_period_numbers = tuple(window.period for window in hold_windows)
+                claim.hold_available = tuple(
+                    any(
+                        (claim.player, day) in replay.games
+                        for day in range(
+                            max(claim.day, window.first), min(hold_end, window.final) + 1
+                        )
+                    )
+                    for window in hold_windows
                 )
 
 
@@ -819,6 +929,31 @@ def load_names(session: Session) -> dict[int, str]:
     return {int(p.id): str(p.name or p.id) for p in session.scalars(select(Player))}
 
 
+def load_team_names(session: Session) -> dict[int, str]:
+    """`teams.id` (season-scoped row, already a unique key) -> team name."""
+    from app.db.models import Team
+
+    return {int(t.id): str(t.name or t.id) for t in session.scalars(select(Team))}
+
+
+def claim_injury_status(session: Session, season: int, day: int, player_id: int) -> str:
+    """The league's own status line the morning of the claim, for context.
+
+    Not part of either "deserved" test -- `deserved_hold`'s availability rule
+    is "played a game", chosen precisely because this coverage does not reach
+    2019-2021 (docs/injuries.md). This is `--why`'s annotation only, so a
+    reader can see, e.g., that Brandon Miller's claim landed while the league
+    had him Out.
+    """
+    if season < 2022:
+        return "no injury-report coverage before 2022"
+    cal = season_calendar(session, season)
+    if cal is None:
+        return "no schedule"
+    status = status_as_of(session, player_id, morning_of(cal.date_of(day)))
+    return status.status if status is not None else "unreported that morning"
+
+
 def load_minutes_trend(session: Session) -> dict[tuple[int, int], tuple[float, float]]:
     """(season, player) -> (mean minutes over his last five games, prior five).
 
@@ -875,6 +1010,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Waiver retention and keepers.")
     parser.add_argument("--season", type=int, default=None, help="one season only")
     parser.add_argument("--skip-values", action="store_true", help="retention only")
+    parser.add_argument(
+        "--why",
+        type=int,
+        default=None,
+        metavar="PLAYER_ID",
+        help="print the full 30-day and hold accounting for every claim on this player",
+    )
     args = parser.parse_args()
 
     started_at = time.time()
@@ -1035,7 +1177,21 @@ def main() -> int:
         print("== 2. did he deserve to stay ==")
         values_started = time.time()
         for year in years:
-            season_claims = [c for c in kept if c.season == year and c.dropped is not None]
+            # `ranked` below (the published denominator, §Decisions 13) is
+            # still every claim with a single dropped man. But `--why` needs
+            # its own target scored even when he has none -- an add into an
+            # open slot, no DROP item on the transaction -- because that is
+            # exactly Brandon Miller's claim (§5), and leaving him unscored
+            # would make `--why` silently print nothing for the one man this
+            # study was written to explain. `score_claims` already handles
+            # `dropped=None` (an empty drop list), so this only widens who is
+            # *scored*, not who is counted in any published share.
+            season_claims = [
+                c
+                for c in kept
+                if c.season == year
+                and (c.dropped is not None or (args.why is not None and c.player == args.why))
+            ]
             score_claims(session, calendars[year], season_claims)
             wire = WireBook(session, calendars[year])
             for claim in season_claims:
@@ -1072,6 +1228,114 @@ def main() -> int:
             f"30-day value above zero {above}, "
             f"median 30-day value {two(median_of([c.value_30 for c in pooled]))}\n"
         )
+
+        # -- 2a-hold. the second definition, beside the first, never replacing
+        # it: scored over the man's actual continuous hold instead of a fixed
+        # thirty days. Both are printed from here on so neither can be read
+        # as the other. --
+        print(
+            f"== 2a-hold. deserved over the hold (>= {HOLD_MIN_AVAILABLE} available "
+            "periods, above replacement in at least half) ==",
+        )
+        rows = []
+        for year in years:
+            sub = [c for c in ranked if c.season == year]
+            if not sub:
+                continue
+            reclassified = sum(1 for c in sub if not c.deserved_30 and c.deserved_hold)
+            reverse = sum(1 for c in sub if c.deserved_30 and not c.deserved_hold)
+            rows.append(
+                [
+                    str(year),
+                    str(len(sub)),
+                    share(sum(1 for c in sub if c.deserved_30), len(sub)),
+                    share(sum(1 for c in sub if c.deserved_hold), len(sub)),
+                    str(reclassified),
+                    str(reverse),
+                    two(median_of([float(c.available_hold) for c in sub])),
+                    two(median_of([float(c.above_hold) for c in sub])),
+                    two(median_of([c.hold_total for c in sub])),
+                ]
+            )
+        table(
+            [
+                "season",
+                "n",
+                "deserved 30d",
+                "deserved hold",
+                "reclassified",
+                "reverse",
+                "med avail",
+                "med above",
+                "med hold value",
+            ],
+            rows,
+        )
+        deserved_hold_pooled = share(sum(1 for c in ranked if c.deserved_hold), len(ranked))
+        reclass_pooled = sum(1 for c in ranked if not c.deserved_30 and c.deserved_hold)
+        reverse_pooled = sum(1 for c in ranked if c.deserved_30 and not c.deserved_hold)
+        print(
+            f"pooled n={len(ranked)}: deserved (30d) {deserved}, deserved (hold) "
+            f"{deserved_hold_pooled}; reclassified (fail 30d, pass hold) {reclass_pooled} "
+            f"({share(reclass_pooled, len(ranked))}); reverse (pass 30d, fail hold) "
+            f"{reverse_pooled} ({share(reverse_pooled, len(ranked))})\n"
+        )
+        print(
+            "note: the hold test's denominator is the men who were kept -- it cannot be a "
+            "rate over every claim the way the 30-day test's 1.6% is, because a man dropped "
+            "same-day has no periods to score. Both denominators are `ranked` above (claims "
+            "with a single dropped man); the hold test additionally needs "
+            f"{HOLD_MIN_AVAILABLE}+ periods with a game played, which a same-day cut can "
+            "never reach either.\n"
+        )
+
+        # -- named: every 2026 claim reclassified by the hold test, both ways --
+        names = load_names(session)
+        teams_by_name = load_team_names(session)
+
+        def hold_row(c: Raw) -> list[str]:
+            team_name = teams_by_name.get(c.team, str(c.team))
+            return [
+                str(c.day),
+                names.get(c.player, str(c.player))[:20],
+                team_name[:18],
+                f"${c.bid}",
+                str(c.days),
+                f"{c.available_hold}/{len(c.hold_periods)}",
+                str(c.above_hold),
+                two(c.hold_total),
+            ]
+
+        hold_header = [
+            "day",
+            "player",
+            "team",
+            "paid",
+            "held d",
+            "avail/periods",
+            "above",
+            "hold value",
+        ]
+
+        reclassified_2026 = sorted(
+            (c for c in ranked if c.season == 2026 and not c.deserved_30 and c.deserved_hold),
+            key=lambda c: c.day,
+        )
+        print(
+            f"== 2026 reclassified: failed the 30-day test, passed the hold test "
+            f"(n={len(reclassified_2026)}) =="
+        )
+        table(hold_header, [hold_row(c) for c in reclassified_2026])
+
+        reverse_2026 = sorted(
+            (c for c in ranked if c.season == 2026 and c.deserved_30 and not c.deserved_hold),
+            key=lambda c: c.day,
+        )
+        print(
+            f"== 2026 reverse: passed the 30-day test, failed the hold test -- the "
+            f"one-good-week men (n={len(reverse_2026)}) =="
+        )
+        table(hold_header, [hold_row(c) for c in reverse_2026])
 
         # -- 2b. did he finish the season as a top-100 man? --
         season_ranks = load_season_ranks(session)
@@ -1279,6 +1543,118 @@ def main() -> int:
         print(
             f"2026 deserved claims: {len(worth)} of {sum(1 for c in ranked if c.season == 2026)}\n"
         )
+
+        # ---- 5b. the 2026 stashes: claimed while Out, or no game yet ------
+        # "Stash" here is the failure mode the 30-day test cannot pass by
+        # construction (Brandon Miller's claim): the man could not help the
+        # roster on day one, either because the league had him Out or
+        # because his own period had no game for him at all. Both signals
+        # come from data already loaded; nothing new is queried per-claim --
+        # the injury lookup is batched by claim day.
+        print(
+            "== 5b. the 2026 stashes (claimed while Out, or 0 games in the claim's own period) =="
+        )
+        cal2026 = season_calendar(session, 2026)
+        by_day: dict[int, list[Raw]] = defaultdict(list)
+        for c in ranked:
+            if c.season == 2026 and c.hold_available:
+                by_day[c.day].append(c)
+        claim_status: dict[int, str] = {}
+        for day, group in by_day.items():
+            statuses = (
+                statuses_as_of(session, [c.player for c in group], morning_of(cal2026.date_of(day)))
+                if cal2026 is not None
+                else {}
+            )
+            for c in group:
+                found = statuses.get(c.player)
+                claim_status[c.transaction_id] = found.status if found is not None else "unreported"
+
+        stash_rows = []
+        stashes = []
+        for day in sorted(by_day):
+            for claim in by_day[day]:
+                status = claim_status.get(claim.transaction_id, "unreported")
+                no_game_yet = not claim.hold_available[0]
+                if not (no_game_yet or status == "Out"):
+                    continue
+                stashes.append(claim)
+                stash_rows.append(
+                    [
+                        str(claim.day),
+                        names.get(claim.player, str(claim.player))[:20],
+                        teams_by_name.get(claim.team, str(claim.team))[:18],
+                        f"${claim.bid}",
+                        status,
+                        "yes" if no_game_yet else "no",
+                        str(claim.days),
+                        f"{claim.available_hold}/{len(claim.hold_periods)}",
+                        str(claim.above_hold),
+                        two(claim.hold_total),
+                        "yes" if claim.deserved_30 else "no",
+                        "yes" if claim.deserved_hold else "no",
+                    ]
+                )
+        table(
+            [
+                "day",
+                "player",
+                "team",
+                "paid",
+                "status",
+                "0-game 1st period",
+                "held d",
+                "avail/periods",
+                "above",
+                "hold value",
+                "deserved 30d",
+                "deserved hold",
+            ],
+            stash_rows,
+        )
+        print(f"2026 stashes identified: {len(stashes)}\n")
+
+    # ---- --why: full period-by-period accounting for one player -----------
+    if args.why is not None and not args.skip_values:
+        target = args.why
+        # `kept`, not `ranked` -- a man claimed into an open roster slot has
+        # no DROP item and is excluded from every published share (§Decisions
+        # 13), but he was still scored above (this section's own carve-out),
+        # and `--why` should show him rather than print nothing.
+        matches = sorted((c for c in kept if c.player == target), key=lambda c: (c.season, c.day))
+        print(f"== --why {target}: {names.get(target, 'unknown')} ({len(matches)} claims) ==")
+        for c in matches:
+            dropped_name = names.get(c.dropped, str(c.dropped)) if c.dropped is not None else None
+            status_note = claim_injury_status(session, c.season, c.day, c.player)
+            print(
+                f"season {c.season} day {c.day} team {teams_by_name.get(c.team, c.team)} "
+                f"paid ${c.bid} tx {c.transaction_id} dropped {dropped_name} "
+                f"status on claim morning: {status_note}"
+            )
+            print(
+                f"  held {c.days}d (censored={c.censored}, run_30={c.run_30}); "
+                f"claim day's wire replacement {two(c.replacement)} cat/wk"
+            )
+            print("  30-day window (deserved_30's periods):")
+            for period, value in zip(c.weekly_30_periods, c.weekly_30, strict=True):
+                mark = "above" if value > c.replacement else "below"
+                print(f"    period {period}: {two(value)} ({mark})")
+            print(
+                f"  beat_30 {c.beat_30} of {c.windows_30} whole weeks touched -> "
+                f"deserved_30={c.deserved_30}"
+            )
+            hold_last_day = c.day + c.days - 1
+            print(f"  hold, day {c.day} through day {hold_last_day} (deserved_hold's periods):")
+            for period, value, avail in zip(
+                c.hold_period_numbers, c.hold_periods, c.hold_available, strict=True
+            ):
+                above = "above" if value > c.replacement else "below"
+                mark = above if avail else "n/a (no game)"
+                print(f"    period {period}: {two(value)} available={avail} ({mark})")
+            print(
+                f"  available periods {c.available_hold}, above replacement {c.above_hold} -> "
+                f"deserved_hold={c.deserved_hold}, hold total value {two(c.hold_total)} cat\n"
+            )
 
     print(f"elapsed {time.time() - started_at:.0f}s")
     return 0
