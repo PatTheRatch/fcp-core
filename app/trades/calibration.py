@@ -2,11 +2,26 @@
 
 The trade page prints `CALIBRATION_NOTE` verbatim under the number, because a
 manager reading a forecast is owed the forecast's record beside it. The figures
-below are the run of 2026-09-22 (`scripts/trade_calibration.py`, review_days=1,
+below are the run of 2026-09-23 (`scripts/trade_calibration.py`, review_days=1,
 every season the database can reconstruct), written up in `docs/trades.md`
 section 7. Nothing here is computed at runtime: it is a published result, and
 it changes only when the calibration is run again and the doc is rewritten
 with it.
+
+RE-RUN ON 2026-09-23, AND NOT ONE DIGIT MOVED
+
+The weekly spread was widened by two that day
+(`app.pickups.stream.SPREAD_SCALE`, docs/spread_revision.md), which changes
+every chance of winning a category in the product, so this calibration was
+re-run whole on the same 55 deals and the same thirty-day window. Every
+published figure came back identical, and the reason is worth keeping in
+front of the next reader: what this module scores is
+`Judgement.delta_season_per_week` and `SideReport.season_independent`, both of
+them *per-week season* terms built from `app.scoring.value.marginal` and
+`places_cost`. Neither reads the head-to-head. The week term that the widening
+does move, `Judgement.delta_week`, is on the page but is not the quantity this
+record is about. So the date below is the newer run and the numbers are the
+ones both runs give.
 
 THE SHORT VERSION
 
@@ -89,8 +104,10 @@ class Measured:
         return self.picked / DEALS if DEALS else 0.0
 
 
-#: The day the published run was made.
-MEASURED_ON = "2026-09-22"
+#: The day the published run was made. The run of 2026-09-22 gave the same
+#: figures; see the module docstring for why widening the spread did not move
+#: them.
+MEASURED_ON = "2026-09-23"
 
 #: Deals the database can both evaluate forward and grade in hindsight, and
 #: the sides they make. Six seasons: 2019, 2021, 2023, 2024, 2025, 2026.

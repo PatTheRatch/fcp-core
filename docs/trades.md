@@ -9,8 +9,47 @@
 
 ## 0. The answer, up front
 
+### Revision R3, 2026-09-23: the weekly spread was widened, and this record did not move
+
+**What changed.** `app.pickups.stream.SPREAD_SCALE` is 2.0 since 2026-09-23,
+so every "chance of winning a category" in the product is nearer the middle
+(`docs/projected_record.md` §0, `docs/spread_revision.md`). The factor was
+chosen by the owner on the evidence of the projected-standings run of
+2026-09-22 and declared before this re-run started; nothing was tuned
+afterwards, which is §7's rule.
+
+**Why this calibration had to be re-run.** `head_to_head` is where every
+chance in the codebase comes from, and `Judgement.delta_week` — the matchup
+term of a trade's net — reads it through `app.pickups.stream.week_deltas`. A
+trade's headline number on the page is therefore not the number it was
+yesterday.
+
+**Before and after: nothing.** The whole run of 2026-09-23 reproduces the run
+of 2026-09-22 **to every published digit**: 25 of 55 on the primary cell, 31
+of 55 over the rest of the season, Spearman −0.02, mean error +0.008, the
+two-for-one gap +0.404 against the old yardstick and **+0.103** against the
+streamed lane, the player level +0.39 over 174 men. `PUBLISHED`,
+`UNEVEN_ERROR` and `CALIBRATION_NOTE` are unchanged, character for character.
+
+**Why it did not move, which is the finding.** What this calibration scores is
+`Judgement.delta_season_per_week` and `SideReport.season_independent` — both
+*per-week season* terms, built from `app.scoring.value.marginal` against the
+league's spreads and from `places_cost`. Neither reads `head_to_head`. The
+week term the widening does move is not in the headline, because a trade is
+judged on what it is worth to an ordinary week from here on rather than on the
+matchup it happens to land in (§1, §2). So this is a real out-of-sample check
+that came back clean, and at the same time it is a check of a narrower thing
+than it looks: it says the widening broke nothing in the trade evaluator, not
+that the widening was measured out of sample on it. The out-of-sample evidence
+about the chances themselves is `docs/pickups_backtest.md`.
+
+The run took 73s against 61s, on the same 55 deals and the same T30 window;
+the full output is in `docs/runs/2026-09-23-trade-calibration.md`.
+
+---
+
 **The evaluator is no better than a coin flip at picking which side of a trade
-did better, and neither of the two revisions changed that.** On the 55 deals
+did better, and none of the three revisions changed that.** On the 55 deals
 this database can both evaluate forward and grade in hindsight, the headline
 picked the side that came out ahead 25 times on the window declared as primary
 — 45%, where a fair coin gives between 20 and 35 of 55 nineteen times in
@@ -361,6 +400,16 @@ Read §7a and §7b first. Two revisions, each declared before its run, each
 followed by exactly one re-run, published whichever way it fell. The numbers in
 this section are the re-run of 2026-09-22; both earlier runs are kept at the
 bottom as the "before".
+
+**Re-run again on 2026-09-23** after the weekly spread was widened by two (§0,
+revision R3), because `head_to_head` is what `Judgement.delta_week` is built
+from. Every figure below came back identical, and §0 says why: what this
+section scores is the per-week *season* term, which does not read the
+head-to-head at all. Only the wall time changed, 61s to 73s, and the line
+below still says 61s because it is the printed output of the run the section
+was written from. The 2026-09-23 output is in
+`docs/runs/2026-09-23-trade-calibration.md`, and it differs from the block
+below in that one number.
 
 ### The answer
 
