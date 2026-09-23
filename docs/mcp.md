@@ -105,6 +105,49 @@ Absolute paths everywhere: Claude Desktop starts the process with no shell
 and no working directory of yours, so a relative path finds nothing and a
 `.env` beside the repo is never read.
 
+## Adding it to ChatGPT, through OpenAI's tunnel
+
+Set up on the VPS on 2026-09-23. ChatGPT reaches a private MCP server
+through OpenAI's own `tunnel-client`
+(https://github.com/openai/tunnel-client, the guide at
+developers.openai.com/api/docs/guides/secure-mcp-tunnels): a daemon on our
+side polls OpenAI *outbound* and forwards each request to the server on
+loopback. Nothing is exposed — no public hostname, no open port, no OAuth
+server of ours — which is why this route was taken before the OAuth one.
+
+What runs, both as systemd units on the VPS:
+
+- `fcp-core-mcp.service` — `scripts/mcp_server.py --http --host 127.0.0.1
+  --port 8787`, the streamable-HTTP form at `http://127.0.0.1:8787/mcp`,
+  reading `.env` and `/opt/fcp-core/.mcp.env` (`BOX_OUT_TOKEN`, a token
+  minted on the site, 0600, the owner's).
+- `openai-tunnel.service` — `/usr/local/bin/tunnel-client run --profile
+  boxout`, reading `/opt/fcp-core/.tunnel.env` (`CONTROL_PLANE_API_KEY`,
+  an organization API key from platform.openai.com/settings/organization/
+  api-keys made by someone with Tunnels Read + Use; 0600). Its profile is
+  `~/.config/tunnel-client/boxout.yaml`, from
+  `tunnel-client init --sample sample_mcp_remote_no_auth --profile boxout
+  --tunnel-id tunnel_… --mcp-server-url http://127.0.0.1:8787/mcp`. Its
+  own health is on `127.0.0.1:8080` (`/readyz`, `/ui`), loopback only.
+
+The binary was downloaded from the release page and its SHA-256 checked
+against the release's `SHA256SUMS.txt` before install (`v0.0.14`). The
+tunnel id is an address, not a secret; the two keys never leave their
+files. `tunnel-client doctor --profile boxout --explain` is the check to
+run when it stops working; "OAuth discovery failed" in its log is expected
+and harmless (we advertise none).
+
+In ChatGPT: chatgpt.com/plugins → **+** → Connection: **Tunnel** → pick the
+tunnel. The daemon has to be running while the app is created and for
+every call after; `systemctl status openai-tunnel` says whether it is.
+
+**What this is not.** Private to the tunnel's OpenAI organization and
+ChatGPT workspace — OpenAI does not allow it to be published — so it is the
+owner's own co-manager in ChatGPT, not the product's. A league member adding
+Box Out to their own ChatGPT or Claude still needs the OAuth remote form
+below, and the token the tunnel uses is the owner's, so it reads what he can
+read and nothing more.
+
 ## The remote form
 
 ```
