@@ -65,6 +65,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.brand import BRAND
 from app.db.session import make_engine, make_session_factory
 from app.scoring.scorecard import Scorecard, scorecard
 from app.scoring.trades import reconstruct_trades
@@ -1338,7 +1339,7 @@ def render(d: Row, notes: dict[str, str] | None = None) -> str:
         add("</section>")
 
     add(
-        "<footer>Full Court Press · compiled from daily lineups, per-category matchup detail "
+        f"<footer>{BRAND} · compiled from daily lineups, per-category matchup detail "
         f"and every transaction of the {d['season'] - 1}–{str(d['season'])[2:]} season."
         "<br>Nine-cat production = PTS + REB + AST + STL + BLK + 3PM − TO. It compares "
         "players inside one category set; the category tables are the actual record."

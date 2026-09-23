@@ -61,17 +61,16 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
 .brand{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap}
 .brand:hover{color:var(--accent)}
-.brand .short{display:none}
 /* At phone width the bar is two rows: the brand, the league and the account
    with the switch on one, the sections on the next. The switch keeps its
-   words for a screen reader and shows a glyph. */
+   words for a screen reader and shows a glyph. The name is not abbreviated:
+   it is short enough to fit at any width. */
 @media (max-width:560px){
   /* A section's tag is pushed to the right of its heading, and it never
      wraps, so on a phone a long heading was squeezed to one word a line.
      Below this width the tag takes a line of its own instead. */
   .shead{flex-wrap:wrap;gap:2px 14px}
   .shead .tag{margin-left:0;flex-basis:100%;white-space:normal}
-  .brand .long{display:none} .brand .short{display:inline}
   .nav{gap:4px 12px}
   .nav .end{gap:10px}
   .league-name{max-width:22vw !important}

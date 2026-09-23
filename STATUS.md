@@ -1,5 +1,17 @@
 # FCP Core Status
 
+**The product is Box Out, at boxoutfantasy.com** (2026-09-22). It was called
+Full Court Press, which is the name of Patrick's own league and stays that:
+a measurement note saying "Full Court Press (ESPN 3853870)" names the league
+and is left alone. The name a manager sees lives in `app/brand.py` and
+nowhere else — pages, mails, the draft room, the scripts' own titles read it
+from there, and `tests/test_brand.py` reads every page and mail the server
+can produce and fails on the old name. Identifiers do not move: the
+repository is `fcp-core`, the settings are `FCP_*`, the units are
+`fcp-core-*.service`, the cookie is `fcp_session`. The domain move and the
+switch to accounts mode are a runbook, **docs/cutover.md**, done by hand;
+`scripts/preflight_public.py` says whether the settings are ready first.
+
 ## Works today
 
 - FastAPI application boots (`create_app()`)

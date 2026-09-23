@@ -1,5 +1,8 @@
 # Draft night: the runbook
 
+*The room is Box Out's draft screen (`app/brand.py`); the league it drafts is
+Full Court Press, which is a different thing wearing the same old name.*
+
 **Written:** 2026-09-18, for the 2027 auction on Saturday 10 October, 6:00 pm UTC.
 **Revised:** 2026-09-20, when the room learned to connect to ESPN from the
 screen and `Draft Room.command` replaced the command line.

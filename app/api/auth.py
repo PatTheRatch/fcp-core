@@ -38,7 +38,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import accounts
+from app import accounts, brand
 from app.api import access
 from app.api.access import (
     COOKIE,
@@ -356,17 +356,17 @@ def me(viewer: CurrentUser, session: SessionDep, settings: SettingsDep) -> MeOut
 SHELL = """<!doctype html>
 <html lang="en" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FCP</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
-<body><main class="page"><header class="mast"><p class="eyebrow">Full Court Press</p>
-<h1>FCP</h1>{body}</header></main></body></html>
+<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
+<body><main class="page"><header class="mast"><p class="eyebrow">{brand}</p>
+<h1>Sign in</h1>{body}</header></main></body></html>
 """
 
 
 def _shell(body: str) -> str:
-    return SHELL.format(body=body)
+    return SHELL.format(brand=escape(brand.BRAND), body=body)
 
 
 @router.get("/sign-in", include_in_schema=False, response_class=HTMLResponse)
 def sign_in_page() -> HTMLResponse:
     """The form. Read per request, like the other pages, so an edit shows on a refresh."""
-    return HTMLResponse((STATIC / "sign-in.html").read_text())
+    return HTMLResponse(brand.fill((STATIC / "sign-in.html").read_text()))

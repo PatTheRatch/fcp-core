@@ -4,7 +4,17 @@
 shell, the league switcher, the account pages, the existing pages moved
 under it, the landing page). The VPS serves it in single mode like the rest
 of the API; accounts mode, and so the landing page for a stranger, is the
-cutover's (docs/accounts.md).
+cutover's (docs/accounts.md, docs/cutover.md).
+
+**The name.** The site is **Box Out**, at **boxoutfantasy.com**, since
+2026-09-22; it was Full Court Press, which is the name of Patrick's own
+league and still is. No page writes the name down: `app/brand.py` holds it
+and the files carry the tokens `{{brand}}`, `{{brand_domain}}` and
+`{{brand_tagline}}`, which every route that serves a page fills in on the way
+out (`app/api/site.py`, `app/api/pages.py` for the shell script,
+`app/api/auth.py`, `app/api/leagues_admin.py`, the draft service, and
+`scripts/draft_plan.py` for the plan it writes). A test reads every page and
+mail the server can produce and fails on the old name.
 
 Code: `app/api/site.py` (the routes, and the one JSON route the pages
 needed), `app/api/static/shell.js` (the navigation), `app/api/static/*.html`
@@ -64,12 +74,12 @@ and `/leagues` (his leagues, each with its name and the seasons held; in
 single mode, every league stored).
 
 ```
-FULL COURT PRESS  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTORY  MY TEAM ▾   ACCOUNT ▾  [Lights down]
-                    Your leagues                                          Through The Wire   you@example.com
-                    Seasons 2027 2026 ...                                 Week               Connections
-                                                                          Season             Projections
-                                                                          Moves              Alerts
-                                                                          Trades             Sign out
+BOX OUT  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTORY  MY TEAM ▾   ACCOUNT ▾  [Lights down]
+           Your leagues                                          Through The Wire   you@example.com
+           Seasons 2027 2026 ...                                 Week               Connections
+                                                                 Season             Projections
+                                                                 Moves              Alerts
+                                                                 Trades             Sign out
 ```
 
 - **The league** is the one in the URL. On a page without one (the account
@@ -100,23 +110,45 @@ FULL COURT PRESS  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTO
   on the first or last item; the arrows, Home and End move through it;
   Escape closes it and puts the focus back on its button; it closes when the
   focus or a click goes elsewhere.
-- **At phone width** the bar is two rows: FCP, the league and Account with
-  the switch (a glyph, its words kept for a screen reader) on the first, the
-  sections on the second, wrapping rather than scrolling. Nothing scrolls the
-  page sideways; a wide table scrolls in its own frame.
+- **At phone width** the bar is two rows: the name, the league and Account
+  with the switch (a glyph, its words kept for a screen reader) on the first,
+  the sections on the second, wrapping rather than scrolling. Nothing scrolls
+  the page sideways; a wide table scrolls in its own frame. The name is not
+  abbreviated: "Box Out" fits at any width, and the long/short pair the old
+  name needed is gone.
 
 `SHELL` is a promise of what it found (`{me, league, season, myTeam, ...}`),
 which the league pages await to know which team is the reader's.
 
 ## The pages, in words
 
-**The landing page** (`/`, signed out). The bar with the name and "Sign in".
-An eyebrow, "Head-to-head, nine categories, on ESPN"; the headline "Your
-league, read properly"; a paragraph on what it does, ending "the moves worth
-a look. You decide."; a burnt-orange block, "Sign in with your email". Below
-a rule, three short columns: The league (free for every member), Your team
-(private to its manager), Getting in (one member connects, invites the
-rest, no password). One screen, no data, no script but the theme.
+**The landing page** (`/`, signed out) is the one page a stranger sees, and
+it was rewritten on 2026-09-22 with the rename. The bar with the name, "Sign
+in" and the light/dark switch. The eyebrow "Head-to-head, nine categories, on
+ESPN", the name as the headline, the tagline and a paragraph under it, the
+burnt-orange "Sign in with your email", and one line for someone whose league
+is not connected: ask whoever runs it, or connect it yourself.
+
+Then **What it is for**: three claims side by side, each one a measured
+figure, the sentence it supports and the note it came from — the pickup
+recommender's **+0.16** categories a week at the 0.20 bar over 616
+team-decision points (docs/pickups_backtest.md); the streamed place's **0.38
+against the held thirteenth man's 0.00** over 1,536 team-periods
+(docs/streaming_lane.md); the trade evaluator's **25 of 55**, a coin, which
+is why the trade page leads with the fit (docs/trades.md). Nothing on this
+page is a number the docs do not already publish, and each one says where it
+is from, because a stranger has no other reason to believe it.
+
+Then the stance, in an accent rule: **a tool, not gospel** — the numbers come
+with their reasons, and the manager decides. Then two columns: what it needs
+from him (an ESPN nine-category head-to-head league, an email address, a
+member who connects the league) and what it will never do (touch ESPN on his
+behalf: no add, no drop, no claim, no trade, no lineup).
+
+No data, no script but the theme, both palettes, and no screenshots: there
+are none worth showing yet, and a page of empty frames saying "screenshot"
+is the sort of thing this product does not do. The file carries a marked
+slot where they go.
 
 **This week.** Eyebrow: the league's name and season. Headline "This week"
 ("The playoffs" in a playoff period). A line: "Matchup period 15, days

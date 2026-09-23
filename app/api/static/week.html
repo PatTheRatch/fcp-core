@@ -14,7 +14,7 @@
 <div class="page">
 
 <header class="mast">
-  <p class="eyebrow" id="eyebrow">Full Court Press &middot; the week</p>
+  <p class="eyebrow" id="eyebrow">{{brand}} &middot; the week</p>
   <h1 id="title">&nbsp;</h1>
   <p class="sub" id="sub"></p>
 </header>
@@ -328,7 +328,7 @@ function drawMasthead(report) {
   document.title = `${us} — the week`;
   $("title").textContent = us;
   $("eyebrow").textContent =
-    `Full Court Press · ${WHERE.season} · matchup period ${report.matchup_period}`;
+    `{{brand}} · ${WHERE.season} · matchup period ${report.matchup_period}`;
   $("sub").innerHTML =
     (them === null
       ? "On a <b>bye</b> this period, so there is no head-to-head to play for. "

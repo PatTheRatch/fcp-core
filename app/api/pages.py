@@ -59,6 +59,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import brand
 from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
 from app.api.schemas import PageContextOut, PageDayOut, PagePeriodOut, PageTeamOut
@@ -98,11 +99,15 @@ MeQuery = Annotated[
 
 @router.get("/pages/static/{name}", include_in_schema=False)
 def asset(name: str) -> Response:
-    """The pages' shared stylesheet and scripts."""
+    """The pages' shared stylesheet and scripts.
+
+    Through `brand.fill` like a page, because the shell draws the product's
+    name and the shell is one of these files.
+    """
     media_type = ASSETS.get(name)
     if media_type is None:
         raise HTTPException(status_code=404, detail=f"no page asset {name!r}")
-    return Response((STATIC / name).read_text(), media_type=media_type)
+    return Response(brand.fill((STATIC / name).read_text()), media_type=media_type)
 
 
 @router.get(

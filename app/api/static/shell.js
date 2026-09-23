@@ -74,8 +74,7 @@ function shellFrame() {
   if (!host) return;
   host.innerHTML =
     `<header class="shell"><nav class="nav" aria-label="Site">` +
-    `<a class="brand" href="/" aria-label="Full Court Press, home">` +
-    `<span class="long">Full Court Press</span><span class="short">FCP</span></a>` +
+    `<a class="brand" href="/" aria-label="{{brand}}, home">{{brand}}</a>` +
     `<div class="nav-main" id="shell-main"></div>` +
     `<div class="end"><div id="shell-account"></div>` +
     `<button class="btn theme" id="theme" type="button" aria-pressed="false" ` +

@@ -42,6 +42,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app import brand
 from app.db.models import LeagueSeason
 from app.draft.bbm import ROLES
 from app.draft.live import Room, RoomError, load_room, market_prices
@@ -361,7 +362,9 @@ def main() -> int:
     args.out.write_text(json.dumps(out, indent=1))
     page = args.out.with_suffix(".html")
     page.write_text(
-        TEMPLATE.read_text().replace("__PLAN_DATA__", json.dumps(out, separators=(",", ":")))
+        brand.fill(
+            TEMPLATE.read_text().replace("__PLAN_DATA__", json.dumps(out, separators=(",", ":")))
+        )
     )
     print(f"wrote {args.out} and {page}: {len(players)} players", flush=True)
     return 0

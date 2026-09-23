@@ -62,6 +62,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from app import brand
 from app.draft.feed import (
     BoardSnapshot,
     LoggedPick,
@@ -300,8 +301,9 @@ def create_draft_app(
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def screen() -> str:
-        # Read per request, so an edit to the page shows on refresh.
-        return SCREEN.read_text()
+        # Read per request, so an edit to the page shows on refresh, with the
+        # product's name filled in from app/brand.py.
+        return brand.fill(SCREEN.read_text())
 
     @app.post("/api/rehearsal/{action}")
     def rehearse(action: str) -> dict[str, Any]:

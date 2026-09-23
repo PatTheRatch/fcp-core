@@ -1,6 +1,14 @@
 # FCP Core
 
-The backend for **Full Court Press**, a fantasy basketball intelligence platform.
+The backend for **Box Out** (boxoutfantasy.com), a category-league fantasy
+basketball product: it reads an ESPN nine-category head-to-head league and
+judges every move in the currency the league is actually won in.
+
+The product's name is in one place, `app/brand.py`, and every page, mail and
+script reads it from there. The repository, the `FCP_*` settings, the systemd
+units, the tables and the virtualenv keep their names: those are identifiers,
+not the brand. "Full Court Press" in the measurement notes is the name of the
+owner's own league (ESPN 3853870), which is data, not the product.
 
 This is a greenfield rebuild. The first milestone is: given an ESPN fantasy league,
 ingest its real structure and data into PostgreSQL in a clean canonical form we can

@@ -37,6 +37,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import channels, notify
+from app.brand import BRAND
 from app.config import Settings, get_settings
 from app.db.session import make_engine, make_session_factory
 from app.watchdog import (
@@ -74,7 +75,7 @@ def tell_owners(
     server's owner (FCP_EMAIL_TO). Best effort: a failure is printed by its
     class, and never stops the rest."""
     for league in stale:
-        title = f"FCP: reconnect {league.name}"
+        title = f"{BRAND}: reconnect {league.name}"
         text = reconnect_message(league, settings.fcp_public_url)
         try:
             with factory() as session:

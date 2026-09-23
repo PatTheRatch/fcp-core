@@ -14,7 +14,7 @@
 <div class="page">
 
 <header class="mast">
-  <p class="eyebrow" id="eyebrow">Full Court Press &middot; trades</p>
+  <p class="eyebrow" id="eyebrow">{{brand}} &middot; trades</p>
   <h1 id="title">&nbsp;</h1>
   <p class="sub" id="sub"></p>
 </header>
@@ -703,7 +703,7 @@ function drawMasthead() {
   const us = nameOf(WHERE.team);
   document.title = `${us} — trades`;
   $("title").textContent = us;
-  $("eyebrow").textContent = `Full Court Press · ${WHERE.season} · trades`;
+  $("eyebrow").textContent = `{{brand}} · ${WHERE.season} · trades`;
   const source = `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
   if (ROSTERS && !ROSTERS.readiness.ready) {
     // No schedule and no rosters: there is no day to judge on, so the

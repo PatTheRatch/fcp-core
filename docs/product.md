@@ -1,6 +1,10 @@
-# fcp.patrickmcdowell.dev: what the site is, and how other people get in
+# Box Out: what the site is, and how other people get in
 
 **Written:** 2026-09-19, with Patrick's four decisions below.
+**Renamed:** 2026-09-22. The product is **Box Out**, at **boxoutfantasy.com**;
+it was called Full Court Press, which is the name of Patrick's own league and
+stays that (`app/brand.py`). The site lived at fcp.patrickmcdowell.dev on the
+tailnet and moves at the cutover (docs/cutover.md).
 **Status:** design. Nothing here is built yet; the recommenders, pages and
 draft room it describes are (STATUS.md). Built in November in the order at
 the end, with the draft on 2026-10-10 and the first weeks of the season
@@ -193,11 +197,16 @@ tables and not ESPN, so Yahoo, Fantrax or Sleeper is a new ingest mapping to
 the same tables. The harder change for those platforms is roto and points
 scoring, which is a rethink of the currency and not in this plan.
 
-**Going public.** Caddy routes fcp.patrickmcdowell.dev to fcp-core instead
-of the old stack (stopped, unused) once sign-in works. The API moves from the
-tailnet address to localhost behind Caddy; every route gets the scope check
-above; sign-in and invites are rate-limited; cookies are `Secure`,
-`HttpOnly`, `SameSite=Lax`.
+**Going public.** The domain is **boxoutfantasy.com** (registered 2026-09-23),
+not fcp.patrickmcdowell.dev, which stays on the old stack and is not touched.
+Caddy on the VPS gains a block for the new name and proxies it to fcp-core;
+every route gets the scope check above; sign-in and the invite routes are
+rate-limited; cookies are `Secure`, `HttpOnly`, `SameSite=Lax`. The API keeps
+its tailnet bind rather than moving to localhost, because Caddy runs in a
+container that reaches the host on the tailnet address and the scheduled
+scripts already call it there. **docs/cutover.md is the runbook**, written to
+be followed top to bottom on the VPS; `scripts/preflight_public.py` says
+whether the settings are ready before anything is switched.
 
 **The draft room** stays a tool a manager runs on his own machine this year.
 Hosting it for a league means live connections per draft room, which is a
@@ -226,8 +235,9 @@ project of its own; nothing above closes that door.
    the existing pages moved under it. Landing and sign-in pages.
 4. **Per-league jobs and precompute:** the job table and worker, per-team
    digests and alerts to each member's own channels, stored reports.
-5. **Cutover:** Caddy routes the domain to fcp-core, the API leaves the
-   tailnet, Full Court Press is invited.
+5. **Cutover:** Caddy answers for boxoutfantasy.com and proxies it to
+   fcp-core, accounts mode goes on, and the Full Court Press league's members
+   are invited. docs/cutover.md.
 6. **Platform columns:** `platform` on leagues and players, before any
    second platform is written.
 7. **Billing:** the entitlements table filled by a payment provider's

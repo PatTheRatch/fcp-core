@@ -39,6 +39,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from app import brand
 from app.api.access import (
     LEAGUE_MEMBER_PAGE,
     SIGNED_IN_PAGE,
@@ -58,8 +59,12 @@ MOVED = 308
 
 
 def _page(name: str) -> HTMLResponse:
-    """One page, read from disk per request so an edit shows on a refresh."""
-    return HTMLResponse((STATIC / name).read_text())
+    """One page, read from disk per request so an edit shows on a refresh.
+
+    The product's name is a token in the file and is filled in here, so the
+    pages have one source for it (`app/brand.py`).
+    """
+    return HTMLResponse(brand.fill((STATIC / name).read_text()))
 
 
 def _moved(to: str, request: Request) -> RedirectResponse:

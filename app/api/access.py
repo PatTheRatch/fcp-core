@@ -53,7 +53,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from app import accounts
+from app import accounts, brand
 from app.api.deps import LeagueIdPath, SeasonPath, SessionDep, TeamIdPath
 from app.config import Settings, get_settings
 from app.db.models import User
@@ -365,8 +365,8 @@ TEAM_PLAN_PAGE = Depends(require_team_plan_page)
 REFUSED_PAGE = """<!doctype html>
 <html lang="en" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FCP</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
-<body><main class="page"><header class="mast"><p class="eyebrow">FCP</p>
+<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
+<body><main class="page"><header class="mast"><p class="eyebrow">{brand}</p>
 <p class="sub">{message}</p><p class="sub"><a href="/">Your leagues</a></p></header></main>
 </body></html>
 """
@@ -382,7 +382,8 @@ def install(app: FastAPI) -> None:
     async def refused(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, PageRefusedError)
         return HTMLResponse(
-            REFUSED_PAGE.format(message=escape(exc.message)), status_code=exc.status_code
+            REFUSED_PAGE.format(brand=escape(brand.BRAND), message=escape(exc.message)),
+            status_code=exc.status_code,
         )
 
     app.add_exception_handler(SignInRequiredError, to_sign_in)

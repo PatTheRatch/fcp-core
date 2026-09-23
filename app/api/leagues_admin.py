@@ -52,7 +52,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import accounts, calibration, intake, memberships, secrets_box
+from app import accounts, brand, calibration, intake, memberships, secrets_box
 from app.accounts import now
 from app.api.access import (
     LEAGUE_MEMBER_PAGE,
@@ -861,8 +861,9 @@ def measure_again(league_id: int, viewer: LeagueOwner, session: SessionDep) -> C
 
 
 def _page(name: str) -> HTMLResponse:
-    """One page, read from disk per request, like the others."""
-    return HTMLResponse((STATIC / name).read_text())
+    """One page, read from disk per request, like the others, with the
+    product's name filled in from `app/brand.py`."""
+    return HTMLResponse(brand.fill((STATIC / name).read_text()))
 
 
 @router.get(

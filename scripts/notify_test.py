@@ -40,10 +40,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import notify
+from app.brand import BRAND
 from app.config import Settings, get_settings
 from app.mail import Mail, confirm_mail, sign_in_mail
 
-TITLE = "FCP delivery test"
+TITLE = f"{BRAND} delivery test"
 
 #: The address a preview's links point at when the server has no public URL
 #: of its own. It goes nowhere on purpose: a preview is looked at, not used.

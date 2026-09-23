@@ -71,6 +71,7 @@ from app import (
     secrets_box,
     subscriptions,
 )
+from app.brand import BRAND
 from app.config import Settings, get_settings
 from app.db.models import League, LeagueConnection, LeagueSeason, Team, User
 from app.digest import (
@@ -93,8 +94,8 @@ log = logging.getLogger("fcp.jobs")
 
 MORNING = "morning"
 ALERT = "alert"
-DIGEST_TITLE = "FCP morning digest"
-ALERT_TITLE = "FCP: a player of yours is out"
+DIGEST_TITLE = f"{BRAND} morning digest"
+ALERT_TITLE = f"{BRAND}: a player of yours is out"
 #: How far back a member's first digest (or alert) looks, with no earlier one.
 FIRST_WINDOW = {MORNING: timedelta(hours=24), ALERT: timedelta(hours=12)}
 
@@ -575,7 +576,7 @@ def _member_digest(
     where = settings.fcp_public_url
     if mode == ALERT:
         mail = alert_mail(
-            team.name if team is not None else "FCP",
+            team.name if team is not None else BRAND,
             text,
             when=f"{at:%a %d %b, %H:%M} UTC",
             public_url=where,
