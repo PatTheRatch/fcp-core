@@ -1,0 +1,42 @@
+{
+ "seconds": 3610.7348160743713,
+ "hurdle": 0.2,
+ "runs": [
+  {
+   "scale": 1.0,
+   "decision_points": 602,
+   "ranked_moves": 2950,
+   "cleared_total": 2402,
+   "cleared_per_point_mean": 3.990033222591362,
+   "no_move_points": 44,
+   "no_move_rate": 0.07308970099667775,
+   "net_mean": 0.2869255527190765,
+   "net_p90": 0.43358211613063835,
+   "net_median": 0.17214387502140216,
+   "net_max": 9.290494696834541,
+   "expected_mean": 4.410299003322259,
+   "expected_p90": 5.734028006291856,
+   "expected_p10": 3.1202638927627095,
+   "expected_sd": 1.164266919610828,
+   "expected_gap_mean": 0.8813429078528048
+  },
+  {
+   "scale": 2.0,
+   "decision_points": 602,
+   "ranked_moves": 2950,
+   "cleared_total": 2419,
+   "cleared_per_point_mean": 4.01827242524917,
+   "no_move_points": 41,
+   "no_move_rate": 0.0681063122923588,
+   "net_mean": 0.2213379209604233,
+   "net_p90": 0.28878260175207604,
+   "net_median": 0.10707772425656259,
+   "net_max": 9.102314052947953,
+   "expected_mean": 4.410299003322259,
+   "expected_p90": 5.3215187623770825,
+   "expected_p10": 3.597315329757695,
+   "expected_sd": 0.9102626323193255,
+   "expected_gap_mean": 0.6067980138488128
+  }
+ ]
+}
