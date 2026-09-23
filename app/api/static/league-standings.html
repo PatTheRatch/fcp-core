@@ -25,15 +25,16 @@
 <main id="body" hidden>
   <section>
     <div class="shead"><h2>The table</h2><span class="tag" id="tag">regular season</span></div>
-    <p class="lede">By matchups won, then fewest lost, then categories won. ESPN reports no
-      matchup record, so that one is counted from the stored matchups; the category record is
+    <p class="lede" id="lede">By matchups won, then fewest lost, then categories won. ESPN reports
+      no matchup record, so that one is counted from the stored matchups; the category record is
       ESPN's own, and counts categories rather than matchups. Byes count neither way.</p>
+    <nav class="views" id="views" hidden>
+      <button type="button" id="view-now" aria-pressed="true">As it stands</button>
+      <button type="button" id="view-soon" aria-pressed="false">Projected</button>
+    </nav>
     <div class="scroll">
-      <table class="grid">
-        <thead><tr>
-          <th></th><th class="l">Team</th><th>Matchups</th><th>Categories</th><th>Cat. share</th>
-          <th>Best run</th><th>Worst run</th><th>Ended on</th><th>Finish</th>
-        </tr></thead>
+      <table class="grid" id="grid">
+        <thead><tr id="head"></tr></thead>
         <tbody id="table"></tbody>
       </table>
     </div>
@@ -53,50 +54,270 @@
    longest runs and the one the season ended on), joined on the team id. The
    reader's own team is shaded; a team's name opens its plan only where the
    reader may open it: his own, or every team in single mode, where the one
-   user is an operator. */
+   user is an operator.
+
+   Two views of one table. "As it stands" is what the season has decided.
+   "Projected" is where it is heading (/projected, docs/projected_record.md):
+   every team's remaining weeks played head to head against the real opponent
+   each week, summed onto what is banked. It shows the projected matchup and
+   category records and the odds of making the playoffs; the odds of each
+   individual place open under the row on a click or a tap, because fourteen
+   more columns is not a table anybody can read on a phone.
+
+   The projection is a forecast and its record travels with it: the footnote
+   prints what it scored when 2026 was replayed against it. If /projected
+   cannot be read -- a season with no schedule stored, or a season that is
+   over -- the toggle simply does not appear and the page is what it was.
+
+   Every column sorts on a click, the first click on a number putting the
+   best value at the top, and the rank column returns the table to the
+   league's own order. */
 
 const WHERE = place();
 
 const run = (n, word) => (isNum(n) && n > 0 ? `${n} ${word}` : dash);
 
-function draw(ctx, standings, streaks) {
-  const runs = new Map((streaks || []).map((s) => [s.espn_team_id, s]));
-  const ours = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season
-    ? ctx.myTeam.espn_team_id : null;
-  const opens = (id) => (ctx && ctx.mode === "single") || id === ours;
-  $("table").innerHTML = standings
-    .map((row, i) => {
-      const streak = runs.get(row.espn_team_id);
-      const decided = row.categories_won + row.categories_lost + row.categories_tied;
-      const share = decided ? row.categories_won / decided : undefined;
-      const ended = streak && streak.final_streak_result
-        ? `${streak.final_streak_result === "WIN" ? "W" : "L"}${streak.final_streak}` : dash;
-      const name = opens(row.espn_team_id)
-        ? `<a href="${teamUrl(WHERE.league, WHERE.season, row.espn_team_id, "week")}">` +
-          `${escape(row.name)}</a>`
-        : escape(row.name);
+/* ---- the columns ---------------------------------------------------------
+   One description per column: its heading, the cell it draws, and the value
+   it sorts on (`undefined` for a column that does not sort). `best` says
+   which way the first click on it goes. */
+
+function columns(view, extra) {
+  const base = [
+    { head: "", cls: "rank", cell: (r, i) => `<td class="rank">${i + 1}</td>`, sort: null },
+    { head: "Team", cls: "l", cell: (r) => r.nameCell, sort: (r) => r.name, best: "up" },
+    {
+      head: "Matchups",
+      cell: (r) => `<td>${wlt(r.matchups_won, r.matchups_lost, r.matchups_tied)}</td>`,
+      sort: (r) => r.matchups_won,
+      best: "down",
+    },
+    {
+      head: "Categories",
+      cell: (r) => `<td>${wlt(r.categories_won, r.categories_lost, r.categories_tied)}</td>`,
+      sort: (r) => r.categories_won,
+      best: "down",
+    },
+    {
+      head: "Cat. share",
+      cell: (r) => `<td>${isNum(r.share) ? r.share.toFixed(3).replace(/^0/, "") : dash}</td>`,
+      sort: (r) => r.share,
+      best: "down",
+    },
+  ];
+  if (view === "soon") {
+    const byes = extra && extra.bye_count > 0;
+    const soon = [
+      {
+        head: "Proj. matchups",
+        cell: (r) => `<td>${r.soon ? fixed(r.soon.projected_matchups[0], 1) + "–" +
+          fixed(r.soon.projected_matchups[1], 1) : dash}</td>`,
+        sort: (r) => (r.soon ? r.soon.projected_matchups[0] : undefined),
+        best: "down",
+      },
+      {
+        head: "Proj. categories",
+        cell: (r) => `<td>${r.soon ? record(r.soon.projected_record) : dash}</td>`,
+        sort: (r) => (r.soon ? r.soon.projected_record[0] : undefined),
+        best: "down",
+      },
+      {
+        head: "Playoffs",
+        cell: (r) =>
+          `<td class="odds">${r.soon
+            ? `<button type="button" class="seeds" data-team="${r.espn_team_id}" ` +
+              `aria-expanded="false">${pct(r.soon.playoff_odds)}</button>`
+            : dash}</td>`,
+        sort: (r) => (r.soon ? r.soon.playoff_odds : undefined),
+        best: "down",
+      },
+    ];
+    if (byes) {
+      soon.push({
+        head: "Bye",
+        cell: (r) => `<td>${r.soon && isNum(r.soon.bye_odds) ? pct(r.soon.bye_odds) : dash}</td>`,
+        sort: (r) => (r.soon ? r.soon.bye_odds : undefined),
+        best: "down",
+      });
+    }
+    return [...base, ...soon];
+  }
+  return [
+    ...base,
+    {
+      head: "Best run",
+      cell: (r) => `<td>${r.streak ? run(r.streak.longest_win_streak, "won") : dash}</td>`,
+      sort: (r) => (r.streak ? r.streak.longest_win_streak : undefined),
+      best: "down",
+    },
+    {
+      head: "Worst run",
+      cell: (r) => `<td>${r.streak ? run(r.streak.longest_loss_streak, "lost") : dash}</td>`,
+      sort: (r) => (r.streak ? r.streak.longest_loss_streak : undefined),
+      best: "up",
+    },
+    { head: "Ended on", cell: (r) => `<td>${r.ended}</td>`, sort: null },
+    {
+      head: "Finish",
+      cell: (r) => `<td>${r.final_standing ? `#${r.final_standing}` : dash}</td>`,
+      sort: (r) => r.final_standing,
+      best: "up",
+    },
+  ];
+}
+
+/** The seed odds for one team, as a row of bars under its own row. */
+function seedsHtml(team, span, playoffs) {
+  const cells = team.finishes
+    .map((share, place) => {
+      const made = place < playoffs;
+      const height = Math.max(2, Math.round(share * 34));
       return (
-        `<tr class="${row.espn_team_id === ours ? "ours" : ""}">` +
-        `<td class="rank">${i + 1}</td>` +
-        `<td class="name">${name}</td>` +
-        `<td>${wlt(row.matchups_won, row.matchups_lost, row.matchups_tied)}</td>` +
-        `<td>${wlt(row.categories_won, row.categories_lost, row.categories_tied)}</td>` +
-        `<td>${isNum(share) ? share.toFixed(3).replace(/^0/, "") : dash}</td>` +
-        `<td>${streak ? run(streak.longest_win_streak, "won") : dash}</td>` +
-        `<td>${streak ? run(streak.longest_loss_streak, "lost") : dash}</td>` +
-        `<td>${ended}</td>` +
-        `<td>${row.final_standing ? `#${row.final_standing}` : dash}</td></tr>`
+        `<span class="seed${made ? " in" : ""}" title="${place + 1}: ${pct(share)}">` +
+        `<i style="height:${height}px"></i><em>${place + 1}</em></span>`
       );
     })
     .join("");
+  return (
+    `<tr class="sub seedrow" data-for="${team.espn_team_id}"><td></td>` +
+    `<td colspan="${span - 1}"><div class="seeds-bar">${cells}</div>` +
+    `<p class="note">Where ${escape(team.name)} finishes, first place on the left; ` +
+    `the shaded places make the playoffs.</p></td></tr>`
+  );
+}
+
+/* ---- drawing -------------------------------------------------------------
+   The rows are prepared once (names, shares, streaks, the projection joined
+   on the team id) and then only ordered and rendered, so a sort or a switch
+   of view re-reads nothing. */
+
+const STATE = { rows: [], view: "now", sort: null, projection: null, open: new Set() };
+
+function prepare(ctx, standings, streaks, projection) {
+  const runs = new Map((streaks || []).map((s) => [s.espn_team_id, s]));
+  const soon = new Map(((projection && projection.teams) || []).map((t) => [t.espn_team_id, t]));
+  const ours = ctx && ctx.myTeam && ctx.myTeam.season === WHERE.season
+    ? ctx.myTeam.espn_team_id : null;
+  const opens = (id) => (ctx && ctx.mode === "single") || id === ours;
+  return standings.map((row) => {
+    const streak = runs.get(row.espn_team_id);
+    const decided = row.categories_won + row.categories_lost + row.categories_tied;
+    return {
+      ...row,
+      streak,
+      soon: soon.get(row.espn_team_id) || null,
+      ours: row.espn_team_id === ours,
+      share: decided ? row.categories_won / decided : undefined,
+      ended: streak && streak.final_streak_result
+        ? `${streak.final_streak_result === "WIN" ? "W" : "L"}${streak.final_streak}` : dash,
+      nameCell: `<td class="name">${opens(row.espn_team_id)
+        ? `<a href="${teamUrl(WHERE.league, WHERE.season, row.espn_team_id, "week")}">` +
+          `${escape(row.name)}</a>`
+        : escape(row.name)}</td>`,
+    };
+  });
+}
+
+function ordered(cols) {
+  const rows = STATE.rows.slice();
+  if (STATE.sort === null) return rows;
+  const column = cols[STATE.sort.at];
+  if (!column || !column.sort) return rows;
+  const sign = STATE.sort.down ? -1 : 1;
+  return rows.sort((a, b) => {
+    const x = column.sort(a);
+    const y = column.sort(b);
+    if (x === y) return 0;
+    if (x === undefined || x === null) return 1;
+    if (y === undefined || y === null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sign;
+  });
+}
+
+function draw() {
+  const cols = columns(STATE.view, STATE.projection);
+  const playoffs = STATE.projection ? STATE.projection.playoff_team_count : 0;
+  $("head").innerHTML = cols
+    .map((column, at) => {
+      const on = STATE.sort && STATE.sort.at === at;
+      const arrow = on ? (STATE.sort.down ? " ▾" : " ▴") : "";
+      const inner = column.sort
+        ? `<button type="button" data-col="${at}">${escape(column.head)}${arrow}</button>`
+        : escape(column.head);
+      return `<th class="${column.cls || ""}">${inner}</th>`;
+    })
+    .join("");
+  const body = [];
+  ordered(cols).forEach((row, i) => {
+    body.push(
+      `<tr class="${row.ours ? "ours" : ""}">` + cols.map((c) => c.cell(row, i)).join("") + "</tr>",
+    );
+    if (STATE.view === "soon" && row.soon && STATE.open.has(row.espn_team_id)) {
+      body.push(seedsHtml(row.soon, cols.length, playoffs));
+    }
+  });
+  $("table").innerHTML = body.join("");
+}
+
+function wireTable() {
+  $("grid").addEventListener("click", (event) => {
+    const head = event.target.closest("th button[data-col]");
+    if (head) {
+      const at = Number(head.dataset.col);
+      const cols = columns(STATE.view, STATE.projection);
+      const best = cols[at] && cols[at].best === "down";
+      STATE.sort =
+        STATE.sort && STATE.sort.at === at ? { at, down: !STATE.sort.down } : { at, down: best };
+      draw();
+      return;
+    }
+    const seeds = event.target.closest("button.seeds");
+    if (seeds) {
+      const id = Number(seeds.dataset.team);
+      if (STATE.open.has(id)) STATE.open.delete(id);
+      else STATE.open.add(id);
+      draw();
+    }
+  });
+  const buttons = { now: $("view-now"), soon: $("view-soon") };
+  Object.entries(buttons).forEach(([view, button]) => {
+    button.addEventListener("click", () => {
+      STATE.view = view;
+      STATE.sort = null;
+      Object.entries(buttons).forEach(([which, other]) =>
+        other.setAttribute("aria-pressed", String(which === view)),
+      );
+      $("tag").textContent = view === "soon" ? "projected" : "regular season";
+      $("lede").innerHTML = view === "soon" ? projectedLede() : NOW_LEDE;
+      draw();
+    });
+  });
+}
+
+const NOW_LEDE =
+  "By matchups won, then fewest lost, then categories won. ESPN reports no matchup record, " +
+  "so that one is counted from the stored matchups; the category record is ESPN's own, and " +
+  "counts categories rather than matchups. Byes count neither way.";
+
+function projectedLede() {
+  const p = STATE.projection;
+  if (!p) return NOW_LEDE;
+  return (
+    `Where the season is heading, from the rosters as they stand on day <b>${p.as_of}</b>` +
+    (p.as_of_date ? ` (${dayName(p.as_of_date)})` : "") +
+    `: each of the <b>${count(p.periods.length, "week")}</b> left played head to head against ` +
+    `the real opponent, added to what is banked. Tap a playoff figure for the odds of each ` +
+    `place. Ordered by ${escape(p.tiebreak)}.`
+  );
 }
 
 async function start() {
   startTheme();
   const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
-  const [standings, streaks, ctx] = await Promise.all([
+  const [standings, streaks, projection, ctx] = await Promise.all([
     get(`${base}/standings`),
     get(`${base}/streaks`),
+    get(`${base}/projected${params(WHERE)}`, { quiet: true }),
     SHELL,
   ]);
   document.title = `Standings · ${leagueName(ctx, WHERE.league)}`;
@@ -112,11 +333,20 @@ async function start() {
   $("sub").innerHTML = played
     ? `${count(rows.length, "team")}. The regular season's matchups, byes left out.`
     : `${count(rows.length, "team")}, and no matchup decided yet this season.`;
-  draw(ctx, rows, streaks.ok ? streaks.body : []);
+  STATE.projection = projection.ok ? projection.body : null;
+  STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], STATE.projection);
+  if (STATE.projection) $("views").hidden = false;
+  draw();
+  wireTable();
   $("foot").innerHTML =
     `Refreshed at <b>${clock()}</b>. Read-only. A tie breaks a run rather than extending it, ` +
     `so "5 won" is five wins in a row.` +
-    (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`);
+    (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`) +
+    (STATE.projection
+      ? `<br>The projection is a forecast, built on day <b>${STATE.projection.as_of}</b> from ` +
+        `${escape(STATE.projection.source_note)}. ${escape(STATE.projection.playoff_note ||
+        "")}<br>${escape(STATE.projection.calibration_note)}`
+      : "");
   $("body").hidden = false;
 }
 

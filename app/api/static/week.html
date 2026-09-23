@@ -90,6 +90,18 @@
     <div id="outlook"></div>
   </section>
 
+  <section id="rest-section" hidden>
+    <div class="shead"><h2>Rest of season</h2><span class="tag" id="rest-tag"></span></div>
+    <p class="lede" id="rest-lede"></p>
+    <div class="scroll">
+      <table class="grid" id="rest-grid">
+        <thead><tr id="rest-head"></tr></thead>
+        <tbody id="rest-weeks"></tbody>
+      </table>
+    </div>
+    <div id="rest-finish"></div>
+  </section>
+
 </main>
 
 <p class="foot" id="foot"></p>
@@ -485,6 +497,78 @@ function drawOutlook(report) {
     `which is what every drop below is charged.</p></article>`;
 }
 
+/* ---- Rest of season ------------------------------------------------------
+   The team's slice of the league projection (/teams/{id}/projected,
+   docs/projected_record.md): every week still to play, who it is against,
+   the chance of each of the nine and the categories it is expected to take,
+   then where the season ends up. It is the same payload the Standings page
+   draws, narrowed to this team, so the two cannot disagree.
+
+   Drawn only when the route answers. A season with no schedule stored, or
+   one that is over, simply has no rest of season and the section stays
+   hidden rather than saying so twice. */
+
+function drawRest(projection) {
+  if (!projection) return;
+  const team = projection.teams[0];
+  if (!team || !team.weeks.length) return;
+  $("rest-section").hidden = false;
+  $("rest-tag").textContent = count(team.weeks.length, "week");
+  $("rest-lede").innerHTML =
+    `Every week left, played against the opponent the schedule actually gives, on the rosters ` +
+    `as they stand on day <b>${projection.as_of}</b>. Banked ` +
+    `<b>${record([team.banked_won, team.banked_lost])}</b> in categories so far, expected ` +
+    `<b>${record([team.expected_won, team.expected_lost])}</b> from here, so projected to end ` +
+    `<b>${record(team.projected_record)}</b>.`;
+  $("rest-head").innerHTML =
+    `<th class="l">Week</th><th class="l">Against</th><th>Expected</th>` +
+    CATS.map((cat) => `<th class="small">${escape(cat)}</th>`).join("");
+  $("rest-weeks").innerHTML = team.weeks
+    .map((week) => {
+      if (week.opponent_espn_team_id === null) {
+        return (
+          `<tr><td class="name">${week.period}</td>` +
+          `<td class="name"><span class="faint">on a bye</span></td>` +
+          `<td>${dash}</td><td colspan="9"></td></tr>`
+        );
+      }
+      const cells = CATS.map((cat) => {
+        const p = week.probabilities[cat];
+        return `<td class="small ${isNum(p) && p >= 0.6 ? "up" : isNum(p) && p <= 0.4 ? "down" : ""}">` +
+          `${pct(p)}</td>`;
+      }).join("");
+      return (
+        `<tr class="${week.in_play ? "ours" : ""}"><td class="name">${week.period}` +
+        (week.in_play ? ` <span class="faint">now</span>` : "") +
+        `</td><td class="name">${escape(week.opponent_name)}</td>` +
+        `<td><b>${fixed(week.expected_wins, 2)}</b></td>${cells}</tr>`
+      );
+    })
+    .join("");
+
+  const places = team.finishes
+    .map((share, place) => ({ place: place + 1, share }))
+    .filter((row) => row.share >= 0.005);
+  const bars = places
+    .map(
+      (row) =>
+        `<li><span class="p">${row.place}</span>` +
+        `<span class="b"><i style="width:${Math.max(1, row.share * 100).toFixed(1)}%"></i></span>` +
+        `<span class="v">${pct(row.share)}</span></li>`,
+    )
+    .join("");
+  const bye = isNum(team.bye_odds)
+    ? ` A first-round bye: <b>${pct(team.bye_odds)}</b>.`
+    : "";
+  $("rest-finish").innerHTML =
+    `<p class="who">Where it finishes</p><ul class="places">${bars}</ul>` +
+    `<p class="why">Making the playoffs (the top ` +
+    `${count(projection.playoff_team_count, "place")}): <b>${pct(team.playoff_odds)}</b>.${bye} ` +
+    `Ordered by ${escape(projection.tiebreak)}, over ` +
+    `${count(projection.n_sims, "simulated season")}.</p>` +
+    `<p class="note">${escape(projection.playoff_note || "")}</p>`;
+}
+
 function drawFoot(report) {
   $("foot").innerHTML =
     `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
@@ -520,6 +604,7 @@ async function start() {
     context: get(`${base}/pages/context${query}`),
     report: get(`${base}/teams/${WHERE.team}/pickups/stream${params(WHERE)}`),
     today: get(`${base}/teams/${WHERE.team}/today${params(WHERE)}`, { quiet: true }),
+    rest: get(`${base}/teams/${WHERE.team}/projected${params(WHERE)}`, { quiet: true }),
   };
   const [context, today] = await Promise.all([asked.context, asked.today]);
   if (context.ok) CONTEXT = context.body;
@@ -543,6 +628,14 @@ async function start() {
   drawOutlook(body);
   drawFoot(body);
   $("body").hidden = false;
+  const rest = await asked.rest;
+  if (rest.ok) {
+    drawRest(rest.body);
+    $("foot").innerHTML +=
+      `<br>The rest of season: <span class="mono">scripts/projected.py</span>, ` +
+      `<span class="mono">docs/projected_record.md</span>. ` +
+      `${escape(rest.body.calibration_note)}`;
+  }
 }
 
 start();

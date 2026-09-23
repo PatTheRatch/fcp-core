@@ -17,8 +17,12 @@ request. Seven sections:
    (docs/acquirable_value.md, r = -0.63 between add volume and return).
 6. The season: where it ends on this roster, and the one move over the rest
    of it that would move it (`app.pickups.season`).
-7. Standings: where he stands on matchups and on categories. The projected
-   finish is a marked slot until that work lands.
+7. Standings: where he stands on matchups and on categories, and where the
+   season is heading -- his projected place, his projected category record
+   and his playoff odds, read from the morning's stored league projection
+   (`app.inseason.projected`, docs/projected_record.md) rather than built
+   here, so the message and the Standings page cannot disagree. "Not built
+   yet" when the morning's job has not run.
 
 TWO SHAPES, ONE BUILD
 
@@ -82,8 +86,9 @@ matchups as they stand, and what the league did in the last day.
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -1229,6 +1234,51 @@ def _place_of(session: Session, league_season: LeagueSeason, espn_team_id: int) 
     return None
 
 
+def _projected_finish(session: Session, league_season: LeagueSeason) -> dict[str, Any] | None:
+    """This morning's stored league projection, or None when there is none.
+
+    Read rather than built: the projection is a league-level job
+    (`app.jobs.PROJECT_STANDINGS`, docs/projected_record.md) that runs before
+    the digests, and a digest that rebuilt it would spend seconds doing work
+    the morning has already done -- and could disagree with the page. The
+    freshness rule is the routes' own, so the message and the Standings page
+    are reading the same row.
+    """
+    from app import reports
+
+    calendar = season_calendar(session, int(league_season.season))
+    if calendar is None:
+        return None
+    on = date.today()
+    row = reports.fresh_league(
+        session,
+        league_season.id,
+        reports.PROJECTED,
+        calendar.scoring_period_on(on),
+        on=on,
+    )
+    return dict(row.payload) if row is not None else None
+
+
+def projected_words(payload: dict[str, Any] | None, espn_team_id: int) -> str | None:
+    """The one line the Standing's marked slot wants, or None.
+
+    Place, projected category record and the playoff odds, from the stored
+    league report. Pure, so a test can hand it a payload.
+    """
+    if not payload:
+        return None
+    teams = payload.get("teams") or []
+    for place, team in enumerate(teams, start=1):
+        if int(team.get("espn_team_id", -1)) != espn_team_id:
+            continue
+        record = [*(team.get("projected_record") or ()), 0.0, 0.0]
+        won, lost = float(record[0]), float(record[1])
+        odds = float(team.get("playoff_odds") or 0.0)
+        return f"{place} of {len(teams)}, {won:.1f}-{lost:.1f} in categories, playoffs {odds:.0%}"
+    return None
+
+
 def standing_lines(
     session: Session, league_season: LeagueSeason, espn_team_id: int
 ) -> tuple[Standing | None, list[str]]:
@@ -1239,6 +1289,12 @@ def standing_lines(
         return None, [f"  no standings today: they could not be read ({type(error).__name__})"]
     if place is None:
         return None, ["  no matchup has been settled yet, so there is no table"]
+    try:
+        projected = projected_words(_projected_finish(session, league_season), espn_team_id)
+    except Exception:  # The digest goes out regardless.
+        projected = None
+    if projected is not None:
+        place = replace(place, projected=projected)
     return place, [
         f"  {place.describe()} on matchups",
         f"  {place.categories_won}-{place.categories_lost} on categories",

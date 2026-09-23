@@ -87,6 +87,15 @@
 const WHERE = place();
 const SETTLED = new Set(["HOME", "AWAY", "TIE"]);
 
+/** The projection's weeks, keyed `period:team` (see `chanceOf`). Filled by
+ *  `start` when /projected answers, and left empty when it does not: a
+ *  season with no schedule stored simply has no chances to show. */
+const PROJECTED = new Map();
+
+/** What a side's posted strip is, said once, so the reader can tell it from
+ *  the chances strip under it. */
+const SO_FAR = ` <span class="faint">&middot; so far</span>`;
+
 /** The day being looked at and the day before it. Two days, because one
  *  morning's news is thin and three is a scroll; the digest's own window is
  *  a day, and the route's default without one is the last 24 hours. */
@@ -156,6 +165,38 @@ function sideStrip(side, other) {
   );
 }
 
+/** The projection's row for one side of one matchup, or null.
+ *  Keyed (period, team), which is how the payload is shaped: one entry per
+ *  team per remaining week, both sides of every pairing. */
+function chanceOf(period, teamId) {
+  const found = PROJECTED.get(`${period}:${teamId}`);
+  return found && !found.on_bye && found.opponent_espn_team_id !== null ? found : null;
+}
+
+/** Each side's chances in this period's nine, with the categories it is
+ *  expected to take. Empty for a period the projection does not cover --
+ *  one already played, or one past the horizon -- which is most of them. */
+function chancesHtml(period, home, away) {
+  const mine = chanceOf(period, home.espn_team_id);
+  const theirs = away ? chanceOf(period, away.espn_team_id) : null;
+  if (!mine || !theirs) return "";
+  const played = mine.in_play && mine.days_remaining < mine.final_scoring_period -
+    mine.first_scoring_period + 1;
+  const note = mine.in_play
+    ? played
+      ? `From here: <b>${count(mine.days_remaining, "day")}</b> left, on what is already posted ` +
+        `plus what the rosters add.`
+      : `Before a game is played, on the rosters as they stand.`
+    : `${count(mine.final_scoring_period - mine.first_scoring_period + 1, "day")}, ` +
+      `on the rosters as they stand today.`;
+  return (
+    `<p class="who">The chances <span class="faint">&middot; ${note}</span></p>` +
+    `<div class="strip">${probabilityStrip(mine.probabilities)}</div>` +
+    `<p class="expect">${escape(home.name)} <b>${fixed(mine.expected_wins, 2)}</b> of 9` +
+    ` &middot; ${escape(away.name)} <b>${fixed(theirs.expected_wins, 2)}</b></p>`
+  );
+}
+
 function matchupHtml(matchup, ours) {
   const home = matchup.home;
   const away = matchup.away;
@@ -195,9 +236,12 @@ function matchupHtml(matchup, ours) {
     `<span class="side right${cls(away)}">${escape(away.name)}</span></div>` +
     `<p class="state">${state}</p>` +
     (started
-      ? `<p class="who">${escape(home.name)}</p><div class="strip">${sideStrip(home, away)}</div>` +
-        `<p class="who">${escape(away.name)}</p><div class="strip">${sideStrip(away, home)}</div>`
+      ? `<p class="who">${escape(home.name)}${SO_FAR}</p>` +
+        `<div class="strip">${sideStrip(home, away)}</div>` +
+        `<p class="who">${escape(away.name)}${SO_FAR}</p>` +
+        `<div class="strip">${sideStrip(away, home)}</div>`
       : "") +
+    chancesHtml(matchup.period, home, away) +
     `</article>`
   );
 }
@@ -419,10 +463,20 @@ async function start() {
     ? get(`${base}/teams/${ours}/pickups/glance${params(WHERE)}`, { quiet: true })
     : null;
 
-  const matchups = await get(`${base}/matchups?period=${period.period}`);
+  const [matchups, projection] = await Promise.all([
+    get(`${base}/matchups?period=${period.period}`),
+    get(`${base}/projected${params(WHERE)}`, { quiet: true }),
+  ]);
   if (!matchups.ok) {
     fail(`The matchups of period ${period.period} cannot be read: ${matchups.detail}`);
     return;
+  }
+  if (projection.ok) {
+    for (const team of projection.body.teams) {
+      for (const week of team.weeks) {
+        PROJECTED.set(`${week.period}:${team.espn_team_id}`, week);
+      }
+    }
   }
   const left = daysLeft(period, today);
   const over = left === 0;
@@ -467,16 +521,27 @@ async function start() {
     .map(([label, value, cls]) => `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd></div>`)
     .join("");
   $("tag").textContent = over || settled ? "final" : inPlay && begun ? "so far" : "not begun";
+  const chances = projection.ok && items.some((m) => m.away && chanceOf(period.period, m.home.espn_team_id));
   $("lede").innerHTML =
     "Each matchup's nine categories, a side's cell shaded where it is winning that category. " +
-    "The count is categories won, not points.";
+    "The count is categories won, not points." +
+    (chances
+      ? " Under each one, the chance the first side named takes each category from here, and " +
+        "the categories each side is expected to end the period with."
+      : "");
   $("matchups").innerHTML = items.length
     ? items.map((m) => matchupHtml(m, ours)).join("")
     : `<p class="empty">No matchups are stored for period ${period.period}.</p>`;
   $("foot").innerHTML =
     `Refreshed at <b>${clock()}</b>. Scores are ESPN's, as the ingest last stored them. ` +
     `<span class="mono">?today=</span> picks a day and so its period; a period that is over ` +
-    `shows its final score, not the score as it stood on that day. Read-only.`;
+    `shows its final score, not the score as it stood on that day. Read-only.` +
+    (chances
+      ? `<br>The chances are a forecast, built on day <b>${projection.body.as_of}</b> from ` +
+        `${escape(projection.body.source_note)}. ` +
+        `<a href="${leagueUrl(WHERE.league, WHERE.season, "standings")}${params(WHERE)}">` +
+        `Where it puts everybody</a>.<br>${escape(projection.body.calibration_note)}`
+      : "");
   $("body").hidden = false;
   if (report) drawYours(ctx, context.body, report);
   drawChanged(context.body, ours, $("changed-mine"));

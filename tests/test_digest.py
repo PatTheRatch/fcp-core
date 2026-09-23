@@ -1268,3 +1268,62 @@ def test_the_compact_email_carries_the_compact_text_beside_it(session: Session) 
     assert "THE LEAGUE" not in built.text
     assert "Worth a look" in built.html
     assert "The season" not in built.html, "the long form's sections are not drawn"
+
+
+# ---------------------------------------------------------------------------
+# the Standing line's projected finish
+# ---------------------------------------------------------------------------
+
+
+def test_the_standing_line_fills_its_projected_slot_from_the_stored_report() -> None:
+    """The one marked slot, from the morning's league projection.
+
+    `projected_words` is pure over the payload the `project_standings` job
+    stores (docs/projected_record.md), so the message quotes the row the
+    Standings page draws rather than working the number out a second time.
+    """
+    payload = {
+        "teams": [
+            {"espn_team_id": 9, "projected_record": [110.4, 60.6], "playoff_odds": 0.972},
+            {"espn_team_id": 1, "projected_record": [92.3, 78.7], "playoff_odds": 0.54},
+            {"espn_team_id": 4, "projected_record": [70.0, 101.0], "playoff_odds": 0.018},
+        ]
+    }
+    assert digest_module.projected_words(payload, 1) == (
+        "2 of 3, 92.3-78.7 in categories, playoffs 54%"
+    )
+    first = digest_module.projected_words(payload, 9)
+    assert first is not None and first.startswith("1 of 3, 110.4-60.6")
+    # A team that is not in the projection, and no projection at all, both
+    # leave the slot empty rather than inventing a place.
+    assert digest_module.projected_words(payload, 77) is None
+    assert digest_module.projected_words(None, 1) is None
+    assert digest_module.projected_words({}, 1) is None
+
+
+def test_a_standing_with_no_projection_still_says_where_he_is() -> None:
+    """Until the morning's job has run the slot says so, and nothing else on
+    the line changes -- which is what it has always done."""
+    place = digest_module.Standing(
+        place=3, of=14, won=8, lost=3, tied=0, categories_won=54, categories_lost=45
+    )
+    assert place.projected is None
+    line = Digest(
+        season=2026,
+        team_name="Through The Wire",
+        generated_at=LATER,
+        place=place,
+        table=["  3 of 14, 8-3 on matchups"],
+    ).standing_words()
+    assert line is not None
+    assert "projected finish: not built yet" in line
+    filled = replace(place, projected="3 of 14, 92.3-78.7 in categories, playoffs 54%")
+    told = Digest(
+        season=2026,
+        team_name="Through The Wire",
+        generated_at=LATER,
+        place=filled,
+        table=["  3 of 14, 8-3 on matchups"],
+    ).standing_words()
+    assert told is not None
+    assert "projected finish: 3 of 14, 92.3-78.7 in categories, playoffs 54%" in told
