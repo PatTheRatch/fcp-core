@@ -317,6 +317,61 @@ class Move:
 
 
 @dataclass(frozen=True)
+class WeekChange:
+    """One move's effect on the matchup in front of us, chance by chance.
+
+    What `week_deltas` has always computed, with the working shown: the nine
+    chances before the move and after it, the starts each man gets either
+    way, and whether the move seats somebody on a day a lineup slot was
+    going empty. `week_deltas` is the sum of `delta` over these, so a caller
+    that wants the table and a caller that wants the number are reading one
+    computation and cannot disagree.
+
+    On a bye there is no head to head at all: both mappings are empty and
+    `delta` is zero, which is exactly what `week_deltas` has always returned.
+    """
+
+    opponent_team_id: int | None
+    #: Days of the period still to play, today included.
+    days_remaining: int
+    #: P(this team wins the category) as things stand, and with the move made.
+    before: Mapping[str, float]
+    after: Mapping[str, float]
+    #: Starts per player over the window, without the move and with it.
+    starts_before: Mapping[int, int]
+    starts: Mapping[int, int]
+    #: True when the move seats a man on a day a slot was going empty.
+    fills_empty_day: bool
+
+    @property
+    def expected_before(self) -> float:
+        return sum(self.before.values())
+
+    @property
+    def expected_after(self) -> float:
+        return sum(self.after.values())
+
+    @property
+    def delta(self) -> float:
+        """Change in expected categories won this period."""
+        return self.expected_after - self.expected_before
+
+    @property
+    def shifts(self) -> tuple[CategoryShift, ...]:
+        """Every category's chance before and after, in the league's order."""
+        return tuple(CategoryShift(key, self.before[key], self.after[key]) for key in self.before)
+
+    def moved(self, threshold: float = MOVED_THRESHOLD) -> tuple[CategoryShift, ...]:
+        """The categories the move changed, largest change first."""
+        return tuple(
+            sorted(
+                (shift for shift in self.shifts if abs(shift.delta) >= threshold),
+                key=lambda shift: -abs(shift.delta),
+            )
+        )
+
+
+@dataclass(frozen=True)
 class EmptyDay:
     """A remaining day where a slot goes empty and a free agent could take it."""
 
@@ -609,6 +664,71 @@ def head_to_head(
     return out
 
 
+def contender_for(
+    session: Session,
+    league_season: LeagueSeason,
+    player: RosteredPlayer,
+    today: int,
+    *,
+    tilt: bool,
+    distributions: Sequence[CategoryDistribution],
+    as_of: date | None,
+) -> Contender:
+    """One man as a week values him: his per-game line, his weight, his days.
+
+    The one construction, so a report, a named move and the projected
+    standings all price the same man the same way.
+    """
+    per_game = per_game_line(
+        session, int(league_season.season), player.player_id, today, tilt=tilt, as_of=as_of
+    )
+    return Contender(
+        player=player,
+        per_game=per_game,
+        weight=weight(per_game, distributions),
+        days=frozenset(player.game_days),
+    )
+
+
+def evaluated_wire(
+    session: Session,
+    league_season: LeagueSeason,
+    week: TeamWeek,
+    today: int,
+    *,
+    pool: Iterable[int] | None = None,
+    pool_size: int = POOL_SIZE,
+    tilt: bool = True,
+    distributions: Sequence[CategoryDistribution],
+    as_of: date | None,
+) -> tuple[Contender, ...]:
+    """The free agents a week report actually evaluates, in its own order.
+
+    The wire less whoever this team already holds, cut to the best
+    `pool_size` by this week's line (`_ranked_wire`). Public because the
+    replacement charge a judgement makes is taken over exactly this set
+    (`spot_book`), so a caller judging one named move has to read the same
+    wire the search would have read or its season term is a different number.
+    """
+    held = {player.player_id for player in week.roster}
+    return _ranked_wire(
+        [
+            contender_for(
+                session,
+                league_season,
+                player,
+                today,
+                tilt=tilt,
+                distributions=distributions,
+                as_of=as_of,
+            )
+            for player in load_free_agents(session, league_season, week, player_ids=pool)
+            if player.player_id not in held
+        ],
+        pool_size,
+    )
+
+
 def stream_recommendations(
     session: Session,
     league_season: LeagueSeason,
@@ -647,28 +767,32 @@ def stream_recommendations(
     days = week.scoring_periods_remaining
 
     def contender(player: RosteredPlayer) -> Contender:
-        per_game = per_game_line(session, season, player.player_id, today, tilt=tilt, as_of=as_of)
-        return Contender(
-            player=player,
-            per_game=per_game,
-            weight=weight(per_game, distributions),
-            days=frozenset(player.game_days),
+        return contender_for(
+            session,
+            league_season,
+            player,
+            today,
+            tilt=tilt,
+            distributions=distributions or (),
+            as_of=as_of,
         )
 
     mine = {player.player_id: contender(player) for player in week.active}
-    held = {player.player_id for player in week.roster}
     historical_wire = pool is None and not has_free_agent_snapshots(session, league_season)
-    wire = _ranked_wire(
-        [
-            contender(player)
-            for player in load_free_agents(session, league_season, week, player_ids=pool)
-            if player.player_id not in held
-        ],
-        pool_size,
+    wire = evaluated_wire(
+        session,
+        league_season,
+        week,
+        today,
+        pool=pool,
+        pool_size=pool_size,
+        tilt=tilt,
+        distributions=distributions,
+        as_of=as_of,
     )
     by_id = {found.player_id: found for found in wire}
 
-    spots = _spots(
+    spots = spot_book(
         session,
         league_season,
         team_id,
@@ -800,7 +924,7 @@ def stream_recommendations(
         if bids:
             # Priced against the wire this report evaluated, so a pickup's
             # value rank means the same thing in the second move as the first.
-            reported = _priced(session, league_season, week, reported, wire, hurdle)
+            reported = priced(session, league_season, week, reported, wire, hurdle)
         return _Search(moves=reported, base=base, before=before)
 
     # The plan. Each move after the first is found by searching again from
@@ -841,7 +965,7 @@ def stream_recommendations(
     )
 
 
-def _spots(
+def spot_book(
     session: Session,
     league_season: LeagueSeason,
     team_id: int,
@@ -861,6 +985,11 @@ def _spots(
     So the roster and the evaluated wire are re-counted over the rest of the
     season, which is the same arithmetic `app.pickups.season` builds its
     candidates from.
+
+    Public because a caller judging one move a manager named by hand
+    (`app.inseason.what_if`) has to charge it against the same book the
+    search would have: the replacement is the best free agent in `wire`, so
+    a different wire is a different season term for the same swap.
     """
     calendar = season_calendar(session, int(league_season.season))
     as_of = calendar.date_of(today) if calendar is not None else None
@@ -898,11 +1027,49 @@ def week_deltas(
 ) -> list[float]:
     """This week's change in expected categories won, for each (added, dropped).
 
+    The number half of `week_changes`, which is where the derivation and the
+    arguments are documented. Kept as its own function because it is what the
+    rest-of-season report and the trade evaluator ask for, and what they have
+    always asked for.
+    """
+    return [
+        change.delta
+        for change in week_changes(
+            session,
+            league_season,
+            team_id,
+            today,
+            moves,
+            tilt=tilt,
+            distributions=distributions,
+            waivers=waivers,
+            effective_day=effective_day,
+            opponent_move=opponent_move,
+        )
+    ]
+
+
+def week_changes(
+    session: Session,
+    league_season: LeagueSeason,
+    team_id: int,
+    today: int,
+    moves: Sequence[tuple[Sequence[int], Sequence[int]]],
+    *,
+    tilt: bool = True,
+    distributions: Sequence[CategoryDistribution] | None = None,
+    waivers: Mapping[int, tuple[date, int]] | None = None,
+    effective_day: int | None = None,
+    opponent_move: tuple[Sequence[int], Sequence[int]] | None = None,
+) -> list[WeekChange]:
+    """This week before and after, for each (added, dropped): the nine chances.
+
     The rest-of-season report needs the week's half of a judgement for moves
     it found by another route, and it must be the same number the streaming
     report would give: the same seating, the same head-to-head, the same
     knowable lines. So it is computed here rather than approximated there.
-    Zero for every move on a bye, where there is no head to head at all.
+    A bye has no head to head at all, so both mappings come back empty and
+    every delta is zero.
 
     `waivers` is the caller's `app.pickups.state.waiver_state` for the men
     arriving, so a claim that cannot play until Thursday is seated here on
@@ -925,14 +1092,25 @@ def week_deltas(
     no longer has.
     """
     week = load_team_week(session, league_season, team_id, today)
+    days = week.scoring_periods_remaining
     if week.opponent_team_id is None:
-        return [0.0 for _ in moves]
+        return [
+            WeekChange(
+                opponent_team_id=None,
+                days_remaining=len(days),
+                before={},
+                after={},
+                starts_before={},
+                starts={},
+                fills_empty_day=False,
+            )
+            for _ in moves
+        ]
     season = int(league_season.season)
     calendar = season_calendar(session, season)
     as_of = calendar.date_of(today) if calendar is not None else None
     if distributions is None:
         distributions = category_distributions(session, league_season)
-    days = week.scoring_periods_remaining
     split = days[0] if effective_day is None else effective_day
     before_days = tuple(day for day in days if day < split)
     after_days = tuple(day for day in days if day >= split)
@@ -978,22 +1156,27 @@ def week_deltas(
     # worlds; the days from it are the roster the move leaves.
     my_before = _Week(before_days, lineup, week.my_totals).project(mine).line
     engine = _Week(after_days, lineup, my_before)
-    base_line = engine.project(mine).line
-    base = sum(head_to_head(base_line, their_line, distributions, len(days)).values())
+    base = engine.project(mine)
+    before = head_to_head(base.line, their_line, distributions, len(days))
 
-    out: list[float] = []
+    out: list[WeekChange] = []
     for added, dropped in moves:
-        after = head_to_head(
-            engine.project(moved(mine, added, dropped)).line,
-            their_line,
-            distributions,
-            len(days),
+        projection = engine.project(moved(mine, added, dropped))
+        out.append(
+            WeekChange(
+                opponent_team_id=week.opponent_team_id,
+                days_remaining=len(days),
+                before=dict(before),
+                after=head_to_head(projection.line, their_line, distributions, len(days)),
+                starts_before=dict(base.starts),
+                starts=dict(projection.starts),
+                fills_empty_day=projection.empty_slot_days < base.empty_slot_days,
+            )
         )
-        out.append(sum(after.values()) - base)
     return out
 
 
-def _priced(
+def priced(
     session: Session,
     league_season: LeagueSeason,
     week: TeamWeek,

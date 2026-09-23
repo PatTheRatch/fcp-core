@@ -572,6 +572,7 @@ def project_standings(
     n_sims: int = N_SIMS,
     seed: int = SEED,
     unavailable: Mapping[int, Collection[int]] | None = None,
+    rosters: Mapping[int, Collection[int]] | None = None,
 ) -> Projection:
     """Every team's rest of season, from the stored schedule and today's rosters.
 
@@ -583,7 +584,18 @@ def project_standings(
     (`app.injuries.statuses_as_of`), which is the only availability a played
     season has, the listener never having run for one.
 
-    Raises `ValueError` when the season has no matchup period holding `today`.
+    `rosters` stands a team's roster on its head, by ESPN team id: the men
+    named are the ones that team is projected on, and every team not named
+    stands exactly as it is. That is the whole of the hypothetical view
+    (`app.inseason.what_if`) -- "what would the table look like if I made
+    this move" -- and it is why the seam docs/projected_record.md section 3
+    names is now taken for a hypothetical and still not for the stored
+    per-team reports. Only men who can be started belong in the list: a man
+    moved to injured reserve is simply left out, because a projection seats
+    nobody from there.
+
+    Raises `ValueError` when the season has no matchup period holding
+    `today`, and when `rosters` names a team this season does not have.
     """
     _first, last, today = horizon(session, league_season, today)
     season = int(league_season.season)
@@ -623,6 +635,17 @@ def project_standings(
     on_ir = frozenset(
         player.player_id for week in weeks.values() for player in week.roster if player.on_ir
     )
+    if rosters:
+        by_espn = {int(team.espn_team_id): team.id for team in teams}
+        for espn_team_id, ids in rosters.items():
+            row = by_espn.get(int(espn_team_id))
+            if row is None:
+                raise ValueError(f"there is no team {int(espn_team_id)} in the {season} season")
+            held[row] = [int(player_id) for player_id in ids]
+        # A man the change has taken off a roster is nobody's injured reserve
+        # any more, and a man it has put on one is simply not in the list.
+        standing = {player_id for ids in held.values() for player_id in ids}
+        on_ir = frozenset(player_id for player_id in on_ir if player_id in standing)
     horizon_days = tuple(range(today, last + 1))
     everyone = {
         player.player_id: player
