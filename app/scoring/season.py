@@ -31,8 +31,21 @@ class SeasonBook:
     _by_team: dict[int, dict[int, list[int]]] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, session: Session, season: int) -> SeasonBook:
-        league_season = session.scalar(select(LeagueSeason).where(LeagueSeason.season == season))
+    def load(
+        cls, session: Session, season: int, league_season: LeagueSeason | None = None
+    ) -> SeasonBook:
+        """The season's played rows, read once.
+
+        `league_season` names whose season it is. The intake passes it
+        (`app.intake.measure`), because a database now holds more than one
+        league and "the row of that year" is no longer one row; without it,
+        the first stored season of that year, which is what every caller
+        before the second league meant.
+        """
+        if league_season is None:
+            league_season = session.scalar(
+                select(LeagueSeason).where(LeagueSeason.season == season)
+            )
         if league_season is None:
             raise ValueError(f"no season {season}")
         periods = {

@@ -80,6 +80,15 @@ WINDOW = 14
 #: Transaction types that fill a roster spot from outside the league.
 ADD_TYPES = ("WAIVER", "FREEAGENT")
 
+#: **These two are the fallback now, not the number** (2026-09-22,
+#: docs/intake.md). Both were measured on one league, and a league connected
+#: to this server is measured on its own history by the intake chain; what a
+#: report actually charges is `app.calibration.calibration(session, league,
+#: ...)`, which falls back to these when a league has no measurement of its
+#: own and none of the leagues measured so far is shaped like it. The values
+#: below have not moved by a digit, and the seeded rows for Full Court Press
+#: are exactly these, so that league's pages print what they always printed.
+#:
 #: Categories a week a typical waiver pickup has returned in this league, the
 #: floor under what the wire gives back for a roster place a man *holds*.
 #: Measured by the table above over every executed add of every season: the
@@ -102,7 +111,13 @@ OPENED_PLACE = 0.38
 OPENED_PLACE_LOWER = 0.23
 
 
-def opened_places(count: int, replacement: float, *, first: float = OPENED_PLACE) -> float:
+def opened_places(
+    count: int,
+    replacement: float,
+    *,
+    first: float = OPENED_PLACE,
+    typical: float = TYPICAL_PICKUP,
+) -> float:
     """What the `count` places a move leaves open are worth, categories a week.
 
     `replacement` is what the wire gives a place back with a man in it -- the
@@ -128,10 +143,13 @@ def opened_places(count: int, replacement: float, *, first: float = OPENED_PLACE
     `first` is a parameter so that the old settlement (a flat replacement level
     per opened place) can be asked for by name when the two are being measured
     against each other, which is what `scripts/trade_calibration.py` does.
+    `typical` is the same parameter for the further places, and both default to
+    the constants below, which are now only the **fallback**: a league with its
+    own measurement passes its own (`app.calibration`, docs/intake.md).
     """
     if count <= 0:
         return 0.0
-    return max(replacement, first) + max(replacement, TYPICAL_PICKUP) * (count - 1)
+    return max(replacement, first) + max(replacement, typical) * (count - 1)
 
 
 @dataclass(frozen=True)

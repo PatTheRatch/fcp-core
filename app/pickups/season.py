@@ -92,6 +92,8 @@ from app.listener.events import OUT
 from app.pickups.bids import Bid, BidFit, bid_fit, recommend_bid, value_rank
 from app.pickups.judge import (
     DAYS_A_WEEK,
+    OPENED_PLACE,
+    TYPICAL_PICKUP,
     Judgement,
     horizon,
     judge,
@@ -160,6 +162,14 @@ __all__ = [
 #: with streaming, and the backtest does not charge a season move for the
 #: stream it displaces. The bar labels a move and never hides one, so a move
 #: under it still appears with its number.
+#:
+#: **This is the fallback now, not the bar** (2026-09-22, docs/intake.md).
+#: A league connected to this server has its own, measured on its own
+#: backtest or set by its own manager; what a report uses is
+#: `app.calibration.calibration(session, league, "season_hurdle_paid")`, and
+#: this is where that ends up when there is nothing better. The number has
+#: not moved, and Full Court Press's seeded row is Patrick's own choice of
+#: exactly this, dated and with his reason on it.
 SEASON_HURDLE_PAID = 0.20
 
 #: The same for a free add into an open place: lower, because it costs
@@ -171,7 +181,7 @@ SEASON_HURDLE_PAID = 0.20
 #: the 2026-09-21 run's pairs are 0.05/0.02, 0.10/0.05 and 0.20/0.10.) So
 #: this follows the paid bar rather than carrying a number of its own: it
 #: moved to 0.10 with it on 2026-09-21, which is also the pair that run's
-#: +1.21 was measured on.
+#: +1.21 was measured on. The fallback, like the paid bar above.
 SEASON_HURDLE_FREE = 0.10
 
 #: Free agents carried into the optimizer, the best by rest-of-season value
@@ -369,6 +379,8 @@ def season_recommendations(
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
     fit: BidFit | None = None,
+    floor: float = TYPICAL_PICKUP,
+    opened: float = OPENED_PLACE,
 ) -> SeasonReport:
     """The rest-of-season report for ESPN team `team_id` on day `today`.
 
@@ -376,6 +388,10 @@ def season_recommendations(
     wire, `distributions` stands in for the season's measured ones and
     `fit` for the fitted bids; all three exist for tests and the backtest.
     `tilt` switches the minutes tilt in the projection.
+
+    The two bars and the two wire numbers are this league's own when the
+    caller has them (`app.calibration.Bars`, docs/intake.md); the defaults
+    are the constants a league with no measurement of its own goes on using.
     """
     week = load_team_week(session, league_season, team_id, today)
     season = int(league_season.season)
@@ -529,6 +545,8 @@ def season_recommendations(
         wire=[player.player_id for player in wire],
         weekly={player_id: line.scaled(1.0 / weeks) for player_id, (line, _w) in values.items()},
         distributions=distributions,
+        floor=floor,
+        opened=opened,
     )
     weeks_deltas = week_deltas(
         session,

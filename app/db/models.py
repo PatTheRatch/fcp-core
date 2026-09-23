@@ -1534,12 +1534,21 @@ class Job(Base):
     that one is `done`, and fails it when that one fails. `last_error` is a
     fixed sentence of ours, never an exception's text, so it carries no
     credential.
+
+    `priority` orders the queue ahead of `run_after`: smaller runs first, and
+    everything is 0 but the intake's hurdle sweep, which is an hour and a
+    half of replay and must never stand in front of a morning's precomputes
+    (`app.jobs.LOW`, docs/intake.md).
     """
 
     __tablename__ = "jobs"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('ingest', 'status_pass', 'precompute', 'digest')", name="ck_jobs_kind"
+            "kind IN ('ingest', 'status_pass', 'precompute', 'digest', "
+            "'injury_backfill', 'injury_pass', "
+            "'intake_ingest', 'intake_schedule', 'intake_replacement', 'intake_lane', "
+            "'intake_hurdles', 'intake_trades', 'intake_pool', 'intake_done')",
+            name="ck_jobs_kind",
         ),
         CheckConstraint("state IN ('queued', 'running', 'done', 'failed')", name="ck_jobs_state"),
         UniqueConstraint("dedupe_key", name="uq_jobs_dedupe_key"),
@@ -1554,6 +1563,8 @@ class Job(Base):
     depends_on: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
     dedupe_key: Mapped[str] = mapped_column(String, nullable=False)
     state: Mapped[str] = mapped_column(String, nullable=False, server_default="queued")
+    #: Smaller runs first, before `run_after` is compared.
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -1778,3 +1789,66 @@ class DigestSubscription(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Calibration: each league's own measured numbers (docs/intake.md)
+# ---------------------------------------------------------------------------
+
+
+class LeagueCalibration(Base):
+    """One measured number, for one league, with where it came from.
+
+    `app.calibration` is the whole story and the only thing that should write
+    here. One row per (league, key); `league_id` null is a **pooled** row,
+    the aggregate of every league measured so far whose settings match, and
+    those are grouped by the settings digest in `payload`.
+
+    `value` is categories a week, and null for `trade_record`, which is a
+    table rather than a number and lives in `payload`. `n` is the sample the
+    value rests on, in that key's own unit (adds, team-periods, decision
+    points, deals), and a value whose `n` is under the key's minimum is kept
+    and shown but not used. `note` is one plain sentence a page prints under
+    the number, and `source` says which of the four places it came from.
+
+    A row written by the intake (`measured`) never replaces one the league's
+    manager set (`owner`): a bar is a choice about churn, and a sweep only
+    ever recommends one.
+    """
+
+    __tablename__ = "league_calibrations"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('measured', 'pooled', 'default', 'owner')",
+            name="ck_league_calibrations_source",
+        ),
+        CheckConstraint("n >= 0", name="ck_league_calibrations_n"),
+        UniqueConstraint("league_id", "key", name="uq_league_calibrations_league_key"),
+        Index(
+            "uq_league_calibrations_pooled_key",
+            "key",
+            unique=True,
+            postgresql_where=text("league_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Null for a pooled row, which belongs to no league.
+    league_id: Mapped[int | None] = mapped_column(ForeignKey("leagues.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    #: Categories a week. Null where the key is a table (`trade_record`).
+    value: Mapped[float | None] = mapped_column(Float)
+    #: Whatever the measurement produced: the sweep grid, the IQR, the 2x2,
+    #: and for a pooled row the settings it is keyed on.
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    #: The sample, in this key's own unit.
+    n: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    measured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: How long the run took, for the intake's own report of itself.
+    run_seconds: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")

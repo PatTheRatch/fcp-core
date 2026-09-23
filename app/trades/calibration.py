@@ -30,6 +30,17 @@ R2, and nearly all of that is lost when one side of a deal is subtracted from
 the other. The category-by-category half of the report is not in this sentence
 at all: it is the same week laid out one line at a time, and it does not depend
 on the headline being right.
+
+WHOSE RECORD IT IS
+
+`CALIBRATION_NOTE` below is the constant this league's page printed before
+the numbers moved into `league_calibrations` (docs/intake.md). It is no
+longer the only note there can be: `trade_note` writes the same sentence from
+a run's own figures, so a second league's page carries a record of its own
+trades rather than of ours. `trade_note` applied to the run below returns
+`CALIBRATION_NOTE` character for character, which is what
+`tests/test_trades.py` holds it to; that is the whole reason the constant is
+still here.
 """
 
 from __future__ import annotations
@@ -50,6 +61,7 @@ __all__ = [
     "UNEVEN_SIDES",
     "WINDOW_DAYS",
     "Measured",
+    "trade_note",
 ]
 
 
@@ -147,3 +159,116 @@ CALIBRATION_NOTE = (
     "not depend on this number being right. Read the number as one input to a "
     "conversation."
 )
+
+
+# ---------------------------------------------------------------------------
+# the same sentence, from any run's own numbers
+# ---------------------------------------------------------------------------
+
+#: Small whole numbers in words, for the horizon. A note a manager reads says
+#: "the thirty days after the deal", not "the 30 days after the deal".
+_NUMBERS = {7: "seven", 14: "fourteen", 21: "twenty-one", 30: "thirty", 60: "sixty"}
+
+#: Tenths of a category, in words. The note is deliberately vague about a
+#: quantity it only knows to about a tenth, and printing "0.389" would claim
+#: three digits of precision that twenty-five sides cannot carry.
+_TENTHS = {
+    0: "under a tenth",
+    1: "a tenth",
+    2: "two tenths",
+    3: "three tenths",
+    4: "four tenths",
+    5: "half",
+    6: "six tenths",
+    7: "seven tenths",
+    8: "eight tenths",
+    9: "nine tenths",
+    10: "a whole category",
+}
+
+
+def _words(number: int) -> str:
+    return _NUMBERS.get(number, str(number))
+
+
+def _tenths(value: float) -> str:
+    """A size in categories a week, said the way a person would say it."""
+    steps = round(abs(value) * 10)
+    if steps in _TENTHS:
+        return _TENTHS[steps]
+    return f"{steps / 10:.1f} categories"
+
+
+def trade_note(
+    *,
+    deals: int,
+    picked: int,
+    coin_range: tuple[int, int],
+    uneven_now: float,
+    window_days: int = WINDOW_DAYS,
+    uneven_before: float | None = None,
+    whose: str = "this league's history",
+) -> str:
+    """The sentence the trade page prints under the number, for one run.
+
+    Every figure in it comes from the run: how many deals could be replayed,
+    how many the evaluator called right, what a fair coin would give over the
+    same number of tosses (`coin_interval` in `scripts/trade_calibration.py`),
+    and what a consolidating deal is mis-priced by. Nothing is claimed that
+    the numbers do not support, and the verdict against the coin is read off
+    the interval rather than asserted: a league where the evaluator lands
+    outside the coin's range is told so.
+
+    `uneven_before` is the same figure from an earlier revision, when there is
+    one. Our own run has one -- R1's 0.389 against R2's 0.103, the one
+    measured defect R2 fixed -- so that clause is in our note; a league
+    measured once has no "before", and its note says only where it stands.
+
+    Applied to the published run this returns `CALIBRATION_NOTE` exactly,
+    which `tests/test_trades.py` holds it to, so this league's page cannot
+    move by a character.
+    """
+    low, high = coin_range
+    if picked > high:
+        verdict = (
+            "so on past evidence this number does better than a coin at picking the "
+            "winner of a trade"
+        )
+    elif picked < low:
+        verdict = (
+            "so on past evidence this number does worse than a coin at picking the "
+            "winner of a trade, which is a reason to distrust it"
+        )
+    else:
+        verdict = (
+            "so on past evidence this number is not better than a coin at picking the "
+            "winner of a trade"
+        )
+    if uneven_before is None:
+        consolidating = (
+            "On deals that send two men for one, where a roster place is left open, "
+            f"this number runs about {_tenths(uneven_now)} of a category a week away "
+            "from what those deals really did."
+        )
+    else:
+        consolidating = (
+            "One thing did get better. On deals that send two men for one, this number "
+            f"used to run about {_tenths(uneven_before)} of a category a week above "
+            "what those deals really did; most of that turned out to be the empty "
+            "roster place being priced as an ordinary waiver pickup at both ends, and "
+            "now that it is priced at what a streamed place really returns the gap is "
+            f"about {_tenths(uneven_now)}."
+        )
+    return (
+        f"This number is a forecast, and here is its record. Over the {deals} trades in "
+        f"{whose} that can be replayed, it pointed at the side that did better in "
+        f"{picked} of them, judged on the {_words(window_days)} days after the deal; a "
+        f"coin lands between {low} and {high} of {deals} nineteen times in twenty, "
+        f"{verdict}. It is better at players than at deals: what it says a man is "
+        "worth a week lines up reasonably well with what he goes on to do, and most of "
+        "that agreement is lost when one side of a deal is subtracted from the other. "
+        f"{consolidating} The category table beside it is a different matter: it is "
+        "what your roster posts in a week with the deal and without it, laid out one "
+        "category at a time, and it does not depend on this number being right. Read "
+        "the number as one input to a conversation."
+    )

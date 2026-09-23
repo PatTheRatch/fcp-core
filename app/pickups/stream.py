@@ -102,7 +102,15 @@ from app.draft.targets import CategoryDistribution, _normal_cdf, category_distri
 from app.draft.valuation import INVERTED_CATEGORIES, PERCENTAGE_COMPONENTS
 from app.inseason.startable import startable_starts
 from app.listener.events import OUT
-from app.pickups.judge import Judgement, SpotBook, judge, load_spots, weekly_lines
+from app.pickups.judge import (
+    OPENED_PLACE,
+    TYPICAL_PICKUP,
+    Judgement,
+    SpotBook,
+    judge,
+    load_spots,
+    weekly_lines,
+)
 from app.pickups.projection import per_game_line
 from app.pickups.state import (
     RosteredPlayer,
@@ -134,6 +142,14 @@ if TYPE_CHECKING:  # A cycle at runtime: `bids` ranks the wire with `weight`.
 #: stands and the figures behind it have changed. The bar barely bites
 #: because an empty-day fill is recommended whenever it helps at all
 #: (`Move.clears`); that rule, not this number, is the churn lever.
+#:
+#: **This is the fallback now, not the bar** (2026-09-22, docs/intake.md).
+#: It was chosen on one league, and a league connected to this server has
+#: its own bar: measured on its own backtest, or set by its own manager on
+#: the account page. What a report actually uses is
+#: `app.calibration.calibration(session, league, "stream_hurdle")`, and this
+#: is what that falls back to. The number has not moved, and Full Court
+#: Press's seeded row is Patrick's own choice of exactly this.
 STREAM_HURDLE = 0.20
 
 #: How many free agents are evaluated, the best by this week's line. Beyond
@@ -469,6 +485,8 @@ def stream_recommendations(
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
     bids: bool = True,
+    floor: float = TYPICAL_PICKUP,
+    opened: float = OPENED_PLACE,
 ) -> StreamReport:
     """The streaming report for ESPN team `team_id` on scoring period `today`.
 
@@ -476,6 +494,11 @@ def stream_recommendations(
     wire; `distributions` stands in for the season's measured ones. Both
     exist for tests and the backtest. `tilt` switches the minutes tilt, and
     `bids` whether a move that clears the hurdle is priced in FAAB.
+
+    `hurdle`, `floor` and `opened` are this league's own numbers when the
+    caller has them (`app.calibration.Bars`, docs/intake.md); the defaults
+    are the constants, which is what a league with no measurement of its own
+    goes on using.
     """
     week = load_team_week(session, league_season, team_id, today)
     season = int(league_season.season)
@@ -510,7 +533,16 @@ def stream_recommendations(
     by_id = {found.player_id: found for found in wire}
 
     spots = _spots(
-        session, league_season, team_id, today, week, wire, tilt=tilt, distributions=distributions
+        session,
+        league_season,
+        team_id,
+        today,
+        week,
+        wire,
+        tilt=tilt,
+        distributions=distributions,
+        floor=floor,
+        opened=opened,
     )
     outlook = judge(spots, delta_week=0.0, delta_season_per_week=0.0)
 
@@ -680,6 +712,8 @@ def _spots(
     *,
     tilt: bool,
     distributions: Sequence[CategoryDistribution] | None,
+    floor: float = TYPICAL_PICKUP,
+    opened: float = OPENED_PLACE,
 ) -> SpotBook:
     """What every man in play is worth to a roster place for the rest of the year.
 
@@ -705,6 +739,8 @@ def _spots(
         wire=pool,
         weekly=weekly,
         distributions=distributions,
+        floor=floor,
+        opened=opened,
     )
 
 

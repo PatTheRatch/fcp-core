@@ -114,7 +114,7 @@ from app.pickups.projection import rest_of_season_line
 from app.pickups.state import build_players, team_row
 from app.scoring.league import average_team_line
 from app.scoring.lines import CategoryLine
-from app.scoring.replacement import TYPICAL_PICKUP, opened_places
+from app.scoring.replacement import OPENED_PLACE, TYPICAL_PICKUP, opened_places
 from app.scoring.value import expected_wins, marginal
 
 #: `TYPICAL_PICKUP` is imported rather than defined here: it is a measurement
@@ -125,6 +125,7 @@ from app.scoring.value import expected_wins, marginal
 __all__ = [
     "CONTESTED_CATEGORIES",
     "DAYS_A_WEEK",
+    "OPENED_PLACE",
     "TIE",
     "TYPICAL_PICKUP",
     "WIN",
@@ -320,12 +321,22 @@ def weekly_lines(
     }, weeks
 
 
-def places_cost(leaving: Sequence[float], arriving: Sequence[float], replacement: float) -> float:
+def places_cost(
+    leaving: Sequence[float],
+    arriving: Sequence[float],
+    replacement: float,
+    *,
+    opened: float = OPENED_PLACE,
+    typical: float = TYPICAL_PICKUP,
+) -> float:
     """What a move of any shape costs the roster places it touches.
 
     `leaving` and `arriving` are categories a week through the league-standard
     lens (`Standard.value`), one entry per man; `replacement` is what the wire
-    would give a place back (`wire_replacement`). Negative means the move
+    would give a place back (`wire_replacement`). `opened` and `typical` are
+    this league's two measurements of the wire, which default to the constants
+    and are passed by any caller that has a league in hand
+    (`app.calibration.Bars`, docs/intake.md). Negative means the move
     improves the places. See the module docstring for the rule; in short, each
     place vacated was worth the better of the man in it and re-streaming it,
     each place filled is worth the better of the man arriving and the same,
@@ -340,12 +351,18 @@ def places_cost(leaving: Sequence[float], arriving: Sequence[float], replacement
     """
     before = sum(max(value, replacement) for value in leaving)
     after = sum(max(value, replacement) for value in arriving)
-    after += opened_places(len(leaving) - len(arriving), replacement)
+    after += opened_places(len(leaving) - len(arriving), replacement, first=opened, typical=typical)
     return before - after
 
 
 def season_cost(
-    dropped_weekly: float, added_weekly: float, replacement: float, *, empty: bool = False
+    dropped_weekly: float,
+    added_weekly: float,
+    replacement: float,
+    *,
+    empty: bool = False,
+    opened: float = OPENED_PLACE,
+    typical: float = TYPICAL_PICKUP,
 ) -> float:
     """What a one-for-one swap costs the roster place, the `places_cost` case.
 
@@ -355,7 +372,13 @@ def season_cost(
     away again (`wire_replacement`). `empty` says the place had nobody in it,
     which is `places_cost` with nobody leaving.
     """
-    return places_cost([] if empty else [dropped_weekly], [added_weekly], replacement)
+    return places_cost(
+        [] if empty else [dropped_weekly],
+        [added_weekly],
+        replacement,
+        opened=opened,
+        typical=typical,
+    )
 
 
 def _best_available(values: Mapping[int, float], exclude: Collection[int], floor: float) -> float:
@@ -449,8 +472,13 @@ class SpotBook:
     banked: tuple[float, float]
     #: Expected categories the roster wins in an ordinary week as it stands.
     expected_per_week: float
-    #: The floor under what the wire gives a place back.
+    #: The floor under what the wire gives a place back: this league's
+    #: `typical_pickup` (`app.calibration`), or the constant when it has none.
     floor: float = TYPICAL_PICKUP
+    #: What a place this move leaves OPEN is worth: this league's
+    #: `opened_place`. Not the same number and not the same question -- one
+    #: is a man kept, the other a place streamed (the module docstring).
+    opened: float = OPENED_PLACE
 
     @property
     def measured(self) -> bool:
@@ -479,12 +507,14 @@ def load_spots(
     weekly: Mapping[int, CategoryLine],
     distributions: Sequence[CategoryDistribution] | None = None,
     floor: float = TYPICAL_PICKUP,
+    opened: float = OPENED_PLACE,
 ) -> SpotBook:
     """The book for one team on one day, from weekly lines the caller has.
 
     `weekly` covers the roster and the wire both; `roster` and `wire` say
     which is which, because the wire replacement is over free agents only and
-    the ordinary week is over the roster only.
+    the ordinary week is over the roster only. `floor` and `opened` are this
+    league's two measurements of the wire, defaulting to the constants.
     """
     lens = standard_lens(session, league_season, today, distributions)
     values = {player_id: lens.value(line) for player_id, line in weekly.items()}
@@ -500,6 +530,7 @@ def load_spots(
         banked=banked_record(session, league_season, team_id, today),
         expected_per_week=lens.week_wins(line),
         floor=floor,
+        opened=opened,
     )
 
 
@@ -584,6 +615,8 @@ def judge(
             [spots.value(player_id) for player_id in dropped],
             [spots.value(player_id) for player_id in added],
             replacement,
+            opened=spots.opened,
+            typical=spots.floor,
         )
         delta_season_per_week = -cost if spots.measured else 0.0
     weeks = spots.weeks_remaining

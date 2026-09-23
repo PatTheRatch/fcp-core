@@ -146,6 +146,7 @@ from sqlalchemy.orm import Session
 from app.db.models import LeagueSeason, MatchupPeriod
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.pickups.judge import (
+    OPENED_PLACE,
     TYPICAL_PICKUP,
     Judgement,
     SpotBook,
@@ -375,6 +376,12 @@ class SideReport:
     summary: str
     #: Honest caveats: a thin projection, an injury, a missing schedule.
     notes: tuple[str, ...] = ()
+    #: This league's two measurements of the wire (`app.calibration`): what a
+    #: place left OPEN returns when it is streamed, and what one ordinary add
+    #: returns. On the report because `opened_value` settles a place with
+    #: them, and a page showing that number has to be able to say whose it is.
+    opened_place: float = OPENED_PLACE
+    typical_pickup: float = TYPICAL_PICKUP
 
     @property
     def places_filled(self) -> int:
@@ -399,7 +406,12 @@ class SideReport:
         to "what is that empty place worth" the day an opened place was
         re-priced.
         """
-        return opened_places(self.places_left_open, self.replacement)
+        return opened_places(
+            self.places_left_open,
+            self.replacement,
+            first=self.opened_place,
+            typical=self.typical_pickup,
+        )
 
     @property
     def net(self) -> float:
@@ -674,6 +686,8 @@ def evaluate_trade(
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
     pool: Sequence[int] | None = None,
+    floor: float = TYPICAL_PICKUP,
+    opened_place: float = OPENED_PLACE,
 ) -> TradeReport:
     """Judge a proposed trade from both sides, as of the morning of `today`.
 
@@ -767,6 +781,8 @@ def evaluate_trade(
             distributions=distributions,
             hurdle=hurdle,
             tilt=tilt,
+            floor=floor,
+            opened_place=opened_place,
         )
         for side, other in ((sides[0], sides[1]), (sides[1], sides[0]))
     )
@@ -801,6 +817,8 @@ def fill_pool(
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution] | None = None,
     pool: Sequence[int] | None = None,
+    floor: float = TYPICAL_PICKUP,
+    opened_place: float = OPENED_PLACE,
 ) -> FillPool:
     """The free agents who could fill the place this deal opens for `for_team`.
 
@@ -848,6 +866,8 @@ def fill_pool(
         wire=loaded.wire_ids,
         weekly=loaded.weekly,
         distributions=loaded.distributions,
+        floor=floor,
+        opened=opened_place,
     )
     side = _settle_drops(side, spots)
     leaving, arriving = side.leaving, side.receives
@@ -891,7 +911,12 @@ def fill_pool(
         today=loaded.today,
         categories=loaded.categories,
         places_opened=opened,
-        opened_value=opened_places(opened, spots.replacement(exclude=arriving)),
+        opened_value=opened_places(
+            opened,
+            spots.replacement(exclude=arriving),
+            first=opened_place,
+            typical=floor,
+        ),
         replacement=spots.replacement(exclude=arriving),
         replacement_player_id=best,
         pool_size=len(loaded.wire),
@@ -1060,6 +1085,8 @@ def _judge_side(
     distributions: Sequence[CategoryDistribution],
     hurdle: float,
     tilt: bool,
+    floor: float = TYPICAL_PICKUP,
+    opened_place: float = OPENED_PLACE,
 ) -> SideReport:
     """Everything one side of the deal is worth, and what it rests on."""
     # `weeks_remaining` is the periods after the one `today` falls in, which
@@ -1079,6 +1106,8 @@ def _judge_side(
         wire=wire,
         weekly=weekly,
         distributions=distributions,
+        floor=floor,
+        opened=opened_place,
     )
 
     side = _settle_drops(side, spots)
@@ -1156,9 +1185,13 @@ def _judge_side(
         distributions=distributions,
         filler=None if best_on_the_wire is None else playoff_weekly.get(best_on_the_wire),
         opened=left_open,
+        floor=floor,
+        opened_place=opened_place,
     )
 
     built = SideReport(
+        opened_place=opened_place,
+        typical_pickup=floor,
         team_id=side.offer.team_id,
         team_name=side.team_name,
         receives=tuple(card(player_id) for player_id in side.receives),
@@ -1227,7 +1260,7 @@ def _roster_season(
     if not spots.measured:
         return 0.0
     carried = replacement * opened if filled else 0.0
-    lane = opened_places(opened, replacement) - carried
+    lane = opened_places(opened, replacement, first=spots.opened, typical=spots.floor) - carried
     return lens.week_wins(after) - lens.week_wins(before) + lane
 
 
@@ -1249,6 +1282,8 @@ def _independent_season(
         [spots.value(player_id) for player_id in leaving],
         [spots.value(player_id) for player_id in receiving],
         spots.replacement(exclude=receiving),
+        opened=spots.opened,
+        typical=spots.floor,
     )
 
 
@@ -1419,6 +1454,8 @@ def _playoff_lens(
     distributions: Sequence[CategoryDistribution],
     filler: CategoryLine | None,
     opened: int,
+    floor: float = TYPICAL_PICKUP,
+    opened_place: float = OPENED_PLACE,
 ) -> PlayoffLens:
     """The deal over the playoff weeks alone, or why it cannot be counted."""
     first = playoff_days[0] if playoff_days else None
@@ -1452,11 +1489,13 @@ def _playoff_lens(
         return lens.value(playoff_weekly.get(player_id, CategoryLine()))
 
     spare = [player_id for player_id in wire if player_id not in set(side.fills)]
-    replacement = max([TYPICAL_PICKUP, *(value(player_id) for player_id in spare)])
+    replacement = max([floor, *(value(player_id) for player_id in spare)])
     cost = places_cost(
         [value(player_id) for player_id in side.leaving],
         [value(player_id) for player_id in side.arriving],
         replacement,
+        opened=opened_place,
+        typical=floor,
     )
     before = sum_lines(playoff_weekly.get(player_id, CategoryLine()) for player_id in side.active)
     after = _after(before, playoff_weekly, side.leaving, side.arriving, filler, opened)
