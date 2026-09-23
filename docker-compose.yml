@@ -17,8 +17,16 @@ services:
     # 2026-09-14 left the database down overnight, and the nightly ingest and
     # backup both failed against it.
     restart: unless-stopped
+    # Log every connection and disconnection with its source address, so the
+    # question "did anyone get in" has an answer next time it is asked. The
+    # day the database port was found open (docs/cutover.md, "Security") it
+    # had none, because this was off.
+    command: ["postgres", "-c", "log_connections=on", "-c", "log_disconnections=on"]
     environment:
       POSTGRES_USER: fcp
+      # Read once, when the data volume is first created; a running database
+      # keeps whatever its password was set to since. The VPS's was rotated
+      # on 2026-09-23 and lives only in its .env.
       POSTGRES_PASSWORD: fcp
       POSTGRES_DB: fcp
     ports:
