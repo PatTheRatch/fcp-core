@@ -369,6 +369,23 @@ def test_the_shell_is_the_navigation_the_product_draws() -> None:
     assert "recommend" not in shell.lower()
 
 
+def test_a_tap_on_a_name_opens_the_card_the_first_time() -> None:
+    """The card is pinned at phone width whoever opened it, so the focus
+    that comes with a tap used to pin it a moment before the tap arrived --
+    and the tap then read as the second one and closed it again. The first
+    tap opened nothing and the second opened it.
+
+    Neither hover nor focus opens a card at phone width now; the tap does,
+    and a keyboard opens it with Enter, which is the same click.
+    """
+    shell = (STATIC / "shell.js").read_text()
+    wired = shell.split("function wireCards")[1]
+    hover, focus = wired.index("onmouseenter"), wired.index("onfocus")
+    assert wired.count("!phoneWidth()", 0, focus) == 1, "hover does not open one on a phone"
+    assert "!phoneWidth()" in wired[focus : wired.index("onblur")], "and neither does focus"
+    assert hover < focus, "read in the order they fire"
+
+
 #: A declaration at the top level of a classic script: one global scope is
 #: shared by every script on a page, so a name declared twice with const or
 #: let stops the second script from running at all.

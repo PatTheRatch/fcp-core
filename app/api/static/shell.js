@@ -504,8 +504,14 @@ function wireCards(root) {
     trigger.onmouseleave = () => {
       if (!cardPinned && cardFor === trigger) hideCard(false);
     };
+    /* Not at phone width, for the reason hovering is not: there the card is
+       pinned whoever opened it, so a focus that came with the tap pinned it
+       a moment before the tap itself arrived -- and the tap then read as the
+       second one and closed it again. The first tap on a name opened
+       nothing and the second opened it. A thumb has no focus of its own; a
+       keyboard opens the card with Enter, which is the click below. */
     trigger.onfocus = () => {
-      if (!cardPinned) showCard(trigger, false);
+      if (!cardPinned && !phoneWidth()) showCard(trigger, false);
     };
     trigger.onblur = () => {
       if (!cardPinned && cardFor === trigger) hideCard(false);
