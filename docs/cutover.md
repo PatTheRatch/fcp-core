@@ -277,6 +277,48 @@ The DNS records can stay or go. Left in place with the Caddy block removed,
 the name resolves to a host that has no site for it, which is a plain 404
 from Caddy and tells nobody anything.
 
+## Security, as checked on 2026-09-23
+
+What the host exposes to the internet, read from the machine itself
+(`ss -tlnp`, `sshd -T`, `docker ps`) the day the domain went live:
+
+| | state |
+|---|---|
+| SSH | keys only, no passwords, no root login, fail2ban active |
+| Updates | unattended security upgrades on; Ubuntu 24.04 LTS |
+| 80 / 443 | Caddy only; the API listens on the tailnet address alone |
+| The API | `100.105.64.94:8001` — reachable over Tailscale, not from the internet |
+| `.env` | `0600`, the one user |
+| The database | **was on the public internet**, see below; now loopback only |
+
+**The hole.** `docker-compose.yml` published the database as `"5433:5432"`.
+A bare `port:port` in Compose binds every interface, and Docker writes its
+own firewall rules ahead of anything `ufw` would say, so `fcp-core-db-1`
+answered on `178.105.181.43:5433` to anyone — behind a three-character
+password on a superuser role. The container's log held 891 failed logins,
+every one against the user `postgres`; a bot that tried `fcp` would have
+been in. Found by asking the question rather than assuming the answer.
+
+**Fixed the same hour, in this order:** the port bound to
+`127.0.0.1:${FCP_DB_PORT}:5432` and the container recreated (the API stayed
+up); the password rotated to forty random characters generated on the VPS
+and never shown anywhere, `DATABASE_URL` and `TEST_DATABASE_URL` rewritten
+in `.env` (backup beside it), services restarted, the old password confirmed
+refused on the host path; the Compose file in the repository carries the
+loopback binding so a redeploy cannot reopen it.
+
+**What is not known.** Postgres was not logging connections and recreating
+the container dropped its log, so a successful login while the port was open
+would have left no trace. What was checked instead: one role, one schema, no
+table, function or extension the migrations did not create, one user, no
+tokens. No sign of anyone having been in; not proof of it either.
+
+**Still open, in order of worth:** `log_connections=on` so the next question
+has an answer; the `fcp` role does not need to be a superuser; a host
+firewall that Docker cannot bypass (`DOCKER-USER` chain) as belt and braces;
+the sign-in link is rate-limited per address (`app/api/auth.py`) and that is
+the one public form.
+
 ## What this does not cover
 
 - **The old site is not retired here.** `fcp.patrickmcdowell.dev` keeps

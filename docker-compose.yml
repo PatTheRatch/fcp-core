@@ -22,7 +22,11 @@ services:
       POSTGRES_PASSWORD: fcp
       POSTGRES_DB: fcp
     ports:
-      - "${FCP_DB_PORT:-5432}:5432"
+      # Loopback only. Docker publishes a bare "port:port" on every interface
+      # and its own firewall rules let it through, so without the address the
+      # database is on the public internet behind nothing but its password.
+      # It was, on the VPS, until 2026-09-23 (docs/cutover.md, "Security").
+      - "127.0.0.1:${FCP_DB_PORT:-5432}:5432"
     volumes:
       - fcp_pgdata:/var/lib/postgresql/data
       - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
