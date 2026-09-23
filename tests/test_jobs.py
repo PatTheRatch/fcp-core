@@ -904,10 +904,50 @@ def test_the_owners_digest_in_single_mode_goes_to_the_env_recipients_and_marks(
     assert note == "sent to 1 of 1 channel(s); marked 1 event(s) notified"
     assert [target for target, _ in outbox.sent] == ["mail owner@example.com"]
     body = outbox.sent[0][1]
-    assert "YOUR ROSTER" in body and "Hurt" in body and "THE LEAGUE" in body
+    # Compact by default, even here: single mode keeps every topic on, and
+    # how long the message is stays a choice (docs/jobs.md, "The two forms").
+    assert "SINCE YESTERDAY" in body and "Hurt" in body
+    assert "YOUR ROSTER" not in body and "THE LEAGUE" not in body
     with factory() as session:
         event = session.scalars(select(PlayerStatusEvent)).one()
         assert event.notified_at is not None
+
+
+def test_the_owner_who_asked_for_the_long_form_gets_it_with_every_topic_on(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Single mode keeps every topic on whatever is stored; the length in
+    the same row is still his, so the one setting he did choose is honoured
+    rather than overridden along with the topics."""
+    settings = settings_for(
+        fcp_auth_mode="single",
+        espn_league_id=LEAGUE_ID,
+        fcp_tracked_team_id=1,
+        fcp_smtp_host="smtp.example.test",
+        fcp_email_from="fcp@example.test",
+        fcp_email_to="owner@example.com",
+    )
+    outbox = Outbox(monkeypatch)
+    with factory() as session:
+        ls, (home, _), _ = league_season(session, season=SEASON)
+        snapshot(session, player(session, "Hurt"), pro_team_id=10, on_team_id=1, season=SEASON)
+        owner = accounts.ensure_owner(session, "owner@example.com", LEAGUE_ID, 1)
+        _channel(session, owner.id, "owner@example.com", settings, verified=True)
+        subscriptions.save(
+            session,
+            owner.id,
+            ls.league_id,
+            topics={topic: False for topic in subscriptions.TOPICS},
+            length=subscriptions.FULL,
+        )
+        ref = jobs.JobRef(1, jobs.DIGEST, ls.league_id, home.id, owner.id, 1, {"mode": "morning"})
+        session.commit()
+
+    run_digest(factory, ref, settings, now=NOW)
+
+    body = outbox.sent[0][1]
+    assert "YOUR ROSTER" in body and "THE LEAGUE" in body, "every topic, at length"
+    assert "SINCE YESTERDAY" not in body
 
 
 # ---------------------------------------------------------------------------

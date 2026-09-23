@@ -425,14 +425,22 @@ def run_digest(
             and settings.fcp_tracked_team_id is not None
             and int(team.espn_team_id) == int(settings.fcp_tracked_team_id)
         )
+        wanted = subscriptions.for_member(session, user.id, league.id)
         if tracked and team is not None and settings.fcp_auth_mode == "single":
             # Single mode is one person reading his own server: nothing there
             # should be silently missing, so the tracked team keeps every
-            # topic whatever is stored (docs/jobs.md, "Subscriptions").
+            # topic whatever is stored (docs/jobs.md, "Subscriptions"). How
+            # long the message is stays his: compact leaves nothing out that
+            # a count and a link do not cover.
             return _owner_digest(
-                session, user, team, mode, at, settings, subscriptions.everything()
+                session,
+                user,
+                team,
+                mode,
+                at,
+                settings,
+                subscriptions.everything(wanted.length),
             )
-        wanted = subscriptions.for_member(session, user.id, league.id)
         if not (wanted.morning if mode == MORNING else wanted.alerts):
             return NOT_SUBSCRIBED[mode]
         if wanted.silent:

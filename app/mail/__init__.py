@@ -9,10 +9,17 @@ package builds the three pieces of each one and hands them to the transport:
 
 THE TWO PARTS
 
-The text part is `Digest.render()` itself, unchanged: it is what
-`--dry-run` prints, what the tests hold line for line, and what a reader in
-a terminal client sees. It is not an apology for the HTML. The HTML part is
+The text part is `Digest.render()` itself: it is what `--dry-run` prints,
+what the tests hold line for line, and what a reader in a terminal client
+sees. It is not an apology for the HTML. The HTML part is
 `app/mail/render.py`, the same content as a page in the house style.
+
+THE TWO FORMS (2026-09-23)
+
+Compact by default, full as an option (`Subscription.length`). Both parts
+follow the one choice: a compact HTML page has the compact text beside it,
+and the league's own news, which the long form appends to the text, is a
+count and a link in the short one. docs/jobs.md, "The two forms".
 
 THE SUBJECT
 
@@ -136,14 +143,19 @@ def digest_mail(
     public_url: str | None = None,
     league_tail: str = "",
 ) -> Mail:
-    """The morning digest, both parts.
+    """The morning digest, both parts, in the length he asked for.
 
     `league_tail` is the plain league section the job appends to the text
     message (`app.job_kinds`); the HTML has the same news in "What changed",
-    filtered by his topics, so it is not repeated there.
+    filtered by his topics, so it is not repeated there. **The compact form
+    does not take it**: its whole point is that the league's traffic is a
+    count and a link, and forty lines of it under the short message would
+    undo that. The text part follows the HTML part's length, because they are
+    two halves of one message.
     """
     held = wanted or everything()
-    text = digest.render() + (f"\n\n{league_tail}" if league_tail else "")
+    tail = "" if held.compact else league_tail
+    text = digest.render(compact=held.compact) + (f"\n\n{tail}" if tail else "")
     return Mail(
         subject=digest_subject(digest),
         text=text,

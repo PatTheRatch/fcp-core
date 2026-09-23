@@ -2,11 +2,17 @@
 """Send the morning digest, or an alert between digests.
 
 Usage:
-    python scripts/digest.py                  # the morning message
+    python scripts/digest.py                  # the morning message, compact
+    python scripts/digest.py --full           # the long form instead
     python scripts/digest.py --alert          # only an urgent roster change, if there is one
     python scripts/digest.py --dry-run        # print it, deliver nothing, mark nothing
     python scripts/digest.py --html OUT.html  # write the HTML part to a file and send nothing
     python scripts/digest.py --on 2026-01-14  # build it for a day of a stored season
+
+**Compact by default, full as an option** (docs/jobs.md, "The two forms"),
+the same choice a member makes on the Alerts page. `--full` is the long
+form; both are built from one `Digest`, so no number can differ between
+them.
 
 Reads the database only: no ESPN request. The season is the newest one the
 listener has snapshotted, and the team is FCP_TRACKED_TEAM_ID from the
@@ -53,7 +59,7 @@ from app.digest import (
 )
 from app.espn import get_espn_settings
 from app.mail import Mail, alert_mail, digest_mail
-from app.subscriptions import everything
+from app.subscriptions import COMPACT, FULL, everything
 
 
 def main() -> int:
@@ -72,6 +78,11 @@ def main() -> int:
         "--html",
         metavar="OUT.html",
         help="Write the HTML part to this file and send nothing. Implies --dry-run.",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="The long form: every section at length. The default is the compact one.",
     )
     parser.add_argument(
         "--on",
@@ -132,7 +143,7 @@ def main() -> int:
                 event_ids = digest.event_ids
                 mail = digest_mail(
                     digest,
-                    wanted=everything(),
+                    wanted=everything(FULL if args.full else COMPACT),
                     public_url=settings.fcp_public_url,
                     league_tail="\n".join(league_section(session, league_season, now=now)),
                 )

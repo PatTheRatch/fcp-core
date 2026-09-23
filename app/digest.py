@@ -81,7 +81,7 @@ matchups as they stand, and what the league did in the last day.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
@@ -111,14 +111,19 @@ from app.pickups.judge import Judgement
 from app.pickups.season import SeasonReport, Swap, season_recommendations
 from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
-from app.pickups.today import DayPlayer, TodayReport, today_lineup
+from app.pickups.today import DayPlayer, Misstart, TodayReport, today_lineup
 from app.scoring.wire import WIRE_TYPES
 
 # The topics a reader chooses between (`app.subscriptions`), named here so
 # the sections and the choices share one vocabulary. Nothing else about
 # subscriptions reaches this module: it is told which topics to build.
-from app.subscriptions import LINEUP, MOVES, MY_TEAM, STANDINGS, Subscription
+from app.subscriptions import LINEUP, MOVES, MY_TEAM, STANDINGS, TOPICS, Subscription
 from app.subscriptions import everything as subscriptions_everything
+
+#: The topics that read the one feed: everything that is not a section of its
+#: own. They are one line of counts in the compact form and one section in
+#: the long one.
+FEED_TOPICS = tuple(topic for topic in TOPICS if topic not in (LINEUP, MOVES, STANDINGS))
 
 #: What a change to your own player can be: anything that moves whether he
 #: plays, or how much. An ownership move on a player you already hold tells
@@ -218,6 +223,112 @@ class Line:
     detail: str
 
 
+# ---------------------------------------------------------------------------
+# the compact form's own pieces, shared by both parts of the email
+# ---------------------------------------------------------------------------
+
+#: Moves named in the compact form before the rest are counted.
+COMPACT_LOOK_LIMIT = 3
+#: Sentences printed in full under "Since yesterday". An injury on your own
+#: roster is the one kind of news worth the space; five of them is a list.
+COMPACT_NEWS_LIMIT = 3
+#: Categories named beside a move on one line. Three is what fits by a name.
+MOSTLY = 3
+#: Men named as able to take an empty place, before the rest are counted.
+FIX_INSTEAD_LIMIT = 2
+
+
+@dataclass(frozen=True)
+class Look:
+    """One move worth a look, on one line.
+
+    Built from the same `Move` or `Swap` the long form prints in full, so the
+    compact email cannot say a different number from the one behind it.
+    """
+
+    #: "add Dylan Cardwell, drop Dennis Schroder", in the text part's words.
+    headline: str
+    #: Categories over both horizons, the number the bar is read against.
+    net: float
+    #: "mostly BLK, FG%", or "" when nothing moved enough to name.
+    mostly: str
+    #: Named by the rest-of-season half rather than by the week's.
+    season: bool = False
+
+
+@dataclass(frozen=True)
+class WorthALook:
+    """The compact form's moves section, chosen once for both parts."""
+
+    #: At most `COMPACT_LOOK_LIMIT` moves that clear the bar.
+    looks: list[Look]
+    #: One line for everything not printed: what is under the bar, and what
+    #: did not fit. "" when there is nothing left to say.
+    tail: str
+    #: Days left this week with a place going empty.
+    days: int
+    #: Whether the tail is worth pointing at the week page for.
+    week_page: bool = False
+
+
+@dataclass(frozen=True)
+class Counts:
+    """What changed since yesterday, counted by whose news it is."""
+
+    mine: int
+    opponent: int
+    league: int
+
+    @property
+    def total(self) -> int:
+        return self.mine + self.opponent + self.league
+
+
+def mostly(move: Move | Swap) -> str:
+    """What a move actually moves, named and not numbered: "mostly BLK, FG%".
+
+    The numbers are on the pages and in the long form; on one line in an
+    inbox they are what pushes the man's own name off the screen.
+    """
+    named = [shift.abbreviation for shift in move.moved()[:MOSTLY]]
+    return f"mostly {', '.join(named)}" if named else ""
+
+
+def _swap_of(move: Move, today: int) -> str:
+    """One streaming move, at its shortest: who comes in, who goes out.
+
+    `_side` above is the long form's, with each man's games left beside him.
+    On one line in an inbox those counts are what pushes the names off the
+    screen; whether the man is still on waivers stays, because it decides
+    whether the move can be made today at all.
+    """
+    add = move.add
+    coming = add.name
+    if not add.seatable_on(today) and add.waiver_clears_at is not None:
+        coming += f", on waivers, clears {add.waiver_clears_at:%a}"
+    if move.kind == IR_MOVE and move.to_ir is not None:
+        return f"add {coming}, {move.to_ir.name} to IR"
+    if move.drop is not None:
+        return f"add {coming}, drop {move.drop.name}"
+    return f"add {coming} into the open place"
+
+
+def fix_words(misstart: Misstart) -> str:
+    """The place that will produce nothing tonight, in one phrase.
+
+    Written once because the long form, the compact form and both their
+    parts all say it, and four copies of a sentence drift.
+    """
+    seat = misstart.seat
+    where = (
+        f"{seat.slot} is empty"
+        if seat.player is None
+        else f"{seat.player.name} has no game at {seat.slot}"
+    )
+    instead = _names(misstart.instead, FIX_INSTEAD_LIMIT)
+    return f"{where}; {instead} could take it" if instead else where
+
+
 def _line(change: Change) -> Line | None:
     """One change as a digest line, or None when it is not the digest's.
 
@@ -282,10 +393,21 @@ class Digest:
     opponent_name: str | None = None
     #: The topics this was built for, in the email's order.
     topics: tuple[str, ...] = ()
+    #: Which league and which team this is about, so the email's own lines
+    #: can link at the pages that hold the rest. None on a `Digest` built by
+    #: hand, and then the compact form names the pages without linking.
+    espn_league_id: int | None = None
+    espn_team_id: int | None = None
 
     @property
     def roster_size(self) -> int:
         return self.healthy + len(self.standing)
+
+    @property
+    def week_adds(self) -> frozenset[int]:
+        """Who the week's plan names as coming in (`planned_adds`), so the
+        season section can tell whether its move has already been printed."""
+        return planned_adds(self.week_report)
 
     def wants(self, topic: str) -> bool:
         """Whether the reader asked for this section. Nothing asked for at
@@ -293,14 +415,165 @@ class Digest:
         should render whole."""
         return not self.topics or topic in self.topics
 
-    def render(self) -> str:
+    @property
+    def feed_topics(self) -> tuple[str, ...]:
+        """The topics that read the one feed, in the email's order."""
+        return tuple(topic for topic in FEED_TOPICS if self.wants(topic))
+
+    def allowed(self) -> list[Change]:
+        """The feed as this reader's topics allow it (`app.subscriptions`).
+
+        The HTML is handed his `Subscription` and filters with that; the text
+        part has only the names, so the filter is rebuilt from them. Both ask
+        the same `allows`, so neither can let a line through the other would
+        not.
+        """
+        wanted = {topic: self.wants(topic) for topic in TOPICS}
+        return Subscription(topics=wanted).filtered(self.feed)
+
+    # -- the compact form's content ----------------------------------------
+    #
+    # Chosen here rather than in either renderer, because the email has two
+    # parts and they must not disagree about which move or which sentence is
+    # worth the space. Each of these reads the reports the long form reads.
+
+    def tonight(self) -> list[str]:
+        """The one line about places nobody can fill, and nothing else.
+
+        The lineup grid and the fix-this line are drawn from `today_report`
+        by each part in its own way -- a grid in the HTML, a `start:` line in
+        the text -- so what is left to say once is this.
+        """
+        report = self.today_report
+        if report is None or not report.empty_slots:
+            return []
+        return [f"{_plural(len(report.empty_slots), 'place')} nobody can fill tonight"]
+
+    def looks(self) -> tuple[list[Look], int]:
+        """The moves that clear the bar, one line each, and how many did not.
+
+        **A move appears once.** The week's plan and the rest-of-season
+        search run over the same wire, so the season's best is very often the
+        week's best again; when it is, it is not printed a second time, and
+        when it names a different man he gets his own line marked `season`.
+        """
+        out: list[Look] = []
+        under = 0
+        planned = self.week_adds
+        week = self.week_report
+        if week is not None and not week.on_bye:
+            out += [
+                Look(_swap_of(move, week.today), move.net, mostly(move))
+                for move in week.recommended
+            ]
+            if week.adds_left:
+                # With nothing in the plan, `planned` is empty and this is
+                # every move weighed, which is exactly what is under the bar.
+                under += len([move for move in week.moves if move.add.player_id not in planned])
+        season = self.season_report
+        if season is not None:
+            best = season.recommended
+            if best is None:
+                under += 1 if season.moves else 0
+            elif not (best.into and all(player.player_id in planned for player in best.into)):
+                out.append(Look(_swap(best), best.judgement.per_week, mostly(best), season=True))
+        return out, under
+
+    def worth_a_look(self) -> WorthALook:
+        """The whole "worth a look" section of the compact form, chosen once.
+
+        Both parts of the email draw this: the same moves, the same tail, the
+        same count of what is under the bar. The tail is a count and a page,
+        never a paragraph -- a bar labels and never hides, and what is under
+        it in an inbox is a number with somewhere to go and read it.
+        """
+        looks, under = self.looks()
+        week = self.week_report
+        days = 0 if week is None or week.on_bye else len(week.empty_days)
+        shown = looks[:COMPACT_LOOK_LIMIT]
+        if not looks and not under:
+            if week is not None and week.on_bye:
+                return WorthALook([], "on a bye this period, so there is no week to plan for", days)
+            if week is not None and not week.adds_left:
+                return WorthALook(
+                    [], "no adds left this period, so there is nothing to plan today", days
+                )
+            return WorthALook([], "nothing clears the bar today", days)
+        parts = []
+        if not looks and week is not None:
+            parts.append(f"nothing clears the bar ({week.hurdle:.2f} categories)")
+        hidden = len(looks) - COMPACT_LOOK_LIMIT
+        if hidden > 0:
+            parts.append(f"{hidden} more worth a look")
+        if under:
+            parts.append(f"{under} more under the bar" if looks else f"{under} under the bar")
+        return WorthALook(shown, " · ".join(parts), days, week_page=bool(parts))
+
+    def counts(self) -> Counts:
+        """What changed since yesterday, by whose news it is."""
+        mine = opponent = league = 0
+        for change in self.allowed():
+            if change.mine:
+                mine += 1
+            elif change.opponent:
+                opponent += 1
+            else:
+                league += 1
+        return Counts(mine=mine, opponent=opponent, league=league)
+
+    def count_phrases(self) -> list[str]:
+        """The counts as phrases, each one a way into the What-changed
+        section of the league's page. Empty when nothing you asked about
+        changed, and a count of nothing is not printed."""
+        counts = self.counts()
+        named = (
+            (counts.mine, "on your roster"),
+            (counts.opponent, "on your opponent's"),
+            (counts.league, "around the league"),
+        )
+        return [f"{count} {words}" for count, words in named if count]
+
+    def standing_words(self) -> str | None:
+        """Where you are, on one line. None when no matchup has been settled,
+        and then the long form's own line says so."""
+        place = self.place
+        if place is None:
+            return None
+        return (
+            f"{place.describe()} on matchups · "
+            f"{place.categories_won}-{place.categories_lost} on categories · "
+            f"projected finish: {place.projected or 'not built yet'}"
+        )
+
+    def news(self) -> list[str]:
+        """The sentences worth their space in full rather than as a count.
+
+        A status change on your roster or your opponent's, because that is
+        the one kind of news that changes what you do today, and a trade you
+        are in. A $1 claim by somebody else is a count.
+        """
+        out = [
+            change.text
+            for change in self.allowed()
+            if (change.kind == feed.STATUS and (change.mine or change.opponent))
+            or (change.kind == feed.TRADE and change.mine)
+        ]
+        return out[:COMPACT_NEWS_LIMIT]
+
+    def render(self, *, compact: bool = False) -> str:
         """The plain-text message, which is also the email's text part.
 
-        The order is the one this message has always had, and not the HTML
-        email's: the text is the message as it was, with the two new sections
-        after it, and the tests that hold the rebuilt digest against the old
-        one line for line still hold (docs/jobs.md, "The digest job").
+        `compact` is the short form (`compact_text`), which is what the email
+        sends unless the reader asked for the long one: the text part follows
+        the HTML part's choice, because they are two halves of one message.
+
+        The long form's order is the one this message has always had, and not
+        the HTML email's: the text is the message as it was, with the two new
+        sections after it, and the tests that hold the rebuilt digest against
+        the old one line for line still hold (docs/jobs.md, "The digest job").
         """
+        if compact:
+            return self.compact_text()
         out = [
             f"{self.team_name} - {self.generated_at:%a %d %b}, "
             f"{self.generated_at:%H:%M} UTC - season {self.season}"
@@ -354,6 +627,73 @@ class Digest:
             out.append("STANDINGS")
             out.extend(self.table or ["  no standings yet"])
         return "\n".join(out[:MAX_LINES])
+
+    # -- the compact text part ---------------------------------------------
+
+    def compact_text(self) -> str:
+        """The compact message: one screen, the same numbers, fewer words.
+
+        It answers "is there anything to do today?" and points at the pages
+        for the rest (docs/jobs.md, "The two forms"). Nothing here is
+        computed: every line reads the reports the long form reads.
+        """
+        out = [
+            f"{self.team_name} - {self.generated_at:%a %d %b}, "
+            f"{self.generated_at:%H:%M} UTC - season {self.season}"
+        ]
+        if self.wants(LINEUP):
+            out += ["", "TONIGHT", *self._tonight_text()]
+        if self.wants(MOVES):
+            out += ["", "WORTH A LOOK", *self._looks_text()]
+        if self.feed_topics:
+            out += ["", "SINCE YESTERDAY", *self._since_text()]
+        if self.wants(STANDINGS):
+            out += ["", "STANDING", *self._standing_text()]
+        return "\n".join(out[:MAX_LINES])
+
+    def _tonight_text(self) -> list[str]:
+        report = self.today_report
+        if report is None:
+            return self.today or ["  no lineup today"]
+        out = [f"  {today_head(report)}"]
+        if report.teams_playing == 0:
+            return out
+        out.append(f"  start: {_names(report.starters, len(report.lineup))}")
+        if report.fix:
+            more = len(report.fix) - 1
+            tail = f" (and {more} more)" if more > 0 else ""
+            out.append(f"  fix: {fix_words(report.fix[0])}{tail}")
+        out += [f"  {line}" for line in self.tonight()]
+        return out
+
+    def _looks_text(self) -> list[str]:
+        if self.week_report is None and self.season_report is None:
+            return self.plan or ["  no plan today"]
+        section = self.worth_a_look()
+        out = [
+            f"  {look.headline}{' (season)' if look.season else ''} · {look.net:+.2f}"
+            + (f" · {look.mostly}" if look.mostly else "")
+            for look in section.looks
+        ]
+        if section.tail:
+            out.append(f"  {section.tail}" + (" - see the week" if section.week_page else ""))
+        if section.days:
+            out.append(
+                f"  {_plural(section.days, 'day')} this week with an empty place - plan the week"
+            )
+        return out
+
+    def _since_text(self) -> list[str]:
+        said = " · ".join(self.count_phrases())
+        out = [f"  {said}" if said else "  nothing you asked about changed"]
+        out += [f"  {sentence}" for sentence in self.news()]
+        return out
+
+    def _standing_text(self) -> list[str]:
+        words = self.standing_words()
+        if words is None:
+            return self.table[:1] or ["  no standings yet"]
+        return [f"  {words}"]
 
 
 def _plural(count: int, noun: str) -> str:
@@ -599,31 +939,34 @@ def today_lines(
     return today_block(session, league_season, espn_team_id, on=on)[1]
 
 
-def _today_lines(report: TodayReport) -> list[str]:
-    """The block's body, from a lineup that was built."""
+def today_head(report: TodayReport) -> str:
+    """The day, and how much of the lineup can be filled. One sentence, said
+    here, because both forms of the message open with it."""
     when = f", {report.calendar_date:%a %d %b}" if report.calendar_date is not None else ""
     if report.teams_playing == 0:
-        return [f"  day {report.today}{when}: no NBA games, so there is no lineup to set"]
+        return f"day {report.today}{when}: no NBA games, so there is no lineup to set"
+    return f"day {report.today}{when}: {report.starts} of {len(report.lineup)} places fillable" + (
+        f", {report.actual_starts} set" if report.actual_known else ""
+    )
 
-    out = [
-        f"  day {report.today}{when}: {report.starts} of {len(report.lineup)} places fillable"
-        + (f", {report.actual_starts} set" if report.actual_known else "")
-    ]
+
+def _today_lines(report: TodayReport) -> list[str]:
+    """The block's body, from a lineup that was built."""
+    if report.teams_playing == 0:
+        return [f"  {today_head(report)}"]
+
+    out = [f"  {today_head(report)}"]
     out.append(f"  start: {_names(report.starters, len(report.lineup))}")
     for misstart in report.fix[:TODAY_FIX_LIMIT]:
-        where = (
-            f"{misstart.seat.slot} is empty"
-            if misstart.seat.player is None
-            else f"{misstart.seat.player.name} has no game at {misstart.seat.slot}"
-        )
-        out.append(f"  fix: {where}; {_names(misstart.instead, 2)} could take it")
+        out.append(f"  fix: {fix_words(misstart)}")
     hidden = len(report.fix) - TODAY_FIX_LIMIT
     if hidden > 0:
         out.append(f"  and {hidden} more place(s) worth fixing")
     for benched in report.benched[:TODAY_SIT_LIMIT]:
         out.append(f"  {benched.player.name} has a game but no place in the lineup")
-    if report.idle:
-        out.append(f"  sitting, no game: {_names(report.idle, TODAY_SIT_LIMIT)}")
+    # No "sitting, no game" list (2026-09-23). A man with no game tonight is
+    # not a thing to do anything about: it is four names of padding above the
+    # one line that expires at tip-off.
     return out
 
 
@@ -682,13 +1025,30 @@ def week_plan(
 SEASON_STASH_LIMIT = 2
 
 
-def _season_lines(report: SeasonReport) -> list[str]:
+def planned_adds(report: StreamReport | None) -> frozenset[int]:
+    """The men the week's plan already names as coming in.
+
+    The season search runs over the same wire as the week's, so its best move
+    is very often the week's best move again. A move is named once
+    (docs/jobs.md, "The two forms"), and this is what the season section
+    checks itself against.
+    """
+    if report is None:
+        return frozenset()
+    return frozenset(move.add.player_id for move in report.recommended)
+
+
+def _season_lines(report: SeasonReport, already: Collection[int] = ()) -> list[str]:
     """The rest-of-season section's body, from a report that was built.
 
     The week's plan answers "what do I do today"; this answers "where is the
     season going, and what would move it". Three things and no more: where it
     ends as it stands, the best move over the rest of it with its number, and
     a man worth stashing until he is back.
+
+    `already` is who the week's plan has named. A move whose whole incoming
+    side is in it is not printed a second time: it is one line saying the
+    week's move is the season's too, with the season's own number on it.
     """
     record = report.outlook.record_without
     out = [
@@ -707,6 +1067,11 @@ def _season_lines(report: SeasonReport) -> list[str]:
                 f"  nothing clears the bar ({hurdle:.2f} a week); the nearest is "
                 f"{_swap(best)} at {best.judgement.per_week:+.2f}"
             )
+    elif move.into and all(player.player_id in already for player in move.into):
+        out.append(
+            f"  the week's move above is the season's too, at "
+            f"{move.judgement.per_week:+.2f} a week over the rest of it"
+        )
     else:
         out.append(f"  worth a look: {_swap(move)}")
         out.append(
@@ -738,9 +1103,14 @@ def season_outlook(
     espn_team_id: int,
     *,
     on: date,
+    already: Collection[int] = (),
 ) -> tuple[SeasonReport | None, list[str]]:
     """The rest of the season for `on`: the report and its lines. Never
-    raises, for the reason `week_block` does not."""
+    raises, for the reason `week_block` does not.
+
+    `already` is what the week's plan names, so the same move is not printed
+    under both headings (`planned_adds`).
+    """
     season = int(league_season.season)
     try:
         calendar = season_calendar(session, season)
@@ -753,7 +1123,7 @@ def season_outlook(
         return None, [f"  no season view today: {error}"]
     except Exception as error:  # The digest goes out regardless.
         return None, [f"  no season view today: it could not be built ({type(error).__name__})"]
-    return report, _season_lines(report)
+    return report, _season_lines(report, already)
 
 
 # ---------------------------------------------------------------------------
@@ -961,7 +1331,9 @@ def build_digest(
         else (None, None, [])
     )
     season_report, season_plan = (
-        season_outlook(session, league_season, espn_team_id, on=on)
+        season_outlook(
+            session, league_season, espn_team_id, on=on, already=planned_adds(week_report)
+        )
         if wanted.on(MOVES)
         else (None, [])
     )
@@ -998,6 +1370,8 @@ def build_digest(
         league_name=str(league_season.name or ""),
         opponent_name=opponent,
         topics=wanted.chosen,
+        espn_league_id=int(league_season.league.espn_league_id),
+        espn_team_id=espn_team_id,
     )
 
 

@@ -23,6 +23,7 @@ from app.inseason.changes import Change, Person
 from app.mail import alert_mail, confirm_mail, digest_mail, digest_subject, sign_in_mail
 from app.notify import build_email
 from app.subscriptions import (
+    FULL,
     LEAGUE_TRANSACTIONS,
     LINEUP,
     MY_TEAM,
@@ -34,6 +35,14 @@ from app.subscriptions import (
 
 NOW = datetime(2026, 1, 14, 9, 0, tzinfo=UTC)
 SITE = "https://fcp.example"
+
+
+def full() -> Subscription:
+    """Every topic, at length. The default is the compact form now
+    (docs/jobs.md, "The two forms"), so the long form is asked for by name
+    in the tests that are about it."""
+    return everything(FULL)
+
 
 #: Anything that would make the client reach out for a file, and the layout
 #: an email cannot do. `background:` is allowed (it is a colour here);
@@ -86,7 +95,7 @@ def test_the_text_part_is_the_rendered_message_and_nothing_else() -> None:
     line; the HTML rides beside it, not over it."""
     digest = _digest()
 
-    built = digest_mail(digest, wanted=everything(), public_url=SITE)
+    built = digest_mail(digest, wanted=full(), public_url=SITE)
 
     assert built.text == digest.render()
     assert built.html.startswith("<!doctype html>")
@@ -97,16 +106,14 @@ def test_the_league_section_is_appended_to_the_text_and_not_repeated_in_the_html
     topics, so printing it twice would be printing it twice."""
     digest = _digest(feed=[_change(feed.ADD, "Somebody added A Player")])
 
-    built = digest_mail(
-        digest, wanted=everything(), public_url=SITE, league_tail="THE LEAGUE\n  9 moves"
-    )
+    built = digest_mail(digest, wanted=full(), public_url=SITE, league_tail="THE LEAGUE\n  9 moves")
 
     assert built.text.endswith("THE LEAGUE\n  9 moves")
     assert "THE LEAGUE" not in built.html
 
 
 def test_both_parts_ride_in_one_message() -> None:
-    built = digest_mail(_digest(), wanted=everything(), public_url=SITE)
+    built = digest_mail(_digest(), wanted=full(), public_url=SITE)
 
     message = build_email(
         built.text,
@@ -129,7 +136,7 @@ def test_the_html_fetches_nothing_and_lays_out_with_tables() -> None:
     """No stylesheet, no script, no web font, no image -- not even a spacer,
     because a blocked image is a hole and a tracking pixel is a thing this
     product does not do."""
-    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+    html = digest_mail(_digest(), wanted=full(), public_url=SITE).html
 
     for forbidden in FETCHES:
         assert forbidden not in html.lower(), forbidden
@@ -140,7 +147,7 @@ def test_the_html_fetches_nothing_and_lays_out_with_tables() -> None:
 
 
 def test_the_html_carries_no_custom_property_because_an_inbox_has_none() -> None:
-    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+    html = digest_mail(_digest(), wanted=full(), public_url=SITE).html
 
     assert "var(--" not in html
     assert "#C4551F" in html, "the site's accent, as a literal colour"
@@ -148,7 +155,7 @@ def test_the_html_carries_no_custom_property_because_an_inbox_has_none() -> None
 
 def test_every_face_falls_back_through_a_generic_family() -> None:
     """A client with none of the named faces still has one to use."""
-    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+    html = digest_mail(_digest(), wanted=full(), public_url=SITE).html
 
     stacks = re.findall(r'font-family:([^;"]+)', html)
     assert stacks
@@ -158,7 +165,7 @@ def test_every_face_falls_back_through_a_generic_family() -> None:
 
 
 def test_the_footer_carries_the_pages_it_came_from_and_a_way_to_manage_it() -> None:
-    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+    html = digest_mail(_digest(), wanted=full(), public_url=SITE).html
 
     assert f'href="{SITE}/account/alerts#wants"' in html
     assert "Manage your alerts" in html
@@ -166,7 +173,7 @@ def test_the_footer_carries_the_pages_it_came_from_and_a_way_to_manage_it() -> N
 
 
 def test_without_a_public_url_the_footer_says_so_rather_than_linking_nowhere() -> None:
-    html = digest_mail(_digest(), wanted=everything(), public_url=None).html
+    html = digest_mail(_digest(), wanted=full(), public_url=None).html
 
     assert "href=" not in html
     assert "No link is set on this server." in html
@@ -178,7 +185,9 @@ def test_without_a_public_url_the_footer_says_so_rather_than_linking_nowhere() -
 
 def test_the_sections_are_exactly_the_topics_he_chose() -> None:
     digest = _digest(topics=(LINEUP, STANDINGS))
-    only_two = Subscription(topics={**dict.fromkeys(TOPICS, False), LINEUP: True, STANDINGS: True})
+    only_two = Subscription(
+        length=FULL, topics={**dict.fromkeys(TOPICS, False), LINEUP: True, STANDINGS: True}
+    )
 
     html = digest_mail(digest, wanted=only_two, public_url=SITE).html
 
@@ -196,7 +205,8 @@ def test_the_feed_topics_share_one_section_drawn_once() -> None:
         topics=(MY_TEAM, LEAGUE_TRANSACTIONS),
     )
     both = Subscription(
-        topics={**dict.fromkeys(TOPICS, False), MY_TEAM: True, LEAGUE_TRANSACTIONS: True}
+        length=FULL,
+        topics={**dict.fromkeys(TOPICS, False), MY_TEAM: True, LEAGUE_TRANSACTIONS: True},
     )
 
     html = digest_mail(digest, wanted=both, public_url=SITE).html
@@ -210,7 +220,7 @@ def test_a_line_he_did_not_ask_for_is_not_in_his_feed() -> None:
     mine = _change(feed.DROP, "My own man was dropped", mine=True)
     anyones = _change(feed.ADD, "Someone else added a man")
     digest = _digest(feed=[mine, anyones], topics=(MY_TEAM,))
-    only_mine = Subscription(topics={**dict.fromkeys(TOPICS, False), MY_TEAM: True})
+    only_mine = Subscription(length=FULL, topics={**dict.fromkeys(TOPICS, False), MY_TEAM: True})
 
     html = digest_mail(digest, wanted=only_mine, public_url=SITE).html
 
@@ -232,7 +242,7 @@ def test_a_digest_with_nothing_to_say_renders_its_honest_lines_not_blanks() -> N
         table=["  no matchup has been settled yet, so there is no table"],
     )
 
-    html = digest_mail(digest, wanted=everything(), public_url=SITE).html
+    html = digest_mail(digest, wanted=full(), public_url=SITE).html
 
     for words in (
         "no lineup today",
@@ -250,12 +260,96 @@ def test_a_standing_shows_a_marked_slot_where_the_projected_finish_will_go() -> 
         place=Standing(place=3, of=12, won=6, lost=4, tied=1, categories_won=40, categories_lost=31)
     )
 
-    html = digest_mail(digest, wanted=everything(), public_url=SITE).html
+    html = digest_mail(digest, wanted=full(), public_url=SITE).html
 
     assert "3 of 12" in html
     assert "6-4-1" in html
     assert "not built yet" in html
     assert "The projected finish is not built yet" in html
+
+
+# ---------------------------------------------------------------------------
+# the compact form, which is what an email is unless he asks for the long one
+
+
+def test_the_compact_form_is_the_default_and_draws_its_own_four_sections() -> None:
+    """Tonight, Worth a look, Since yesterday, Standing -- and none of the
+    long form's headings. `everything()` is compact: the default is a
+    default everywhere, including a preview."""
+    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+
+    for heading in ("Tonight", "Worth a look", "Since yesterday", "Standing"):
+        assert f">{heading}</span>" in html, heading
+    for long_form in ("Today&#x27;s lineup", "This week</span>", "The season", "What changed"):
+        assert long_form not in html, long_form
+
+
+def test_a_compact_section_he_did_not_ask_for_is_not_drawn() -> None:
+    only_tonight = Subscription(topics={**dict.fromkeys(TOPICS, False), LINEUP: True})
+
+    html = digest_mail(_digest(topics=(LINEUP,)), wanted=only_tonight, public_url=SITE).html
+
+    assert ">Tonight</span>" in html
+    for heading in ("Worth a look", "Since yesterday", "Standing"):
+        assert f">{heading}</span>" not in html, heading
+
+
+def test_the_compact_feed_is_counts_with_the_injury_said_in_full() -> None:
+    """The one kind of news worth the space is a status change on a roster
+    that matters to him; a dollar claim by somebody else is a count."""
+    digest = _digest(
+        feed=[
+            _change(feed.STATUS, "Kawhi Leonard is out: ACTIVE to OUT.", mine=True),
+            _change(feed.CLAIM, "Load Management claimed A Player for $1."),
+            _change(feed.CLAIM, "Another Team claimed B Player for $1."),
+            _change(feed.DROP, "A Rival dropped C Player.", opponent=True),
+        ],
+        espn_league_id=3853870,
+        espn_team_id=1,
+    )
+
+    html = digest_mail(digest, wanted=everything(), public_url=SITE).html
+
+    assert "Kawhi Leonard is out: ACTIVE to OUT." in html
+    assert "claimed A Player" not in html, "a claim is a count, not a sentence"
+    assert "1 on your roster" in html
+    assert "1 on your opponent&#x27;s" in html
+    assert "2 around the league" in html
+    assert f'href="{SITE}/l/3853870/2026/week#changed"' in html
+
+
+def test_the_compact_form_names_the_pages_without_linking_when_it_cannot() -> None:
+    """A digest that does not know its league -- one built by hand, for a
+    preview -- prints the words rather than a link that goes nowhere."""
+    html = digest_mail(
+        _digest(feed=[_change(feed.STATUS, "Somebody is out.", mine=True)]),
+        wanted=everything(),
+        public_url=SITE,
+    ).html
+
+    assert "1 on your roster" in html
+    assert f'href="{SITE}/l/' not in html
+
+
+def test_the_compact_standing_is_one_line_with_the_marked_slot_still_in_it() -> None:
+    digest = _digest(
+        place=Standing(place=3, of=12, won=6, lost=4, tied=1, categories_won=40, categories_lost=31)
+    )
+
+    html = digest_mail(digest, wanted=everything(), public_url=SITE).html
+
+    assert "3 of 12, 6-4-1 on matchups" in html
+    assert "40-31 on categories" in html
+    assert "projected finish: not built yet" in html
+
+
+def test_the_compact_form_fetches_nothing_either() -> None:
+    html = digest_mail(_digest(), wanted=everything(), public_url=SITE).html
+
+    for forbidden in FETCHES:
+        assert forbidden not in html.lower(), forbidden
+    for forbidden in UNSUPPORTED:
+        assert forbidden not in html.replace(" ", ""), forbidden
 
 
 # ---------------------------------------------------------------------------

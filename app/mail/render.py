@@ -28,11 +28,13 @@ WHAT THE SECTIONS ARE
 **Today** is the one thing that expires: the place going empty tonight, in
 the warn colour, and the lineup as a small grid of slot, man and his game.
 **This week** and **The season** are the moves, each with its number and one
-line of reason; a move that did not clear the bar is shown and labelled
-"under the bar", because a bar labels and never hides. **What changed** is
-the feed's own sentences, grouped by day and filtered by his topics.
-**Standings** is where he is, with a marked slot where the projected finish
-will go.
+line of reason; a move that did not clear the bar is named on one line and
+labelled "under the bar", because a bar labels and never hides. A move is
+named **once**: the season's best is very often the week's best again, and
+the season section then says so rather than printing it twice. **What
+changed** is the feed's own sentences, grouped by day and filtered by his
+topics. **Standings** is where he is, with a marked slot where the projected
+finish will go.
 
 Every section says something. A section with nothing in it says so in the
 honest line the text message uses -- "nothing new", "no plan today" -- rather
@@ -44,11 +46,12 @@ never *recommended* and never *do this* (docs/in_season_pages.md).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from html import escape
 
-from app.digest import Digest
+from app.digest import Digest, Look, fix_words, mostly, today_head
 from app.inseason.changes import Change
 from app.mail import style as s
 from app.pickups.season import SeasonReport, Swap
@@ -160,48 +163,28 @@ def _lede(words: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fix_line(misstart: Misstart) -> str:
+def _fix_line(misstart: Misstart, extra: int = 0) -> str:
     """The place that will produce nothing tonight, in the warn colour.
 
     The one thing in the message that expires: it is worth fixing before
-    tip-off and worth nothing after it.
+    tip-off and worth nothing after it. The words are `digest.fix_words`, so
+    the page and both parts of the email say it the one way.
     """
-    where = (
-        f"{misstart.seat.slot} is empty"
-        if misstart.seat.player is None
-        else f"{misstart.seat.player.name} has no game at {misstart.seat.slot}"
+    tail = f" (and {extra} more)" if extra > 0 else ""
+    return (
+        f'<p style="margin:10px 0 0;{s.TEXT}color:{s.WARN};">'
+        f"<b>Fix:</b> {_h(fix_words(misstart))}{_h(tail)}</p>"
     )
-    instead = ", ".join(player.name for player in misstart.instead[:2])
-    tail = f" &#8212; {_h(instead)} could take it" if instead else ""
-    return f'<p style="margin:10px 0 0;{s.TEXT}color:{s.WARN};"><b>Fix:</b> {_h(where)}{tail}</p>'
 
 
-def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
-    """The day's lineup: what to fix, then the grid of who starts where."""
-    if report is None:
-        return "".join(_empty(line.strip()) for line in lines) or _empty("no lineup today")
-    when = f"{report.calendar_date:%a %d %b}" if report.calendar_date is not None else ""
-    if report.teams_playing == 0:
-        return _empty(f"day {report.today}{', ' + when if when else ''}: no NBA games tonight")
+def _lineup_grid(report: TodayReport) -> str:
+    """The starters by slot, with the game each one has: the one table in
+    this message worth its own space, and the same grid in both forms.
 
-    out = [
-        _lede(
-            f"Day {report.today}{', ' + when if when else ''}: "
-            f"{report.starts} of {len(report.lineup)} places fillable"
-            + (f", {report.actual_starts} set" if report.actual_known else "")
-        )
-    ]
-    for misstart in report.fix[:FIX_LIMIT]:
-        out.append(_fix_line(misstart))
-    hidden = len(report.fix) - FIX_LIMIT
-    if hidden > 0:
-        out.append(_lede(f"and {hidden} more place(s) worth fixing"))
-    if not report.fix:
-        out.append(
-            f'<p style="margin:10px 0 0;{s.TEXT}color:{s.GOOD};">'
-            "<b>Nothing to fix:</b> every place that can produce tonight is filled.</p>"
-        )
-
+    The empty places are counted under the grid rather than given a row
+    each: a roster short at three UT slots printed the same sentence three
+    times, which reads as a fault rather than a fact.
+    """
     rows = [
         f'<tr><td style="{s.CELL_TOP}{s.TAG}width:56px;">Place</td>'
         f'<td style="{s.CELL_TOP}{s.TEXT}">Who</td>'
@@ -209,9 +192,6 @@ def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
     ]
     for seat in report.lineup:
         if seat.player is None:
-            # The empty places are counted under the grid rather than given a
-            # row each: a roster short at three UT slots printed the same
-            # sentence three times, which reads as a fault rather than a fact.
             continue
         game = seat.player.game.describe() if seat.player.game is not None else "no game"
         flag = (
@@ -224,10 +204,32 @@ def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
             f'<td style="{s.CELL}{s.TEXT}"><b>{_h(seat.player.name)}</b>{flag}</td>'
             f'<td style="{s.CELL}{s.NUM}color:{s.MUTED};" align="right">{_h(game)}</td></tr>'
         )
-    out.append(
+    return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"'
         ' style="margin-top:14px;border-collapse:collapse;">' + "".join(rows) + "</table>"
     )
+
+
+def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
+    """The day's lineup: what to fix, then the grid of who starts where."""
+    if report is None:
+        return "".join(_empty(line.strip()) for line in lines) or _empty("no lineup today")
+    if report.teams_playing == 0:
+        return _empty(today_head(report))
+
+    out = [_lede(_capital(today_head(report)))]
+    for misstart in report.fix[:FIX_LIMIT]:
+        out.append(_fix_line(misstart))
+    hidden = len(report.fix) - FIX_LIMIT
+    if hidden > 0:
+        out.append(_lede(f"and {hidden} more place(s) worth fixing"))
+    if not report.fix:
+        out.append(
+            f'<p style="margin:10px 0 0;{s.TEXT}color:{s.GOOD};">'
+            "<b>Nothing to fix:</b> every place that can produce tonight is filled.</p>"
+        )
+
+    out.append(_lineup_grid(report))
     if report.empty_slots:
         out.append(
             _lede(
@@ -239,14 +241,9 @@ def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
     benched = [b.player.name for b in report.benched[:BENCH_LIMIT]]
     if benched:
         out.append(_lede("A game and no place: " + ", ".join(benched)))
-    idle = [player.name for player in report.idle[:BENCH_LIMIT]]
-    if idle:
-        extra = len(report.idle) - BENCH_LIMIT
-        out.append(
-            _lede(
-                "Sitting, no game: " + ", ".join(idle) + (f" and {extra} more" if extra > 0 else "")
-            )
-        )
+    # No "sitting, no game" list (2026-09-23): a man with no game tonight is
+    # not a thing to do anything about, and five names of him sat above the
+    # one line that expires at tip-off.
     on_ir = [player.name for player in report.injured_reserve]
     if on_ir:
         out.append(_lede(f"On {ON_IR.upper()}: " + ", ".join(on_ir)))
@@ -258,16 +255,24 @@ def _today(report: TodayReport | None, lines: Sequence[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _move_row(headline: str, net: float, reason: str, mark: str) -> str:
-    """One move: what it is, what it is worth, one line of why, and the bar's
-    own word on it. The number and the reason are always both there: a
-    number with no reason is a verdict."""
-    tag = (
+#: The bar's own two words on a move.
+CLEARS = "clears the bar"
+UNDER = "under the bar"
+
+
+def _tag(mark: str) -> str:
+    return (
         f'<span style="{s.TAG}color:{s.ACCENT};border:1px solid {s.ACCENT};'
         f'padding:1px 6px;">{_h(mark)}</span>'
-        if mark == "clears the bar"
+        if mark == CLEARS
         else f'<span style="{s.TAG}border:1px solid {s.RULE};padding:1px 6px;">{_h(mark)}</span>'
     )
+
+
+def _move_row(headline: str, net: float, reason: str, mark: str = CLEARS) -> str:
+    """One move that cleared: what it is, what it is worth, one line of why,
+    and the bar's own word on it. The number and the reason are always both
+    there: a number with no reason is a verdict."""
     return f"""<tr><td style="padding:14px 0 10px;border-top:1px solid {s.RULE};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr><td style="{s.TEXT}font-size:17px;font-weight:bold;">{_h(headline)}</td>
@@ -275,7 +280,27 @@ def _move_row(headline: str, net: float, reason: str, mark: str) -> str:
 padding-left:14px;">{s.gain(net)}</td></tr>
 </table>
 <p style="margin:5px 0 0;{s.NOTE}">{_h(reason)}</p>
-<p style="margin:6px 0 0;">{tag}</p>
+<p style="margin:6px 0 0;">{_tag(mark)}</p>
+</td></tr>
+"""
+
+
+def _under_row(headline: str, net: float, cats: str) -> str:
+    """A move that did not clear the bar, on one line (2026-09-23).
+
+    It used to carry the same paragraph a move worth making does -- both
+    horizons, both records, the categories -- and three of them under a
+    heading that says nothing clears the bar is a page of reasons not to do
+    anything. The bar still labels rather than hides: the move is named, with
+    what it is worth and what it would move, and the page has the rest.
+    """
+    note = f' <span style="{s.NOTE}">&#183; {_h(cats)}</span>' if cats else ""
+    return f"""<tr><td style="padding:10px 0;border-top:1px solid {s.RULE};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="{s.TEXT}">{_h(headline)}{note} {_tag(UNDER)}</td>
+<td align="right" valign="top" style="{s.NUM}white-space:nowrap;\
+padding-left:14px;">{s.gain(net)}</td></tr>
+</table>
 </td></tr>
 """
 
@@ -338,12 +363,10 @@ def _week(report: StreamReport | None, opponent: str | None, lines: Sequence[str
             )
         )
         for move in report.moves[:UNDER_LIMIT]:
-            rows.append(_move_row(_side(move, report.today), move.net, _why(move), "under the bar"))
+            rows.append(_under_row(_side(move, report.today), move.net, mostly(move)))
     else:
         for move in report.recommended[:MOVE_LIMIT]:
-            rows.append(
-                _move_row(_side(move, report.today), move.net, _why(move), "clears the bar")
-            )
+            rows.append(_move_row(_side(move, report.today), move.net, _why(move)))
         # By the man coming in, not by the object: the plan judges its second
         # move with the first already made, so the same add appears in
         # `moves` and in `recommended` with two different numbers, and
@@ -351,7 +374,7 @@ def _week(report: StreamReport | None, opponent: str | None, lines: Sequence[str
         planned = {move.add.player_id for move in report.recommended}
         near = [move for move in report.moves if move.add.player_id not in planned]
         for move in near[:UNDER_LIMIT]:
-            rows.append(_move_row(_side(move, report.today), move.net, _why(move), "under the bar"))
+            rows.append(_under_row(_side(move, report.today), move.net, mostly(move)))
     if rows:
         out.append(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
@@ -369,7 +392,9 @@ def _swap(move: Swap) -> str:
     return f"Add {coming}, drop {', '.join(player.name for player in move.out)}"
 
 
-def _season(report: SeasonReport | None, lines: Sequence[str]) -> str:
+def _season(
+    report: SeasonReport | None, lines: Sequence[str], already: Collection[int] = ()
+) -> str:
     if report is None:
         return "".join(_empty(line.strip()) for line in lines) or _empty(
             "no rest-of-season view today"
@@ -395,19 +420,24 @@ def _season(report: SeasonReport | None, lines: Sequence[str]) -> str:
             out.append(
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
                 ' border="0" style="margin-top:12px;border-collapse:collapse;">'
-                + _move_row(
-                    _swap(nearest),
-                    nearest.judgement.per_week,
-                    _season_why(nearest),
-                    "under the bar",
-                )
+                + _under_row(_swap(nearest), nearest.judgement.per_week, mostly(nearest))
                 + "</table>"
             )
+    elif best.into and all(player.player_id in already for player in best.into):
+        # The same wire, so the season's best is very often the week's best
+        # again. A move is named once: this says the week's move is the
+        # season's too, with the season's own number on it.
+        out.append(
+            _lede(
+                "The move under This week is the season's too, at "
+                f"{best.judgement.per_week:+.2f} categories a week over the rest of it."
+            )
+        )
     else:
         out.append(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
             ' border="0" style="margin-top:12px;border-collapse:collapse;">'
-            + _move_row(_swap(best), best.judgement.per_week, _season_why(best), "clears the bar")
+            + _move_row(_swap(best), best.judgement.per_week, _season_why(best))
             + "</table>"
         )
     if report.stashes:
@@ -557,12 +587,14 @@ def digest_html(
     public_url: str | None = None,
     preview: str = "",
 ) -> str:
-    """The morning digest as a page.
+    """The morning digest as a page, compact by default.
 
     `wanted` decides the sections and their order: exactly the topics he
-    chose, in `app.subscriptions.TOPICS` order. `public_url` is the site, for
-    the links at the foot; without it the footer carries the words and no
-    links, because a link built on nothing goes nowhere.
+    chose, in `app.subscriptions.TOPICS` order, and how much of each
+    (`Subscription.length`). `public_url` is the site, for the links at the
+    foot and, in the compact form, for the pages that hold what it left out;
+    without it the words are printed with no link, because a link built on
+    nothing goes nowhere.
     """
     day = f"{digest.generated_at:%A %d %B %Y}"
     out = [
@@ -573,7 +605,12 @@ def digest_html(
             f"{day} &#183; season {digest.season}".replace("&#183;", "·"),
         ),
     ]
-    for title, body in _sections(digest, wanted):
+    sections = (
+        _compact_sections(digest, wanted, _pages(digest, public_url))
+        if wanted.compact
+        else _sections(digest, wanted)
+    )
+    for title, body in sections:
         out.append(_section(title, body))
     out.append(_footer(*_foot(digest, public_url)))
     out.append(_close())
@@ -584,6 +621,155 @@ def digest_html(
 #: one feed, not five sections, so the heading is the section's own name and
 #: the lede under it says which of them the reader holds.
 CHANGED = "What changed"
+
+# ---------------------------------------------------------------------------
+# the compact form: one screen, and a link for the rest
+# ---------------------------------------------------------------------------
+
+#: The headings of the compact form, in its order.
+TONIGHT = "Tonight"
+WORTH = "Worth a look"
+SINCE = "Since yesterday"
+STANDING = "Standing"
+
+
+@dataclass(frozen=True)
+class Pages:
+    """Where the compact form sends a reader for what it left out.
+
+    None when the server has no public URL, or when the digest does not know
+    which league and team it is about (one built by hand, for a preview or a
+    test). The words are then printed without a link, because a link built on
+    nothing goes nowhere.
+    """
+
+    week: str | None = None
+    season: str | None = None
+    changed: str | None = None
+
+
+def _pages(digest: Digest, public_url: str | None) -> Pages:
+    base = (public_url or "").rstrip("/")
+    if not base or digest.espn_league_id is None:
+        return Pages()
+    league = f"{base}/l/{digest.espn_league_id}/{digest.season}"
+    if digest.espn_team_id is None:
+        return Pages(changed=f"{league}/week#changed")
+    team = f"{league}/team/{digest.espn_team_id}"
+    return Pages(week=f"{team}/week", season=f"{team}/season", changed=f"{league}/week#changed")
+
+
+def _to(href: str | None, words: str) -> str:
+    """The words, linked when there is somewhere to link them."""
+    return _link(href, words) if href else _h(words)
+
+
+def _capital(words: str) -> str:
+    return words[:1].upper() + words[1:]
+
+
+def _compact_today(digest: Digest) -> str:
+    """Tonight: the grid, the one thing to fix, and the one line of what
+    nobody on the roster can fill. No list of men with no game, no slot
+    codes: this section answers "is the lineup right?" and nothing else."""
+    report = digest.today_report
+    if report is None:
+        return "".join(_empty(line.strip()) for line in digest.today) or _empty("no lineup today")
+    if report.teams_playing == 0:
+        return _empty(today_head(report))
+    out = [_lede(_capital(today_head(report)))]
+    if report.fix:
+        out.append(_fix_line(report.fix[0], len(report.fix) - 1))
+    else:
+        out.append(
+            f'<p style="margin:10px 0 0;{s.TEXT}color:{s.GOOD};">'
+            "<b>Nothing to fix:</b> every place that can produce tonight is filled.</p>"
+        )
+    out.append(_lineup_grid(report))
+    out += [_lede(_capital(line)) for line in digest.tonight()]
+    return "".join(out)
+
+
+def _look_row(look: Look) -> str:
+    """One move worth a look, on one line: what it is, what it is worth, and
+    what it moves. The reasons in full are on the week's own page."""
+    season = f' <span style="{s.TAG}">(season)</span>' if look.season else ""
+    note = f' <span style="{s.NOTE}">&#183; {_h(look.mostly)}</span>' if look.mostly else ""
+    return f"""<tr><td style="padding:10px 0;border-top:1px solid {s.RULE};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="{s.TEXT}"><b>{_h(_capital(look.headline))}</b>{season}{note}</td>
+<td align="right" valign="top" style="{s.NUM}white-space:nowrap;\
+padding-left:14px;">{s.gain(look.net)}</td></tr>
+</table>
+</td></tr>
+"""
+
+
+def _compact_week(digest: Digest, pages: Pages) -> str:
+    """Worth a look: the moves that clear the bar, one line each, then one
+    line for everything else with the page that holds it."""
+    if digest.week_report is None and digest.season_report is None:
+        return "".join(_empty(line.strip()) for line in digest.plan) or _empty("no plan today")
+    section = digest.worth_a_look()
+    out: list[str] = []
+    if section.looks:
+        out.append(
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
+            ' border="0" style="margin-top:6px;border-collapse:collapse;">'
+            + "".join(_look_row(look) for look in section.looks)
+            + "</table>"
+        )
+    if section.tail:
+        tail = _h(section.tail)
+        if section.week_page:
+            tail += f" &#8594; {_to(pages.week, 'see the week')}"
+        out.append(f'<p style="margin:12px 0 0;{s.NOTE}">{tail}</p>')
+    if section.days:
+        days = "1 day" if section.days == 1 else f"{section.days} days"
+        out.append(
+            f'<p style="margin:8px 0 0;{s.NOTE}color:{s.WARN};">'
+            f"{days} this week with an empty place &#8594; "
+            f"{_to(pages.week, 'plan the week')}</p>"
+        )
+    return "".join(out)
+
+
+def _compact_changed(digest: Digest, pages: Pages) -> str:
+    """Since yesterday: the counts, each a way into What changed, and the
+    sentences worth their space in full."""
+    phrases = digest.count_phrases()
+    if not phrases:
+        return _empty("nothing you asked about changed")
+    counted = " &nbsp;&#183;&nbsp; ".join(_to(pages.changed, phrase) for phrase in phrases)
+    out = [f'<p style="margin:10px 0 0;{s.TEXT}">{counted}</p>']
+    out += [f'<p style="margin:8px 0 0;{s.NOTE}">{_h(sentence)}</p>' for sentence in digest.news()]
+    return "".join(out)
+
+
+def _compact_standing(digest: Digest) -> str:
+    words = digest.standing_words()
+    if words is None:
+        return "".join(_empty(line.strip()) for line in digest.table) or _empty("no standings yet")
+    return f'<p style="margin:10px 0 0;{s.TEXT}">{_h(words)}</p>'
+
+
+def _compact_sections(digest: Digest, wanted: Subscription, pages: Pages) -> list[tuple[str, str]]:
+    """The compact form's four sections, and nothing else.
+
+    The same topics decide them as decide the long form's: a section he did
+    not ask for is not drawn, and the five feed topics share one line of
+    counts the way they share one section there.
+    """
+    out: list[tuple[str, str]] = []
+    if wanted.on(LINEUP):
+        out.append((TONIGHT, _compact_today(digest)))
+    if wanted.on(MOVES):
+        out.append((WORTH, _compact_week(digest, pages)))
+    if [topic for topic in wanted.chosen if topic not in (LINEUP, MOVES, STANDINGS)]:
+        out.append((SINCE, _compact_changed(digest, pages)))
+    if wanted.on(STANDINGS):
+        out.append((STANDING, _compact_standing(digest)))
+    return out
 
 
 def _sections(digest: Digest, wanted: Subscription) -> list[tuple[str, str]]:
@@ -602,7 +788,12 @@ def _sections(digest: Digest, wanted: Subscription) -> list[tuple[str, str]]:
             out.append((LABELS[topic], _today(digest.today_report, digest.today)))
         elif topic == MOVES:
             out.append(("This week", _week(digest.week_report, digest.opponent_name, digest.plan)))
-            out.append(("The season", _season(digest.season_report, digest.season_plan)))
+            out.append(
+                (
+                    "The season",
+                    _season(digest.season_report, digest.season_plan, digest.week_adds),
+                )
+            )
         elif topic == STANDINGS:
             out.append((LABELS[topic], _standings(digest)))
         elif topic == feed_topics[0]:

@@ -6,9 +6,11 @@ until it has actually been delivered.
 """
 
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -52,7 +54,9 @@ from app.listener import events as kinds
 from app.listener.pool import UNROSTERED_STATUSES
 from app.listener.snapshots import latest_snapshots
 from app.listener.status import next_pass_after, run_status_pass
+from app.mail import digest_mail
 from app.pickups.stream import stream_recommendations
+from app.subscriptions import FULL, everything
 from tests.fakes import attach_pool, fake_league, fake_pool_entry, fake_pro_game, fake_team
 from tests.pickups_db import ANY, WEEK, clear_schedule, day_date, games
 from tests.scoring_db import held
@@ -67,6 +71,8 @@ MINE = 3
 RIVAL = 21
 FIRST = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
 LATER = datetime(2026, 11, 3, 22, 30, tzinfo=UTC)
+#: A public URL for the mail the compact tests build. Nothing is sent.
+SITE = "https://fcp.example"
 
 
 @pytest.fixture(scope="module")
@@ -642,7 +648,7 @@ def test_the_script_prints_and_marks_nothing_without_a_delivery_url(
     session.commit()
 
     completed = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "digest.py")],
+        [sys.executable, str(REPO_ROOT / "scripts" / "digest.py"), "--full"],
         env={
             **os.environ,
             "DATABASE_URL": test_database_url,
@@ -671,6 +677,41 @@ def test_the_script_prints_and_marks_nothing_without_a_delivery_url(
     session.expire_all()
     [event] = session.scalars(select(PlayerStatusEvent)).all()
     assert event.notified_at is None, "nothing was delivered, so nothing is marked"
+
+
+def test_the_script_prints_the_compact_form_unless_asked_for_the_long_one(
+    session: Session, test_database_url: str, tmp_path: Path
+) -> None:
+    """Compact by default, full as an option (docs/jobs.md, "The two
+    forms"). The CLI makes the same choice a member makes on his Alerts
+    page, so what is looked at here is what goes out."""
+    _pass(session, _baseline(), FIRST)
+    session.commit()
+
+    completed = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "digest.py")],
+        env={
+            **os.environ,
+            "DATABASE_URL": test_database_url,
+            "TEST_DATABASE_URL": test_database_url,
+            "ESPN_LEAGUE_ID": str(LEAGUE_ID),
+            "ESPN_SWID": "{x}",
+            "ESPN_S2": "y",
+            "FCP_TRACKED_TEAM_ID": str(MINE),
+            "PYTHONPATH": str(REPO_ROOT),
+        }
+        | {"ESPN_SEASON": "", "FCP_SMTP_HOST": ""},
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "TONIGHT" in completed.stdout and "WORTH A LOOK" in completed.stdout
+    for long_form in ("YOUR ROSTER", "ON THE WIRE", "CHURN", "THE LEAGUE"):
+        assert long_form not in completed.stdout, long_form
 
 
 def test_the_script_refuses_without_a_tracked_team(
@@ -987,7 +1028,10 @@ def test_the_morning_digest_opens_with_todays_lineup(session: Session) -> None:
 
     assert section[0] == f"  day 5, {day_date(5):%a %d %b}: 1 of 3 places fillable"
     assert section[1] == "  start: Playing"
-    assert section[-1] == "  sitting, no game: Dead One, Dead Two, Dead Three"
+    # The men with no game are not listed (2026-09-23): there is nothing to
+    # do about a man who is not playing, and three names of him sat above
+    # the one line that expires at tip-off.
+    assert not [line for line in section if "Dead One" in line]
     assert "TODAY" in rendered.split("THIS WEEK")[0], "above the week, not below it"
     # An extra section, not a replacement.
     assert "YOUR ROSTER" in rendered and "ON THE WIRE" in rendered
@@ -1062,7 +1106,6 @@ def test_the_whole_message_fits_a_phone_with_a_crowded_day_on_top() -> None:
             "  fix: Resting Man has no game at PG; Bench Three could take it",
             "  and 3 more place(s) worth fixing",
             *[f"  Bench {i} has a game but no place in the lineup" for i in range(4)],
-            "  sitting, no game: Idle One, Idle Two, Idle Three, Idle Four and 2 more",
         ],
         plan=[
             "  period 8, days 52-55 left (4), v Rival",
@@ -1087,3 +1130,141 @@ def test_the_whole_message_fits_a_phone_with_a_crowded_day_on_top() -> None:
     # sections, and says so rather than printing a heading over nothing.
     assert "  no rest-of-season view today" in lines
     assert "  no standings yet" in lines
+
+
+# ---------------------------------------------------------------------------
+# the compact form: one screen, the same numbers (docs/jobs.md)
+# ---------------------------------------------------------------------------
+
+
+def test_the_compact_text_is_four_sections_and_no_more(session: Session) -> None:
+    """Tonight, the moves worth a look, the counts, where you stand.
+
+    The long form's own sections -- the roster feed, the wire, the churn
+    line, the league's traffic -- are not in it: the email's job is "is there
+    anything to do today?", and the pages have the rest.
+    """
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    lines = build_digest(session, ls, 1, now=MORNING).render(compact=True).splitlines()
+
+    assert [line for line in lines if line and not line.startswith(" ")][1:] == [
+        "TONIGHT",
+        "WORTH A LOOK",
+        "SINCE YESTERDAY",
+        "STANDING",
+    ]
+    for long_form in ("YOUR ROSTER", "ON THE WIRE", "CHURN", "THE SEASON", "THIS WEEK"):
+        assert long_form not in lines, long_form
+    assert lines[0].startswith("Home - ")
+
+
+def test_the_compact_text_says_tonight_and_the_move_in_a_line_each(session: Session) -> None:
+    """The day, who starts, the one thing to fix or the count of what nobody
+    can fill; then the move with its number and what it moves."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    rendered = build_digest(session, ls, 1, now=MORNING).render(compact=True)
+    lines = rendered.splitlines()
+
+    assert f"  day 5, {day_date(5):%a %d %b}: 1 of 3 places fillable" in lines
+    assert "  start: Playing" in lines
+    assert "  2 places nobody can fill tonight" in lines
+    assert "  add Streamer One, drop Dead One · +0.50 · mostly PTS, FG%, FT%" in lines
+    # No slot codes: "day 5: F, UT going empty" three times is the week
+    # page's business, and one line says the same thing here.
+    assert "  3 days this week with an empty place - plan the week" in lines
+    assert not [line for line in lines if "going empty" in line]
+
+
+def test_the_compact_text_counts_what_is_under_the_bar_rather_than_explaining_it(
+    session: Session,
+) -> None:
+    """A bar labels and never hides. In an email what is under it is a
+    number and a page, not a paragraph each."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    lines = build_digest(session, ls, 1, now=MORNING).render(compact=True).splitlines()
+
+    [tail] = [line for line in lines if "under the bar" in line]
+    assert tail == "  1 more under the bar - see the week"
+    assert not [line for line in lines if "record 4.5-4.5 without" in line]
+
+
+def test_a_move_that_is_both_the_weeks_and_the_seasons_is_named_once(session: Session) -> None:
+    """The two searches run over the same wire, so the season's best is very
+    often the week's best again. It is printed once, and the season half
+    says so with its own number rather than repeating the row."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+    digest = build_digest(session, ls, 1, now=MORNING)
+    assert digest.week_report is not None and digest.season_report is not None
+    coming = digest.week_report.recommended[0].add
+    same_man = replace(digest.season_report.moves[0], into=(coming,), out=())
+    digest.season_report = replace(
+        digest.season_report, best_add=same_man, best_swap=None, best_two_swap=None
+    )
+
+    looks, _under = digest.looks()
+    html = digest_mail(digest, wanted=everything(FULL), public_url=SITE).html
+
+    assert [look.headline for look in looks] == ["add Streamer One, drop Dead One"]
+    assert not [look for look in looks if look.season], "not a second line for the same man"
+    assert "the season&#x27;s too" in html, "the long form says it instead of repeating it"
+    assert html.count("Add Streamer One") == 1
+
+
+def test_the_season_gets_its_own_line_when_it_names_a_different_man(session: Session) -> None:
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+
+    looks, _under = build_digest(session, ls, 1, now=MORNING).looks()
+
+    assert [look.season for look in looks] == [False, True]
+    assert looks[1].headline == "add Streamer One, Streamer Two, drop Playing, Dead One"
+
+
+def test_every_number_in_the_compact_email_is_in_the_full_one(session: Session) -> None:
+    """The compact form is the same `Digest` rendered with less of it, so a
+    number it shows can never be a number the long form does not: nothing
+    here is computed a second time.
+
+    Measurements only -- what a judgement is worth, a hurdle, a record, a
+    day. A count of what the long form lists one by one ("2 places nobody
+    can fill") is the compact form's own arithmetic and is not a number it
+    could disagree about.
+    """
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+    digest = build_digest(session, ls, 1, now=MORNING)
+
+    short = digest_mail(digest, wanted=everything(), public_url=SITE)
+    long_one = digest_mail(digest, wanted=everything(FULL), public_url=SITE)
+
+    measured = set(re.findall(r"[+-]?\d+\.\d+", short.html))
+    assert measured, "the compact form carries its numbers"
+    for number in measured:
+        assert number in long_one.html, number
+    for number in set(re.findall(r"[+-]?\d+\.\d+", short.text)):
+        assert number in long_one.text, number
+
+
+def test_the_compact_email_carries_the_compact_text_beside_it(session: Session) -> None:
+    """Two halves of one message: a compact page does not ride beside the
+    long text, and the league's own traffic is a count rather than forty
+    lines appended to it."""
+    clear_schedule(session)
+    ls, _home, _away = _two_empty_slots_a_day(session)
+    digest = build_digest(session, ls, 1, now=MORNING)
+
+    built = digest_mail(
+        digest, wanted=everything(), public_url=SITE, league_tail="THE LEAGUE\n  9 moves"
+    )
+
+    assert built.text == digest.render(compact=True)
+    assert "THE LEAGUE" not in built.text
+    assert "Worth a look" in built.html
+    assert "The season" not in built.html, "the long form's sections are not drawn"
