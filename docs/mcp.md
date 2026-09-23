@@ -1,13 +1,18 @@
 # The co-manager: everything the site knows, as tools a model can call
 
 **Written:** 2026-09-23. **Status:** built, exercised in process and over
-stdio, and driven for real in three conversations — see "The live run".
+stdio, and driven for real in three conversations — see "The live run". The
+OAuth front door is built and run end to end on the laptop against the MCP
+SDK's own OAuth client and the Claude Code CLI; it is **not deployed** —
+"Deploying it (the owner's steps)" is the runbook.
 
 Code: `app/mcp/` (`scope.py`, `provenance.py`, `trim.py`, `tools.py`,
 `server.py`), the entry point `scripts/mcp_server.py`, the tokens
-(`app/api_tokens.py`, `app/api/tokens.py`, migration `0029_api_tokens`), and
-the skill `skills/box-out-co-manager/SKILL.md`. Tests: `tests/test_mcp.py`,
-`tests/test_mcp_access.py`.
+(`app/api_tokens.py`, `app/api/tokens.py`, migration `0029_api_tokens`), the
+OAuth front door (`app/oauth.py`, `app/api/oauth.py`,
+`app/api/static/consent.html`, migration `0030_oauth_front_door`), and the
+skill `skills/box-out-co-manager/SKILL.md`. Tests: `tests/test_mcp.py`,
+`tests/test_mcp_access.py`, `tests/test_oauth.py`.
 
 ## Why
 
@@ -37,6 +42,13 @@ in `.env` is the server's own, so a manager makes his own on
 the token written to the page once. Prefixed `bo_`, so a token in a config
 file is recognisable; only its sha256 is stored, as a session cookie's is;
 revoking one stops it dead.
+
+**A token an app asked for is the same token.** Since 2026-09-23 an app can
+ask for one through OAuth ("Adding it to your own Claude or ChatGPT", below)
+instead of a manager cutting one by hand. What it receives is
+`api_tokens.mint`'s own `bo_` string, named after the app and listed on the
+same page with **via OAuth** beside it. There is one kind of token here, one
+lifetime and one place to end it.
 
 **A token carries no scope, deliberately.** It acts as the manager who made
 it, through the same dependencies every route declares
@@ -144,9 +156,9 @@ every call after; `systemctl status openai-tunnel` says whether it is.
 **What this is not.** Private to the tunnel's OpenAI organization and
 ChatGPT workspace — OpenAI does not allow it to be published — so it is the
 owner's own co-manager in ChatGPT, not the product's. A league member adding
-Box Out to their own ChatGPT or Claude still needs the OAuth remote form
-below, and the token the tunnel uses is the owner's, so it reads what he can
-read and nothing more.
+Box Out to their own ChatGPT or Claude uses the front door below, and the
+token the tunnel uses is the owner's, so it reads what he can read and
+nothing more.
 
 ## The remote form
 
@@ -154,17 +166,227 @@ read and nothing more.
 python scripts/mcp_server.py --http --host 127.0.0.1 --port 8787
 ```
 
-serves streamable HTTP at `/mcp`. A request's own `Authorization: Bearer`
-wins over the environment's token, so one server can answer for several
-managers, each reading his own leagues. `BOX_OUT_TOKEN` stays as the
-fallback for a connector that carries one token of its own.
+serves streamable HTTP at `/mcp`. With auth on — the default — it is an
+OAuth 2.1 protected resource and every call has to carry a bearer the site
+issued. `--no-auth` is the loopback form the ChatGPT tunnel needs, where
+`BOX_OUT_TOKEN` answers for every caller and the port must never be reachable
+from outside the machine.
 
-**What the remote form is not, yet.** It does no OAuth: there is no
-authorization server, no protected-resource metadata and no
-`AuthSettings`/`TokenVerifier` wired up, so a host that expects to sign in
-rather than to be handed a bearer cannot use it. That is the next piece of
-work if this is ever served off this machine, and until it is, it belongs
-behind the tailnet like the API.
+## Adding it to your own Claude or ChatGPT
+
+**For a manager, it is three steps.** Paste `https://mcp.boxoutfantasy.com`
+into the app's connector settings; the app sends you to boxoutfantasy.com,
+where you sign in the way you always do here — your address, a link in your
+mail, no password; you read a page that names the app and says it wants to
+read your leagues and your teams' plans and can never add, drop, bid or
+accept anything on ESPN, and you press Allow. That is the whole of it. The
+app is connected, and the token it now holds is listed on
+**Account → Connections** under that app's name with **via OAuth** beside
+it, where you can end it whenever you like.
+
+**What the app is given is one of your own `bo_` tokens.** Not a token of a
+second kind with a second lifetime: the same row in `api_tokens` the owner
+mints by hand above, made by `api_tokens.mint` and named after the app that
+asked. It is you, through the same checks every route declares, so it reads
+your leagues and your teams' plans and nothing else. OAuth here is a front
+door onto the tokens that already existed — the owner's words on
+2026-09-23 — and not a replacement for them.
+
+### The endpoints
+
+The authorization server is on the site (`app/api/oauth.py`), because the
+sign-in is. The MCP server is the resource server (`app/mcp/server.py`).
+
+| Where | What |
+|---|---|
+| `GET https://mcp.boxoutfantasy.com/.well-known/oauth-protected-resource/mcp` | RFC 9728: this resource, and the site as its authorization server. Served at the bare path too, for clients that ask there first |
+| `POST https://mcp.boxoutfantasy.com/mcp` with no usable bearer | `401` with `WWW-Authenticate: Bearer … resource_metadata="…"`, which is how an app finds the front door at all |
+| `GET https://boxoutfantasy.com/.well-known/oauth-authorization-server` | RFC 8414: the endpoints below, `code_challenge_methods_supported: ["S256"]`, `grant_types_supported: ["authorization_code"]` |
+| `POST /oauth/register` | RFC 7591 dynamic registration. Stores a client id, the app's name and its redirect URIs. No client secret is issued |
+| `GET /oauth/authorize` | Needs a session; signed out it goes to `/sign-in?next=<this whole request>` and comes back to it. Then the consent page |
+| `POST /oauth/consent` | Allow issues a single-use code, ten minutes, bound to the app, the redirect URI, the PKCE challenge, the manager and the `resource`. Deny issues nothing and says `access_denied` |
+| `POST /oauth/token` | `authorization_code` with the PKCE verifier. The answer is the raw `bo_` string, once |
+| `POST /oauth/revoke` | RFC 7009. Ends the token; always `200` |
+
+### No refresh token, on purpose
+
+The token endpoint issues **no refresh token** and sends **no `expires_in`**,
+and the metadata advertises `authorization_code` alone.
+
+A `bo_` token does not expire. It ends when its manager revokes it on
+Connections, and that is the only lifetime it has ever had. A refresh token
+would be a second secret to store, hash and rotate, wrapped around an access
+token that never goes stale — ceremony that would make the metadata say
+something the tokens do not do. The honest version is the one a manager can
+check: one token, visible on his own account page, dead the moment he says
+so. If an app's token stops working it does what it does on any 401 — walks
+the flow again, which is a sign-in and a click.
+
+### As run, 2026-09-23
+
+Two real servers on the laptop (the site on `:8010` in accounts mode, the
+co-manager on `:8787` with auth on) against a private database, driven by
+the MCP SDK's own `OAuthClientProvider` — the client that does the
+discovery, the registration and the PKCE, with this end playing only the
+human's part:
+
+```
+1. app sends the browser to        http://localhost:8010/oauth/authorize
+2. signed out, so the site says    /sign-in?next=<the whole request>
+3. asked for a link                202 If that address can sign in, a link is on its way…
+4. clicked the link in the mail    http://localhost:8010/auth/callback
+5. signed in, sent back to         /oauth/authorize
+6. the consent page says           Claude Code — wants to read your leagues and your teams' plans…
+7. pressed Allow, sent back to     http://127.0.0.1:33418/callback
+8. registered client_id            boc_jKDqiJyZiYYPQMoLbzTbb3mflEnHTXdK01s4Bp7OA0k
+9. the access token                bo_…            refresh token? None   expires_in? None
+10. tools the server offers        14: my_leagues, league_context, week_report, …
+11. my_leagues() came back         {"as": "member@example.com", "how": "token", "leagues": []}
+```
+
+Then, in the same run: the token appears on the account page as
+`Claude Code (the SDK's own OAuth client) (OAuth)`; revoking it there makes
+the next call to `/mcp` a `401` with the resource-metadata header.
+
+**And against the Claude Code CLI itself.**
+`claude mcp add --transport http box-out-remote http://127.0.0.1:8787/mcp`
+was accepted (it does not insist on https), the CLI read
+`/.well-known/oauth-protected-resource/mcp`, read the site's
+`/.well-known/oauth-authorization-server`, and **registered itself** —
+`Claude Code (box-out-remote)`, redirect `http://localhost:3118/callback` —
+then reported `! Needs authentication`. The last leg opens a browser and
+waits on that loopback port, which cannot be driven from an agent's shell,
+so the browser leg was done by the SDK client above. With an OAuth-issued
+token supplied as a header instead, `claude mcp list` says
+`box-out-oauth: http://127.0.0.1:8787/mcp (HTTP) - ✔ Connected`, and
+`claude -p "Call the my_leagues tool…"` answered
+"`as` = `member@example.com`; 0 leagues returned." — a real host, a real
+tool call, through the resource server, on a token this flow minted.
+
+### Deploying it (the owner's steps)
+
+Local work only above this line; nothing below has been run.
+
+1. **Deploy and migrate.** On the VPS, in `/opt/fcp-core`:
+   `git pull`, then `./.venv/bin/alembic upgrade head` (migration `0030`,
+   `oauth_clients` and `oauth_codes`).
+2. **Two lines in `/opt/fcp-core/.env`:**
+   ```
+   FCP_MCP_PUBLIC_URL=https://mcp.boxoutfantasy.com
+   ```
+   `FCP_PUBLIC_URL=https://boxoutfantasy.com` is already there and is what
+   the co-manager names as its authorization server. `FCP_AUTH_MODE` must be
+   `accounts`: in single mode `/oauth/authorize` refuses outright, because
+   single mode makes every request the owner and the flow would hand out the
+   owner's token to whoever asked. `python scripts/preflight_public.py`
+   prints both, and the front door's own line, without printing a secret.
+3. **A DNS record at Cloudflare**, DNS only — **the grey cloud**, for the
+   same reason the other two are (Caddy gets its own certificate, and a
+   proxy would hide the real client address):
+
+   | Type | Name | Content | Proxy |
+   |---|---|---|---|
+   | A | `mcp` | `178.105.181.43` | DNS only |
+
+4. **A Caddy block.** Back the file up first, by date, as docs/cutover.md
+   does, then append to `/srv/fullcourtpress/Caddyfile`, leaving every
+   existing block exactly as it is:
+   ```
+   mcp.boxoutfantasy.com {
+     reverse_proxy 127.0.0.1:8787
+     encode gzip
+     header {
+       X-Content-Type-Options nosniff
+       X-Frame-Options DENY
+       Referrer-Policy strict-origin-when-cross-origin
+     }
+   }
+   ```
+   No `log` block: a bearer does not travel in the URI, but nothing here
+   needs writing down either. The file is mounted read-only into the
+   container, so validate and reload **inside** it, and **never restart that
+   container** — it serves two other sites:
+   ```
+   docker exec fullcourtpress-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+   docker exec fullcourtpress-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
+   ```
+   Note `reverse_proxy 127.0.0.1:8787` and not the tailnet address: the MCP
+   unit binds loopback. Caddy passes the browser's `Host` through, and the
+   SDK's DNS-rebinding guard would answer `421` to every request behind it —
+   so `mcp.boxoutfantasy.com` is added to the allowed hosts from
+   `FCP_MCP_PUBLIC_URL` (`app.mcp.server.transport_security`), which is why
+   step 2 comes before step 4.
+5. **Restart the MCP unit**: `systemctl restart fcp-core-mcp`. Its banner on
+   stderr now says `protected resource https://mcp.boxoutfantasy.com/mcp,
+   authorization server https://boxoutfantasy.com`. If `FCP_MCP_PUBLIC_URL`
+   is missing it exits 2 without serving: a public server that cannot name
+   itself must not run open.
+6. **Check it**, from the laptop:
+   ```
+   curl -s https://mcp.boxoutfantasy.com/.well-known/oauth-protected-resource/mcp
+   curl -si -X POST https://mcp.boxoutfantasy.com/mcp -d '{}' | grep -i www-authenticate
+   curl -s https://boxoutfantasy.com/.well-known/oauth-authorization-server
+   ```
+   then add `https://mcp.boxoutfantasy.com` in Claude and walk the flow.
+
+**One thing this changes: the ChatGPT tunnel.** `fcp-core-mcp.service` runs
+`--http` with no flag today and the tunnel sends no bearer, so the moment
+auth is on, ChatGPT gets a `401`. Two honest ways out, and the second is the
+recommendation:
+
+- Leave the tunnel behind, now that an app can sign in properly. ChatGPT can
+  add the public server the same way Claude does.
+- Or run a second, loopback-only process for it: copy
+  `fcp-core-mcp.service` to `fcp-core-mcp-tunnel.service` with
+  `--http --host 127.0.0.1 --port 8788 --no-auth`, point
+  `~/.config/tunnel-client/boxout.yaml` at `http://127.0.0.1:8788/mcp`, and
+  restart `openai-tunnel`. `:8787` then serves the public name with auth on
+  and `:8788` serves the tunnel as the owner. Nothing proxies to `:8788`.
+
+### Security
+
+- **PKCE S256 or nothing.** `plain` is not implemented, not advertised and
+  not accepted; an authorization request without a challenge is sent back to
+  the app as `invalid_request`. The verifier is compared in constant time,
+  because that comparison is the whole proof that the app finishing the flow
+  is the one that started it.
+- **Exact redirect match.** A redirect URI is compared to the registered
+  string exactly — never by prefix, never by host — and only `https://` or
+  `http://` on `localhost`/`127.0.0.1` is stored at all (RFC 8252). An
+  unknown app, or a redirect URI it did not register, is answered *to the
+  reader as a page* and never redirected: there is nowhere trusted to send
+  that error.
+- **Codes are single-use and short.** Ten minutes; spending one is a single
+  `UPDATE` matching only an unused, unexpired row belonging to that client,
+  so two requests racing on one code cannot both win, exactly as a sign-in
+  link's second click cannot. A wrong verifier burns the code rather than
+  leaving it for a second try. Expired, spent, never issued and another
+  app's all answer the same `invalid_grant`.
+- **Only hashes.** The code's sha256 and the token's sha256 are what is
+  stored; the raw strings exist in one response each and nowhere else, not in
+  a log and not in the database. There is no client secret to steal.
+- **Registration is open and rate-limited** — ten per address, then one a
+  minute, the shape `POST /auth/sign-in` uses. Open is what dynamic
+  registration means; a row opens nothing until a manager has signed in and
+  pressed Allow.
+- **No open redirect through `next`.** The path the sign-in link comes back
+  to goes through `app.accounts.safe_next`: a local absolute path, no scheme,
+  no `//host`, no backslash.
+- **The consent page names the client**, escaped — `client_name` is a string
+  an app chose for itself — and says which account it is about to act as.
+- **CSRF on the consent form.** The cookie is `SameSite=Lax`, so a
+  cross-site POST does not carry it; on top of that the form carries a token
+  derived from this browser's own session, compared in constant time. One
+  browser's token is not another's.
+- **Single mode refuses the flow.** Every request there is the owner, so an
+  authorization endpoint would hand out the owner's token to whoever asked.
+  `/oauth/authorize` and `/oauth/consent` answer a plain page saying so, and
+  the preflight fails a server in single mode.
+- **With auth on, `BOX_OUT_TOKEN` is not a fallback.** A call with no bearer
+  gets the 401, never the owner's leagues.
+- **Public URLs come from settings, never from `Host`.** Both metadata
+  documents and every endpoint in them are built on `FCP_PUBLIC_URL` and
+  `FCP_MCP_PUBLIC_URL` (docs/cutover.md's rule, and `app.api.auth._link`'s).
 
 ## The tools
 
@@ -485,3 +707,46 @@ questions a manager would ask; it does not rule it out on the tenth.
 - **Three decimals.** A quantity measured on 616 decision points has no
   fourth decimal worth paying for, and the trim's rounding is the same
   rounding the equality tests compare against, so nothing is hidden by it.
+
+### The front door (2026-09-23)
+
+- **The access token IS a `bo_` token.** The alternative — an OAuth token of
+  its own, with its own table, its own expiry and its own resolver — is a
+  second answer to "who may open what", and a second thing to revoke. This
+  way a manager sees one list on one page, `resolve_viewer` has one path, and
+  `tests/test_mcp_access.py`'s promise ("a token is its owner, and nobody
+  else") covers the OAuth ones for free.
+- **The authorization server is the site's own code, not the SDK's routes.**
+  `mcp.server.auth.routes.create_auth_routes` is spec-correct and was read
+  closely, but it mounts Starlette routes at fixed root paths derived from
+  the issuer (`/authorize`, `/token`, `/register`), and `provider.authorize`
+  is handed a client and params with no request — no cookie to read, no
+  session to check, nowhere to render a consent page. The thing an
+  authorization server actually has to do here is *be certain who is at the
+  keyboard*, and everything that knows that (the magic link, `fcp_session`,
+  `resolve_viewer`, `SignInRequiredError`) is a FastAPI dependency on the
+  site. Bolted-on Starlette routes would also sit outside
+  `tests/test_access.py`'s "every route declares exactly one check". So the
+  site serves `/oauth/…` itself, in its own house style, and the SDK is used
+  for exactly the half it fits: the resource server, where `AuthSettings`
+  plus a `TokenVerifier` give the protected-resource metadata and the
+  `WWW-Authenticate` 401 for nothing.
+- **No refresh token.** Argued above, under the heading of its own: a
+  refresh token wrapped around an access token that never expires is
+  ceremony, and the metadata would be saying something the tokens do not do.
+  The lifetime is the one a manager can see on his Connections page.
+- **A token is not audience-restricted.** `validate_token_resource` is False
+  and the `resource` an app asks for is recorded rather than enforced. RFC
+  8707's point is to stop a token issued for one resource being replayed at
+  another — but here both resources are ours, the same manager, the same
+  checks, and the token he pastes into a config file by hand was never bound
+  to either. Binding it between our own two front doors would buy nothing and
+  would break that one.
+- **Single mode refuses the flow outright.** It would otherwise be the
+  sharpest edge in the whole design: single mode means every request is the
+  owner, so `/oauth/authorize` would hand the owner's leagues to any stranger
+  who walked it. A one-line guard and a plain page beats a footnote.
+- **Registration is never updated.** A caller holding no secret has proved
+  nothing that would entitle it to change an existing app's redirect URIs, so
+  every registration is a new row. An app that wants different URIs registers
+  again, which is what dynamic registration is for.

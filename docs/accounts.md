@@ -97,6 +97,17 @@ plans and nothing else. Only its sha256 is stored and it is shown once. That
 is what lets a co-manager read for a member without a second answer to "who
 may open what" (docs/mcp.md).
 
+**An app can ask for one instead of a manager cutting it by hand.** Since
+2026-09-23 the site is also an OAuth 2.1 authorization server
+(`app/api/oauth.py`, `app/oauth.py`, migration `0030`, docs/mcp.md): an app
+registers itself, the manager is sent to `/sign-in` and back to a consent
+page that names the app, and Allow mints `api_tokens.mint`'s own `bo_` token
+named after it. It is the same row, the same lifetime and the same
+Connections page — there is no second kind of token and no second answer to
+who may open what. In **single mode the flow is refused outright**: every
+request there is the owner, so an authorization endpoint would hand out the
+owner's token to whoever asked.
+
 ## The checks
 
 Five questions, as FastAPI dependencies in `app/api/access.py`. Every route
@@ -439,6 +450,10 @@ The API stays tailnet-only until this is done. In order:
    - `FCP_OWNER_EMAIL=` Patrick's address (the one he will sign in with).
    - `FCP_PUBLIC_URL=https://boxoutfantasy.com` (the site's own name since
      the 2026-09-22 rename; fcp.patrickmcdowell.dev stays on the old stack).
+   - `FCP_MCP_PUBLIC_URL=https://mcp.boxoutfantasy.com` if the remote
+     co-manager is being served: it is what the MCP server names itself in
+     its metadata, and `--http` refuses to start with auth on without it
+     (docs/mcp.md, "Deploying it").
    - `FCP_SMTP_HOST`, `FCP_EMAIL_FROM` (and the SMTP login) if not already
      set for the digest; sign-in links need only the host and the sender.
    - `FCP_SERVICE_TOKEN=` a fresh `python -c "import secrets;
