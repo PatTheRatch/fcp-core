@@ -35,6 +35,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.resources import FunctionResource
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import brand
 from app.api.access import Viewer
 from app.config import Settings, get_settings
 from app.db.session import make_engine, make_session_factory
@@ -44,10 +45,11 @@ from app.mcp.scope import RefusedError, viewer_for_token
 #: Where a stdio server reads its token from.
 TOKEN_ENV = "BOX_OUT_TOKEN"
 
-#: The name a host shows. The rename to Box Out is another piece of work
-#: landing beside this one; when `app/brand.py` exists this reads from it.
+#: The name a host shows in its own list of servers. The slug is what a host
+#: prefixes its tool names with (`mcp__box-out__…`), so it is spelled out
+#: rather than derived; the title is the product's, from `app.brand`.
 NAME = "box-out"
-TITLE = "Box Out"
+TITLE = brand.BRAND
 
 REPO = Path(__file__).resolve().parent.parent.parent
 
@@ -77,10 +79,11 @@ NOTES: dict[str, tuple[str, str]] = {
     "injuries": ("docs/injuries.md", "What the league said about a man, and when it said it"),
 }
 
-INSTRUCTIONS = """Box Out reads one fantasy basketball league's own record and
-reasoning: the week and season plans, today's lineup, what changed, a trade
-judged from both sides, the wire, the standings, and the numbers every one of
-those leans on with the sample behind each.
+INSTRUCTIONS = f"""{brand.BRAND} reads one fantasy basketball league's own
+record and reasoning: the week and season plans, today's lineup, what changed,
+a trade judged from both sides, the wire, the standings and where the season
+is heading, and the numbers every one of those leans on with the sample
+behind each.
 
 Three rules hold whatever is asked.
 
@@ -300,6 +303,21 @@ def build_server(
     )
     def standings(league_id: int, season: int, ctx: Context) -> dict[str, Any]:
         return run(ctx, lambda s, v: tools.standings(s, v, league_id, season))
+
+    @mcp.tool(
+        description=(
+            "Where every team in the league is heading: the matchup and category "
+            "record each is projected to end on, and the odds of each finishing "
+            "place, from playing out every remaining matchup head to head. It "
+            "carries its own record of how well the method scored when the "
+            "season was replayed against it; quote that whenever you quote an "
+            "odd. League scope."
+        )
+    )
+    def projected_standings(
+        league_id: int, season: int, ctx: Context, today: int | None = None
+    ) -> dict[str, Any]:
+        return run(ctx, lambda s, v: tools.projected_standings(s, v, league_id, season, today))
 
     @mcp.tool(
         description=(

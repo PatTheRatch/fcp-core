@@ -266,6 +266,7 @@ EXPECTED = {
     "todays_lineup",
     "what_changed",
     "standings",
+    "projected_standings",
     "matchup",
     "recent_moves",
     "player_card",
@@ -440,6 +441,7 @@ ALL_CALLS: dict[str, dict[str, Any]] = {
     "matchup": {"league_id": LEAGUE_ID, "season": SEASON, "team_id": HOME, "period": 2},
     "recent_moves": {"league_id": LEAGUE_ID, "season": SEASON, "days": 7},
     "free_agents": {"league_id": LEAGUE_ID, "season": SEASON, "team_id": HOME, "today": TODAY},
+    "projected_standings": {"league_id": LEAGUE_ID, "season": SEASON, "today": TODAY},
 }
 
 

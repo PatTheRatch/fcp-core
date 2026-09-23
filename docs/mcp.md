@@ -6,7 +6,7 @@ see "What has not been run".
 
 Code: `app/mcp/` (`scope.py`, `provenance.py`, `trim.py`, `tools.py`,
 `server.py`), the entry point `scripts/mcp_server.py`, the tokens
-(`app/api_tokens.py`, `app/api/tokens.py`, migration `0028_api_tokens`), and
+(`app/api_tokens.py`, `app/api/tokens.py`, migration `0029_api_tokens`), and
 the skill `skills/box-out-co-manager/SKILL.md`. Tests: `tests/test_mcp.py`,
 `tests/test_mcp_access.py`.
 
@@ -79,7 +79,7 @@ The database comes from `.env` in the repo root, like everything else here.
 house rules as the slash command `/mcp__box-out__co_manager`.
 
 **As run on 2026-09-22**, against the local database and the stored 2026
-season, the server reported `"status":"connected"` with twelve tools and the
+season, the server reported `"status":"connected"` with every tool and the
 prompt registered.
 
 ## Adding it to Claude Desktop
@@ -126,7 +126,7 @@ behind the tailnet like the API.
 
 ## The tools
 
-Twelve, each a thin call into the function its route calls. Sizes are the
+Thirteen, each a thin call into the function its route calls. Sizes are the
 2026 season of ESPN league 3853870 on day 52 — a fourteen-team league with
 eight seasons of history — as the model receives them (pretty-printed JSON);
 tokens are counted with a cl100k tokenizer as a stand-in, so read them as
@@ -141,6 +141,7 @@ within ten per cent rather than exact.
 | `todays_lineup(...)` | the proposed lineup place by place beside the one that is set, and the places that will produce nothing tonight | 6k chars, ~1,900 |
 | `what_changed(league_id, season, team_id?, since?, until?, today?)` | injuries, adds, drops, claims and trades as one sentence each, newest first | 2.9k chars, ~800 (two days of a real week) |
 | `standings(league_id, season)` | every team's matchup and category record | 4k chars, ~1,230 |
+| `projected_standings(league_id, season, today?)` | the record each team is projected to end on, its finishing odds, and the record of the method (docs/projected_record.md) | 8.5k chars, ~2,740 |
 | `matchup(league_id, season, team_id, period?)` | one team's matchup, each side's nine as ESPN stored them | 1.7k chars, ~530 |
 | `recent_moves(league_id, season, days?)` | the league's roster moves in a window, failed claims included | 0.8k chars, ~260 (a week) |
 | `player_card(player_id, league_id?, season?, today?)` | his line per game and per week, games left, playoff games, status, and what the rate rests on | 1.4k chars, ~530 |
@@ -333,10 +334,6 @@ on ESPN.
   verbs rather than trusting this paragraph.
 - **A verdict.** No field says accept or reject. `clears_hurdle` is a label
   and the payload says so in words.
-- **`projected_standings`.** The work was landing beside this one and had not
-  reached main when the tools were wired. It is a tool of its own when it
-  does: one call, the league's projected finish, with the same provenance
-  block.
 - **A per-player projection from a gated source.** Everything here is ESPN's
   own or derived from stored box scores (`app.projections.sources`). A tool
   that ever carries Basketball Monster's numbers has to ask `may_show`
@@ -365,10 +362,10 @@ nested `claude -p` cannot authenticate (`OAuth session expired and could not
 be refreshed`) and the `ANTHROPIC_API_KEY` in `.env` is rejected with a 401,
 so no model could be driven against the server.
 
-What **was** verified: the server starts, connects and registers all twelve
-tools and the prompt inside a real Claude Code session
-(`"mcp_servers":[{"name":"box-out","status":"connected"}]`, twelve
-`mcp__box-out__*` tools, `/mcp__box-out__co_manager`, and the skill
+What **was** verified: the server starts, connects and registers every
+tool and the prompt inside a real Claude Code session
+(`"mcp_servers":[{"name":"box-out","status":"connected"}]`, every
+`mcp__box-out__*` tool, `/mcp__box-out__co_manager`, and the skill
 discovered); the whole surface answers over stdio through the SDK's own
 client (`tests/test_mcp_access.py`); and every tool's answer matches the
 route's for a known deal and a known day (`tests/test_mcp.py`). The

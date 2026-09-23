@@ -35,6 +35,7 @@ from app.api import changes as changes_api
 from app.api import leagues as leagues_api
 from app.api import pickups as pickups_api
 from app.api import players as players_api
+from app.api import projected as projected_api
 from app.api import trades as trades_api
 from app.api import transactions as transactions_api
 from app.api.access import Viewer
@@ -493,6 +494,69 @@ def standings(session: Session, viewer: Viewer, league_id: int, season: int) -> 
         ],
         "note": "byes are left out: an unopposed matchup is not a win",
         "provenance": block(session, found),
+    }
+
+
+def projected_standings(
+    session: Session, viewer: Viewer, league_id: int, season: int, today: int | None = None
+) -> dict[str, Any]:
+    """Where every team is heading: the record it ends on, and the odds.
+
+    Each team's remaining matchups played out head to head and summed onto
+    what is banked (`app.inseason.projected`). The per-week detail every team
+    carries is dropped here -- fourteen teams times a dozen weeks is a table
+    nobody reads aloud -- and what is kept is the record, the finishing
+    odds, and the note saying how well this method scored when the season it
+    is projecting was replayed against it.
+    """
+    found = league_member(session, viewer, league_id, season)
+    try:
+        answer = projected_api.projected_standings(found, session, today=today)
+    except HTTPException as error:
+        raise _passed_through(error) from None
+    body = answer.model_dump(mode="json")
+    return {
+        "league_id": body["league_id"],
+        "season": body["season"],
+        "as_of": {"scoring_period": body["as_of"], "date": body["as_of_date"]},
+        "matchup_period": body["matchup_period"],
+        "periods_left": body["periods"],
+        "playoff_team_count": body["playoff_team_count"],
+        "bye_count": body["bye_count"],
+        "teams": [
+            {
+                "espn_team_id": team["espn_team_id"],
+                "name": team["name"],
+                "banked_matchups": team["banked_matchups"],
+                "banked_categories": [
+                    trim.n(team["banked_won"]),
+                    trim.n(team["banked_lost"]),
+                ],
+                "projected_matchups": [trim.n(value) for value in team["projected_matchups"]],
+                "projected_categories": [trim.n(value) for value in team["projected_record"]],
+                "playoff_odds": trim.n(team["playoff_odds"]),
+                "bye_odds": trim.n(team["bye_odds"]),
+            }
+            for team in body["teams"]
+        ],
+        "how_it_was_made": {
+            "simulations": body["n_sims"],
+            "tiebreak": body["tiebreak"],
+            "basis": body["basis"],
+            "playoffs_projected": body["playoffs_projected"],
+            "playoff_note": body["playoff_note"],
+        },
+        "projection_record": body["calibration_note"],
+        "language": (
+            "read the odds as directions rather than quantities: "
+            "`projection_record` says how well this method has scored"
+        ),
+        "provenance": block(
+            session,
+            found,
+            day=int(body["as_of"]),
+            extra={"projection_source_note": body["source_note"]},
+        ),
     }
 
 

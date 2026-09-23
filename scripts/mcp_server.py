@@ -29,6 +29,7 @@ import logging
 import os
 import sys
 
+from app import brand
 from app.config import get_settings
 from app.mcp.server import TOKEN_ENV, build_server
 
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.http:
         print(
-            f"Box Out MCP on http://{args.host}:{args.port}/mcp "
+            f"{brand.BRAND} MCP on http://{args.host}:{args.port}/mcp "
             f"(auth mode {settings.fcp_auth_mode})",
             file=sys.stderr,
         )

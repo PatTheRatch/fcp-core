@@ -33,12 +33,16 @@ the league's own numbers. Then:
 | "What should I do today / this week?" | `todays_lineup`, then `week_report`, then `what_changed` |
 | "Should I trade X for Y?" | `judge_trade` |
 | "Is X worth picking up?" / "Who's on the wire?" | `free_agents`, then `player_card` for a name |
-| "How am I doing?" | `standings`, `matchup` |
+| "How am I doing?" / "Will I make the playoffs?" | `standings`, `matchup`, `projected_standings` |
 | "Anything happen?" | `what_changed`, `recent_moves` |
 | "Who should I drop / stash?" | `season_report` |
 
 `player_card` does not carry what a man is worth a week. `free_agents` and
 `judge_trade` do. Say which number you are quoting.
+
+`projected_standings` carries its own record (`projection_record`), which
+says the method is overconfident. Quote it whenever you quote an odd, the
+way you quote `trade_record` with a trade.
 
 ## "What should I do this week?"
 
