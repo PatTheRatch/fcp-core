@@ -26,8 +26,21 @@ Head to head, not against the field: the opponent is known, and the
 uncertainty is only in the days left. P(I win a category) is the normal
 probability that my projected total beats his, with the spread of a whole
 period's totals (`app.draft.targets.CategoryDistribution`) scaled by the
-square root of the share of the period remaining. Turnovers are inverted.
-Expected wins is the sum over the nine; a move's worth is the change in it.
+square root of the share of the period remaining and then by `SPREAD_SCALE`.
+Turnovers are inverted. Expected wins is the sum over the nine; a move's
+worth is the change in it.
+
+`SPREAD_SCALE` is two, and it is the whole reason a week here is worth less
+than it used to be. The measured spread is **one team's** total over a
+period; what decides a category is the difference between two of them, and
+the model had been reading a one-team spread as if it were that difference.
+Replaying 2026 from thirty-eight mornings said so in the plainest way there
+is (docs/projected_record.md section 0): at scale one, categories called at
+95% were won 81% of the time and ones called at 5% were won 19%. At two the
+table lines up almost everywhere. So every chance in this codebase is now
+nearer the middle, every delta between two chances is smaller, and the same
+0.20 bar catches fewer moves. That is the intended effect and not a side
+effect.
 
 THE MOVES
 
@@ -175,6 +188,41 @@ MOVED_THRESHOLD = 0.01
 #: Days in a matchup period, which is what a week's claim buys: a bid made
 #: with two days left is bid for two of seven.
 PERIOD_DAYS = 7.0
+
+#: What every weekly spread is multiplied by inside `head_to_head`, before the
+#: share-of-the-period scaling. **2.0, applied 2026-09-23, Patrick's decision.**
+#:
+#: What it is: `CategoryDistribution.spread` is the standard deviation of *one*
+#: team's total in a category over a period of the ordinary length, measured on
+#: this league's own results. A category is decided by the *difference* between
+#: two such totals, and the model used that one-team spread for it, which made
+#: every chance too sure of itself.
+#:
+#: Why 2.0: the projected-standings calibration replayed 2026 from thirty-eight
+#: mornings and scored 47,880 per-category calls (docs/projected_record.md
+#: section 0). At scale 1.0 the reliability table was pulled toward the middle
+#: at every distance -- 95% calls won 81% of the time, 5% calls won 19% -- for
+#: a Brier of 0.2288. The same run at sqrt(2), the number two *independent*
+#: totals would give, reads 0.2202 and closes about half the gap; at 2.0 it
+#: reads 0.2179 and the table is calibrated almost everywhere. The extra over
+#: sqrt(2) is the part the independence argument does not cover: the nine
+#: categories move together inside a week, and a roster's own week-to-week form
+#: varies more than the league's cross-sectional spread suggests. The owner
+#: chose the number that calibrates the published table rather than the
+#: number the theory alone gives.
+#:
+#: What it costs: this is the one function every "chance of winning a category"
+#: in the product comes from -- the pickup judgement, the streaming hurdle's
+#: units, the bid sizing, the trade evaluator, the projected standings, the
+#: day's lineup edge and the MCP tools over all of them -- so widening it
+#: shrinks every delta and every net. All three calibrations were re-run whole
+#: on 2026-09-23 and republished; see docs/spread_revision.md.
+#:
+#: Not applied to the draft. `app.draft.optimizer` and `app.draft.targets` use
+#: the same spreads for a different question (a whole season against the field,
+#: not a week against one opponent), and whether they want the same factor is
+#: its own measurement. They are unchanged.
+SPREAD_SCALE = 2.0
 
 SWAP = "swap"
 ADD = "add"
@@ -451,9 +499,14 @@ def head_to_head(
 ) -> dict[str, float]:
     """P(I win each category), from two projected weeks.
 
-    The spread is the period's, scaled by the square root of the share of
-    the period still to play. With nothing left the result is settled:
-    ahead wins, behind loses, level is a coin.
+    The spread is the period's, widened by `SPREAD_SCALE` and scaled by the
+    square root of the share of the period still to play. With nothing left
+    the result is settled: ahead wins, behind loses, level is a coin.
+
+    A caller that hands in its own `distributions` -- the backtest, the
+    calibration's `--sigma-scale` diagnostic -- is widened on top of what it
+    hands in, so "as shipped" is the spreads as measured and nothing else
+    done to them.
     """
     categories = [distribution.abbreviation for distribution in distributions]
     my_totals = mine.totals(categories)
@@ -462,7 +515,7 @@ def head_to_head(
     for distribution in distributions:
         key = distribution.abbreviation
         share = days_remaining / distribution.period_days if distribution.period_days > 0 else 1.0
-        sigma = distribution.spread * math.sqrt(max(0.0, share))
+        sigma = distribution.spread * SPREAD_SCALE * math.sqrt(max(0.0, share))
         edge = my_totals[key] - their_totals[key]
         if distribution.lower_is_better:
             edge = -edge

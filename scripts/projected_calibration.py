@@ -40,7 +40,14 @@ The result of the published run is at the top of docs/projected_record.md,
 and the sentence the pages print is
 `app.inseason.projected_calibration.CALIBRATION_NOTE`. The variance model is
 not tuned on what comes out of here: if the numbers are poor the doc says so
-and proposes the change, which is a separate decision.
+and proposes the change, which is a separate decision. That is how the
+widening of 2026-09-23 was taken -- priced here on 2026-09-22 as
+`--sigma-scale 2.0`, decided by the owner, then applied in
+`app.pickups.stream.SPREAD_SCALE` and re-run whole.
+
+`--sigma-scale` now multiplies **on top of** that shipped factor, so a plain
+run is the product as it ships and the printed "effective scale" is the
+number that reached the spreads.
 """
 
 from __future__ import annotations
@@ -75,6 +82,7 @@ from app.injuries import morning_of, statuses_as_of
 from app.inseason.projected import Projection, final_table, project_standings
 from app.pickups.judge import banked_record
 from app.pickups.state import SeasonCalendar, season_calendar
+from app.pickups.stream import SPREAD_SCALE
 
 #: ESPN's league id for Full Court Press, named rather than assumed.
 LEAGUE_ID = 3853870
@@ -253,13 +261,18 @@ def _ruled_out(
 def run(session: Session, season: int, sims: int, sigma_scale: float = 1.0) -> dict[str, Any]:
     """One replay. `sigma_scale` widens every weekly spread by a factor.
 
-    It exists to price a **proposed** change without making it. The shipped
-    model is scale 1.0 -- `app.pickups.stream.head_to_head` on the league's
-    own measured spreads -- and it stays 1.0 whatever this run says; a
-    variance model tuned on the run that scores it is not a calibration. The
-    interesting factor is sqrt(2), which is what the spread of the difference
-    between two independent team totals would be, and the doc reports what it
-    would have scored beside what the shipped model did.
+    It exists to price a **proposed** change without making it, and it
+    multiplies **on top of the shipped model**, which since 2026-09-23 widens
+    every spread by `app.pickups.stream.SPREAD_SCALE` (2.0) of its own. So
+    `--sigma-scale 1.0` is the product exactly as it ships and is what the
+    published numbers are run at; `--sigma-scale 0.5` undoes the shipped
+    widening and reproduces the old model; `--sigma-scale 2.0` is a total
+    factor of four. The effective factor is printed with every run so a
+    reader never has to do that multiplication in his head.
+
+    Whatever this says, the shipped factor is not moved here: a variance
+    model tuned on the run that scores it is not a calibration. 2.0 was
+    chosen on the run of 2026-09-22 and declared before this one.
     """
     league_season = _league_season(session, season)
     calendar = season_calendar(session, season)
@@ -319,6 +332,8 @@ def run(session: Session, season: int, sims: int, sigma_scale: float = 1.0) -> d
         "season": season,
         "sims": sims,
         "sigma_scale": sigma_scale,
+        "shipped_scale": SPREAD_SCALE,
+        "effective_scale": sigma_scale * SPREAD_SCALE,
         "checkpoints": checkpoints,
         "basis": "weekly spreads from seasons before this one, era adjustment off; "
         "availability from the NBA's own injury reports as of 10am Eastern that day",
@@ -406,11 +421,13 @@ def _print(result: dict[str, Any]) -> None:
     print(f"PROJECTED STANDINGS, replayed on {result['season']}")
     print(f"  {result['checkpoints']} checkpoints, {result['sims']} simulated seasons each")
     print(f"  basis: {result['basis']}")
+    print(
+        f"  shipped spread scale {result['shipped_scale']:.4f} "
+        f"x --sigma-scale {result['sigma_scale']:.4f} "
+        f"= {result['effective_scale']:.4f} applied to every weekly spread"
+    )
     if result["sigma_scale"] != 1.0:
-        print(
-            f"  DIAGNOSTIC RUN: spreads widened by {result['sigma_scale']:.4f}. "
-            "Not the shipped model."
-        )
+        print("  DIAGNOSTIC RUN: this is not the shipped model.")
     print()
     brier = result["brier"]
     print(f"BRIER, per-category probabilities: {brier:.4f} over {result['n']} of them")
@@ -459,7 +476,9 @@ def main() -> None:
         "--sigma-scale",
         type=float,
         default=1.0,
-        help="Widen every weekly spread by this factor. A diagnostic, never shipped.",
+        help="Widen every weekly spread by this factor ON TOP of the shipped "
+        "app.pickups.stream.SPREAD_SCALE. 1.0 is the product as it ships. A "
+        "diagnostic; the shipped factor is not set from here.",
     )
     parser.add_argument("--json", type=Path, default=None)
     args = parser.parse_args()

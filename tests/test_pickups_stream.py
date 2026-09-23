@@ -179,11 +179,14 @@ def test_a_coin_flip_category_is_flipped_by_a_free_agent_with_three_games_left(
     assert move.fills_empty_day is True
     blocks = move.moved()[0]
     assert blocks.abbreviation == "BLK"
-    # Nine blocks against a ten-block weekly spread over three of seven days.
+    # Nine blocks against a ten-block weekly spread, doubled by
+    # `SPREAD_SCALE`, over three of seven days: 9 / (10 * 2 * sqrt(3/7)) is
+    # 0.687 of a standard deviation, which is a 75% chance. Before the spread
+    # was widened on 2026-09-23 the same nine blocks read 92%.
     assert blocks.after == pytest.approx(
         head_to_head(CategoryLine({"BLK": 9}), CategoryLine(), WEEK, 3)["BLK"]
     )
-    assert blocks.after > 0.9
+    assert blocks.after == pytest.approx(0.7541, abs=0.0005)
     assert [shift.abbreviation for shift in move.moved()] == ["BLK"], "nothing else moved"
     assert [day.scoring_period for day in report.empty_days] == [5, 6, 7]
     assert all(day.fillers[0].name == "Blocker" for day in report.empty_days)
@@ -413,8 +416,10 @@ def test_head_to_head_is_settled_with_no_days_left_and_inverts_turnovers() -> No
     assert 0.5 < open_week["PTS"] < 1.0
     assert 0.0 < open_week["TO"] < 0.5, "more turnovers is losing"
     assert open_week["BLK"] == pytest.approx(0.5)
-    # Twenty points over a hundred-point spread, a whole week to go.
-    assert open_week["PTS"] == pytest.approx(0.5793, abs=0.001)
+    # Twenty points over a hundred-point spread doubled by `SPREAD_SCALE`, a
+    # whole week to go: a tenth of a standard deviation, 54%. It read 58% on
+    # the undoubled spread, before 2026-09-23.
+    assert open_week["PTS"] == pytest.approx(0.5398, abs=0.001)
 
 
 def test_every_move_carries_a_judgement_over_both_horizons(session: Session) -> None:
