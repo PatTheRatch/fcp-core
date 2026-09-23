@@ -153,6 +153,46 @@ def test_reading_a_subscription_writes_no_row(factory: sessionmaker[Session]) ->
         assert session.query(DigestSubscription).count() == 0
 
 
+def test_a_new_member_gets_the_compact_email(factory: sessionmaker[Session]) -> None:
+    """Compact by default, full as an option (docs/jobs.md, "The two
+    forms"), and no row is written to say so."""
+    with factory() as session:
+        user_id, league_id = _member(session, "member@example.com")
+        held = subscriptions.for_member(session, user_id, league_id)
+
+    assert held.length == subscriptions.COMPACT
+    assert held.compact is True
+
+
+def test_a_length_this_version_does_not_have_reads_as_compact() -> None:
+    """A row from a version that never had this column, and a value nobody
+    recognises, both land on the default rather than on the long form."""
+    assert subscriptions.clean_length("full") == subscriptions.FULL
+    assert subscriptions.clean_length("FULL") == subscriptions.FULL
+    for nonsense in (None, "", "medium", 7):
+        assert subscriptions.clean_length(nonsense) == subscriptions.COMPACT, nonsense
+    assert subscriptions.Subscription(length="medium").compact is True
+
+
+def test_the_length_he_chose_is_kept_and_read_back(factory: sessionmaker[Session]) -> None:
+    with factory() as session:
+        user_id, league_id = _member(session, "member@example.com")
+        subscriptions.save(session, user_id, league_id, length=subscriptions.FULL)
+        session.commit()
+        held = subscriptions.for_member(session, user_id, league_id)
+
+    assert held.length == subscriptions.FULL and held.compact is False
+
+
+def test_everything_is_every_topic_and_still_a_choice_of_length() -> None:
+    """Single mode keeps every topic on; how long the message is stays a
+    setting, because compact leaves nothing out that a count and a link do
+    not cover."""
+    assert subscriptions.everything().compact is True
+    assert subscriptions.everything(subscriptions.FULL).compact is False
+    assert subscriptions.everything(subscriptions.FULL).chosen == subscriptions.TOPICS
+
+
 def test_an_unknown_topic_is_dropped_and_a_missing_one_takes_its_default() -> None:
     """A row written by an older version still reads, and a body from a page
     that is ahead of the server cannot write a topic that does not exist."""
@@ -245,6 +285,37 @@ def test_the_page_reads_every_league_he_is_in_and_writes_what_he_ticks(
 
     again = member.get("/me/subscriptions").json()["leagues"][0]
     assert again["alerts"] is False and again["morning"] is True
+
+
+def test_the_page_offers_the_two_lengths_and_writes_the_one_he_picks(
+    sign_in: SignIn, factory: sessionmaker[Session]
+) -> None:
+    """The setting beside the topics: the topics say what is in the email,
+    this says how much of each. Compact is named as the default, so nobody
+    has to guess what doing nothing gets him."""
+    with factory() as session:
+        _member(session, "member@example.com")
+    member = sign_in("member@example.com")
+
+    [league] = member.get("/me/subscriptions").json()["leagues"]
+    assert league["length"] == subscriptions.COMPACT
+    assert [option["name"] for option in league["lengths"]] == list(subscriptions.LENGTHS)
+    assert [option["on"] for option in league["lengths"]] == [True, False]
+    assert "(default)" in league["lengths"][0]["label"]
+
+    written = member.put(
+        f"/me/subscriptions/{LEAGUE_ID}",
+        json={"topics": dict(subscriptions.DEFAULTS), "length": subscriptions.FULL},
+    )
+    assert written.status_code == 200, written.text
+    assert written.json()["length"] == subscriptions.FULL
+
+    nonsense = member.put(
+        f"/me/subscriptions/{LEAGUE_ID}",
+        json={"topics": dict(subscriptions.DEFAULTS), "length": "medium"},
+    )
+    assert nonsense.status_code == 200
+    assert nonsense.json()["length"] == subscriptions.COMPACT, "an unknown length is the default"
 
 
 def test_every_topic_off_is_answered_as_silent(

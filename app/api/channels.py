@@ -9,7 +9,7 @@ each route's scope, all of them "signed in", about the caller's own rows.
     POST   /me/channels/verify  {token}  the link's token, spent
     DELETE /me/channels/{channel_id}     disable one, and wipe its target
     GET    /me/subscriptions             what goes in his email, per league
-    PUT    /me/subscriptions/{league_id} choose it (`app.subscriptions`)
+    PUT    /me/subscriptions/{league_id} choose it, and how long (`app.subscriptions`)
 
 **Email and nothing else** since 2026-09-22. `kind` is still accepted in the
 body and still answered, because it is a column and the page shows a row the
@@ -244,6 +244,13 @@ class TopicOut(BaseModel):
     on: bool
 
 
+class LengthOut(BaseModel):
+    name: str = Field(description="'compact' or 'full', as `length` is written")
+    label: str = Field(description="What the page calls it")
+    note: str = Field(description="One line of what it means for the message")
+    on: bool = Field(description="Whether this is the one he holds")
+
+
 class SubscriptionOut(BaseModel):
     espn_league_id: int
     league: str = Field(description="The league's name, for the page's heading")
@@ -251,6 +258,8 @@ class SubscriptionOut(BaseModel):
     morning: bool = Field(description="The morning digest")
     alerts: bool = Field(description="The urgent roster change between digests")
     silent: bool = Field(description="Every topic off: nothing is sent, and the job says so")
+    length: str = Field(description="How much of each section: 'compact' (the default) or 'full'")
+    lengths: list[LengthOut] = Field(description="The lengths there are, for the page's choice")
 
 
 class SubscriptionsOut(BaseModel):
@@ -261,6 +270,9 @@ class SubscriptionIn(BaseModel):
     topics: dict[str, bool]
     morning: bool = True
     alerts: bool = True
+    #: A length this version does not have takes the default, as an unknown
+    #: topic does, so a page ahead of the server cannot write one.
+    length: str = subscriptions.DEFAULT_LENGTH
 
 
 def _subscription(session: Session, user_id: int, league: League) -> SubscriptionOut:
@@ -280,6 +292,16 @@ def _subscription(session: Session, user_id: int, league: League) -> Subscriptio
         morning=held.morning,
         alerts=held.alerts,
         silent=held.silent,
+        length=held.length,
+        lengths=[
+            LengthOut(
+                name=name,
+                label=subscriptions.LENGTH_LABELS[name],
+                note=subscriptions.LENGTH_NOTES[name],
+                on=held.length == name,
+            )
+            for name in subscriptions.LENGTHS
+        ],
     )
 
 
@@ -324,6 +346,7 @@ def set_subscription(
         topics=dict(body.topics),
         morning=body.morning,
         alerts=body.alerts,
+        length=body.length,
     )
     session.commit()
     log.info("user %s set his subscription in league %s", user_id, league_id)

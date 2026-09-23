@@ -26,6 +26,11 @@ all. `morning` is the digest; `alerts` is the urgent roster change
 the same topics as the digest -- an alert about the opponent's injury only
 reaches someone subscribed to his opponent.
 
+`length` is not a topic either: it says how much of what he asked for is
+written out. **Compact by default** (2026-09-23), which is one screen with a
+link for the rest; `full` is the long form, every section at length. The
+alert between digests is already short and does not read it.
+
 THE DEFAULTS
 
 Lineup, my moves, my team, my opponent, trades and standings on; the two
@@ -109,6 +114,21 @@ NOTES = {
     STANDINGS: "Where you stand, and where the season is heading.",
 }
 
+#: How much of each section he wants. Not a topic: it says how the message
+#: he asked for is written, not whether it is sent.
+COMPACT = "compact"
+FULL = "full"
+LENGTHS = (COMPACT, FULL)
+DEFAULT_LENGTH = COMPACT
+
+#: What the Alerts page calls the choice, and one line of what it means.
+LENGTH_LABEL = "Email length"
+LENGTH_LABELS = {COMPACT: "Compact (default)", FULL: "Full"}
+LENGTH_NOTES = {
+    COMPACT: "One screen: tonight's lineup, the moves that clear the bar, what changed as counts.",
+    FULL: "Every section at length: the reasons under each move, and the feed a line a change.",
+}
+
 DEFAULTS = {
     LINEUP: True,
     MOVES: True,
@@ -138,6 +158,16 @@ class Subscription:
     morning: bool = True
     #: The urgent roster change between digests.
     alerts: bool = True
+    #: `COMPACT` or `FULL`: how much of each section he wants (docs/jobs.md,
+    #: "The two forms"). Compact by default, for everybody.
+    length: str = DEFAULT_LENGTH
+
+    @property
+    def compact(self) -> bool:
+        """Whether the email is the short form. Anything that is not the word
+        `full` is compact: the default survives a row written by a version
+        that did not have this, and a value nobody recognises."""
+        return self.length != FULL
 
     def on(self, topic: str) -> bool:
         """Whether this topic is switched on. An unknown name is off: a topic
@@ -179,10 +209,21 @@ class Subscription:
         return [change for change in changes if self.allows(change)]
 
 
-def everything() -> Subscription:
+def everything(length: str = DEFAULT_LENGTH) -> Subscription:
     """Every topic on, both cadences on: the owner's tracked team in single
-    mode, and what a preview renders so a whole email can be looked at."""
-    return Subscription(topics=dict.fromkeys(TOPICS, True))
+    mode, and what a preview renders so a whole email can be looked at.
+
+    The length is still a choice: "nothing is silently missing" is about the
+    topics, and a compact email leaves nothing out that a count and a link do
+    not cover.
+    """
+    return Subscription(topics=dict.fromkeys(TOPICS, True), length=clean_length(length))
+
+
+def clean_length(length: object) -> str:
+    """A stored or submitted length, read into the two this version has.
+    Anything else is the default, which is compact."""
+    return FULL if str(length or "").strip().lower() == FULL else COMPACT
 
 
 def clean(topics: dict[str, object] | None) -> dict[str, bool]:
@@ -219,7 +260,12 @@ def for_member(session: Session, user_id: int, league_id: int) -> Subscription:
     row = _row(session, user_id, league_id)
     if row is None:
         return Subscription()
-    return Subscription(topics=clean(row.topics), morning=row.morning, alerts=row.alerts)
+    return Subscription(
+        topics=clean(row.topics),
+        morning=row.morning,
+        alerts=row.alerts,
+        length=clean_length(row.length),
+    )
 
 
 def save(
@@ -230,9 +276,11 @@ def save(
     topics: dict[str, object] | None = None,
     morning: bool = True,
     alerts: bool = True,
+    length: str = DEFAULT_LENGTH,
 ) -> Subscription:
     """Write what he chose, replacing whatever was there. Does not commit."""
     wanted = clean(topics)
+    how_long = clean_length(length)
     row = _row(session, user_id, league_id)
     if row is None:
         row = DigestSubscription(user_id=user_id, league_id=league_id)
@@ -240,6 +288,7 @@ def save(
     row.topics = dict(wanted)
     row.morning = bool(morning)
     row.alerts = bool(alerts)
+    row.length = how_long
     row.updated_at = datetime.now(UTC)
     session.flush()
-    return Subscription(topics=wanted, morning=row.morning, alerts=row.alerts)
+    return Subscription(topics=wanted, morning=row.morning, alerts=row.alerts, length=how_long)

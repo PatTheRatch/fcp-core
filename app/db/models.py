@@ -1768,6 +1768,10 @@ class DigestSubscription(Base):
     )
     morning: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     alerts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    #: How much of it he wants: "compact" (the default) or "full". A column
+    #: rather than a key in `topics`, because it is not a topic: it says how
+    #: the message is written, not whether a section is in it.
+    length: Mapped[str] = mapped_column(String, nullable=False, server_default=text("'compact'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -28,6 +28,13 @@
   .cadence{display:flex;flex-wrap:wrap;gap:6px 24px;margin:12px 0 4px}
   .cadence label{cursor:pointer}
   .cadence input{accent-color:var(--accent);cursor:pointer}
+  /* How long the email is: the same row as a topic, one rule above it. */
+  .length{margin:14px 0 4px;padding-top:10px;border-top:1px solid var(--rule)}
+  .length label{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;
+    align-items:start;cursor:pointer;margin-top:8px}
+  .length input{accent-color:var(--accent);margin-top:5px;cursor:pointer}
+  .length .name{font-weight:600}
+  .length .note{grid-column:2;color:var(--muted);font-size:14px}
   .saved{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
     color:var(--muted);margin:10px 0 0;min-height:1.2em}
 </style>
@@ -183,6 +190,30 @@ function cadence(id, label, on, onChange) {
   return wrap;
 }
 
+/* How long the email is, beside the topics: the topics say what is in it,
+   this says how much of each. Compact is the default and is named as one,
+   so nobody has to guess which he would get by doing nothing. */
+
+function lengths(row, onChange) {
+  const wrap = el("div", undefined, "length");
+  wrap.append(el("p", "Email length", "eyebrow"));
+  for (const option of row.lengths || []) {
+    const id = `len-${row.espn_league_id}-${option.name}`;
+    const box = el("input");
+    box.type = "radio";
+    box.name = `len-${row.espn_league_id}`;
+    box.id = id;
+    box.value = option.name;
+    box.checked = option.on;
+    box.onchange = onChange;
+    const label = el("label");
+    label.htmlFor = id;
+    label.append(box, el("span", option.label, "name"), el("span", option.note, "note"));
+    wrap.append(label);
+  }
+  return wrap;
+}
+
 function leagueBlock(row, save) {
   const block = el("div", undefined, "league");
   block.append(el("h3", row.league));
@@ -192,10 +223,12 @@ function leagueBlock(row, save) {
     say.textContent = "saving…";
     const topics = {};
     for (const topic of row.topics) topics[topic.name] = $(`t-${row.espn_league_id}-${topic.name}`).checked;
+    const picked = document.querySelector(`input[name="len-${row.espn_league_id}"]:checked`);
     const got = await save(row.espn_league_id, {
       topics,
       morning: $(`m-${row.espn_league_id}`).checked,
       alerts: $(`a-${row.espn_league_id}`).checked,
+      length: picked ? picked.value : row.length,
     });
     say.textContent = !got.ok
       ? got.detail
@@ -210,6 +243,8 @@ function leagueBlock(row, save) {
     cadence(`a-${row.espn_league_id}`, "Alerts between digests", row.alerts, send),
   );
   block.append(when);
+
+  block.append(lengths(row, send));
 
   const list = el("ul", undefined, "topics");
   for (const topic of row.topics) {
