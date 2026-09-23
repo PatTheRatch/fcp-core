@@ -405,9 +405,13 @@ section{margin-top:56px}
 .two > .side{border-top:1px solid var(--rule-strong);padding-top:12px;min-width:0}
 .side h3{font-family:var(--display);font-size:17px;text-transform:uppercase;
   letter-spacing:.04em;overflow-wrap:anywhere}
-.side .whose{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+/* The small label over a half of a comparison, and the line under it. Not
+   scoped to `.side`: the week page's What if answer draws the same finish
+   block the trade page does, out of the same function, and a shared
+   component cannot depend on the container one page happens to put it in. */
+.whose{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--faint);margin:2px 0 0}
-.side .hint{color:var(--muted);font-size:14px;margin:6px 0 0}
+.hint{color:var(--muted);font-size:14px;margin:6px 0 0}
 .roster{list-style:none;margin:10px 0 0;padding:0}
 .roster li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
 .pick{display:flex;flex:1 1 auto;min-width:0;align-items:baseline;gap:8px;text-align:left;

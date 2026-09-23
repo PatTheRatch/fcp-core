@@ -573,53 +573,11 @@ function nineHtml(side) {
 const shiftsOf = (side) =>
   (side.categories || []).map((view) => ({ abbreviation: view.abbreviation, delta: view.p_delta }));
 
-/** "3rd", the way the standings page numbers a place. */
-function ordinal(place) {
-  if (!isNum(place)) return dash;
-  const rest = place % 100;
-  const suffix =
-    rest >= 11 && rest <= 13 ? "th" : ["th", "st", "nd", "rd"][place % 10] || "th";
-  return `${place}${suffix}`;
-}
-
-/** Where the deal leaves this side: the projected record, the place and the
- *  playoff odds, before and after (docs/what_if.md).
- *
- *  It sits under the nine and not beside the number on purpose. The number is
- *  read against a bar; this is not. It is a second lens -- the same rosters
- *  played out against the real opponent each week rather than a league-average
- *  one -- and nothing on the page is labelled, recommended or refused on it.
- *  So it comes with the simulation's own sampling band beside it and the
- *  forecast's published record underneath, and when the odds moved by less
- *  than the band it says so in those words. */
-function finishHtml(side) {
-  const f = side.finish;
-  if (!f) return "";
-  // A tenth of a point rather than the whole point `pct` gives the standings.
-  // One man usually moves these odds by less than a point, and two figures
-  // that read "59% → 59%" would say the arithmetic failed rather than that
-  // the move is small; the band beside them is in tenths for the same reason.
-  const odds = (v) => (isNum(v) ? `${(v * 100).toFixed(1)}%` : dash);
-  const was =
-    `${record(f.record_before)} · ${ordinal(f.place_before)} · ` +
-    `playoffs ${odds(f.playoff_odds_before)}`;
-  const now =
-    `${record(f.record_after)} · ${ordinal(f.place_after)} · ${odds(f.playoff_odds_after)}`;
-  // A tenth of a point, except when the band is under one and "±0.0 points"
-  // would read as a simulation that is exact, which is the opposite of what
-  // this is here to say.
-  const points = f.odds_band * 100;
-  const band = `±${fixed(points, points < 0.1 ? 2 : 1)} points on each`;
-  const quiet = f.moved_more_than_the_band === false || f.readable === false;
-  return (
-    `<p class="whose" style="margin-top:20px">finish</p>` +
-    `<p class="hint"><span class="mono">Projected ${escape(was)}</span> → ` +
-    `<span class="mono"><b>${escape(now)}</b></span> ` +
-    `<span class="faint">(${escape(band)}${quiet ? ", so this is inside the noise" : ""})</span>` +
-    `</p>` +
-    `<p class="hint faint">${escape(f.calibration_note)}</p>`
-  );
-}
+/* Where the deal leaves each side -- the projected record, the place and the
+   playoff odds, before and after -- is `finishHtml` in pages.js, which the
+   week page's what-if draws out of the same function (docs/what_if.md). It
+   sits under the nine and not beside the number on purpose: the number is
+   read against a bar and this is not. */
 
 function sideHtml(side, ours) {
   return (
@@ -628,7 +586,7 @@ function sideHtml(side, ours) {
     `<p class="whose">${ours ? "our side" : "our estimate of their side, not what they think"}</p>` +
     `<div class="strip">${shiftStrip(shiftsOf(side))}</div>` +
     nineHtml(side) +
-    finishHtml(side) +
+    finishHtml(side.finish) +
     `<p class="lede" style="margin-top:14px">${escape(side.summary)}</p>` +
     `</div>`
   );

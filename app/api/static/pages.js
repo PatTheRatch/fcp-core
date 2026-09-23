@@ -333,6 +333,61 @@ const wire = (report) =>
     ? "historical wire (no snapshots)"
     : "from the listener's latest pass";
 
+/* ---- the finish: a second lens, never a second bar ----------------------
+   Where a change leaves one team in the projected standings, before and
+   after (docs/what_if.md). The trade page draws it under each side of a
+   deal and the week page under a what-if, out of this one function, so the
+   two screens cannot drift apart on the one figure nobody has a bar for.
+
+   It sits under the categories and never beside the number. The number is
+   read against a bar; this is not. It is the same rosters played out
+   against the real opponent each week rather than a league-average one, and
+   nothing on either page is labelled, recommended, re-sorted or refused on
+   it. So it comes with the simulation's own sampling band beside it and the
+   forecast's published record underneath, and when the odds moved by less
+   than the band it says so in those words. */
+
+/** "3rd", the way the standings page numbers a place. */
+function ordinal(place) {
+  if (!isNum(place)) return dash;
+  const rest = place % 100;
+  const suffix = rest >= 11 && rest <= 13 ? "th" : ["th", "st", "nd", "rd"][place % 10] || "th";
+  return `${place}${suffix}`;
+}
+
+/** Odds to a tenth of a point, rather than the whole point `pct` gives the
+ *  standings. One man usually moves these by less than a point, and two
+ *  figures reading "59% → 59%" would say the arithmetic failed rather than
+ *  that the move is small; the band beside them is in tenths for the same
+ *  reason. */
+const oddsPoint = (v) => (isNum(v) ? `${(v * 100).toFixed(1)}%` : dash);
+
+/** One team's finish, before and after: the projected record, the place and
+ *  the playoff odds, the sampling band in brackets, and the forecast's own
+ *  published record underneath. */
+function finishHtml(f) {
+  if (!f) return "";
+  const was =
+    `${record(f.record_before)} · ${ordinal(f.place_before)} · ` +
+    `playoffs ${oddsPoint(f.playoff_odds_before)}`;
+  const now =
+    `${record(f.record_after)} · ${ordinal(f.place_after)} · ${oddsPoint(f.playoff_odds_after)}`;
+  // A tenth of a point, except when the band is under one and "±0.0 points"
+  // would read as a simulation that is exact, which is the opposite of what
+  // this is here to say.
+  const points = f.odds_band * 100;
+  const band = `±${fixed(points, points < 0.1 ? 2 : 1)} points on each`;
+  const quiet = f.moved_more_than_the_band === false || f.readable === false;
+  return (
+    `<p class="whose" style="margin-top:20px">finish</p>` +
+    `<p class="hint"><span class="mono">Projected ${escape(was)}</span> → ` +
+    `<span class="mono"><b>${escape(now)}</b></span> ` +
+    `<span class="faint">(${escape(band)}${quiet ? ", so this is inside the noise" : ""})</span>` +
+    `</p>` +
+    `<p class="hint faint">${escape(f.calibration_note)}</p>`
+  );
+}
+
 /* ---- the theme ---------------------------------------------------------
    Light is the default and the skin these pages were approved in; the switch
    flips to the draft room's palette. Kept in localStorage, wrapped, so a
