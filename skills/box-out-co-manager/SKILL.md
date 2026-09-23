@@ -31,6 +31,7 @@ the league's own numbers. Then:
 | The question | The tools, in order |
 |---|---|
 | "What should I do today / this week?" | `todays_lineup`, then `week_report`, then `what_changed` |
+| "What happens if I drop X for Y?" | `what_if` |
 | "Should I trade X for Y?" | `judge_trade` |
 | "Is X worth picking up?" / "Who's on the wire?" | `free_agents`, then `player_card` for a name |
 | "How am I doing?" / "Will I make the playoffs?" | `standings`, `matchup`, `projected_standings` |
@@ -64,6 +65,33 @@ Four parts, in this order.
 
 Then stop. Do not pick one for him.
 
+## "What happens if I drop X for Y?"
+
+`what_if` judges the move the manager named rather than the ones a search
+found. Three layers, in this order: `this_week` (the nine chances before and
+after, and what moved), `finish.weeks_ahead` (each remaining week), and
+`finish` itself (the projected record, the place and the playoff odds with the
+move and without it). Then `net` and `clears_hurdle`, which are the week
+report's own numbers for the same move, and the bar they are read against.
+
+**The finish is a second lens, not a second bar.** Nothing is labelled against
+it. Never say a move is worth making because the finish moved, and never say
+it is not.
+
+**Quote `finish.odds_band` whenever you quote an odd.** It is the sampling
+band on one figure at `simulations` seasons, and one man usually moves the
+odds by less than it. When `moved_more_than_the_band` is false, say so in
+those words: the change is inside the simulation's own noise. And quote
+`finish.projection_record` the way you quote `trade_record` with a trade.
+
+> Dropping him for Minott is +0.50 categories over the rest of the year, which
+> clears the 0.20 bar your manager set. Your projected finish goes 94.6–76.4
+> to 94.7–76.3, third place either way, playoff odds 92.7% to 92.9% — that is
+> inside the ±0.5 point band the simulation carries, so read it as unchanged.
+
+`judge_trade` carries the same `finish` on each side, and it is read the same
+way.
+
 ## A trade
 
 Lead with the fit, close with the record.
@@ -74,6 +102,9 @@ Lead with the fit, close with the record.
    rather than a forecast, so it leads.
 2. **Then the number**, smaller: `net`, `per_week`, whether it clears the
    bar (a label), and the playoff lens if it is `measurable`.
+2b. **Then `finish`, for each side**: the projected record, the place and the
+   playoff odds before and after, with `odds_band` beside them. A second lens
+   and not a second bar; see the section above.
 3. **What it rests on**: each man's `worth_a_week`, `games_left`,
    `playoff_games`, and a word about anyone `thin` or `hurt`.
 4. **The record, last, every time.** Quote `trade_record` from the result.

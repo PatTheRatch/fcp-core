@@ -277,3 +277,51 @@ def categories(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def finish(row: Mapping[str, Any] | None, *, weeks: bool = False) -> dict[str, Any] | None:
+    """Where a change leaves a team, with the noise and the record on it.
+
+    The two numbers a manager reads -- the projected record and the playoff
+    odds, before and after -- and the three things that stop them being read
+    as more than they are: the simulation's own sampling band, whether the
+    change cleared it, and the published record of the forecast. `language`
+    says the finish is a second lens and not a second bar, which is the one
+    thing a model must not get wrong about it.
+
+    `weeks` keeps the week-by-week list. Off by default: a dozen rows of "and
+    in week fourteen he is worth four hundredths" is not a sentence anybody
+    says, and a deal has two sides of them.
+    """
+    if row is None:
+        return None
+    out: dict[str, Any] = {
+        "espn_team_id": row["espn_team_id"],
+        "team_name": row["team_name"],
+        "projected_categories_before": [n(value) for value in row["record_before"]],
+        "projected_categories_after": [n(value) for value in row["record_after"]],
+        "place_before": row["place_before"],
+        "place_after": row["place_after"],
+        "playoff_odds_before": n(row["playoff_odds_before"]),
+        "playoff_odds_after": n(row["playoff_odds_after"]),
+        "bye_odds_before": n(row["bye_odds_before"]),
+        "bye_odds_after": n(row["bye_odds_after"]),
+        "simulations": row["n_sims"],
+        "odds_band": n(row["odds_band"]),
+        "moved_more_than_the_band": row["readable"],
+        "noise": row["noise_note"],
+        "projection_record": row["calibration_note"],
+        "language": row["language"],
+    }
+    if weeks:
+        out["weeks_ahead"] = [
+            {
+                "period": week["period"],
+                "opponent_espn_team_id": week["opponent_espn_team_id"],
+                "opponent": week["opponent_name"],
+                "expected_categories_before": n(week["expected_before"]),
+                "expected_categories_after": n(week["expected_after"]),
+            }
+            for week in row["weeks"]
+        ]
+    return out

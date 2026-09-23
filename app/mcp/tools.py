@@ -38,9 +38,11 @@ from app.api import players as players_api
 from app.api import projected as projected_api
 from app.api import trades as trades_api
 from app.api import transactions as transactions_api
+from app.api import what_if as what_if_api
 from app.api.access import Viewer
 from app.db.models import League, LeagueSeason, Player, Team
 from app.draft.targets import category_distributions
+from app.inseason.projected_calibration import SHORT_NOTE
 from app.mcp import trim
 from app.mcp.provenance import block
 from app.mcp.scope import (
@@ -102,6 +104,18 @@ LABEL_ONLY = (
 OTHER_SIDE = (
     "the other side's numbers are our estimate of his roster's needs, made "
     "with our own projections. They are never his opinion."
+)
+
+#: What `finish` means, and what it does not. It is the one field on these
+#: answers a model is most likely to read as a verdict, because it is the
+#: number the manager asked for in the first place.
+SECOND_LENS = (
+    "`finish` is a second lens and not a second bar: nothing is labelled "
+    "against it, and the hurdle, the bid and the record are priced on the "
+    "judgement's own numbers, which it does not touch. Quote `odds_band` "
+    "beside any odds you quote, and say so when "
+    "`moved_more_than_the_band` is false: the change is inside the "
+    "simulation's own noise."
 )
 
 
@@ -1008,7 +1022,7 @@ def judge_trade(
         "notes": deal["notes"],
         "wire": {"pool_size": deal["pool_size"], "historical": deal["historical_wire"]},
         "trade_record": body["calibration_note"],
-        "language": f"{LABEL_ONLY} And {OTHER_SIDE}",
+        "language": f"{LABEL_ONLY} And {OTHER_SIDE} {SECOND_LENS}",
         "provenance": _trade_provenance(session, found, int(deal["today"])),
     }
 
@@ -1019,17 +1033,100 @@ def _trade_provenance(session: Session, found: LeagueSeason, day: int) -> dict[s
     `trade_record` is the longest note there is and it is already in the
     answer, verbatim, where the manager will read it. Printing it twice
     would be a fifth of the payload spent on a repeat.
+
+    The finish on each side comes out of a different forecast with a record
+    of its own, so that one travels here.
     """
-    out = block(session, found, keys=TRADE_KEYS, day=day)
+    out = block(session, found, keys=TRADE_KEYS, day=day, extra=_projection_note())
     record = out["calibration"][calibration.TRADE_RECORD]
     record["note"] = "`trade_record` in this result is this note, verbatim"
     return out
+
+
+def what_if(
+    session: Session,
+    viewer: Viewer,
+    league_id: int,
+    season: int,
+    team_id: int,
+    drop: Sequence[int] | None = None,
+    add: Sequence[int] | None = None,
+    to_ir: Sequence[int] | None = None,
+    today: int | None = None,
+) -> dict[str, Any]:
+    """One pickup a manager named, in three layers (docs/what_if.md).
+
+    The week and the judgement are the week report's own numbers for the same
+    move, and the finish is the projected-standings engine run twice. The
+    finish is a second lens: nothing is labelled against it, and the noise
+    beside it is to be quoted with it.
+    """
+    found = league_member(session, viewer, league_id, season)
+    team = team_plan(session, viewer, found, league_id, team_id)
+    try:
+        answer = what_if_api.what_if_report(
+            found,
+            team,
+            session,
+            drop=list(drop or ()),
+            add=list(add or ()),
+            to_ir=list(to_ir or ()),
+            today=today,
+        )
+    except HTTPException as error:
+        raise _passed_through(error) from None
+    body = answer.model_dump(mode="json")
+    week = body["week"]
+    return {
+        "team": {"espn_team_id": body["espn_team_id"], "name": body["team_name"]},
+        "judged_on_day": body["today"],  # nothing after this day is read
+        "date": body["today_date"],
+        "kind": body["kind"],
+        "adds": [trim.player(man) for man in body["adds"]],
+        "drops": [trim.player(man) for man in body["drops"]],
+        "to_ir": [trim.player(man) for man in body["to_ir"]],
+        "this_week": {
+            "matchup_period": week["matchup_period"],
+            "opponent_espn_team_id": week["opponent_espn_team_id"],
+            "opponent": week["opponent_name"],
+            "days_left": week["days_remaining"],
+            "chance_by_category_before": trim.nine(week["before"]),
+            "chance_by_category_after": trim.nine(week["after"]),
+            "expected_categories_before": trim.n(week["expected_before"]),
+            "expected_categories_after": trim.n(week["expected_after"]),
+            "moved": trim.shifts(week["moved"]),
+            "fills_empty_day": week["fills_empty_day"],
+        },
+        "finish": trim.finish(body["finish"], weeks=True),
+        "net": trim.n(body["net"]),
+        "clears_hurdle": body["clears_hurdle"],
+        "hurdle": trim.n(body["hurdle"]),
+        "judgement": trim.judgement(body["judgement"]),
+        "bid": trim.bid(body["bid"]),
+        "roster_room": {"pool_size": body["pool_size"], "historical_wire": body["historical_wire"]},
+        "notes": body["notes"],
+        "language": f"{LABEL_ONLY} {SECOND_LENS}",
+        "provenance": block(
+            session, found, keys=WEEK_KEYS, day=int(body["today"]), extra=_projection_note()
+        ),
+    }
+
+
+def _projection_note() -> dict[str, Any]:
+    """The projected record's own calibration sentence, for the provenance.
+
+    The finish comes out of a different forecast from the week's chances and
+    has a different record; a block that carried only the week's would be
+    saying the wrong thing about half the answer.
+    """
+    return {"projected_record_note": SHORT_NOTE}
 
 
 def _side(side: dict[str, Any]) -> dict[str, Any]:
     """One side of a deal: the fit first, then the number."""
     playoffs = side["playoffs"]
     return {
+        "finish": trim.finish(side.get("finish")),
         "espn_team_id": side["espn_team_id"],
         "team_name": side["team_name"],
         "summary": side["summary"],

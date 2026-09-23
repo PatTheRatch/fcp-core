@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.api import pickups as pickups_api
 from app.api import trades as trades_api
+from app.api import what_if as what_if_api
 from app.config import Settings, get_settings
 from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
 from app.mcp import trim
@@ -272,6 +273,7 @@ EXPECTED = {
     "player_card",
     "free_agents",
     "judge_trade",
+    "what_if",
 }
 
 
@@ -383,6 +385,93 @@ def test_a_judged_deal_is_the_trade_routes_own_answer(
     # Both sides, always: the other side is judged with the same machinery.
     assert {side["espn_team_id"] for side in answer["sides"]} == {HOME, AWAY}
     assert "estimate of his roster's needs" in answer["language"]
+
+
+def test_a_named_pickup_is_the_what_if_routes_own_answer(
+    server: MCPServer, session: Session, league: dict[str, Any]
+) -> None:
+    """The tool and the page cannot be told two different things about a move.
+
+    The same named swap, through the route function the week page would fetch
+    and through the tool, compared at the three decimals the trim keeps -- the
+    week's chances, the judgement's own numbers, and the finish.
+    """
+    who = league["who"]
+    dropped = int(who["HomeWeak"].espn_player_id)
+    added = int(who["Wire"].espn_player_id)
+    answer = call(
+        server,
+        "what_if",
+        {
+            "league_id": LEAGUE_ID,
+            "season": SEASON,
+            "team_id": HOME,
+            "drop": [dropped],
+            "add": [added],
+            "today": TODAY,
+        },
+    )
+    route = what_if_api.what_if_report(
+        league["ls"], league["home"], session, drop=[dropped], add=[added], today=TODAY
+    ).model_dump(mode="json")
+
+    assert answer["judged_on_day"] == route["today"]
+    assert answer["kind"] == route["kind"] == "swap"
+    assert answer["net"] == trim.n(route["net"])
+    assert answer["hurdle"] == trim.n(route["hurdle"])
+    assert answer["clears_hurdle"] == route["clears_hurdle"]
+    assert answer["this_week"]["chance_by_category_before"] == trim.nine(route["week"]["before"])
+    assert answer["this_week"]["chance_by_category_after"] == trim.nine(route["week"]["after"])
+    assert answer["this_week"]["expected_categories_after"] == trim.n(
+        route["week"]["expected_after"]
+    )
+    assert answer["judgement"] == trim.judgement(route["judgement"])
+    assert [man["name"] for man in answer["adds"]] == ["Wire"]
+    assert [man["name"] for man in answer["drops"]] == ["HomeWeak"]
+
+    finish = answer["finish"]
+    assert finish["playoff_odds_before"] == trim.n(route["finish"]["playoff_odds_before"])
+    assert finish["playoff_odds_after"] == trim.n(route["finish"]["playoff_odds_after"])
+    assert finish["projected_categories_after"] == [
+        trim.n(value) for value in route["finish"]["record_after"]
+    ]
+    assert finish["odds_band"] == trim.n(route["finish"]["odds_band"])
+    assert finish["projection_record"] == route["finish"]["calibration_note"]
+    assert [week["period"] for week in finish["weeks_ahead"]] == [
+        week["period"] for week in route["finish"]["weeks"]
+    ]
+    # The one thing a model must not get wrong about this answer.
+    assert "second lens and not a second bar" in answer["language"]
+    assert "odds_band" in answer["language"]
+
+
+def test_a_judged_deal_carries_the_finish_for_both_sides(
+    server: MCPServer, league: dict[str, Any]
+) -> None:
+    """The deal happens to both rosters, so both finishes come back."""
+    who = league["who"]
+    answer = call(
+        server,
+        "judge_trade",
+        {
+            "league_id": LEAGUE_ID,
+            "season": SEASON,
+            "team_id": HOME,
+            "with_team": AWAY,
+            "give": [int(who["HomeWeak"].espn_player_id)],
+            "get": [int(who["Star"].espn_player_id)],
+            "today": TODAY,
+        },
+    )
+    for side in answer["sides"]:
+        finish = side["finish"]
+        assert finish is not None
+        assert finish["espn_team_id"] == side["espn_team_id"]
+        assert finish.get("projection_record")
+        assert finish["odds_band"] >= 0
+        assert "weeks_ahead" not in finish, "a deal has two sides of them; the tool drops both"
+    assert "second lens and not a second bar" in answer["language"]
+    assert answer["provenance"]["projected_record_note"]
 
 
 def test_a_week_report_is_the_pickup_routes_own_answer(

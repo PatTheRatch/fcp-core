@@ -383,6 +383,36 @@ def build_server(
             ctx, lambda s, v: tools.free_agents(s, v, league_id, season, team_id, today, sort)
         )
 
+    @mcp.tool(
+        description=(
+            "One pickup the manager names -- drop this man, add that one -- "
+            "judged three ways: the nine categories of this week's matchup "
+            "before and after, each remaining week's expected categories "
+            "before and after, and where the team finishes, which is the "
+            "projected record, the place and the playoff odds with the move "
+            "and without it. `drop`, `add` and `to_ir` are ESPN player ids; "
+            "the added man has to be on the wire that day. The week's number "
+            "and the bar are the week report's own for the same move. The "
+            "finish is a second lens and not a second bar: nothing is "
+            "labelled against it, and it carries the simulation's own "
+            "sampling band, which you quote with it. The team's manager only."
+        )
+    )
+    def what_if(
+        league_id: int,
+        season: int,
+        team_id: int,
+        ctx: Context,
+        drop: list[int] | None = None,
+        add: list[int] | None = None,
+        to_ir: list[int] | None = None,
+        today: int | None = None,
+    ) -> dict[str, Any]:
+        return run(
+            ctx,
+            lambda s, v: tools.what_if(s, v, league_id, season, team_id, drop, add, to_ir, today),
+        )
+
     # -- a deal ------------------------------------------------------------
 
     @mcp.tool(
