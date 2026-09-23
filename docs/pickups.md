@@ -364,6 +364,32 @@ beside them. The week page opens with it and draws it before the rest;
 with the starters and the fix-this line. On a day no NBA team plays -- the
 All-Star break -- every one of them says so in a line and draws no grid.
 
+**As built, the games day by day** (2026-09-23, `app/pickups/stream.py`,
+`app/api/schemas.py`, `app/mcp/trim.py`, `app/api/static/week.html`): the
+seating above already knows, for every remaining day and for **both**
+rosters, who has a game he is not ruled out of and which of them the lineup
+can seat. It is now reported. `StreamReport.schedule` is a `Schedule`: one
+`DayGames` a remaining scoring period, each side a `SideGames` of `games`
+(men on that roster with a game that day who are not ruled out of it per
+`state.playable_days`, injured reserve left out), `seated` (how many of them
+`seat` gives a place, which is the ten-starter cap doing its work) and
+`open_places` (`len(lineup) - seated`), with the men behind the numbers
+marked seated or not; plus `mine_total` and `theirs_total`, the three
+figures summed over the days left. `theirs` is None on a bye.
+
+It is read off `_Projection.by_day` — the projection's own record of what it
+seated — rather than computed a second time, so the grid and the expected
+wins cannot disagree, and it is **additive**: no existing field and no
+existing number moved, which is what keeps the backtest and the hurdle
+priced on the same report. `StreamReportOut.schedule` defaults to an empty
+table, so a report stored before the field existed still validates.
+`week_report` carries it as one line a day, three numbers a side
+(`trim.schedule`). The week page's SCHEDULE grid reads it instead of the two
+`/lineups` requests it used to count *places set* from — the owner's
+complaint of 2026-09-23, that ten men in a lineup is not ten games and that
+a place set with an OUT man is no game at all (docs/in_season_pages.md,
+section 5).
+
 ### 4.4 Long term, rest of season: `app/pickups/season.py`
 
 Answer: *who on the wire would make my roster better for the rest of the year, and who should go.*
@@ -452,7 +478,7 @@ Schemas in `app/api/schemas.py`. Follow the existing rule: bounded collections r
 
 | route | returns |
 |---|---|
-| `GET /leagues/{id}/seasons/{yr}/teams/{tid}/pickups/stream?today=N` | `StreamReportOut`: the week both sides project to, P(win) per category, the moves with the categories each one shifts and its bid, the empty days, the period's add budget, and `recommended` (the plan: an ordered list of independent moves, empty when nothing clears the hurdle and when no adds are left) |
+| `GET /leagues/{id}/seasons/{yr}/teams/{tid}/pickups/stream?today=N` | `StreamReportOut`: the week both sides project to, P(win) per category, the moves with the categories each one shifts and its bid, the empty days, `schedule` (the week's games day by day, both sides), the period's add budget, and `recommended` (the plan: an ordered list of independent moves, empty when nothing clears the hurdle and when no adds are left) |
 | `GET /leagues/{id}/seasons/{yr}/teams/{tid}/pickups/season?today=N` | `SeasonReportOut`: the roster's ordinary week, the best add, swap and two-swap each with its own hurdle and bid, the drop candidates, the stashes, the churn guard, and the period's add budget |
 
 Two reports rather than one `/pickups`, because they answer different questions on different horizons and a caller usually wants one of them; `/week` and `/free-agents` are still to come, and the `TeamWeek` state is visible inside the stream report meanwhile. `today` is a scoring period and defaults to the calendar day turned into one through the stored NBA schedule. Player ids go out as ESPN's, like the rest of the API. An unknown team is a 404 (`TeamDep`); a season the listener has never run for — no `pro_team_games`, no `player_status_snapshots` — is a **409**, because with no schedule, roster or wire there is nothing to decide from, and that is a different answer from "no move is worth making". Neither route makes an ESPN request. Both reports are bounded, so both return an object rather than a `Page`.

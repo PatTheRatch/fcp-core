@@ -733,8 +733,10 @@ details.disc .inside > .lede{margin-top:0}
 .read details.disc > summary{padding:6px 0 5px}
 
 /* The days left as a sheet: the period across, both sides down, a real table
-   because that is what it is. A day with places the roster cannot fill is
-   marked; tapping a day opens who each side has starting on it. */
+   because that is what it is. The figure is the games that will count that
+   day, with the games behind it in the small face when the lineup cannot
+   seat them all; the last column is the week. A day with places the roster
+   cannot fill is marked; tapping a day names the men behind both figures. */
 .sched{width:100%;border-collapse:collapse;table-layout:fixed}
 .sched th,.sched td{border:1px solid var(--rule);padding:0;text-align:center}
 .sched thead th{border-width:0 1px 1px 0;border-bottom-color:var(--rule-strong);
@@ -759,6 +761,17 @@ details.disc .inside > .lede{margin-top:0}
   color:var(--faint);font-variant-numeric:tabular-nums}
 .sched td .open{display:block;margin-top:2px;font-family:var(--mono);font-size:9px;
   letter-spacing:.06em;text-transform:uppercase;color:var(--stop)}
+/* Places nobody can fill on a day no free agent can fill one either: true,
+   and not the alarm the accent is for. */
+.sched td .open.quiet{color:var(--faint)}
+/* The games behind the starts. Small, because the big figure is the one
+   that counts and this is the size of what is going to waste. */
+.sched td .of{font-size:10px;color:var(--faint)}
+.sched th.total,.sched td.total{border-left-color:var(--rule-strong);background:var(--sunk)}
+.sched th.total{padding-top:10px}
+.sched th.total .dn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
+.sched td.total .flat.sum{color:var(--ink);font-weight:500}
 .sched td.past{color:var(--faint)}
 .sched td.now{box-shadow:inset 0 0 0 1px var(--accent)}
 .daybox{border-top:1px solid var(--rule-strong);margin-top:18px;padding:12px 0 4px}

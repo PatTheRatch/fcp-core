@@ -89,10 +89,34 @@ not gospel. What did not clear the bar is not hidden — it is under More,
 every move of it, each marked *clears the bar* or *below the bar*.
 
 **5. Schedule.** The period's days across, **you** and **them** down, as a
-real table: how many starting places each side has a man in on each day,
-from the stored lineups. A day with places this roster cannot fill carries
-the mark (`n open`) the week report puts on it, and tapping a day opens who
-each side has in those places and who on the wire could fill an open one.
+real table, and a **Total** column at the right for the days still to play.
+
+The figure in a cell is **the games that will count**: men on that side's
+roster with a game that day who are not ruled out of it, seated by the same
+lineup solve the week above is projected from (`StreamReportOut.schedule`,
+built in `app/pickups/stream.py` off the projection itself, so the grid and
+the expected wins cannot disagree). A man ESPN has **out** counts on no day
+before the date he is due back and on none at all when there is no date;
+injured reserve is not in it. Where a side has more games than the lineup
+has places, the games follow in the small face — **7/9** is seven starts out
+of nine games, and the other two are men on the bench that day. The small
+second figure rather than `7 (9)`: at 390 px an eight-column row gives a
+cell about 34 px, where the bracketed form wraps, and what the reader needs
+at a glance is the big number, with the shortfall legible on a second look.
+
+This replaced a count of the *places each side had a man in*, read from the
+stored lineups, which the owner rightly called wrong on 2026-09-23: ten men
+in the lineup is not ten games, and a place set with a man who is out is not
+a game at all. The two `/lineups` requests the grid made are gone; the one
+for the opponent stays, because their half of Tonight is a fact about what
+they have set and not something this page works out.
+
+`n open` is starting places no man on that roster can fill — in the accent
+on a day a free agent could fill one (the week report's own empty-day check,
+the one thing the bar is waived for), in the muted face otherwise, where it
+is true and not an alarm. Tapping a day names the men behind both figures on
+both sides, each marked **bench** where the lineup had no place left for
+him, so the list and the count are the same arithmetic.
 
 **6. What changed.** Only when the window — the day on the page and the day
 before it — holds something worth the eye: a man out, a doubt, a piece of
@@ -366,7 +390,9 @@ The game sheet adds two more of the league's own, and no new route:
 
 `/lineups` is league scope (docs/accounts.md: every team's stored lineups
 are a member's to read), which is what lets the sheet show the other side of
-Tonight and the other row of the schedule without a scope of its own. It is
+Tonight without a scope of its own, and it is asked only for the opponent:
+the schedule grid used to be drawn from both sides' rows and is now drawn
+from the week report's own games table, so ours is no longer fetched. It is
 what the ingest wrote down and not a plan: what the page *estimates* about
 the opponent is the totals in the nine, and it says so there. A day the
 ingest holds no lineup for is an en dash. `/changes` is the same route and

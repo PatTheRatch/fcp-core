@@ -215,9 +215,12 @@
 const WHERE = place();
 let CONTEXT = null;
 let REPORT = null;
-/* Both sides' stored daily lineups for the period, indexed by day, which is
-   what the schedule sheet and the other side of Tonight are drawn from. */
-const SET_LINEUPS = { us: null, them: null };
+/* The opponent's stored daily lineups for the period, indexed by day: the
+   other side of Tonight, which is a fact about what they have set rather
+   than anything this page works out. The schedule sheet used to be drawn
+   from these too, ours and theirs, and is now drawn from the week report's
+   own games table, so only their side is still fetched. */
+let THEIR_LINEUPS = null;
 
 /* ---- the bands ----------------------------------------------------------
    Where the nine are split for the eye. A display choice, not a model claim:
@@ -606,7 +609,7 @@ function drawTonight(report) {
  *  lineups route is what the ingest wrote down, and the rest of what is
  *  known about a man is in his card. */
 function drawTheirTonight(day) {
-  const them = SET_LINEUPS.them;
+  const them = THEIR_LINEUPS;
   const name = REPORT && !onBye(REPORT) ? nameOf(REPORT.opponent_espn_team_id) : null;
   if (name === null) {
     $("theirs-line").innerHTML = `Theirs <span class="n">on a bye</span>`;
@@ -776,33 +779,47 @@ function drawRead(report) {
 }
 
 /* ---- the schedule -------------------------------------------------------
-   The period across and both sides down, from the lineups the ingest stored
-   (`/teams/{id}/lineups`): how many starting places each side has a man in
-   on each day. A day the roster cannot fill carries the mark the week report
-   puts on it, and tapping a day opens who is in those places. */
+   The period across and both sides down, from the week report's own games
+   table (`schedule`): the games each side has on each day by men who are not
+   ruled out, and how many of them its lineup seats. The cell is what will
+   count -- the seated figure -- with the games behind it in the small face
+   when the two differ, because a tenth place is a cap and a man with a game
+   on a full day produces nothing. A day with places nobody can fill carries
+   the mark, and tapping a day names the men behind both numbers. */
 
-function dayCell(day, which, empty) {
-  const rows = SET_LINEUPS[which];
-  const set = rows === null ? null : rows.get(day.scoring_period) || [];
+/** One side's cell: seated big, `/games` small when a game goes unplayed. */
+function gamesCell(side, day, which, empty) {
   const gap = which === "us" ? empty.get(day.scoring_period) : undefined;
   const classes = [day.played ? "past" : "", day.today ? "now" : "", gap ? "gap" : ""]
     .filter(Boolean)
     .join(" ");
-  if (set === null || !set.length) {
+  if (!side) {
+    // A day already played, or one the report does not cover: the week is
+    // what is left, and the grid says so rather than printing a zero.
     return `<td class="${classes}"><span class="flat">${dash}</span></td>`;
   }
-  const open = gap
-    ? `<span class="open">${(gap.empty_slots || []).length} open</span>`
+  const spare = side.games > side.seated ? `<span class="of">/${side.games}</span>` : "";
+  const open = side.open_places
+    ? `<span class="open${gap ? "" : " quiet"}">${side.open_places} open</span>`
     : "";
   return (
     `<td class="${classes}"><button type="button" data-day="${day.scoring_period}" ` +
-    `data-side="${which}" aria-expanded="false" aria-controls="day-detail">` +
-    `${set.length}${open}</button></td>`
+    `aria-expanded="false" aria-controls="day-detail">` +
+    `${side.seated}${spare}${open}</button></td>`
   );
+}
+
+/** The week in one cell: the same two figures over the days left. */
+function totalCell(total) {
+  if (!total) return `<td class="total"><span class="flat">${dash}</span></td>`;
+  const spare = total.games > total.seated ? `<span class="of">/${total.games}</span>` : "";
+  return `<td class="total"><span class="flat sum">${total.seated}${spare}</span></td>`;
 }
 
 function drawSchedule(report) {
   const period = CONTEXT && CONTEXT.period;
+  const schedule = report.schedule || { days: [] };
+  const left = new Map((schedule.days || []).map((d) => [d.scoring_period, d]));
   const days = period ? period.days : (report.scoring_periods_remaining || []).map((n) => ({
     scoring_period: n,
     calendar_date: null,
@@ -828,30 +845,45 @@ function drawSchedule(report) {
           `<span class="dn">${day.scoring_period}</span></th>`
         );
       })
-      .join("");
+      .join("") +
+    `<th scope="col" class="total"><span class="dn">Total</span></th>`;
   const them = onBye(report) ? null : nameOf(report.opponent_espn_team_id);
+  const row = (which) =>
+    days
+      .map((day) => {
+        const found = left.get(day.scoring_period);
+        return gamesCell(found ? (which === "us" ? found.mine : found.theirs) : null,
+          day, which, empty);
+      })
+      .join("");
   $("sched-body").innerHTML =
-    `<tr class="us"><th scope="row">You</th>` +
-    days.map((day) => dayCell(day, "us", empty)).join("") +
+    `<tr class="us"><th scope="row">You</th>${row("us")}` +
+    totalCell(schedule.mine_total) +
     `</tr>` +
     (them === null
       ? ""
-      : `<tr><th scope="row">Them</th>` +
-        days.map((day) => dayCell(day, "them", empty)).join("") +
+      : `<tr><th scope="row">Them</th>${row("them")}` +
+        totalCell(schedule.theirs_total) +
         `</tr>`);
   $("sched-body")
     .querySelectorAll("button[data-day]")
     .forEach((button) => {
-      button.onclick = () => pickDay(button, days, empty);
+      button.onclick = () => pickDay(button, days, left, empty);
     });
   $("sched-how-text").innerHTML =
-    `Each cell is how many starting places that side has a man in on that day, from the lineups ` +
-    `the ingest has stored; a day it holds none for is an en dash. <b>Open</b> is a place ` +
-    `nobody on your roster can fill that a free agent could — the one thing the bar above is ` +
-    `waived for. Tap a day for who is in those places.`;
+    `Each cell is the <b>games that will count</b> for that side on that day: men on the ` +
+    `roster with a game, seated by the same lineup solve the week above is projected from. ` +
+    `A man ESPN has <b>out</b> is not counted on a day before the date he is due back, and ` +
+    `nobody counts on a day he has no game. Where a side has more games than the lineup has ` +
+    `places, the games follow in the small face — <b>7/9</b> is seven starts out of nine ` +
+    `games, and the other two are men on the bench that day. ` +
+    `<b>Open</b> is starting places no man on that roster can fill; it is in the accent on a ` +
+    `day a free agent could fill one, which is the one thing the bar above is waived for. ` +
+    `<b>Total</b> is the same two figures added over the days still to play. Tap a day for ` +
+    `the men behind both numbers.`;
 }
 
-function pickDay(button, days, empty) {
+function pickDay(button, days, left, empty) {
   const open = button.getAttribute("aria-expanded") === "true";
   $("sched-body")
     .querySelectorAll("button[data-day]")
@@ -864,34 +896,42 @@ function pickDay(button, days, empty) {
   const number = Number(button.dataset.day);
   const day = days.find((each) => each.scoring_period === number);
   const gap = empty.get(number);
-  const names = (which) => {
-    const rows = SET_LINEUPS[which];
-    const set = rows === null ? [] : rows.get(number) || [];
-    return set.length
-      ? set
-          .map(
-            (slot) =>
-              `${cardName(slot.player_id, escape(slot.player_name))} ` +
-              `<span class="faint mono">${escape(slot.slot)}</span>`,
-          )
-          .join(", ")
-      : `<span class="faint">not stored</span>`;
+  const found = left.get(number);
+  // The men the cell counted, in the order the seating took them: the ones
+  // who start, then the ones a full lineup leaves on the bench.
+  const names = (side) => {
+    if (!side || !side.men.length) return `<span class="faint">nobody has a game</span>`;
+    const one = (man) =>
+      `${cardName(man.espn_player_id, escape(man.name))}` +
+      (man.seated ? "" : ` <span class="faint mono">bench</span>`);
+    return side.men.map(one).join(", ");
   };
+  const line = (side) =>
+    !side
+      ? ""
+      : `<span class="faint"> · ${side.seated} of ${side.games} ` +
+        `${side.games === 1 ? "game" : "games"} started</span>`;
   const them = REPORT && !onBye(REPORT) ? nameOf(REPORT.opponent_espn_team_id) : null;
   const fillers = gap ? gap.fillers || [] : [];
   const named = fillers.slice(0, 4).map((p) => escape(p.name)).join(", ");
   const more = fillers.length > 4 ? ` and ${fillers.length - 4} more` : "";
+  const mine = found ? found.mine : null;
+  const theirs = found ? found.theirs : null;
   $("day-detail").innerHTML =
     `<div class="daybox"><p class="cn">` +
     `${day && day.calendar_date ? dayName(day.calendar_date) : `Day ${number}`}` +
     `<span class="faint"> · day ${number}</span></p>` +
-    `<p class="who">You</p><p class="names">${names("us")}</p>` +
-    (them === null ? "" : `<p class="who">${escape(them)}</p><p class="names">${names("them")}</p>`) +
+    `<p class="who">You${line(mine)}</p><p class="names">${names(mine)}</p>` +
+    (them === null
+      ? ""
+      : `<p class="who">${escape(them)}${line(theirs)}</p>` +
+        `<p class="names">${names(theirs)}</p>`) +
     (gap
       ? `<p class="gapline"><b>${escape((gap.empty_slots || []).join(", "))}</b> nobody on this ` +
         `roster can fill. ${fillers.length ? `${named}${more} could.` : "Nobody on the wire can."}</p>`
       : "") +
-    `<p class="note">The places each side has a man in, as the ingest stored them.</p></div>`;
+    `<p class="note">The men with a game that day who are not ruled out of it, marked ` +
+    `<b>bench</b> where the lineup has no place left for them.</p></div>`;
   wireCards($("day-detail"));
 }
 
@@ -1157,12 +1197,12 @@ function drawFoot() {
     `touches ESPN.`;
 }
 
-/* ---- the stored lineups -------------------------------------------------
-   One fetch a side for the whole matchup period, indexed by day. The route
-   is the league's own (`/teams/{id}/lineups`), so the other side of the
-   sheet costs no new scope. */
+/* ---- the opponent's stored lineups --------------------------------------
+   One fetch for the whole matchup period, indexed by day. The route is the
+   league's own (`/teams/{id}/lineups`), so their half of Tonight costs no
+   new scope. */
 
-async function setLineups(teamId, which, period) {
+async function setLineups(teamId, period) {
   if (teamId === null || teamId === undefined || !period) return;
   const query = new URLSearchParams({
     period: String(period),
@@ -1181,7 +1221,7 @@ async function setLineups(teamId, which, period) {
       byDay.get(day).push(slot);
     });
   }
-  SET_LINEUPS[which] = byDay;
+  THEIR_LINEUPS = byDay;
 }
 
 async function start() {
@@ -1200,7 +1240,6 @@ async function start() {
   if (context.ok) CONTEXT = context.body;
   if (CONTEXT) $("title").textContent = nameOf(Number(WHERE.team));
   const period = CONTEXT && CONTEXT.period ? CONTEXT.period.period : null;
-  const ourLineups = setLineups(WHERE.team, "us", period);
   const news = drawChanged(WHERE.team === null ? null : Number(WHERE.team));
   drawTonight(today.ok ? today.body : null);
 
@@ -1224,10 +1263,9 @@ async function start() {
 
   const theirLineups = onBye(REPORT)
     ? Promise.resolve()
-    : setLineups(REPORT.opponent_espn_team_id, "them", period);
+    : setLineups(REPORT.opponent_espn_team_id, period);
   drawTheirTonight(today.ok && today.body ? today.body.today : null);
-  await Promise.all([ourLineups, theirLineups]);
-  drawSchedule(REPORT);
+  await theirLineups;
   if (today.ok && today.body) drawTheirTonight(today.body.today);
 
   const rest = await asked.rest;
