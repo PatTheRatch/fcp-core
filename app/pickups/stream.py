@@ -20,6 +20,12 @@ line's value against the league's spreads (counts over each category's
 spread, turnovers against), the ordering the draft board uses; it decides
 who sits on a full day and nothing else.
 
+That day-by-day answer is kept as well as summed (`Schedule`): for each
+remaining day and both rosters, the games by men who are not ruled out, how
+many of them the lineup seats, and the starting places nobody can fill. It
+is read off the projection's own record rather than worked out again, so a
+grid drawn from it and the expected wins below can never disagree.
+
 THE CHANCE
 
 Head to head, not against the field: the opponent is known, and the
@@ -322,6 +328,63 @@ class EmptyDay:
 
 
 @dataclass(frozen=True)
+class DayMan:
+    """A man with a game on a day, and whether the lineup seats him."""
+
+    player: RosteredPlayer
+    seated: bool
+
+
+@dataclass(frozen=True)
+class SideGames:
+    """One side's games on one day, or over the days left.
+
+    `games` is the men on that roster with a game that day who are not ruled
+    out of it (`app.pickups.state.playable_days`, injured reserve left out);
+    `seated` is how many of them the lineup can start, which is the same
+    seating the week is projected from. They differ when there are more games
+    than places: a ten-place lineup seats ten of eleven games and the
+    eleventh is a game that will not count. `open_places` is the other
+    direction -- starting places no man of this roster can fill that day.
+
+    Over the days left the three are simply summed, so `open_places` on a
+    week is slot-days rather than slots.
+
+    `men` is empty on a total, and on a day it is every man the `games` count
+    counted, in the order the seating considered them: best first, each
+    marked with whether he got a place.
+    """
+
+    games: int
+    seated: int
+    open_places: int
+    men: tuple[DayMan, ...] = ()
+
+
+@dataclass(frozen=True)
+class DayGames:
+    """One remaining scoring period, both sides of it."""
+
+    scoring_period: int
+    mine: SideGames
+    #: None on a bye, where there is no other side.
+    theirs: SideGames | None
+
+
+@dataclass(frozen=True)
+class Schedule:
+    """The week's games day by day, and the totals the page reads across.
+
+    Read off the projection itself rather than computed again, so the grid
+    and the expected wins can never disagree about who plays and who starts.
+    """
+
+    days: tuple[DayGames, ...]
+    mine_total: SideGames
+    theirs_total: SideGames | None
+
+
+@dataclass(frozen=True)
 class StreamReport:
     team_id: int
     matchup_period: int
@@ -339,6 +402,9 @@ class StreamReport:
     #: Empty when nothing is worth doing and when no adds are left.
     recommended: tuple[Move, ...]
     empty_days: tuple[EmptyDay, ...]
+    #: Games and starts, day by day, for both sides. Additive: nothing above
+    #: is computed from it and no number above moved when it arrived.
+    schedule: Schedule
     #: The season as it stands, with no move: the projected record and the
     #: weeks the judgements are charged over (`app.pickups.judge`).
     outlook: Judgement
@@ -377,11 +443,26 @@ class StreamReport:
 
 
 @dataclass(frozen=True)
+class _DaySeats:
+    """One day of a projection: who could play, and whom the lineup seated."""
+
+    #: Ids with a game that day and nothing in the way of playing it, in the
+    #: order the seating considered them, which is weight order.
+    available: tuple[int, ...]
+    #: The ids of `available` the lineup seated, in the order they took a place.
+    seated: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class _Projection:
     line: CategoryLine
     starts: Mapping[int, int]
     #: Slot-days the roster left empty over the window.
     empty_slot_days: int
+    #: Each day of the window as it was seated. The schedule table is read
+    #: off this, so it is the projection's own arithmetic and not a second
+    #: pass over the same rosters.
+    by_day: Mapping[int, _DaySeats]
 
 
 @dataclass(frozen=True)
@@ -431,6 +512,7 @@ class _Week:
     def project(self, contenders: Mapping[int, Contender]) -> _Projection:
         starts: dict[int, int] = {}
         empty = 0
+        by_day: dict[int, _DaySeats] = {}
         for day in self._days:
             available = sorted(
                 (c for c in contenders.values() if day in c.days and c.player.seatable_on(day)),
@@ -444,10 +526,11 @@ class _Week:
             for player_id in seated:
                 starts[player_id] = starts.get(player_id, 0) + 1
             empty += len(self._lineup) - len(seated)
+            by_day[day] = _DaySeats(available=key[1], seated=seated)
         line = self._totals
         for player_id, count in starts.items():
             line = line + contenders[player_id].per_game.scaled(count)
-        return _Projection(line=line, starts=starts, empty_slot_days=empty)
+        return _Projection(line=line, starts=starts, empty_slot_days=empty, by_day=by_day)
 
 
 def seat(available: Sequence[Contender], lineup: Sequence[str]) -> tuple[int, ...]:
@@ -618,6 +701,7 @@ def stream_recommendations(
             (),
             (),
             empty_days,
+            _schedule(days, len(lineup), base, mine, None, {}),
             outlook,
             hurdle,
             len(wire),
@@ -626,7 +710,8 @@ def stream_recommendations(
 
     opponent = load_team_week(session, league_season, week.opponent_team_id, today)
     theirs = {player.player_id: contender(player) for player in opponent.active}
-    their_line = _Week(days, lineup, opponent.my_totals).project(theirs).line
+    their_projection = _Week(days, lineup, opponent.my_totals).project(theirs)
+    their_line = their_projection.line
 
     def search(board: _Board, available: Sequence[Contender], taken: frozenset[int]) -> _Search:
         """Every legal move from `board`, ranked, the best one per pickup.
@@ -748,6 +833,7 @@ def stream_recommendations(
         first.moves,
         tuple(plan),
         empty_days,
+        _schedule(days, len(lineup), first.base, mine, their_projection, theirs),
         outlook,
         hurdle,
         len(wire),
@@ -1038,6 +1124,61 @@ def _empty_days(
     return tuple(out)
 
 
+def _side_games(
+    days: Sequence[int],
+    places: int,
+    projection: _Projection,
+    contenders: Mapping[int, Contender],
+) -> tuple[dict[int, SideGames], SideGames]:
+    """One side's days, and the total over them, from its own projection."""
+    out: dict[int, SideGames] = {}
+    for day in days:
+        seats = projection.by_day[day]
+        taken = set(seats.seated)
+        out[day] = SideGames(
+            games=len(seats.available),
+            seated=len(seats.seated),
+            open_places=places - len(seats.seated),
+            men=tuple(
+                DayMan(player=contenders[player_id].player, seated=player_id in taken)
+                for player_id in seats.available
+            ),
+        )
+    return out, SideGames(
+        games=sum(side.games for side in out.values()),
+        seated=sum(side.seated for side in out.values()),
+        open_places=sum(side.open_places for side in out.values()),
+    )
+
+
+def _schedule(
+    days: Sequence[int],
+    places: int,
+    mine: _Projection,
+    my_contenders: Mapping[int, Contender],
+    theirs: _Projection | None,
+    their_contenders: Mapping[int, Contender],
+) -> Schedule:
+    """The per-day games table for both sides, off the two projections.
+
+    Both sides are seated by the same rule and counted the same way; on a
+    bye there is no other side and the table is one row deep.
+    """
+    my_days, my_total = _side_games(days, places, mine, my_contenders)
+    their_days: dict[int, SideGames] = {}
+    their_total: SideGames | None = None
+    if theirs is not None:
+        their_days, their_total = _side_games(days, places, theirs, their_contenders)
+    return Schedule(
+        days=tuple(
+            DayGames(scoring_period=day, mine=my_days[day], theirs=their_days.get(day))
+            for day in days
+        ),
+        mine_total=my_total,
+        theirs_total=their_total,
+    )
+
+
 def _report(
     week: TeamWeek,
     base: _Projection,
@@ -1046,6 +1187,7 @@ def _report(
     moves: tuple[Move, ...],
     recommended: tuple[Move, ...],
     empty_days: tuple[EmptyDay, ...],
+    schedule: Schedule,
     outlook: Judgement,
     hurdle: float,
     pool_size: int,
@@ -1063,6 +1205,7 @@ def _report(
         moves=moves,
         recommended=recommended,
         empty_days=empty_days,
+        schedule=schedule,
         outlook=outlook,
         hurdle=hurdle,
         pool_size=pool_size,

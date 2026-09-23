@@ -9,6 +9,7 @@ agent whose four games land on days the lineup is already full.
 """
 
 from collections.abc import Iterator, Mapping
+from datetime import date
 
 import pytest
 from sqlalchemy.orm import Session
@@ -110,6 +111,7 @@ def rostered(
     per_game: Mapping[str, float],
     position: str = "PG",
     injury_status: str = "ACTIVE",
+    back_on: date | None = None,
 ) -> Player:
     who = player(session, name)
     eligible(session, who, slots, position)
@@ -119,6 +121,7 @@ def rostered(
         pro_team_id=pro_team,
         on_team_id=team.espn_team_id,
         injury_status=injury_status,
+        expected_return_date=back_on,
     )
     projected(session, who, 70, per_game)
     held(session, team, period, who, 1)
@@ -716,3 +719,135 @@ def test_a_pool_named_by_id_is_taken_as_men_who_are_free_agents_now(session: Ses
     move = report.recommended[0]
     assert move.add.waiver_clears_on is None
     assert move.add_starts == 3
+
+
+# ---------------------------------------------------------------------------
+# the schedule: games, seated, open, day by day
+# ---------------------------------------------------------------------------
+
+
+def test_the_schedule_counts_games_by_men_who_are_not_ruled_out(session: Session) -> None:
+    """The owner's three complaints, 2026-09-23, in one week.
+
+    A man ESPN has OUT with no date back plays no day of it; a man OUT with
+    a date back plays the days from it and none before; and what is counted
+    is games, not the places a lineup happens to have men in.
+    """
+    ls, home, away, first = build_week(session, bench=3)
+    rostered(session, home, first, "Fit", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(
+        session,
+        home,
+        first,
+        "Out For The Year",
+        slots=ANY,
+        pro_team=10,
+        per_game=TEN_POINTS,
+        injury_status="OUT",
+    )
+    rostered(
+        session,
+        home,
+        first,
+        "Back On Seven",
+        slots=ANY,
+        pro_team=10,
+        per_game=TEN_POINTS,
+        injury_status="OUT",
+        back_on=day_date(7),
+    )
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    mine = {day.scoring_period: day.mine for day in report.schedule.days}
+    assert sorted(mine) == [5, 6, 7], "the days left, and no day already played"
+    assert [mine[day].games for day in (5, 6, 7)] == [1, 1, 2], (
+        "the man with no date back never counts; the other counts from the day he is back"
+    )
+    assert [mine[day].seated for day in (5, 6, 7)] == [1, 1, 2], "three places, never full"
+    assert [mine[day].open_places for day in (5, 6, 7)] == [2, 2, 1]
+    assert sorted(man.player.name for man in mine[7].men) == ["Back On Seven", "Fit"]
+    assert all(man.seated for man in mine[7].men)
+    assert [man.player.name for man in mine[5].men] == ["Fit"]
+
+
+def test_the_schedule_seats_what_the_lineup_holds_and_no_more(session: Session) -> None:
+    """More games than places is the whole reason a games count is not an
+    answer on its own: four men play, three places, one game goes nowhere."""
+    ls, home, away, first = build_week(session, bench=3)
+    for name in ("A", "B", "C", "D"):
+        rostered(session, home, first, name, slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    rostered(session, away, first, "Rival", slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    mine = {day.scoring_period: day.mine for day in report.schedule.days}
+    assert [mine[day].games for day in (5, 6, 7)] == [4, 4, 4]
+    assert [mine[day].seated for day in (5, 6, 7)] == [3, 3, 3], "the lineup is three places"
+    assert [mine[day].open_places for day in (5, 6, 7)] == [0, 0, 0]
+    benched = [man.player.name for man in mine[5].men if not man.seated]
+    assert len(benched) == 1, "one man a day is a game that will not count"
+    # The seating the week was projected from and nothing else: the day's
+    # starts add up to the starts the projection scored.
+    assert report.projected.get("PTS") == pytest.approx(300 + 3 * 3 * 10)
+
+
+def test_the_schedule_is_the_same_arithmetic_on_the_other_side(session: Session) -> None:
+    """The opponent's row is his own roster seated by the same rule, and the
+    totals down each side are the days added up."""
+    ls, home, away, first = build_week(session, bench=3)
+    for name in ("A", "B", "C", "D"):
+        rostered(session, home, first, name, slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    for name in ("Rival", "Rival Two"):
+        rostered(session, away, first, name, slots=ANY, pro_team=11, per_game=TEN_POINTS)
+    rostered(
+        session,
+        away,
+        first,
+        "Their Hurt Man",
+        slots=ANY,
+        pro_team=11,
+        per_game=TEN_POINTS,
+        injury_status="OUT",
+    )
+    games(session, 10, [5, 6, 7])
+    games(session, 11, [6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    mine = [day.mine for day in report.schedule.days]
+    theirs = [day.theirs for day in report.schedule.days]
+    assert all(side is not None for side in theirs)
+    assert [side.games for side in theirs if side] == [0, 2, 2], (
+        "their OUT man is no more counted than ours; on day 5 his NBA team does not play"
+    )
+    assert [side.seated for side in theirs if side] == [0, 2, 2]
+    assert [side.open_places for side in theirs if side] == [3, 1, 1]
+
+    total = report.schedule.mine_total
+    their_total = report.schedule.theirs_total
+    assert their_total is not None
+    assert (total.games, total.seated, total.open_places) == (12, 9, 0)
+    assert (their_total.games, their_total.seated, their_total.open_places) == (4, 4, 5)
+    assert total.men == () and their_total.men == (), "a total is a sum, not a list of men"
+    for sums, sides in ((total, mine), (their_total, [side for side in theirs if side])):
+        assert sums.games == sum(side.games for side in sides)
+        assert sums.seated == sum(side.seated for side in sides)
+        assert sums.open_places == sum(side.open_places for side in sides)
+
+
+def test_on_a_bye_the_schedule_has_one_side(session: Session) -> None:
+    ls, home, _, first = build_week(session, bye=True)
+    rostered(session, home, first, "Fit", slots=ANY, pro_team=10, per_game=TEN_POINTS)
+    games(session, 10, [5, 6, 7])
+
+    report = stream_recommendations(session, ls, HOME, today=5, distributions=WEEK)
+
+    assert report.schedule.theirs_total is None
+    assert all(day.theirs is None for day in report.schedule.days)
+    assert report.schedule.mine_total.games == 3
