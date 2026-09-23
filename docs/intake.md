@@ -107,17 +107,27 @@ page's button.
 
 | step | does | timing here |
 |---|---|---|
-| `intake_ingest` | every season the login can read, newest first | minutes a season |
-| `intake_schedule` | the NBA schedule behind each of them | seconds a season |
-| `intake_replacement` | `typical_pickup` | 32s, 8 seasons |
-| `intake_lane` | `opened_place` | 96s, 8 seasons |
-| `intake_hurdles` | the sweep, and the three bars | the long one, about ninety minutes |
-| `intake_trades` | `trade_record` | 58s, 8 seasons |
+| `intake_ingest` | every season the login can read, newest first | minutes a season, unmeasured (below) |
+| `intake_schedule` | the NBA schedule behind each of them | seconds a season, unmeasured |
+| `intake_replacement` | `typical_pickup` | **2s**, nine seasons |
+| `intake_lane` | `opened_place` | **3s**, nine seasons |
+| `intake_hurdles` | the sweep, and the three bars | **the long one: about forty minutes a season**, so five or six hours over nine |
+| `intake_trades` | `trade_record` | **94s**, nine seasons |
 | `intake_pool` | the pooled rows | under a second |
 | `intake_done` | the summary, and the email | under a second |
 
-The timings are the run of 2026-09-22 on the live local database, 14 teams,
-seasons 2019–2026, with the two ESPN-facing steps stubbed as already done.
+The timings are the run of 2026-09-22 on a copy of the live local database
+(ESPN 3853870, nine seasons 2019–2027, 10 to 16 teams a season), with the two
+ESPN-facing steps stubbed as already done.
+
+**The sweep is hours, not the ninety minutes it was budgeted at.** The
+published one-season run in docs/pickups_backtest.md is 5,138 seconds for 616
+decision points across *two* tilt settings; one tilt on one season is
+therefore about forty minutes, and this league has nine seasons of roughly
+that size. That is why it is resumable a season at a time and why it carries
+the queue's lowest priority: it is the difference between a league's numbers
+arriving in an afternoon and a league's manager waiting a morning for his
+own reports.
 
 **Why eight kinds rather than one job with eight stages.** The queue already
 knows how to hold a step back until the one before it is done, how to fail
@@ -190,14 +200,24 @@ YOUR NUMBERS
   What a pickup is worth: 0.06 categories a week — measured on this league, 924 adds
   What an open place is worth: 0.38 categories a week — measured on this league, 1,536 team-periods
   The bar for a move this week: 0.20 categories a week — your choice, 2026-09-18: ...
-  ...
+  The bar for a move that costs FAAB: 0.20 categories a week — your choice, ...
+  The bar for a free add: 0.10 categories a week — your choice, ...
+  The trade number's record: 55 deals — below
 
 The bar a move has to clear this week is 0.20 categories. A move under it is
 still shown, with its number, and labelled: the bar says which moves are
 worth a look, it never hides one.
 
 You can change any of the three bars here: <FCP_PUBLIC_URL>/account/connections
+
+HOW MUCH TO TRUST THE TRADE NUMBER
+
+  This number is a forecast, and here is its record. Over the 55 trades in
+  this league's history that can be replayed, ...
 ```
+
+The trade record is a paragraph rather than a line, so it gets its own block
+and the list keeps the one line per number it is there for.
 
 and, when a step failed:
 
@@ -289,7 +309,18 @@ again.
 - **The trade note is a function of the run** (`app.trades.calibration.trade_note`),
   so a second league's page carries a record of its own trades. Applied to
   the published run it returns `CALIBRATION_NOTE` character for character,
-  which is what `tests/test_trades.py` holds it to.
+  which is what `tests/test_trades.py` holds it to. The verdict against the
+  coin is read off the exact binomial interval rather than asserted, so a
+  league where the evaluator lands outside the range is told so in either
+  direction.
+- **A league keeps its own revision history across a re-measurement.** The
+  clause "this number used to run about four tenths above what those deals
+  really did" is a fact about revision R1 of the evaluator, not about the run
+  being made, so `intake_trades` reads the revision figures off the stored
+  row and hands them to the new run (`measure.REVISION_ERRORS`). Without
+  that, re-measuring this league would quietly drop a sentence its page had
+  yesterday. A league measured for the first time has nothing to carry, and
+  its note says only where the number stands.
 - **A measurement with nothing to measure is not a failure.** A league with
   one unplayed season has no adds, no lanes, no decisions and no trades; the
   step writes no row, says so in its note, and the number falls back.

@@ -105,13 +105,12 @@ def summarise(session: Session, league: League, *, at: datetime, settings: Setti
 def _number(found: Calibrated) -> str:
     """One line of the list: the number, what it is, and where it came from.
 
-    Never a number without its sample. `trade_record` has no number at all,
-    so its line is the record's own sentence, which is the same sentence the
-    trade page prints under the deal.
+    Never a number without its sample. A key with no single number says what
+    it rests on instead, which is the honest short form of a table.
     """
     title = calibration.DEFAULTS[found.key].title
     if found.value is None:
-        return f"{title}: {found.note}"
+        return f"{title}: {found.n} {calibration.unit(found.key)} — below"
     return f"{title}: {found.value:.2f} categories a week — {found.note}"
 
 
@@ -150,6 +149,14 @@ def lines(summary: Summary) -> list[str]:
         ]
     if summary.account_url:
         out += ["", f"You can change any of the three bars here: {summary.account_url}"]
+    # The trade record is a paragraph, not a line, and putting it in the list
+    # above buries the five numbers beside it. It gets its own block, in the
+    # words the trade page prints under the deal.
+    record = next(
+        (found for found in summary.numbers if found.key == calibration.TRADE_RECORD), None
+    )
+    if record is not None and record.note:
+        out += ["", "HOW MUCH TO TRUST THE TRADE NUMBER", "", f"  {record.note}"]
     if summary.failed:
         out += ["", "WHAT DID NOT FINISH", ""]
         out += [f"  {intake.STEP_WORDS.get(step, step)}: {why}" for step, why in summary.failed]

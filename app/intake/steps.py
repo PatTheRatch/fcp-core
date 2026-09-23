@@ -366,10 +366,20 @@ def run_intake_hurdles(factory: sessionmaker[Session], job: JobRef) -> str | Non
 
 
 def run_intake_trades(factory: sessionmaker[Session], job: JobRef) -> str | None:
+    """The trade record, with this league's own revision history carried.
+
+    What an earlier revision of the evaluator was mis-pricing consolidating
+    deals by is a fact about that revision, and a league that has it does not
+    stop having it because it was measured again. So the stored row's
+    revision figures are read first and handed to the run, which is what
+    keeps this league's note the sentence it has always printed.
+    """
     with factory() as session:
         league = _league(session, job)
         _refuse_unless_nine_cat(session, league.id)
-        found = measure.measure_trades(session, league.id)
+        before = calibration.stored(session, league.id, calibration.TRADE_RECORD)
+        carried = dict((before.payload or {}).get("uneven_error") or {}) if before else {}
+        found = measure.measure_trades(session, league.id, carry=carried)
         if not found.n:
             return _nothing_measured("trade_record", "no trade can be both forecast and graded")
         kept = _store(session, league.id, found, note=measure.trade_note_for(found.payload))

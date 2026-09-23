@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import statistics
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -477,8 +477,23 @@ def hurdles_from(swept: Sequence[SweptSeason]) -> dict[str, Measurement]:
 # ---------------------------------------------------------------------------
 
 
+#: Keys of `uneven_error` that name an **earlier revision of this code**
+#: rather than the run being made. They are carried from one measurement of a
+#: league to the next: "this number used to run about four tenths above what
+#: those deals really did" is a fact about revision R1, and a league that has
+#: it does not stop having it because it was measured again. A league
+#: measured for the first time has none, and its note says only where the
+#: number stands.
+REVISION_ERRORS = ("R1, the old yardstick",)
+
+
 def measure_trades(
-    session: Session, league_id: int, *, seasons: Iterable[int] | None = None, review_days: int = 1
+    session: Session,
+    league_id: int,
+    *,
+    seasons: Iterable[int] | None = None,
+    review_days: int = 1,
+    carry: Mapping[str, float] | None = None,
 ) -> Measurement:
     """`trade_record`: the 2x2 of `scripts/trade_calibration.py`, on this league.
 
@@ -489,9 +504,10 @@ def measure_trades(
     what the note is written from, with the exact binomial interval a fair
     coin would give over the same number of tosses beside it.
 
-    There is no "before" for a league measured once, so its note says where
-    the number stands on consolidating deals rather than how far it has come;
-    ours has one, and keeps it (`app.trades.calibration.trade_note`).
+    `carry` is what an earlier measurement of this league recorded about a
+    revision of the evaluator (`REVISION_ERRORS`), so a re-run keeps the
+    league's own history and its note does not lose a sentence it had
+    yesterday. A league measured once has nothing to carry.
     """
     from scripts.trade_calibration import (
         CELLS,
@@ -554,7 +570,14 @@ def measure_trades(
         "window_days": 30,
         "coin_range": [low, high],
         "uneven_sides": uneven_sides,
-        "uneven_error": {"this run": round(uneven_now, 3)},
+        "uneven_error": {
+            **{
+                name: float(value)
+                for name, value in (carry or {}).items()
+                if name in REVISION_ERRORS
+            },
+            "this run": round(uneven_now, 3),
+        },
         "player_level_sample": len(players),
         "player_level_spearman": round(
             spearman([p.predicted for p in players], [p.delivered for p in players]), 3

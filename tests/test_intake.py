@@ -346,6 +346,15 @@ def test_the_email_names_every_number_with_its_sample(session: Session) -> None:
     assert "it never hides one" in text_part
     assert "<html" in (mail.html or ""), "the same words in the house style"
 
+    # The trade record is a paragraph, so it is its own block rather than a
+    # line in the list: otherwise the five numbers beside it are unreadable.
+    assert "HOW MUCH TO TRUST THE TRADE NUMBER" in text_part
+    listed = text_part.split("HOW MUCH TO TRUST")[0]
+    assert "The trade number's record: 55 deals" in listed
+    assert "This number is a forecast" not in listed
+    for line in listed.splitlines():
+        assert len(line) < 260, f"a line of the list ran away: {line[:80]}"
+
 
 def test_the_email_never_says_ready_over_a_failure(session: Session) -> None:
     league = _nine_cat(session)
@@ -461,3 +470,49 @@ def test_a_league_with_no_tradeable_deal_is_not_a_failure(
         job = JobRef(1, jobs.INTAKE_TRADES, league.id, None, None, 1)
     note = steps.run_intake_trades(factory, job)
     assert note is not None and "nothing to measure yet" in note
+
+
+# ---------------------------------------------------------------------------
+# the trade record's own history
+# ---------------------------------------------------------------------------
+
+
+def test_a_re_measurement_keeps_the_leagues_own_revision_history(session: Session) -> None:
+    """What an old revision mis-priced is a fact about that revision.
+
+    A league that has it does not stop having it because it was measured
+    again, so the figure is carried from the stored row into the new run and
+    the note keeps the sentence it had yesterday. A league measured for the
+    first time has nothing to carry, and its note says only where the number
+    stands -- which is the difference `trade_note` is written to make.
+    """
+    from app.intake.measure import REVISION_ERRORS, trade_note_for
+    from app.trades.calibration import CALIBRATION_NOTE
+
+    ours = {
+        "deals": 55,
+        "picked": 25,
+        "coin_range": [20, 35],
+        "window_days": 30,
+        "uneven_error": {"R1, the old yardstick": 0.389, "this run": 0.103},
+    }
+    assert trade_note_for(ours) == CALIBRATION_NOTE, "byte for byte, what the page printed"
+
+    first_time = {**ours, "uneven_error": {"this run": 0.103}}
+    fresh = trade_note_for(first_time)
+    assert fresh != CALIBRATION_NOTE
+    assert "One thing did get better" not in fresh, "it has no before to compare with"
+    assert "about a tenth of a category a week away" in fresh
+    assert "25 of them" in fresh and "between 20 and 35 of 55" in fresh
+
+    assert "R1, the old yardstick" in REVISION_ERRORS
+    assert "this run" not in REVISION_ERRORS, "a run does not carry its own figure forward"
+
+
+def test_the_note_reads_the_coin_interval_rather_than_asserting_a_verdict() -> None:
+    from app.trades.calibration import trade_note
+
+    body = {"deals": 55, "coin_range": (20, 35), "uneven_now": 0.1, "window_days": 30}
+    assert "not better than a coin" in trade_note(picked=25, **body)
+    assert "does better than a coin" in trade_note(picked=44, **body)
+    assert "does worse than a coin" in trade_note(picked=6, **body)
