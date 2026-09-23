@@ -105,6 +105,19 @@ switch to accounts mode are a runbook, **docs/cutover.md**, done by hand;
   playoff games, his status, what the projection rests on — built once in
   `app/inseason/card.py` and drawn once in the shell, for the week, season
   and moves pages to use next (section 12).
+- **What one named move does** (`app/inseason/what_if.py`,
+  `GET .../teams/{team_id}/what-if`, the `what_if` tool, docs/what_if.md,
+  2026-09-23). A manager can name his own pickup — drop this man, add that
+  one — rather than reading the ones a search ranked, and the answer carries
+  three layers: this week's nine chances before and after, every remaining
+  week, and **where he finishes**, which is the projected-standings engine
+  (docs/projected_record.md) run twice on the same seed with his roster
+  changed in the second run. The trade report carries the same finish on each
+  side, under the nine, and the trade page draws it. The judgement beside it
+  is the recommender's own numbers untouched: the finish is a second lens and
+  not a second bar, it carries the simulation's own sampling band, and one
+  man usually moves the odds by less than that band. The Week page's form is
+  the piece not built (docs/what_if.md section 7).
 - The recommender backtest (`scripts/pickups_backtest.py`,
   docs/pickups_backtest.md): every 2026 team, 616 decision points, scored in
   categories by replaying the real matchup with the lineup re-solved both

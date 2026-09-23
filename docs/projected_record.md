@@ -390,6 +390,26 @@ change every pickup and trade number on the site, so it is a decision of its
 own with its own backtest; this work does not touch them. The seam is named
 here and in `app/inseason/projected.py` so the next person finds it.
 
+**Taken for the hypothetical view, 2026-09-23, and for nothing else.** The
+owner asked what a named pickup or a trade does to *his projected finish*, and
+that question has no answer against a league-average opponent. So
+`project_standings` grew a `rosters` argument -- a team named there is
+projected on the men given instead of the ones stored, every other team
+standing as it is -- and `app/inseason/what_if.py` runs this engine twice on
+the same seed, once as the league stands and once with the change in. That is
+the `/what-if` route, the Finish block on the trade page and the `what_if`
+tool; `docs/what_if.md` is the write-up.
+
+The seam above is **still not taken**, and this is the reason to be careful
+about the difference. Nothing stored moved: the precomputes, the hurdle, the
+bid model and the trade calibration all still read the league-average record,
+and a hypothetical's judgement is the recommender's own numbers untouched. The
+finish sits *beside* them as a second lens with no bar on it, because this
+forecast's record is the table in section 0 and a bar on top of that would be a
+bar on something that names the right side of a week five out about 55% of the
+time. Making the finish the headline is the decision that is still open, and it
+needs the backtest the seam has always needed.
+
 Routes:
 
 ```

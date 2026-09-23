@@ -168,7 +168,7 @@ behind the tailnet like the API.
 
 ## The tools
 
-Thirteen, each a thin call into the function its route calls. Sizes are the
+Fourteen, each a thin call into the function its route calls. Sizes are the
 2026 season of ESPN league 3853870 on day 52 — a fourteen-team league with
 eight seasons of history — as the model receives them (pretty-printed JSON);
 tokens are counted with a cl100k tokenizer as a stand-in, so read them as
@@ -188,7 +188,8 @@ within ten per cent rather than exact.
 | `recent_moves(league_id, season, days?)` | the league's roster moves in a window, failed claims included | 0.8k chars, ~260 (a week) |
 | `player_card(player_id, league_id?, season?, today?)` | his line per game and per week, games left, playoff games, status, and what the rate rests on | 1.4k chars, ~530 |
 | `free_agents(league_id, season, team_id, today?, sort?)` | the wire priced at the league standard, best fifteen of however many | 8k chars, ~2,970 |
-| `judge_trade(league_id, season, team_id, with_team, give, get, drop?, their_drop?, fill?, their_fill?, today?)` | both sides' nine categories before and after, the number, the playoff lens, and the league's trade record verbatim | 18k chars, ~5,120 |
+| `what_if(league_id, season, team_id, drop?, add?, to_ir?, today?)` | one pickup the manager names: this week's nine before and after, every remaining week, and the projected finish either way, beside the week report's own number for the same move (docs/what_if.md) | 8.7k chars, ~2,420 |
+| `judge_trade(league_id, season, team_id, with_team, give, get, drop?, their_drop?, fill?, their_fill?, today?)` | both sides' nine categories before and after, the number, the playoff lens, each side's projected finish, and the league's trade record verbatim | 21k chars, ~5,850 |
 
 **`what_changed` takes a scoring period.** Its route's default window is the
 last twenty-four hours of real time, which on a season stored months ago is
@@ -349,6 +350,13 @@ needs.** `app/mcp/trim.py` has the argument; in short —
 - **`judge_trade` says the trade record once.** It is in the answer, verbatim,
   where a manager reads it; the provenance entry points at it rather than
   repeating 1,200 characters.
+- **A `finish` keeps its noise and its record, and loses its weeks on a
+  trade.** `what_if` keeps the week-by-week list, because "which week does he
+  help" is the question a manager asks next; `judge_trade` drops it, because a
+  deal has two sides of a dozen rows each and nobody reads twenty-four of them
+  aloud. What never goes is `odds_band`, `moved_more_than_the_band`, the noise
+  sentence and the projected record's own calibration note: the two odds
+  without them would be a precision the simulation does not have.
 
 What is dropped outright: ESPN ids repeated inside nested objects, the
 layout fields the pages need (`describe` strings beside the parts they are

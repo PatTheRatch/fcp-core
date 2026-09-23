@@ -137,6 +137,7 @@ side the report carries a `SideReport` with:
 | `places_opened` / `places_used` / `replacement` / `opened_value` | how a 2-for-1 was settled, and at what: the man the wire offers, and what the place it empties is worth once it is streamed (§7b) |
 | `summary` | the plain-English line, generated from the numbers |
 | `notes` | the honest caveats for this side |
+| `finish` | where the deal leaves this side in the projected standings: the projected record, the place and the playoff odds before and after (§1a) |
 
 The currency is the recommender's, unchanged:
 
@@ -167,6 +168,37 @@ decision that costs players, so it is labelled on the same scale as a claim
 that costs FAAB. The bar labels and never hides: a deal under it is printed in
 full with its number, and the most the report ever says is "clears the 0.20
 bar" or "does not".
+
+### 1a. The finish, added 2026-09-23
+
+Everything above answers "what is this deal worth", in categories, against a
+league-average opponent. It does not answer the question the owner actually
+asked, which is *where does it leave me*. Since 2026-09-23 each side also
+carries a `finish`: the projected final category record, the place and the
+playoff odds, before the deal and after it, from the projected-standings
+engine (`docs/projected_record.md`) run twice on the same seed with **both**
+rosters changed in the second run -- because the deal happens to both sides at
+once. The rosters are the evaluator's own, man for man: each side's `gives`
+and `drops` leave, its `receives` and `fills` arrive. `docs/what_if.md` is the
+write-up, and it shares its engine with the `/what-if` route for a named
+pickup.
+
+**It is a second lens and not a second bar.** Nothing on this page is
+labelled, ranked or refused on the finish; the bar is still `TRADE_HURDLE` on
+the net. The finish comes with the simulation's own ninety-five percent
+sampling band beside it (`odds_band`, about a point at ten thousand seasons)
+and the projected record's published calibration sentence underneath, because
+that forecast has a record of its own and it is not the trade number's.
+
+On the page it sits under the nine categories, one compact line per side:
+
+    Projected 94.6-76.4 · 3rd · playoffs 92.7% → 94.4-76.6 · 3rd · 92.2%
+    (±0.5 points on each)
+
+The deal's own cost: one more reading of the league's measured weekly spreads
+would have been 2.9 s, so the route now reads them once and hands them to the
+evaluator and to both projections; the finish layer itself adds about 1.5 s
+(`docs/what_if.md` §4).
 
 ---
 
@@ -920,8 +952,13 @@ Top to bottom:
   apart by a sign and an arrow before they are told apart by colour, and the
   *count's* change is drawn in plain ink rather than green or red, because
   more turnovers is a bigger number and a worse week and only the probability
-  beside it knows which way that cuts. Under each table, the engine's own
-  sentence, which already leads with the fit.
+  beside it knows which way that cuts. Under each table, a compact **Finish**
+  line — `Projected 94.6-76.4 · 3rd · playoffs 92.7% → 94.4-76.6 · 3rd ·
+  92.2%`, the sampling band in brackets, "so this is inside the noise" when
+  the odds moved by less than it, and the projected record's own calibration
+  sentence in faint type underneath (§1a). It sits here and not beside the
+  number because it is a second lens and not a second bar. Then the engine's
+  own sentence, which already leads with the fit.
 - **The number, second and smaller.** Per side: this week plus the change per
   week over the weeks left and the net; the projected record with and
   without; "clears the 0.20 bar" or "below" as a label and never as advice;
