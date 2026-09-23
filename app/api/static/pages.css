@@ -746,6 +746,28 @@ details.disc .inside > .lede{margin-top:0}
 #tonight-grids > .side{border-top:0;padding-top:0}
 @media (max-width:860px){ #tonight-grids > .side{margin-top:24px} }
 
+/* The two ways the block can be laid out (week.html, `layOutTonight`).
+   `together` is one list down the page, both sides in one column with a
+   mark at the head of every row, for the nights one side has almost
+   nobody in it; `apart` is two columns whose widths the script sets from
+   the counts, so the side with more men gets more of the page instead of
+   exactly half of it. Below 861px the block is one column either way, and
+   the marks stay with `together` because that is the rule they belong to. */
+/* One list keeps a column's measure rather than running the width of a
+   desk: a name at one edge and its standing at the other, with a foot of
+   paper between them, is the same accident the two columns made. */
+#tonight-grids.together{grid-template-columns:minmax(0,1fr);gap:0;max-width:46rem}
+#tonight-grids.together > .side{margin-top:0}
+#tonight-grids.together > .side + .side{margin-top:22px}
+#tonight-grids.together .tonight li{grid-template-columns:3.4em minmax(0,1fr) auto}
+#tonight-grids.together .tonight li::before{content:"THEM";font-family:var(--mono);
+  font-size:10.5px;letter-spacing:.12em;color:var(--faint)}
+#tonight-grids.together #tonight-ours li::before{content:"YOU";color:var(--accent)}
+#tonight-grids.together .tonight .meta{grid-column:2/-1}
+@media (min-width:861px){
+  #tonight-grids.apart{grid-template-columns:minmax(0,var(--ours,1fr)) minmax(0,var(--theirs,1fr))}
+}
+
 /* A move worth a look: the two names, the number, the categories it moves,
    and everything behind it one tap away. A rule over it, never a box; the
    first one carries the accent rule the house gives a reader's own row. */

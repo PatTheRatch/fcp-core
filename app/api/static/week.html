@@ -56,7 +56,11 @@
 
   <!-- 3. Tonight. Who plays, ours and theirs, and the one thing in the set
        lineup worth fixing -- when there is one. When there is not, there is
-       no block, and the absence is the message. -->
+       no block, and the absence is the message.
+
+       The two sides share the block by a rule, not by halves: see
+       `layOutTonight` below for what decides whether this is two columns or
+       one marked list. -->
   <section id="tonight-section" hidden>
     <div class="shead"><h2>Tonight</h2><span class="tag" id="tonight-tag"></span></div>
     <p class="warnline" id="today-fix" hidden></p>
@@ -421,6 +425,51 @@ function pickCategory(button) {
 const playerName = (player) =>
   player ? cardName(player.espn_player_id, `<b>${escape(player.name)}</b>`) : dash;
 
+/* ---- how the two sides share the block ----------------------------------
+   The rule, stated once and in one place.
+
+   When either side has fewer than TONIGHT_TOGETHER men to show, the block
+   is one list down the page: both sides in a single column, one under the
+   other, every row carrying a YOU or a THEM so the mark and not the column
+   says whose it is. Two columns with a single name in the left of them is
+   half a page of whitespace that reads as a fault rather than as air, and
+   the preseason page -- one man of ours playing on the opening night, ten
+   places set against him -- is the case this was written for.
+
+   Otherwise the two columns stay, and their widths follow the counts
+   instead of splitting the page down the middle: ten men against five take
+   two thirds of it, clamped at a third either way so the narrow column
+   still holds a name without breaking it. Below 861px the block is one
+   column at any count, which is the house grid's own rule and not this
+   one; the marks belong to this one, so they appear only when it fires. */
+const TONIGHT_TOGETHER = 4;
+const TONIGHT_NARROWEST = 1 / 3;
+
+/** How many men each side has to show, once each side knows. Their side is
+ *  fetched after ours is drawn, so the layout is decided twice. */
+const TONIGHT_COUNTS = { ours: null, theirs: null };
+
+function layOutTonight() {
+  const grids = $("tonight-grids");
+  const { ours, theirs } = TONIGHT_COUNTS;
+  if (ours === null || theirs === null) {
+    // Their side has not come back yet: two even columns, which is what the
+    // half-drawn block already looks like, rather than a layout that jumps.
+    grids.classList.remove("together", "apart");
+    return;
+  }
+  const together = Math.min(ours, theirs) < TONIGHT_TOGETHER;
+  grids.classList.toggle("together", together);
+  grids.classList.toggle("apart", !together);
+  if (together) return;
+  const share = Math.min(
+    1 - TONIGHT_NARROWEST,
+    Math.max(TONIGHT_NARROWEST, ours / (ours + theirs)),
+  );
+  grids.style.setProperty("--ours", `${(share * 2).toFixed(3)}fr`);
+  grids.style.setProperty("--theirs", `${((1 - share) * 2).toFixed(3)}fr`);
+}
+
 /** "at MIL", or "no game" in the muted style. */
 const gameCell = (player) =>
   player && player.game
@@ -606,6 +655,8 @@ function drawTonight(report) {
     ? playing.map((player) => tonightRow(player)).join("")
     : `<li class="off"><span class="who">Nobody of yours plays tonight.</span></li>`;
   wireCards($("tonight-ours"));
+  TONIGHT_COUNTS.ours = playing.length;
+  layOutTonight();
 
   const idle = [...(report.idle || []), ...(report.injured_reserve || [])];
   $("tonight-rest").hidden = !idle.length;
@@ -649,6 +700,8 @@ function drawTheirTonight(day) {
     $("theirs-line").innerHTML = `Theirs <span class="n">on a bye</span>`;
     $("tonight-theirs").innerHTML = `<li class="off"><span class="who">No opponent this
       period.</span></li>`;
+    TONIGHT_COUNTS.theirs = 0;
+    layOutTonight();
     return;
   }
   const rows = them === null ? null : them.get(day) || [];
@@ -656,6 +709,8 @@ function drawTheirTonight(day) {
     $("theirs-line").innerHTML = `${escape(name)} <span class="n">reading…</span>`;
     return;
   }
+  TONIGHT_COUNTS.theirs = rows.length;
+  layOutTonight();
   $("theirs-line").innerHTML =
     `${escape(name)} <span class="n">${count(rows.length, "place")} set</span>`;
   $("tonight-theirs").innerHTML = rows.length
