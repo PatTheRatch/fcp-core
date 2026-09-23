@@ -1091,6 +1091,21 @@ def build(run: Run, *, label: str) -> str:
         ],
         rate_rows,
     )
+    autumn = next((rate for rate in run.rates if rate.label.endswith("-11")), None)
+    winter = next((rate for rate in run.rates if rate.label.endswith("-02")), None)
+    if autumn is not None and winter is not None:
+        verdict = "more" if autumn.marginal > winter.marginal else "less"
+        out += [
+            "",
+            f"**Plainly: a dollar bought {verdict} in November than in February.** "
+            f"{plain(autumn.marginal)} categories a dollar against {plain(winter.marginal)} on "
+            f"the marginal reading, and {plain(autumn.gross)} against {plain(winter.gross)} on "
+            f"the gross one, over {autumn.paid_n} and {winter.paid_n} paid claims. The rate "
+            "collapses through the middle of the season and comes back in March, and the March "
+            "figure is the one to trust least: a claim made then has fewer than thirty days of "
+            "season left to deliver in, so its window is cut by the calendar rather than by "
+            "what it cost.",
+        ]
     lower, middle, upper = spread(run.top_rate.ratios)
     out += [
         "",
