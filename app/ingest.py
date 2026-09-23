@@ -600,6 +600,30 @@ def latest_free_agent_ids(session: Session, league_season: LeagueSeason) -> list
     )
 
 
+def _season_is_live(
+    session: Session, league_season: LeagueSeason, now: datetime | None = None
+) -> bool:
+    """Whether anyone can still act on this season: its draft is ahead, or it
+    is the league's newest.
+
+    The wire matters for a season like that and for no other. Before the
+    draft the wire IS the season -- nobody is rostered, and the projections
+    the board is built on hang on free agents' cards -- yet a preseason run
+    always falls back to a full pass (there are no days to narrow against),
+    which used to mean the one run that should capture the draft pool was
+    the one that skipped it: 162 of ESPN's 348 projected men stored for 2027
+    on 2026-09-23, Curry and Cunningham among the missing.
+    """
+    if draft_is_pending(league_season.drafted_at, now):
+        return True
+    newest = session.scalar(
+        select(func.max(LeagueSeason.season)).where(
+            LeagueSeason.league_id == league_season.league_id
+        )
+    )
+    return newest == league_season.season
+
+
 def _season_player_ids(
     session: Session, league_season: LeagueSeason, *, include_free_agents: bool = False
 ) -> list[int]:
@@ -612,8 +636,9 @@ def _season_player_ids(
 
     With `include_free_agents`, also everyone the listener last saw on the
     wire, so an unrostered player's minutes are visible before anyone picks
-    him up. A scheduled run wants that; a historical full pass does not,
-    since it would refetch the universe for a season nobody can act on.
+    him up. Any run on a live season wants that (`_season_is_live`); a
+    historical full pass does not, since it would refetch the universe for a
+    season nobody can act on.
     """
     weekly = (
         select(Player.espn_player_id)
@@ -709,7 +734,9 @@ def ingest_player_stats(
     """
     captured_on = (now or datetime.now(UTC)).date()
     espn_player_ids = _season_player_ids(
-        session, league_season, include_free_agents=not scope.is_full
+        session,
+        league_season,
+        include_free_agents=not scope.is_full or _season_is_live(session, league_season, now),
     )
     players = {
         player.espn_player_id: player

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.models import (
     DailyLineupSlot,
     DraftPick,
+    FreeAgentSnapshot,
     League,
     LeagueSeason,
     LeagueSeasonCategory,
@@ -1354,3 +1355,118 @@ def test_each_days_projection_is_kept(session: Session) -> None:
     assert snapshots["2026-11-02"].stats["PTS"] == 1710.0  # the day's last read wins
     assert snapshots["2026-11-03"].stats["PTS"] == 1650.0
     assert snapshots["2026-11-03"].games_played == 70.0
+
+
+def _preseason_league_with_a_free_agent_card(card_id: int, name: str) -> Any:
+    """A season whose draft is still ahead: no rosters, one card on the wire."""
+    home, away = fake_team(3, "A"), fake_team(21, "B")
+    espn = league_with_play(
+        teams=[home, away],
+        boxes={},
+        matchup_period_count=1,
+        cards={card_id: fake_card(card_id, name, {}, projected={"GP": 66.0, "PTS": 1702.0})},
+    )
+    # ESPN's draft date, well after any `now` the test passes.
+    far_ahead = int(datetime(2030, 10, 18, tzinfo=UTC).timestamp() * 1000)
+    attach_transactions(
+        espn,
+        {},
+        draft_settings={
+            "auctionBudget": 200,
+            "type": "AUCTION",
+            "timePerSelection": 90,
+            "date": far_ahead,
+            "pickOrder": [3, 1, 2],
+        },
+    )
+    return espn
+
+
+def test_before_the_draft_a_full_pass_still_stores_the_wire_projections(
+    session: Session,
+) -> None:
+    """The draft pool is the free agents' cards, and preseason has no days to
+    narrow a run against, so a "recent" run falls back to a full pass. A full
+    pass used to skip the wire; before the draft it must not."""
+    espn = _preseason_league_with_a_free_agent_card(3975, "Stephen Curry")
+    league_season = ingest_season(session, espn)
+    session.commit()
+    assert session.scalars(select(PlayerSeasonStat)).all() == [], "nobody rostered, nothing stored"
+
+    curry = Player(espn_player_id=3975, name="Stephen Curry")
+    session.add(curry)
+    session.flush()
+    session.add(
+        FreeAgentSnapshot(
+            league_season_id=league_season.id,
+            observed_at=datetime(2026, 9, 23, tzinfo=UTC),
+            scoring_period=0,
+            player_id=curry.id,
+            status="FREEAGENT",
+        )
+    )
+    session.commit()
+
+    ingest_season(session, espn)  # the full pass a preseason run falls back to
+    session.commit()
+
+    stored = session.scalars(
+        select(PlayerSeasonStat).where(PlayerSeasonStat.kind == "projected")
+    ).one()
+    assert stored.player_id == curry.id
+    assert stored.raw_totals["PTS"] == 1702.0
+
+
+def test_the_newest_season_takes_the_wire_on_a_full_pass_too(session: Session) -> None:
+    """In season, a manual full pass is not a reason to lose the wire."""
+    espn = _preseason_league_with_a_free_agent_card(3975, "Stephen Curry")
+    attach_transactions(espn, {})  # the default draft date, 2025-10-18: already drafted
+    league_season = ingest_season(session, espn)
+    session.commit()
+    curry = Player(espn_player_id=3975, name="Stephen Curry")
+    session.add(curry)
+    session.flush()
+    session.add(
+        FreeAgentSnapshot(
+            league_season_id=league_season.id,
+            observed_at=datetime(2026, 9, 23, tzinfo=UTC),
+            scoring_period=0,
+            player_id=curry.id,
+            status="FREEAGENT",
+        )
+    )
+    session.commit()
+
+    ingest_season(session, espn)
+    session.commit()
+
+    kinds = {row.kind for row in session.scalars(select(PlayerSeasonStat)).all()}
+    assert "projected" in kinds
+
+
+def test_a_played_season_leaves_the_wire_alone_on_a_full_pass(session: Session) -> None:
+    """The other half of the rule: a historical full pass does not refetch the universe."""
+    espn = _preseason_league_with_a_free_agent_card(3975, "Stephen Curry")
+    attach_transactions(espn, {})  # the default draft date, 2025-10-18: already drafted
+    league_season = ingest_season(session, espn)
+    # A newer season exists, so 2026 is history.
+    ingest_league_structure(session, fake_league(season=2027))
+    session.commit()
+    curry = Player(espn_player_id=3975, name="Stephen Curry")
+    session.add(curry)
+    session.flush()
+    session.add(
+        FreeAgentSnapshot(
+            league_season_id=league_season.id,
+            observed_at=datetime(2026, 9, 23, tzinfo=UTC),
+            scoring_period=0,
+            player_id=curry.id,
+            status="FREEAGENT",
+        )
+    )
+    session.commit()
+
+    ingest_season(session, espn)
+    session.commit()
+
+    assert session.scalars(select(PlayerSeasonStat)).all() == []
