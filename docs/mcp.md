@@ -310,10 +310,21 @@ Local work only above this line; nothing below has been run.
    docker exec fullcourtpress-caddy-1 caddy validate --config /etc/caddy/Caddyfile
    docker exec fullcourtpress-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
    ```
-   Note `reverse_proxy 127.0.0.1:8787` and not the tailnet address: the MCP
-   unit binds loopback. Caddy passes the browser's `Host` through, and the
-   SDK's DNS-rebinding guard would answer `421` to every request behind it —
-   so `mcp.boxoutfantasy.com` is added to the allowed hosts from
+   **As deployed (2026-09-23), two corrections to the above.** Caddy runs in
+   a container, so `127.0.0.1` in its config is the container's own loopback
+   and the block answered `502`; the authenticated MCP unit binds the tailnet
+   address instead (`--host 100.105.64.94`, unreachable from the internet,
+   the same address the site's block proxies to) and the block reads
+   `reverse_proxy 100.105.64.94:8787`. And the Caddyfile is a **file** bind
+   mount: `sed -i` (or `mv`) replaces the inode and the container keeps the
+   old file, so every later `reload --config /etc/caddy/Caddyfile` reverts
+   to it. Edit it in place only (`sudo tee`, `tee -a`); if an inode has been
+   swapped, load the host's copy by hand until the container is next
+   recreated: `docker cp /srv/fullcourtpress/Caddyfile
+   fullcourtpress-caddy-1:/tmp/Caddyfile` then validate and reload with
+   `--config /tmp/Caddyfile`. Caddy passes the browser's `Host` through, and
+   the SDK's DNS-rebinding guard would answer `421` to every request behind
+   it — so `mcp.boxoutfantasy.com` is added to the allowed hosts from
    `FCP_MCP_PUBLIC_URL` (`app.mcp.server.transport_security`), which is why
    step 2 comes before step 4.
 5. **Restart the MCP unit**: `systemctl restart fcp-core-mcp`. Its banner on
