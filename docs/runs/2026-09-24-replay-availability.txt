@@ -1,0 +1,62 @@
+   ... 1/44 decision points, 182 man-mornings
+   ... 2/44 decision points, 364 man-mornings
+   ... 3/44 decision points, 545 man-mornings
+   ... 4/44 decision points, 727 man-mornings
+   ... 5/44 decision points, 909 man-mornings
+   ... 6/44 decision points, 1091 man-mornings
+   ... 7/44 decision points, 1273 man-mornings
+   ... 8/44 decision points, 1455 man-mornings
+   ... 9/44 decision points, 1636 man-mornings
+   ... 10/44 decision points, 1818 man-mornings
+   ... 11/44 decision points, 1999 man-mornings
+   ... 12/44 decision points, 2181 man-mornings
+   ... 13/44 decision points, 2363 man-mornings
+   ... 14/44 decision points, 2545 man-mornings
+   ... 15/44 decision points, 2727 man-mornings
+   ... 16/44 decision points, 2909 man-mornings
+   ... 17/44 decision points, 3091 man-mornings
+   ... 18/44 decision points, 3273 man-mornings
+   ... 19/44 decision points, 3455 man-mornings
+   ... 20/44 decision points, 3637 man-mornings
+   ... 21/44 decision points, 3819 man-mornings
+   ... 22/44 decision points, 4001 man-mornings
+   ... 23/44 decision points, 4183 man-mornings
+   ... 24/44 decision points, 4365 man-mornings
+   ... 25/44 decision points, 4547 man-mornings
+   ... 26/44 decision points, 4729 man-mornings
+   ... 27/44 decision points, 4911 man-mornings
+   ... 28/44 decision points, 5093 man-mornings
+   ... 29/44 decision points, 5275 man-mornings
+   ... 30/44 decision points, 5455 man-mornings
+   ... 31/44 decision points, 5637 man-mornings
+   ... 32/44 decision points, 5819 man-mornings
+   ... 33/44 decision points, 6001 man-mornings
+   ... 34/44 decision points, 6183 man-mornings
+   ... 35/44 decision points, 6364 man-mornings
+   ... 36/44 decision points, 6546 man-mornings
+   ... 37/44 decision points, 6728 man-mornings
+   ... 38/44 decision points, 6910 man-mornings
+   ... 39/44 decision points, 7092 man-mornings
+   ... 40/44 decision points, 7274 man-mornings
+   ... 41/44 decision points, 7456 man-mornings
+   ... 42/44 decision points, 7637 man-mornings
+   ... 43/44 decision points, 7819 man-mornings
+   ... 44/44 decision points, 8001 man-mornings
+season 2026, 44 decision points, 8001 man-mornings, 629 of them (7.9%) with a status on the morning
+calendar: SeasonCalendar(first_scoring_period=1, first_date=datetime.date(2025, 10, 21), last_scoring_period=174)
+
+| reading | mean absolute error (categories a week) | mean error | share of the published error it removes |
+|---|---|---|---|
+| status-blind: every man counted for all his team's games | 0.1743 | +0.0723 | -3.26% |
+| statuses visible: the declared source order | 0.1688 | +0.0641 | -- (the reference) |
+| the games oracle: the same rate, given the games he really played | 0.1005 | -0.0454 | +40.45% |
+| a zero line | 0.4834 | -0.4832 | -186.44% |
+
+| morning status | n | mean games, blind | visible | really played | MAE blind | MAE visible |
+|---|---|---|---|---|---|---|
+| silent | 7372 | 30.06 | 30.06 | 23.69 | 0.1659 | 0.1659 |
+| OUT | 266 | 29.34 | 21.49 | 15.84 | 0.3495 | 0.1839 |
+| QUESTIONABLE | 214 | 25.77 | 25.77 | 18.12 | 0.2232 | 0.2232 |
+| PROBABLE | 72 | 27.53 | 27.53 | 18.83 | 0.2077 | 0.2077 |
+| ACTIVE | 53 | 25.77 | 25.77 | 19.49 | 0.1976 | 0.1976 |
+| DOUBTFUL | 24 | 24.88 | 24.88 | 16.17 | 0.2051 | 0.2051 |
