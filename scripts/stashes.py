@@ -119,9 +119,11 @@ LIMITATIONS WORTH KNOWING BEFORE THE CODE
   `scripts/keepers.py` ships the same pairing and the doc's limitations repeat
   it; do not read a net of 0.3 as a third of a category of the standings.
 
-REPRODUCE. From the worktree root:
+REPRODUCE. From the worktree root, against whichever database `DATABASE_URL`
+names -- the published run was the local Docker Postgres, where the injury
+reports are one season deep:
 
-    PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/stashes.py
+    PYTHONPATH=. ~/fcp-core/.venv/bin/python scripts/stashes.py --why
 
 `.env` cannot be sourced by a shell (its line 29 holds an unquoted value with
 angle brackets), so `DATABASE_URL` is read out of it in Python; a worktree with

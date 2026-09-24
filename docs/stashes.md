@@ -6,7 +6,7 @@
 **Instrument:** `player_game_stats` · `pro_team_games` · `transactions` · `transaction_items` · `daily_lineup_slots` · `matchup_team_stats` · `injury_reports`
 **Currency:** categories a week, through `scripts/pickups_backtest.py`'s `Replay` and `app.pickups.judge.standard_lens`
 **Companions:** [`availability.md`](availability.md) (the absences and the report-based return prior this calibrates against), [`keepers.md`](keepers.md) (the hold, the replacement level, the `Replay` reuse), [`streaming_lane.md`](streaming_lane.md) (`OPENED_PLACE`, what a dead place costs), [`pickups.md`](pickups.md) §4.4 (the stash lane as designed), [`what_if.md`](what_if.md) (the engine this feeds)
-**Reproduce:** `PYTHONPATH=. /opt/fcp-core/.venv/bin/python scripts/stashes.py --why`
+**Reproduce:** `PYTHONPATH=. ~/fcp-core/.venv/bin/python scripts/stashes.py --why` — this run was made against the **local** Docker Postgres (`fcp-core-db-1`, `localhost:5432`), not the VPS; on the VPS the interpreter is `/opt/fcp-core/.venv/bin/python` and the injury-report tables of §1b and §3 will be five seasons deep rather than one (limitation 2).
 **Read-only:** every query is a SELECT. Nothing is written to the database. **Runtime 254s** for all eight seasons.
 
 > **Note on the reproduce line.** The house style sources `.env` before running
