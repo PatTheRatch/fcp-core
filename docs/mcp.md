@@ -3,7 +3,7 @@
 **Written:** 2026-09-23. **Status:** built, exercised in process and over
 stdio, and driven for real in three conversations — see "The live run". The
 OAuth front door is built and run end to end on the laptop against the MCP
-SDK's own OAuth client and the Claude Code CLI; it is **not deployed** —
+SDK's own OAuth client and the Claude Code CLI, and **deployed on 2026-09-23** at `https://mcp.boxoutfantasy.com` —
 "Deploying it (the owner's steps)" is the runbook.
 
 Code: `app/mcp/` (`scope.py`, `provenance.py`, `trim.py`, `tools.py`,
