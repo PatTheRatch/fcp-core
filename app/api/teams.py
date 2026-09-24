@@ -89,6 +89,19 @@ def list_lineups(
                 points=game.points if game else None,
                 rebounds=game.rebounds if game else None,
                 assists=game.assists if game else None,
+                # The rest of the nine, so the other side of a page's
+                # Tonight can print a box score rather than three of them.
+                # A box score is a league-visible fact, not a plan, which is
+                # why this route is the league's and not the team's.
+                minutes=game.minutes if game else None,
+                steals=game.steals if game else None,
+                blocks=game.blocks if game else None,
+                turnovers=game.turnovers if game else None,
+                three_pointers_made=game.three_pointers_made if game else None,
+                field_goals_made=game.field_goals_made if game else None,
+                field_goals_attempted=game.field_goals_attempted if game else None,
+                free_throws_made=game.free_throws_made if game else None,
+                free_throws_attempted=game.free_throws_attempted if game else None,
             )
             for slot, player, game in rows
         ],

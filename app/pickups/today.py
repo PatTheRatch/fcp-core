@@ -50,6 +50,16 @@ and the report says so (`actual_known` is False) rather than comparing
 against an empty lineup as though the manager had set none. When the rows are
 there, `actual` is that lineup and `edge` is what the proposal is worth over
 it, in the currency the seating orders by.
+
+AND WHAT HE ACTUALLY DID
+
+`DayPlayer.box` is the same kind of thing one field further on: the man's
+stored `player_game_stats` line for today, once the ingest has it, so a page
+can print `34 min - 22 pts - 8 reb` beside his game mark instead of the mark
+alone. It is read after every input to the seating is built and is fed to
+nothing: the look-ahead guarantee above is about what decides the lineup,
+and this decides nothing. Until the nightly pass reaches the day there is no
+row and the field is None, which is what a page shows as the mark alone.
 """
 
 from __future__ import annotations
@@ -71,7 +81,9 @@ from app.pickups.projection import per_game_line
 from app.pickups.state import (
     GONE_SLOT,
     IR_SLOT,
+    BoxScore,
     RosteredPlayer,
+    box_scores,
     build_players,
     load_team_week,
     season_calendar,
@@ -132,6 +144,12 @@ class DayPlayer:
     #: His knowable line per game as of this morning, for the seating order.
     per_game: CategoryLine
     weight: float
+    #: What he actually did today, once the ingest has stored it; None until
+    #: then. Display only, and the same kind of thing as `actual` below: a
+    #: stored fact about today, read after the day, never an input. Nothing
+    #: in the seating, the weight or the projection touches it, which is what
+    #: keeps the look-ahead guarantee in the module docstring intact.
+    box: BoxScore | None = None
 
     @property
     def player_id(self) -> int:
@@ -303,6 +321,9 @@ def today_lineup(
         on_ir=on_ir,
     )
     games = _games_today(session, season, (player.pro_team_id for player in roster), today)
+    # Read after the seating's inputs and never fed to it: what a man did
+    # tonight, for the page to print beside his game mark (see `DayPlayer.box`).
+    stored = box_scores(session, season, (player.player_id for player in roster), today)
 
     def day_player(player: RosteredPlayer) -> DayPlayer:
         per_game = per_game_line(session, season, player.player_id, today, tilt=tilt, as_of=as_of)
@@ -311,6 +332,7 @@ def today_lineup(
             game=games.get(player.pro_team_id),
             per_game=per_game,
             weight=weight(per_game, distributions),
+            box=stored.get(player.player_id),
         )
 
     held = {player.player_id: day_player(player) for player in roster}

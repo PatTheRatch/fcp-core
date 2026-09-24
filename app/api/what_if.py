@@ -211,6 +211,8 @@ def _week_out(week: WeekLayer) -> WhatIfWeekOut:
         opponent_espn_team_id=week.opponent_team_id,
         opponent_name=week.opponent_name,
         days_remaining=week.days_remaining,
+        posted=dict(week.posted.counts),
+        opponent_posted=dict(week.opponent_posted.counts),
         before=dict(week.before),
         after=dict(week.after),
         expected_before=week.expected_before,

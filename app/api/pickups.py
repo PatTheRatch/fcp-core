@@ -43,7 +43,7 @@ plan. It needs the team's manager but not the paid tier (docs/product.md,
 route (docs/site.md).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Annotated, Any
 
@@ -57,12 +57,14 @@ from app.api.access import TEAM_MANAGER, TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.schemas import (
     BidOut,
+    BoxScoreOut,
     CategoryShiftOut,
     DropCandidateOut,
     EmptyDayOut,
     GlanceOut,
     JudgementOut,
     PickupPlayerOut,
+    PostedManOut,
     RungOut,
     ScheduleDayOut,
     ScheduleManOut,
@@ -93,7 +95,7 @@ from app.pickups.bids import Bid
 from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
-from app.pickups.state import RosteredPlayer, SeasonCalendar, season_calendar
+from app.pickups.state import BoxScore, PostedMan, RosteredPlayer, SeasonCalendar, season_calendar
 from app.pickups.stream import CategoryShift, Move, Schedule, SideGames, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
 from app.pickups.today import Benched, DayPlayer, Misstart, Seat, TodayReport
@@ -203,7 +205,11 @@ def build_payload(
             floor=bars.typical_pickup.number,
             opened=bars.opened_place.number,
         )
-        out = _stream_out(stream, _espn_ids(session, _stream_players(stream)), bars)
+        out = _stream_out(
+            stream,
+            _espn_ids(session, _stream_players(stream), _posted_ids(stream)),
+            bars,
+        )
     elif kind == reports.SEASON:
         season = build_season(
             session,
@@ -351,9 +357,16 @@ def glance(
     )
 
 
-def _espn_ids(session: Session, players: list[RosteredPlayer]) -> dict[int, int]:
-    """This database's player ids, mapped to ESPN's, for one report."""
-    wanted = sorted({player.player_id for player in players})
+def _espn_ids(
+    session: Session, players: list[RosteredPlayer], extra: Iterable[int] = ()
+) -> dict[int, int]:
+    """This database's player ids, mapped to ESPN's, for one report.
+
+    `extra` names men the report carries who are not `RosteredPlayer`s: the
+    men behind the posted score, one of whom may since have been dropped and
+    so be on no roster the report holds.
+    """
+    wanted = sorted({player.player_id for player in players} | {int(each) for each in extra})
     if not wanted:
         return {}
     return {
@@ -362,6 +375,11 @@ def _espn_ids(session: Session, players: list[RosteredPlayer]) -> dict[int, int]
             select(Player.id, Player.espn_player_id).where(Player.id.in_(wanted))
         ).all()
     }
+
+
+def _posted_ids(report: StreamReport) -> list[int]:
+    """The men in either side's posted score, whose ESPN ids the page needs."""
+    return [man.player_id for man in (*report.posted_men, *report.opponent_posted_men)]
 
 
 def _stream_players(report: StreamReport) -> list[RosteredPlayer]:
@@ -523,6 +541,30 @@ def _schedule_out(schedule: Schedule, espn: dict[int, int]) -> ScheduleOut:
     )
 
 
+def _posted_out(men: tuple[PostedMan, ...], espn: dict[int, int]) -> list[PostedManOut]:
+    """The score a man at a time, in the order the engine sorted them.
+
+    The page reads these and not the matchups route for the live number. The
+    two answer different questions: `/matchups` is ESPN's stored tally for
+    the whole period as of the last ingest, with no day column to cap it by,
+    while these are the engine's own posted-so-far as of the report's
+    `today` -- which on a replayed day is a week that had not been played
+    yet (`app.pickups.state`, "what has been posted so far"). A page drawn
+    from the route would print the finished week under a chance built on the
+    engine's, and the two would disagree in public.
+    """
+    return [
+        PostedManOut(
+            espn_player_id=espn.get(man.player_id, man.player_id),
+            name=man.name,
+            games=man.games,
+            minutes=man.minutes,
+            line=dict(man.line.counts),
+        )
+        for man in men
+    ]
+
+
 def _stream_out(
     report: StreamReport, espn: dict[int, int], bars: calibration.Bars
 ) -> StreamReportOut:
@@ -535,6 +577,11 @@ def _stream_out(
         probabilities=dict(report.probabilities),
         projected=dict(report.projected.counts),
         opponent_projected=dict(report.opponent_projected.counts),
+        posted=dict(report.posted.counts),
+        opponent_posted=dict(report.opponent_posted.counts),
+        posted_source=report.posted_source,
+        posted_men=_posted_out(report.posted_men, espn),
+        opponent_posted_men=_posted_out(report.opponent_posted_men, espn),
         moves=[_move_out(move, report.hurdle, espn) for move in report.moves],
         recommended=[_move_out(move, report.hurdle, espn) for move in report.recommended],
         empty_days=[
@@ -562,9 +609,31 @@ def _stream_out(
     )
 
 
+def _box_out(box: BoxScore | None) -> BoxScoreOut | None:
+    """A man's stored line for the day, or None until the ingest has it."""
+    if box is None:
+        return None
+    return BoxScoreOut(
+        scoring_period=box.scoring_period,
+        minutes=box.minutes,
+        points=box.line.get("PTS"),
+        rebounds=box.line.get("REB"),
+        assists=box.line.get("AST"),
+        steals=box.line.get("STL"),
+        blocks=box.line.get("BLK"),
+        three_pointers_made=box.line.get("3PM"),
+        turnovers=box.line.get("TO"),
+        field_goals_made=box.line.get("FGM"),
+        field_goals_attempted=box.line.get("FGA"),
+        free_throws_made=box.line.get("FTM"),
+        free_throws_attempted=box.line.get("FTA"),
+    )
+
+
 def _day_out(player: DayPlayer, espn: dict[int, int]) -> TodayPlayerOut:
     return TodayPlayerOut(
         **_player_out(player.player, espn).model_dump(),
+        line=_box_out(player.box),
         game=(
             None
             if player.game is None

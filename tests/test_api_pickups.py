@@ -208,6 +208,25 @@ def test_the_stream_route_carries_the_weeks_games_day_by_day(client: TestClient)
             assert schedule[f"{side}_total"][key] == sum(day[side][key] for day in schedule["days"])
 
 
+def test_the_stream_route_carries_the_score_as_it_stands(client: TestClient) -> None:
+    """What THE NINE prints under each chance, and where it comes from.
+
+    This fixture has no box score at all, so every day of it reads as live
+    and the score is ESPN's own running matchup row -- which is the case a
+    page has to explain, because the table it draws underneath is built from
+    the box scores and on a live morning can fall short of it.
+    """
+    body = client.get(url(), params={"today": 1}).json()
+
+    assert body["posted_source"] == "espn"
+    assert body["posted"]["PTS"] == POSTED["PTS"]
+    assert body["opponent_posted"]["PTS"] == pytest.approx(POSTED["PTS"] * 0.8)
+    assert "FG%" not in body["posted"], "a rate is rebuilt from made over attempted"
+    assert body["posted"]["FGM"] and body["posted"]["FGA"]
+    assert body["posted_men"] == [] and body["opponent_posted_men"] == []
+    assert body["projected"]["PTS"] > body["posted"]["PTS"], "the days left are still to come"
+
+
 def test_a_report_stored_before_the_schedule_existed_still_validates(
     client: TestClient,
 ) -> None:

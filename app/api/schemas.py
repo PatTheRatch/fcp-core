@@ -145,6 +145,18 @@ class LineupSlotOut(BaseModel):
     points: float | None
     rebounds: float | None
     assists: float | None
+    #: The rest of the stored line, so a page can print a box score rather
+    #: than three of its nine numbers. Null on a day with no line, and on a
+    #: row served before these fields existed.
+    minutes: float | None = None
+    steals: float | None = None
+    blocks: float | None = None
+    turnovers: float | None = None
+    three_pointers_made: float | None = None
+    field_goals_made: float | None = None
+    field_goals_attempted: float | None = None
+    free_throws_made: float | None = None
+    free_throws_attempted: float | None = None
 
 
 class BenchCallOut(BaseModel):
@@ -767,6 +779,47 @@ class GlanceOut(BaseModel):
     stored: bool = Field(description="Read from the morning's stored report, not built now")
 
 
+class BoxScoreOut(BaseModel):
+    """One man's stored line for one day, in raw counts.
+
+    The counts and not the two rates, so FG% and FT% are rebuilt from the
+    made and attempted under them the way every other total on these pages
+    is (`app/scoring/lines.py`). A stored fact about a day that has been
+    played, not an estimate of one.
+    """
+
+    scoring_period: int
+    minutes: float
+    points: float
+    rebounds: float
+    assists: float
+    steals: float
+    blocks: float
+    three_pointers_made: float
+    turnovers: float
+    field_goals_made: float
+    field_goals_attempted: float
+    free_throws_made: float
+    free_throws_attempted: float
+
+
+class PostedManOut(BaseModel):
+    """One man's share of what his side has posted this matchup period.
+
+    Every man whose started line is in the score, including one the team has
+    since dropped: the table these rows draw has to add up to the score above
+    it, so nobody in the score may be missing from it.
+    """
+
+    espn_player_id: int
+    name: str
+    games: int = Field(description="Days he started and produced a line, before `today`")
+    minutes: float
+    line: dict[str, float] = Field(
+        description="His raw counts over those days, keyed as the nine are"
+    )
+
+
 class StreamReportOut(BaseModel):
     """Who to stream this week, and whether anyone is worth a look."""
 
@@ -778,6 +831,35 @@ class StreamReportOut(BaseModel):
     probabilities: dict[str, float]
     projected: dict[str, float] = Field(description="Raw counts, the week as projected")
     opponent_projected: dict[str, float]
+    posted: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Raw counts, the score as it stands: what this side has posted in the period "
+            "by the morning of `today`, under the same live/replay rule the projection "
+            "uses (`app.pickups.state`). `projected` is this plus the days still to play. "
+            "Empty on a report stored before the field existed"
+        ),
+    )
+    opponent_posted: dict[str, float] = Field(default_factory=dict)
+    posted_source: str = Field(
+        default="",
+        description=(
+            "Where the two totals above came from: `espn` (ESPN's own running matchup "
+            "row, kept on a live morning because it carries stat corrections ours may "
+            "not) or `box_scores` (our stored started lines on the period's days before "
+            "`today`). Empty on a report stored before the field existed"
+        ),
+    )
+    posted_men: list[PostedManOut] = Field(
+        default_factory=list,
+        description=(
+            "The score broken out a man at a time, always from the stored box scores, "
+            "best first by games then points. On `box_scores` these add up to `posted` "
+            "exactly; on `espn` they can fall short of it by whatever ESPN has counted "
+            "and the ingest has not yet stored"
+        ),
+    )
+    opponent_posted_men: list[PostedManOut] = Field(default_factory=list)
     moves: list[StreamMoveOut]
     recommended: list[StreamMoveOut] = Field(
         description=(
@@ -952,6 +1034,14 @@ class TodayPlayerOut(PickupPlayerOut):
     status: str = Field(description="healthy, injured (with the return date when ESPN gives one)")
     plays: bool = Field(
         description="A game today ESPN has not ruled him out of, so he can be started"
+    )
+    line: BoxScoreOut | None = Field(
+        default=None,
+        description=(
+            "What he actually did today, once the ingest has stored it. Null until then, "
+            "and on a report stored before the field existed. Display only: nothing in the "
+            "seating or the projection reads it"
+        ),
     )
 
 
@@ -1435,6 +1525,15 @@ class PageContextOut(BaseModel):
     teams: list[PageTeamOut]
     our_espn_team_id: int | None
     source_note: str = Field(description="Where the numbers came from, in the page's words")
+    box_scores_as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "When the last ingest of this season finished. Every stored box score on the "
+            "page is as of that moment, because they arrive with the nightly pass "
+            "(`scripts/ingest_league.py --recent`, docs/jobs.md): a line is last night's "
+            "until an in-game refresh exists. Null when no run has ever succeeded"
+        ),
+    )
     generated_at: datetime = Field(description="When this answer was built, for the refreshed line")
 
 
@@ -1577,6 +1676,15 @@ class WhatIfWeekOut(BaseModel):
     opponent_espn_team_id: int | None = Field(description="Null on a bye")
     opponent_name: str | None
     days_remaining: int = Field(description="Days of the period still to play, today included")
+    posted: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Raw counts, the score as it stands before any change: the same field the "
+            "week report carries, under the same live/replay rule. A change made today "
+            "cannot move it, which is why there is one and not a pair"
+        ),
+    )
+    opponent_posted: dict[str, float] = Field(default_factory=dict)
     before: dict[str, float] = Field(description="P(winning the category) as things stand")
     after: dict[str, float]
     expected_before: float

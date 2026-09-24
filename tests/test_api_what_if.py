@@ -230,6 +230,11 @@ def test_the_route_is_the_engines_payload_and_not_a_second_computation(
     assert body["week"]["before"] == pytest.approx(dict(built.week.before))
     assert body["week"]["after"] == pytest.approx(dict(built.week.after))
     assert body["week"]["delta"] == pytest.approx(built.week.delta)
+    # The score as it stands, the same two lines the week report carries: a
+    # change made today cannot move a day already played, so there is one
+    # of each and not a before and an after.
+    assert body["week"]["posted"] == pytest.approx(dict(built.week.posted.counts))
+    assert body["week"]["opponent_posted"] == pytest.approx(dict(built.week.opponent_posted.counts))
     assert body["finish"]["record_before"] == pytest.approx(list(built.finish.record_before))
     assert body["finish"]["playoff_odds_after"] == pytest.approx(built.finish.playoff_odds_after)
     assert [man["name"] for man in body["adds"]] == ["Wire"]

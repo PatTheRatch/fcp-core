@@ -56,14 +56,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import brand
 from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
 from app.api.schemas import PageContextOut, PageDayOut, PagePeriodOut, PageTeamOut
-from app.db.models import LeagueSeason, MatchupPeriod, Team
+from app.db.models import IngestRun, LeagueSeason, MatchupPeriod, Team
+from app.ingest_runs import SUCCEEDED
 from app.pickups.state import SeasonCalendar, period_for_day, season_calendar
 from app.projections.sources import ESPN, describe
 
@@ -148,7 +149,27 @@ def page_context(
         # Nothing on these pages is per-player projection data, so nothing is
         # gated; the line says where the numbers came from all the same.
         source_note=describe(ESPN, f"{season} season, from the stored box scores"),
+        box_scores_as_of=_last_ingest(session, season),
         generated_at=datetime.now(UTC),
+    )
+
+
+def _last_ingest(session: Session, season: int) -> datetime | None:
+    """When the last successful ingest of this season finished.
+
+    The honest limit on every stored box score a page shows. They arrive
+    with the nightly pass (`scripts/ingest_league.py --recent`, docs/jobs.md),
+    so tonight's line is last night's until an in-game refresh exists, and
+    the page says so rather than letting a reader take a stale line for a
+    live one. Off `ingest_runs`, which is the table that makes the schedule
+    observable at all (`app/api/ingest_runs.py`).
+    """
+    return session.scalar(
+        select(func.max(IngestRun.finished_at)).where(
+            IngestRun.season == season,
+            IngestRun.status == SUCCEEDED,
+            IngestRun.finished_at.is_not(None),
+        )
     )
 
 

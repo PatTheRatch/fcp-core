@@ -499,6 +499,32 @@ def test_a_week_report_is_the_pickup_routes_own_answer(
     assert answer["roster_room"]["adds_left"] == route["adds_left"]
 
 
+def test_the_week_report_carries_the_score_as_it_stands(
+    server: MCPServer, session: Session, league: dict[str, Any]
+) -> None:
+    """Nine numbers a side, and the co-manager quotes them when asked how
+    the week is going (skills/box-out-co-manager/SKILL.md).
+
+    The route's own `posted`, so the answer a model reads and the score a
+    page prints are one number. Not the men behind it: that is a table for a
+    page, and every figure in it is already in these two lines.
+    """
+    answer = call(
+        server,
+        "week_report",
+        {"league_id": LEAGUE_ID, "season": SEASON, "team_id": HOME, "today": TODAY},
+    )
+    route = pickups_api.stream_report(
+        league["ls"], league["home"], session, today=TODAY
+    ).model_dump(mode="json")
+
+    score = answer["posted_so_far"]
+    assert score["mine"] == trim.nine(route["posted"])
+    assert score["theirs"] == trim.nine(route["opponent_posted"])
+    assert score["source"] == route["posted_source"]
+    assert "posted_men" not in str(score), "the men are a page's table, not a model's"
+
+
 def test_a_lineup_is_the_today_routes_own_answer(
     server: MCPServer, session: Session, league: dict[str, Any]
 ) -> None:

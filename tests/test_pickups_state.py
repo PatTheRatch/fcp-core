@@ -12,8 +12,9 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from app.db.models import Matchup, RosterSlot
+from app.db.models import Matchup, PlayerGameStat, RosterSlot
 from app.pickups.state import (
+    box_scores,
     load_free_agents,
     load_team_week,
     playable_days,
@@ -167,6 +168,89 @@ def test_on_a_replayed_day_the_posted_totals_stop_the_night_before(session: Sess
     assert week.opp_totals.get("PTS") == 0.0, "the opponent has posted nothing either"
     whole_period = load_team_week(session, ls, HOME, today=5)
     assert whole_period.my_totals.get("PTS") == 150, "over a whole period, ESPN's own total"
+
+
+def test_the_men_behind_a_replayed_score_add_up_to_it(session: Session) -> None:
+    """The table a page draws under the score is the score's own arithmetic.
+
+    Not a second query over the same rows but the very sum `_posted`
+    returns, so the two cannot drift: a page that showed a Total row
+    disagreeing with the figure above it would be worse than showing no
+    table at all. The men stop at the same boundary the score does.
+    """
+    ls, (home, away), (first, _) = league_season(session)
+    configure(ls)
+    games(session, 10, [1])
+    matchup(session, first, home, away, {home: {"PTS": 150}, away: {"PTS": 190}})
+    monday = player(session, "Monday")
+    tuesday = player(session, "Tuesday")
+    held(session, home, first, monday, 1, stats={"PTS": 10, "REB": 4, "FGM": 4, "FGA": 9})
+    held(session, home, first, monday, 2, stats={"PTS": 12, "REB": 6, "FGM": 5, "FGA": 8})
+    held(session, home, first, tuesday, 2, stats={"PTS": 20, "REB": 1, "FGM": 8, "FGA": 8})
+    held(session, home, first, player(session, "Today"), 3, stats={"PTS": 99})
+    played(session, player(session, "Next Week"), 9, 30.0, {"PTS": 1000})
+
+    week = load_team_week(session, ls, HOME, today=3)
+
+    assert week.posted_source == "box_scores"
+    names = [man.name for man in week.my_posted_men]
+    assert names == ["Monday", "Tuesday"], "best first by games, then points; today is not in it"
+    for abbreviation in ("PTS", "REB", "FGM", "FGA"):
+        summed = sum(man.line.get(abbreviation) for man in week.my_posted_men)
+        assert summed == week.my_totals.get(abbreviation), abbreviation
+    assert sum(man.line.games for man in week.my_posted_men) == week.my_totals.games
+    assert [man.games for man in week.my_posted_men] == [2, 1]
+
+
+def test_on_a_live_morning_the_men_are_the_box_scores_and_the_score_is_espns(
+    session: Session,
+) -> None:
+    """The one case where the table can fall short of the score above it.
+
+    ESPN writes its running row as the games go; our box scores arrive with
+    the nightly ingest. So on a live morning the two sources disagree by
+    whatever has been played and not yet stored, and `posted_source` is what
+    lets a page say so rather than print a Total row that looks wrong.
+    """
+    ls, (home, away), (first, _) = league_season(session)
+    configure(ls)
+    games(session, 10, [1])
+    matchup(session, first, home, away, {home: {"PTS": 150}, away: {"PTS": 190}})
+    held(session, home, first, player(session, "Monday"), 1, stats={"PTS": 10})
+
+    week = load_team_week(session, ls, HOME, today=3)
+
+    assert week.posted_source == "espn"
+    assert week.my_totals.get("PTS") == 150
+    assert [man.line.get("PTS") for man in week.my_posted_men] == [10.0]
+
+
+def test_a_mans_stored_line_is_read_for_one_day_and_only_when_he_played(
+    session: Session,
+) -> None:
+    """`box_scores` is display only: a day ESPN lists with no line is absent.
+
+    Which is what lets a page show the game mark alone until the ingest has
+    reached him, rather than a row of zeros that reads as a night off.
+    """
+    ls, _, _ = league_season(session)
+    configure(ls)
+    who = player(session, "Played")
+    quiet = player(session, "Listed Only")
+    played(session, who, 2, 31.0, {"PTS": 22, "REB": 8, "FGM": 8, "FGA": 15})
+    session.add(
+        PlayerGameStat(
+            player_id=quiet.id, season=SEASON, scoring_period=2, played=False, raw_totals={}
+        )
+    )
+    session.flush()
+
+    lines = box_scores(session, SEASON, [who.id, quiet.id], 2)
+
+    assert set(lines) == {who.id}
+    assert lines[who.id].minutes == 31.0
+    assert lines[who.id].line.get("PTS") == 22.0
+    assert box_scores(session, SEASON, [who.id], 3) == {}, "one day, never a window"
 
 
 def test_a_player_on_injured_reserve_is_flagged_and_uses_the_slot(session: Session) -> None:

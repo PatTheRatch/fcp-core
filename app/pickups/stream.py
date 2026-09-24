@@ -132,6 +132,7 @@ from app.pickups.judge import (
 )
 from app.pickups.projection import per_game_line
 from app.pickups.state import (
+    PostedMan,
     RosteredPlayer,
     TeamWeek,
     build_players,
@@ -450,6 +451,16 @@ class StreamReport:
     probabilities: Mapping[str, float]
     projected: CategoryLine
     opponent_projected: CategoryLine
+    #: The score as it stands: what each side has posted in this period by
+    #: the morning of `today`, under the live/replay rule `app.pickups.state`
+    #: states. The projection above is this plus the days still to play.
+    posted: CategoryLine
+    opponent_posted: CategoryLine
+    #: `POSTED_ESPN` or `POSTED_BOX_SCORES`, and the two totals broken out a
+    #: man at a time from the stored box scores.
+    posted_source: str
+    posted_men: tuple[PostedMan, ...]
+    opponent_posted_men: tuple[PostedMan, ...]
     #: Best first, one per added player, at most `REPORT_MOVES`; empty on a bye.
     moves: tuple[Move, ...]
     #: The plan: independent moves to make today, in order, each one over the
@@ -1396,6 +1407,11 @@ def _report(
         probabilities=dict(before),
         projected=base.line,
         opponent_projected=their_line,
+        posted=week.my_totals,
+        opponent_posted=week.opp_totals,
+        posted_source=week.posted_source,
+        posted_men=week.my_posted_men,
+        opponent_posted_men=week.opp_posted_men,
         moves=moves,
         recommended=recommended,
         empty_days=empty_days,

@@ -54,6 +54,19 @@ posted as well would count them twice. That is the opposite of the rule
 add made on the morning of day N has happened by the time the report is
 read, while day N's games have not.
 
+WHO POSTED IT
+
+`_posted_men` is the same sum broken out a man at a time, and it is always
+the box scores' -- the started lines on the period's days before `today` --
+whichever source the total came from. On a replayed day the two are the
+same arithmetic and the men add up to the total exactly; `_posted` folds
+them rather than running a second query. On a live morning ESPN's row is
+kept as the total and the men can fall short of it, because ESPN writes
+its running tally as the games go and our box scores arrive with the
+nightly ingest. `posted_source` says which of the two a total is, so a page
+can print the gap rather than let a table quietly disagree with the score
+above it.
+
 FAAB
 
 The in-season pot is `league_seasons.acquisition_budget` (100 every season),
@@ -143,6 +156,12 @@ GONE_SLOT = "FA"
 #: A transaction ESPN carried out, as `transactions.status` spells it.
 EXECUTED = "EXECUTED"
 
+#: Where a side's posted-so-far total came from. ESPN's own matchup row
+#: (`matchup_team_stats`) on a live morning, our stored box scores on any
+#: replayed day. See the module docstring, "who posted it".
+POSTED_ESPN = "espn"
+POSTED_BOX_SCORES = "box_scores"
+
 #: Adds a team may make for each day of a matchup period.
 #:
 #: ESPN's raw `acquisitionSettings` for this league, read 2026-09-18 and
@@ -211,6 +230,40 @@ class RosteredPlayer:
 
 
 @dataclass(frozen=True)
+class BoxScore:
+    """One stored `player_game_stats` line, as a page prints it.
+
+    A fact about a day that has been played, not an estimate of one: it is
+    carried for display and nothing in the seating or the projection reads
+    it. `minutes` is beside the line rather than in it because the nine do
+    not score minutes and `CategoryLine` holds only what they do.
+    """
+
+    scoring_period: int
+    played: bool
+    minutes: float
+    line: CategoryLine
+
+
+@dataclass(frozen=True)
+class PostedMan:
+    """One man's share of what a side has posted this matchup period.
+
+    `line.games` is the days he started and produced a line, which is what
+    the table sorts on before points.
+    """
+
+    player_id: int
+    name: str
+    minutes: float
+    line: CategoryLine
+
+    @property
+    def games(self) -> int:
+        return self.line.games
+
+
+@dataclass(frozen=True)
 class TeamWeek:
     """One team's matchup period as of `today`."""
 
@@ -224,6 +277,13 @@ class TeamWeek:
     #: Raw counts posted so far, including FGM/FGA and FTM/FTA.
     my_totals: CategoryLine
     opp_totals: CategoryLine
+    #: The same, a man at a time, always from the stored box scores. Best
+    #: first by games then points. See the module docstring, "who posted it".
+    my_posted_men: tuple[PostedMan, ...]
+    opp_posted_men: tuple[PostedMan, ...]
+    #: `POSTED_ESPN` or `POSTED_BOX_SCORES`: which source the two totals
+    #: above came from, so a reader can be told when the men fall short.
+    posted_source: str
     roster: tuple[RosteredPlayer, ...]
     #: The pot left as of `today`, never below zero. See the module docstring.
     faab_remaining: int
@@ -399,6 +459,9 @@ def load_team_week(
     opponent: Team | None = None
     my_totals = CategoryLine()
     opp_totals = CategoryLine()
+    my_men: tuple[PostedMan, ...] = ()
+    opp_men: tuple[PostedMan, ...] = ()
+    source = POSTED_BOX_SCORES
     if matchup is not None:
         other_id = matchup.away_team_id if matchup.home_team_id == team.id else matchup.home_team_id
         if other_id is not None:
@@ -406,9 +469,12 @@ def load_team_week(
         season = int(league_season.season)
         # Read once for both sides: it is a fact about the database, not the team.
         live = is_live(session, season, today)
-        my_totals = _posted(session, period, matchup.id, team.id, today, season=season, live=live)
+        source = POSTED_ESPN if live else POSTED_BOX_SCORES
+        my_totals, my_men = _posted(
+            session, period, matchup.id, team.id, today, season=season, live=live
+        )
         if opponent is not None:
-            opp_totals = _posted(
+            opp_totals, opp_men = _posted(
                 session, period, matchup.id, opponent.id, today, season=season, live=live
             )
 
@@ -431,6 +497,9 @@ def load_team_week(
         opponent_team_id=int(opponent.espn_team_id) if opponent is not None else None,
         my_totals=my_totals,
         opp_totals=opp_totals,
+        my_posted_men=my_men,
+        opp_posted_men=opp_men,
+        posted_source=source,
         roster=roster,
         faab_remaining=max(0, budget - spent),
         faab_overspent=max(0, spent - budget),
@@ -807,22 +876,60 @@ def _posted(
     *,
     season: int,
     live: bool,
-) -> CategoryLine:
-    """The raw counts a team has posted in this matchup by the morning of `today`.
+) -> tuple[CategoryLine, tuple[PostedMan, ...]]:
+    """What a team has posted in this matchup by the morning of `today`, and who.
 
-    Two sources, and `live` picks between them (see the module docstring).
-    On a live morning ESPN's own `matchup_team_stats` row is the running
-    tally and is kept, because it carries the stat corrections our box scores
-    may not have. On any replayed day that row is the period's final total
-    with no day to cap it by, so the started lines on the period's days
-    **before** `today` are summed instead -- exclusive, because
+    Two sources for the total, and `live` picks between them (see the module
+    docstring). On a live morning ESPN's own `matchup_team_stats` row is the
+    running tally and is kept, because it carries the stat corrections our
+    box scores may not have. On any replayed day that row is the period's
+    final total with no day to cap it by, so the started lines on the
+    period's days **before** `today` are summed instead -- exclusive, because
     `scoring_periods_remaining` starts at `today` and the projection will add
     that day itself.
+
+    The men are the box scores' either way, and on a replayed day the total
+    is their sum rather than a second query: the table a page draws under the
+    score and the score itself are then one piece of arithmetic.
     """
+    men = _posted_men(session, period, team_row_id, today, season=season)
     if live:
-        return _stored_posted(session, matchup_id, team_row_id)
+        return _stored_posted(session, matchup_id, team_row_id), men
+    totals = dict.fromkeys(COUNTS, 0.0)
+    games = 0
+    for man in men:
+        games += man.line.games
+        for abbreviation in COUNTS:
+            totals[abbreviation] += man.line.get(abbreviation)
+    return CategoryLine(totals, games), men
+
+
+def _posted_men(
+    session: Session,
+    period: MatchupPeriod,
+    team_row_id: int,
+    today: int,
+    *,
+    season: int,
+) -> tuple[PostedMan, ...]:
+    """Each man's share of what this side posted, from the stored box scores.
+
+    The same join `_posted` sums, grouped by the man rather than added up:
+    the started lines on the period's days **before** `today`. A man who has
+    since been dropped is in it, because his games are in the score.
+    """
     rows = session.execute(
-        select(*(getattr(PlayerGameStat, column) for column in _POSTED_COLUMNS))
+        select(
+            PlayerGameStat.player_id,
+            Player.name,
+            func.count(),
+            func.coalesce(func.sum(PlayerGameStat.minutes), 0.0),
+            *(
+                func.coalesce(func.sum(getattr(PlayerGameStat, column)), 0.0)
+                for column in _POSTED_COLUMNS
+            ),
+        )
+        .join(Player, Player.id == PlayerGameStat.player_id)
         .join(
             DailyLineupSlot,
             (DailyLineupSlot.player_id == PlayerGameStat.player_id)
@@ -837,12 +944,69 @@ def _posted(
             PlayerGameStat.played.is_(True),
             PlayerGameStat.minutes > 0,
         )
+        .group_by(PlayerGameStat.player_id, Player.name)
     ).all()
-    totals = dict.fromkeys(COUNTS, 0.0)
-    for row in rows:
-        for abbreviation, value in zip(COUNTS, row, strict=True):
-            totals[abbreviation] += float(value or 0.0)
-    return CategoryLine(totals, len(rows))
+    men = [
+        PostedMan(
+            player_id=int(row[0]),
+            name=str(row[1]),
+            minutes=float(row[3] or 0.0),
+            line=CategoryLine(
+                {
+                    abbreviation: float(value or 0.0)
+                    for abbreviation, value in zip(COUNTS, row[4:], strict=True)
+                },
+                int(row[2] or 0),
+            ),
+        )
+        for row in rows
+    ]
+    men.sort(key=lambda man: (-man.games, -man.line.get("PTS"), man.name))
+    return tuple(men)
+
+
+def box_scores(
+    session: Session, season: int, player_ids: Iterable[int], day: int
+) -> dict[int, BoxScore]:
+    """Each man's stored line on one scoring period, for the men who have one.
+
+    A fact about a day, read for display only: `app.pickups.today` hangs it
+    off a man so a page can print what he actually did, and nothing in the
+    seating or the projection sees it. A man ESPN lists with no line at all
+    is absent from the answer, which is what lets a page show the game mark
+    alone until the ingest has reached him.
+    """
+    ids = sorted({int(player_id) for player_id in player_ids})
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(
+            PlayerGameStat.player_id,
+            PlayerGameStat.played,
+            PlayerGameStat.minutes,
+            *(getattr(PlayerGameStat, column) for column in _POSTED_COLUMNS),
+        ).where(
+            PlayerGameStat.season == season,
+            PlayerGameStat.scoring_period == day,
+            PlayerGameStat.player_id.in_(ids),
+            PlayerGameStat.played.is_(True),
+        )
+    ).all()
+    return {
+        int(row[0]): BoxScore(
+            scoring_period=day,
+            played=bool(row[1]),
+            minutes=float(row[2] or 0.0),
+            line=CategoryLine(
+                {
+                    abbreviation: float(value or 0.0)
+                    for abbreviation, value in zip(COUNTS, row[3:], strict=True)
+                },
+                1,
+            ),
+        )
+        for row in rows
+    }
 
 
 def _stored_posted(session: Session, matchup_id: int, team_row_id: int) -> CategoryLine:

@@ -335,6 +335,16 @@ def week_report(
         "chance_by_category": trim.nine(body["probabilities"]),
         "projected": trim.nine(body["projected"]),
         "opponent_projected": trim.nine(body["opponent_projected"]),
+        # The score as it stands, both sides: nine numbers each, so it is
+        # the cheapest thing in this answer and the first one a manager
+        # asking "how is my week going" wants. Not the men behind it -- that
+        # is a table for a page, and every number in it is already in the
+        # two lines here.
+        "posted_so_far": {
+            "mine": trim.nine(body.get("posted")),
+            "theirs": trim.nine(body.get("opponent_posted")),
+            "source": body.get("posted_source") or None,
+        },
         "worth_a_look": [trim.stream_move(move) for move in body["recommended"]],
         "also_ranked": {
             "of": of_moves,

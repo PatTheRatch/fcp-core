@@ -126,6 +126,7 @@ from app.pickups.stream import (
     spot_book,
     week_changes,
 )
+from app.scoring.lines import CategoryLine
 from app.trades.evaluate import TradeReport
 
 __all__ = [
@@ -233,6 +234,11 @@ class WeekLayer:
     opponent_team_id: int | None
     opponent_name: str | None
     days_remaining: int
+    #: The score as it stands, both sides, in raw counts: the week report's
+    #: own `posted`, under the same live/replay rule. One and not a pair,
+    #: because a change made today cannot move a day already played.
+    posted: CategoryLine
+    opponent_posted: CategoryLine
     #: P(this team wins the category), as things stand and with the change made.
     before: Mapping[str, float]
     after: Mapping[str, float]
@@ -565,6 +571,8 @@ def _week_layer(
         opponent_team_id=week.opponent_team_id,
         opponent_name=opponent,
         days_remaining=changed.days_remaining,
+        posted=week.my_totals,
+        opponent_posted=week.opp_totals,
         before=dict(changed.before),
         after=dict(changed.after),
         add_starts={player_id: changed.starts.get(player_id, 0) for player_id in change.adds},
