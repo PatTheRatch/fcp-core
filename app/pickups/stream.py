@@ -131,6 +131,7 @@ from app.pickups.judge import (
     weekly_lines,
 )
 from app.pickups.projection import per_game_line
+from app.pickups.stash import Stash, held_stashes
 from app.pickups.state import (
     PostedMan,
     RosteredPlayer,
@@ -489,6 +490,12 @@ class StreamReport:
     #: Adds already made this matchup period, and what it allows.
     adds_used: int
     adds_budget: int
+    #: The men on this roster ESPN has ruled out, longest out first: how long
+    #: they have been out, the odds on each week, and what the place they are
+    #: holding costs while it waits (`app.pickups.stash`). The season half of
+    #: every number above already counts them for the games they are expected
+    #: to play; this is the term that count cannot carry.
+    stashed: tuple[Stash, ...] = ()
 
     @property
     def today(self) -> int:
@@ -816,6 +823,18 @@ def stream_recommendations(
         opened=opened,
     )
     outlook = judge(spots, delta_week=0.0, delta_season_per_week=0.0)
+    # The men this report is already counting for a fraction of their games,
+    # and what the wait costs the place (`app.pickups.stash`).
+    stashed = held_stashes(
+        session,
+        league_season,
+        spots,
+        today,
+        week.roster,
+        ir_slot_free=week.ir_slot_free,
+        tilt=tilt,
+        as_of=as_of,
+    )
 
     engine = _Week(days, lineup, week.my_totals)
     empty_days = _empty_days(week, wire, lineup)
@@ -841,6 +860,7 @@ def stream_recommendations(
             hurdle,
             len(wire),
             historical_wire,
+            stashed,
         )
 
     opponent = load_team_week(session, league_season, week.opponent_team_id, today)
@@ -973,6 +993,7 @@ def stream_recommendations(
         hurdle,
         len(wire),
         historical_wire,
+        stashed,
     )
 
 
@@ -1397,6 +1418,7 @@ def _report(
     hurdle: float,
     pool_size: int,
     historical_wire: bool,
+    stashed: tuple[Stash, ...] = (),
 ) -> StreamReport:
     return StreamReport(
         team_id=week.team_id,
@@ -1426,4 +1448,5 @@ def _report(
         ir_slot_free=week.ir_slot_free,
         adds_used=week.adds_used,
         adds_budget=week.adds_budget,
+        stashed=stashed,
     )

@@ -73,6 +73,7 @@ from app.api.schemas import (
     SeasonSwapOut,
     SideGamesOut,
     StashCandidateOut,
+    StashOut,
     StreamMoveOut,
     StreamReportOut,
     TodayBenchedOut,
@@ -95,6 +96,7 @@ from app.pickups.bids import Bid
 from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
+from app.pickups.stash import Stash
 from app.pickups.state import BoxScore, PostedMan, RosteredPlayer, SeasonCalendar, season_calendar
 from app.pickups.stream import CategoryShift, Move, Schedule, SideGames, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
@@ -606,6 +608,7 @@ def _stream_out(
         adds_used=report.adds_used,
         adds_budget=report.adds_budget,
         adds_left=report.adds_left,
+        stashed=[stash_out(block) for block in report.stashed],
     )
 
 
@@ -726,6 +729,27 @@ def _stash_out(stash: StashCandidate, espn: dict[int, int]) -> StashCandidateOut
         weeks_away=stash.weeks_away,
         healthy_rank=stash.healthy_rank,
         needs_drop=stash.needs_drop,
+        stash=stash_out(stash.stash),
+    )
+
+
+def stash_out(stash: Stash) -> StashOut:
+    """The stash block as a page reads it. Public: the what-if draws it too."""
+    return StashOut(
+        player_id=stash.player_id,
+        name=stash.name,
+        days_out=stash.days_out,
+        return_odds_by_week={str(week): odds for week, odds in stash.return_odds_by_week.items()},
+        expected_dead_weeks=stash.expected_dead_weeks,
+        dead_cost=stash.dead_cost,
+        expected_net=stash.expected_net,
+        net_if_out_past_week=stash.net_if_out_past_week,
+        late_week=stash.late_week,
+        ir_slot_free=stash.ir_slot_free,
+        expected_games=stash.expected_games,
+        healthy_games=stash.healthy_games,
+        line=stash.line,
+        language=stash.language,
     )
 
 

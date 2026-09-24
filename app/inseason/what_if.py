@@ -663,6 +663,11 @@ def _stash(
         late_net=late.delta_total,
         expected_games=man.season_games,
         healthy_games=len(man.schedule_days),
+        return_in_days=(
+            None
+            if man.expected_return_date is None or as_of is None
+            else (man.expected_return_date - as_of).days
+        ),
     )
 
 

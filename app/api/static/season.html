@@ -60,10 +60,13 @@
   <section>
     <div class="shead"><h2>Stashes</h2><span class="tag">out now, back soon</span></div>
     <p class="lede">Injured men whose healthy value would rank on the wire by the time they
-      return, and what a place for them would cost today.</p>
+      return, and what a place for them would cost today. The odds are the NBA's own return
+      record for men who have been out this long, not a diagnosis and not a date.</p>
     <table class="grid">
       <thead><tr>
-        <th>Player</th><th>Back</th><th>Weeks away</th><th>Healthy rank</th><th>The place</th>
+        <th>Player</th><th>Out</th><th>Back in a fortnight</th><th>Dead weeks</th>
+        <th>Dead cost</th><th>Expected</th><th>If not back by week 4</th>
+        <th>Healthy rank</th><th>The place</th>
       </tr></thead>
       <tbody id="stashes"></tbody>
     </table>
@@ -243,8 +246,12 @@ function drawStashes(report) {
   $("stashes").innerHTML = stashes
     .map((stash) =>
       `<tr><td class="name">${escape(stash.player.name)}</td>` +
-      `<td>${escape(dayName(stash.expected_return_date))}</td>` +
-      `<td>${fixed(stash.weeks_away, 1)}</td>` +
+      `<td>${stash.stash.days_out} days</td>` +
+      `<td>${Math.round((stash.stash.return_odds_by_week["2"] || 0) * 100)}%</td>` +
+      `<td>${fixed(stash.stash.expected_dead_weeks, 1)}</td>` +
+      `<td>${fixed(stash.stash.dead_cost, 2)}</td>` +
+      `<td>${signed(stash.stash.expected_net, 2)}</td>` +
+      `<td>${signed(stash.stash.net_if_out_past_week, 2)}</td>` +
       `<td>${stash.healthy_rank}</td>` +
       `<td>${stash.needs_drop ? "needs a drop" : "free, the IR slot is open"}</td></tr>`)
     .join("");

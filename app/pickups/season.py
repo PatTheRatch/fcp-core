@@ -34,19 +34,29 @@ The horizon is the rest of the regular season, from the stored matchup
 periods, because that is what the standings are decided on; once it is
 over the horizon becomes the playoff periods, so the report still answers
 during a title run. A player's games are his NBA team's over the same
-window less the days ESPN has ruled him out of, and `rest_of_season_line`
-then takes the availability discount once. Dividing by the weeks in the
-window turns a season into a week, which is the unit the opponent
-distributions are measured in.
+window, weighted for a man who is ruled out by the chance he is back by each
+of them (`RosteredPlayer.season_games`, `app.pickups.returns`), and
+`rest_of_season_line` then takes the availability discount once. Dividing by
+the weeks in the window turns a season into a week, which is the unit the
+opponent distributions are measured in.
 
 STASHES
 
 A free agent who is OUT is worth nothing this week and can be worth a great
-deal in six. From 2027 the league carries one injured-reserve slot, so a
-stash can be an add with no drop; without the slot free it costs a roster
-place, and the report says which. He qualifies when ESPN has a return date
-inside `STASH_WEEKS` and his value ignoring the injury would put him in the
-pool at all.
+deal in six. He qualifies when the place is expected to stand empty for no
+longer than `STASH_WEEKS` and his value ignoring the injury would put him in
+the pool at all. The lane used to ask for an ESPN return date inside that
+window; ESPN's basketball API has never carried one, so it returned nothing
+on every call it ever had (`docs/stashes.md` section 7), and the wait is now
+the return prior's.
+
+**Whether a stash costs a roster place is a setting, read from the stored
+one.** `league_seasons.injured_reserve_slots` against the roster's own IR
+occupancy is `TeamWeek.ir_slot_free`: with a slot free a stash is an add with
+no drop and the wait is free; without one it costs a place and the report
+says so and prices it. This docstring used to say the league gains a slot in
+2027. The stored 2027 row says 0 (`docs/stashes.md` section 5), the setting
+wins, and no code here assumes either way.
 
 THE HURDLES, AND THE VOLUME GUARD
 
@@ -79,7 +89,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -95,12 +105,15 @@ from app.pickups.judge import (
     OPENED_PLACE,
     TYPICAL_PICKUP,
     Judgement,
+    SpotBook,
     horizon,
     judge,
     load_spots,
     weeks_between,
 )
 from app.pickups.projection import rest_of_season_line
+from app.pickups.returns import expected_dead_days, expected_games_if_out_past
+from app.pickups.stash import LATE_WEEK, Stash, stash_block
 from app.pickups.state import (
     EXECUTED,
     RosteredPlayer,
@@ -288,13 +301,19 @@ class StashCandidate:
     """A free agent who is out now and worth a place when he returns."""
 
     player: RosteredPlayer
-    expected_return_date: date
+    #: ESPN's own date, when it gives one. It never has in basketball
+    #: (`app/listener/pool.py`), so this is None and the wait is the prior's.
+    expected_return_date: date | None
+    #: Weeks the place is expected to stand empty before he plays again.
     weeks_away: float
     #: Where his healthy rest-of-season value would rank on the wire.
     healthy_rank: int
     #: False when the injured-reserve slot is free, so the stash costs
     #: nobody a place.
     needs_drop: bool
+    #: The same block the what-if and the trades report carry: the odds, the
+    #: dead weeks, what they cost and the net either side of them.
+    stash: Stash
 
 
 @dataclass(frozen=True)
@@ -628,9 +647,11 @@ def season_recommendations(
             week,
             wire,
             wire_weights,
+            spots,
             last_day=last_day,
             today=today,
             today_date=as_of,
+            weeks=weeks,
             pool_size=pool_size,
             tilt=tilt,
             distributions=distributions,
@@ -702,35 +723,37 @@ def _stashes(
     week: TeamWeek,
     wire: Sequence[RosteredPlayer],
     wire_weights: Mapping[int, float],
+    spots: SpotBook,
     *,
     last_day: int,
     today: int,
     today_date: date | None,
+    weeks: float,
     pool_size: int,
     tilt: bool,
     distributions: Sequence[CategoryDistribution],
 ) -> tuple[StashCandidate, ...]:
     """Free agents who are out now and would be worth a place when they return.
 
-    Value is counted as if he were healthy -- every game his NBA team has
-    left -- because that is the question a stash asks: is this man worth a
-    place once he is back? The games he will miss are already priced into
-    whether the return date is inside `STASH_WEEKS`.
+    The rank is still what he would be worth **healthy** -- every game his NBA
+    team has left -- because that is the question a stash asks: is this man
+    worth a place once he is back?
+
+    What has changed is the gate. The lane used to want an ESPN return date
+    inside `STASH_WEEKS`, and ESPN's basketball API has never given one, so it
+    returned nothing on every call it has ever had (`docs/stashes.md` section
+    7). Now it asks the return prior instead: a man qualifies when the place
+    is expected to stand empty for no longer than `STASH_WEEKS`, which is the
+    same question the date was standing in for. Beside him goes the block the
+    what-if and the trades report carry, so the three cannot disagree about
+    what a wait costs.
     """
-    if today_date is None:
-        return ()
-    horizon_date = today_date + timedelta(weeks=STASH_WEEKS)
-    hurt = [
-        player
-        for player in wire
-        if (player.injury_status or "").upper() == OUT
-        and player.expected_return_date is not None
-        and today_date <= player.expected_return_date <= horizon_date
-    ]
+    hurt = [player for player in wire if (player.injury_status or "").upper() == OUT]
     if not hurt:
         return ()
     season = int(league_season.season)
     games = schedule(session, season, [player.pro_team_id for player in hurt], today, last_day)
+    horizon_days = last_day - today + 1
     out: list[StashCandidate] = []
     for player in hurt:
         healthy_games = len(games.get(player.pro_team_id, {}))
@@ -743,14 +766,58 @@ def _stashes(
         rank = 1 + sum(1 for value in wire_weights.values() if value > healthy)
         if rank > pool_size:
             continue
-        assert player.expected_return_date is not None
+        days_out = player.days_out or 1
+        dated = (
+            None
+            if player.expected_return_date is None or today_date is None
+            else (player.expected_return_date - today_date).days
+        )
+        # The gate is the wait itself, not what it costs: a league with a free
+        # injured-reserve slot pays nothing for it and would otherwise list
+        # every out man on the wire. ESPN's date wins when there is one, which
+        # is what the lane always asked for and never once got.
+        waiting = (
+            float(dated)
+            if dated is not None
+            else expected_dead_days(horizon_days, days_out=days_out)
+        )
+        if waiting < 0 or waiting / DAYS_A_WEEK > STASH_WEEKS:
+            continue
+        replacement = spots.replacement(exclude=[player.player_id])
+        late_line = rest_of_season_line(
+            session,
+            season,
+            player.player_id,
+            today,
+            expected_games_if_out_past(
+                (period - today for period in player.schedule_days),
+                days_out=days_out,
+                past_days=int(LATE_WEEK * DAYS_A_WEEK),
+            ),
+            tilt=tilt,
+            as_of=today_date,
+        ).scaled(1.0 / weeks)
+        block = stash_block(
+            player_id=player.player_id,
+            name=player.name,
+            days_out=days_out,
+            horizon_days=horizon_days,
+            opened=spots.opened,
+            ir_slot_free=week.ir_slot_free,
+            net=(spots.value(player.player_id) - replacement) * spots.weeks_remaining,
+            late_net=(spots.lens.value(late_line) - replacement) * spots.weeks_remaining,
+            expected_games=player.season_games,
+            healthy_games=healthy_games,
+            return_in_days=dated,
+        )
         out.append(
             StashCandidate(
                 player=player,
                 expected_return_date=player.expected_return_date,
-                weeks_away=(player.expected_return_date - today_date).days / DAYS_A_WEEK,
+                weeks_away=waiting / DAYS_A_WEEK,
                 healthy_rank=rank,
                 needs_drop=not week.ir_slot_free,
+                stash=block,
             )
         )
     return tuple(sorted(out, key=lambda stash: stash.healthy_rank))

@@ -820,6 +820,29 @@ class PostedManOut(BaseModel):
     )
 
 
+class StashOut(BaseModel):
+    """What holding a man who is not playing is expected to cost and return."""
+
+    player_id: int
+    name: str
+    days_out: int = Field(description="Calendar days since his last played game")
+    return_odds_by_week: dict[str, float] = Field(
+        description="P(back by the end of week k), from the NBA's own return record"
+    )
+    expected_dead_weeks: float
+    dead_cost: float = Field(
+        description="Categories the dead place costs; zero with a free IR slot"
+    )
+    expected_net: float = Field(description="The move's own net, less the dead cost")
+    net_if_out_past_week: float
+    late_week: int = Field(description="The week the second arm is conditioned on")
+    ir_slot_free: bool
+    expected_games: float
+    healthy_games: int
+    line: str = Field(description="The one line a page prints")
+    language: str = Field(description="What the odds are and are not")
+
+
 class StreamReportOut(BaseModel):
     """Who to stream this week, and whether anyone is worth a look."""
 
@@ -911,6 +934,13 @@ class StreamReportOut(BaseModel):
     adds_used: int = Field(description="Executed adds this matchup period")
     adds_budget: int = Field(description="Adds the period allows: one for each of its days")
     adds_left: int
+    stashed: list[StashOut] = Field(
+        default_factory=list,
+        description=(
+            "The men on this roster ESPN has ruled out, longest out first, and what the "
+            "place each is holding costs while it waits"
+        ),
+    )
 
 
 class SeasonSwapOut(BaseModel):
@@ -939,10 +969,13 @@ class DropCandidateOut(BaseModel):
 
 class StashCandidateOut(BaseModel):
     player: PickupPlayerOut
-    expected_return_date: date
-    weeks_away: float
+    expected_return_date: date | None = Field(
+        default=None, description="ESPN's own date; its basketball API has never given one"
+    )
+    weeks_away: float = Field(description="Weeks the place is expected to stand empty")
     healthy_rank: int = Field(description="Where his healthy value would rank on the wire")
     needs_drop: bool = Field(description="False when the injured-reserve slot is free")
+    stash: StashOut
 
 
 class VolumeGuardOut(BaseModel):
@@ -1311,6 +1344,13 @@ class TradeSideOut(BaseModel):
     expected_per_week: float = Field(description="Categories this roster wins in a week, before")
     summary: str
     notes: list[str]
+    stashed: list[StashOut] = Field(
+        default_factory=list,
+        description=(
+            "The men this side takes on who are ruled out: the return odds and what the "
+            "place each is holding costs while it waits"
+        ),
+    )
     finish: FinishOut | None = Field(
         default=None,
         description=(
@@ -1732,3 +1772,7 @@ class WhatIfOut(BaseModel):
     pool_size: int = Field(description="Free agents the replacement charge was taken over")
     historical_wire: bool
     notes: list[str]
+    stash: StashOut | None = Field(
+        default=None,
+        description="What the wait costs, when the man added or moved to IR is ruled out",
+    )

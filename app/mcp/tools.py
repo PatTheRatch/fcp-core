@@ -376,6 +376,9 @@ def week_report(
             "faab_remaining": body["faab_remaining"],
         },
         "wire": {"pool_size": body["pool_size"], "historical": body["historical_wire"]},
+        # The men this plan already counts for a fraction of their games, and
+        # what the place each is holding costs while it waits.
+        "men_who_are_out": [trim.stash(one) for one in body.get("stashed") or []],
         "language": LABEL_ONLY,
         "provenance": block(
             session, found, keys=WEEK_KEYS, day=_day_of(body, today, session, found), stored=stored
@@ -428,6 +431,7 @@ def season_report(
                 "weeks_away": trim.n(row["weeks_away"]),
                 "healthy_rank_on_the_wire": row["healthy_rank"],
                 "needs_a_drop": row["needs_drop"],
+                "stash": trim.stash(row["stash"]),
             }
             for row in body["stashes"]
         ],
@@ -1136,6 +1140,7 @@ def what_if(
         "judgement": trim.judgement(body["judgement"]),
         "bid": trim.bid(body["bid"]),
         "roster_room": {"pool_size": body["pool_size"], "historical_wire": body["historical_wire"]},
+        "stash": trim.stash(body.get("stash")),
         "notes": body["notes"],
         "language": f"{LABEL_ONLY} {SECOND_LENS}",
         "provenance": block(
@@ -1189,5 +1194,6 @@ def _side(side: dict[str, Any]) -> dict[str, Any]:
             "note": playoffs["note"],
             "categories": trim.categories(playoffs["categories"]),
         },
+        "men_arriving_who_are_out": [trim.stash(one) for one in side.get("stashed") or []],
         "notes": side["notes"],
     }

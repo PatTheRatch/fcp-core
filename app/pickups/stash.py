@@ -60,18 +60,33 @@ the bar still appears with its number and its odds, which is the owner's rule
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
+from sqlalchemy.orm import Session
+
+from app.db.models import LeagueSeason
+from app.pickups.judge import SpotBook, horizon, weeks_between
+from app.pickups.projection import rest_of_season_line
 from app.pickups.returns import (
     PRIOR_SOURCE,
     RAMP_SOURCE,
     expected_dead_days,
     expected_dead_days_if_out_past,
+    expected_games_if_out_past,
     odds_back_by_week,
 )
+from app.pickups.state import RosteredPlayer, build_players
 
-__all__ = ["LATE_WEEK", "ODDS_WEEKS", "STASH_LANGUAGE", "Stash", "stash_block"]
+__all__ = [
+    "LATE_WEEK",
+    "ODDS_WEEKS",
+    "STASH_LANGUAGE",
+    "Stash",
+    "held_stashes",
+    "stash_block",
+]
 
 #: Days in a matchup period, the divisor that turns a dead day into a dead
 #: week. `app.pickups.judge.DAYS_A_WEEK`, repeated here rather than imported
@@ -154,6 +169,7 @@ def stash_block(
     healthy_games: int,
     late_week: int = LATE_WEEK,
     odds_weeks: Sequence[int] = ODDS_WEEKS,
+    return_in_days: int | None = None,
 ) -> Stash:
     """Price the wait around a net the caller has already judged.
 
@@ -162,22 +178,40 @@ def stash_block(
     in the still-out-in-four-weeks branch -- so nothing about the judgement is
     re-derived here. `horizon_days` is the days the plan covers from today,
     and `opened` this league's `OPENED_PLACE`.
+
+    `return_in_days` is ESPN's own date, when it gives one: **the date wins**,
+    so the wait is that many days and the odds are one from the week it falls
+    in and zero before it, with no second arm to print. ESPN's basketball API
+    has never given one, so the prior answers in practice; the branch is here
+    because the declared rule says the date wins and a rule with no code is
+    not a rule.
     """
-    dead_days = 0.0 if ir_slot_free else expected_dead_days(horizon_days, days_out=days_out)
+    dated = return_in_days is not None
+    if dated:
+        waiting = float(max(0, min(int(return_in_days or 0), horizon_days)))
+        odds = {
+            int(week): (1.0 if DAYS_A_WEEK * week >= float(return_in_days or 0) else 0.0)
+            for week in odds_weeks
+        }
+    else:
+        waiting = expected_dead_days(horizon_days, days_out=days_out)
+        odds = odds_back_by_week(int(days_out), odds_weeks)
+    dead_days = 0.0 if ir_slot_free else waiting
     dead_weeks = dead_days / DAYS_A_WEEK
     cost = opened * dead_weeks
-    late_days = (
-        0.0
-        if ir_slot_free
-        else expected_dead_days_if_out_past(
+    if ir_slot_free:
+        late_days = 0.0
+    elif dated:
+        late_days = waiting
+    else:
+        late_days = expected_dead_days_if_out_past(
             horizon_days, days_out=days_out, past_days=int(late_week * DAYS_A_WEEK)
         )
-    )
     return Stash(
         player_id=player_id,
         name=name,
         days_out=int(days_out),
-        return_odds_by_week=odds_back_by_week(int(days_out), odds_weeks),
+        return_odds_by_week=odds,
         expected_dead_days=dead_days,
         expected_dead_weeks=dead_weeks,
         dead_cost=cost,
@@ -189,3 +223,82 @@ def stash_block(
         expected_games=expected_games,
         healthy_games=healthy_games,
     )
+
+
+def held_stashes(
+    session: Session,
+    league_season: LeagueSeason,
+    spots: SpotBook,
+    today: int,
+    players: Iterable[RosteredPlayer],
+    *,
+    ir_slot_free: bool,
+    tilt: bool = True,
+    as_of: date | None = None,
+) -> tuple[Stash, ...]:
+    """The block for every man in `players` ESPN has ruled out, longest out first.
+
+    What a report says about the men it is already counting for a fraction of
+    their games: how long they have been out, the odds on each week, what the
+    place costs while they wait and the net either side of it. The net is the
+    one `judge` would charge -- what he is worth to the place against what the
+    wire would give it back -- so nothing here invents a second currency.
+
+    A man already on injured reserve costs no place, whatever the roster's
+    room is: he is not in it.
+    """
+    out = [player for player in players if player.ruled_out]
+    if not out:
+        return ()
+    _first, last, day = horizon(session, league_season, today)
+    weeks = weeks_between(day, last)
+    horizon_days = last - day + 1
+    rebuilt = {
+        player.player_id: player
+        for player in build_players(
+            session,
+            league_season,
+            [player.player_id for player in out],
+            tuple(range(day, last + 1)),
+        )
+    }
+    blocks: list[Stash] = []
+    for player in out:
+        man = rebuilt.get(player.player_id, player)
+        days_out = man.days_out or 1
+        dated = (
+            None
+            if man.expected_return_date is None or as_of is None
+            else (man.expected_return_date - as_of).days
+        )
+        replacement = spots.replacement(exclude=[man.player_id])
+        late_line = rest_of_season_line(
+            session,
+            int(league_season.season),
+            man.player_id,
+            day,
+            expected_games_if_out_past(
+                (period - day for period in man.schedule_days),
+                days_out=days_out,
+                past_days=int(LATE_WEEK * DAYS_A_WEEK),
+            ),
+            tilt=tilt,
+            as_of=as_of,
+        ).scaled(1.0 / weeks)
+        blocks.append(
+            stash_block(
+                player_id=man.player_id,
+                name=man.name,
+                days_out=days_out,
+                horizon_days=horizon_days,
+                opened=spots.opened,
+                ir_slot_free=ir_slot_free or player.on_ir,
+                net=(spots.value(man.player_id) - replacement) * spots.weeks_remaining,
+                late_net=(spots.lens.value(late_line) - replacement) * spots.weeks_remaining,
+                expected_games=man.season_games,
+                healthy_games=len(man.schedule_days),
+                return_in_days=dated,
+            )
+        )
+    blocks.sort(key=lambda block: (-block.days_out, block.name))
+    return tuple(blocks)

@@ -50,11 +50,12 @@ from app import calibration
 from app.api import pickups
 from app.api.access import TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
-from app.api.pickups import _bid_out, _judgement_out, _player_out
+from app.api.pickups import _bid_out, _judgement_out, _player_out, stash_out
 from app.api.schemas import (
     CategoryShiftOut,
     FinishOut,
     FinishWeekOut,
+    StashOut,
     WhatIfManOut,
     WhatIfOut,
     WhatIfWeekOut,
@@ -265,4 +266,10 @@ def _out(report: WhatIf, session: Session, bars: calibration.Bars) -> WhatIfOut:
         pool_size=report.pool_size,
         historical_wire=report.historical_wire,
         notes=list(report.notes),
+        stash=_stash(report),
     )
+
+
+def _stash(report: WhatIf) -> StashOut | None:
+    """The stash block, when the change adds or holds a man who is ruled out."""
+    return None if report.stash is None else stash_out(report.stash)

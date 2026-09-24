@@ -587,8 +587,36 @@ function sideHtml(side, ours) {
     `<div class="strip">${shiftStrip(shiftsOf(side))}</div>` +
     nineHtml(side) +
     finishHtml(side.finish) +
+    stashLines(side.stashed) +
     `<p class="lede" style="margin-top:14px">${escape(side.summary)}</p>` +
     `</div>`
+  );
+}
+
+/* A man arriving who is not playing yet, one line each, under the finish.
+   The same line the week page's what-if prints and the same numbers behind
+   it (`app.pickups.stash`): no verdict words, no return date -- ESPN's
+   basketball API carries none -- and the odds beside the number. */
+function stashLines(stashed) {
+  const rows = stashed || [];
+  if (!rows.length) return "";
+  return (
+    `<p class="whose" style="margin-top:14px">men arriving who are out</p>` +
+    rows
+      .map((stash) => {
+        const fortnight = Math.round((stash.return_odds_by_week["2"] || 0) * 100);
+        return (
+          `<p class="note"><b>${escape(stash.name)}</b> — out ` +
+          `<b>${stash.days_out} days</b> · back within a fortnight ` +
+          `<b>${fortnight}%</b> · dead weeks cost ` +
+          `<b>${fixed(stash.dead_cost, 2)}</b> · expected ` +
+          `<b>${signed(stash.expected_net, 2)}</b> (or ` +
+          `${signed(stash.net_if_out_past_week, 2)} if he is not back by week ` +
+          `${stash.late_week})</p>`
+        );
+      })
+      .join("") +
+    `<p class="hint faint">${escape(rows[0].language)}</p>`
   );
 }
 

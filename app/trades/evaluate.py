@@ -161,6 +161,7 @@ from app.pickups.judge import (
 )
 from app.pickups.projection import rest_of_season_line
 from app.pickups.season import SEASON_HURDLE_PAID
+from app.pickups.stash import Stash, held_stashes
 from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
@@ -382,6 +383,12 @@ class SideReport:
     #: them, and a page showing that number has to be able to say whose it is.
     opened_place: float = OPENED_PLACE
     typical_pickup: float = TYPICAL_PICKUP
+    #: The men this side is taking on who are ruled out, longest out first:
+    #: the return odds and what the place each is holding costs while it
+    #: waits (`app.pickups.stash`). The same block the week report and the
+    #: what-if carry, so a stash is priced the same wherever it is asked
+    #: about. Empty when nobody arriving is out, which is most deals.
+    stashed: tuple[Stash, ...] = ()
 
     @property
     def places_filled(self) -> int:
@@ -1211,6 +1218,20 @@ def _judge_side(
         expected_per_week=spots.expected_per_week,
         summary="",
         notes=side.notes + _side_notes(side, weeks, opened, used),
+        stashed=held_stashes(
+            session,
+            league_season,
+            spots,
+            today,
+            [
+                players[player_id]
+                for player_id in (*side.receives, *side.fills)
+                if player_id in players
+            ],
+            ir_slot_free=side.week.ir_slot_free,
+            tilt=tilt,
+            as_of=as_of,
+        ),
     )
     return replace(built, summary=summarise(built))
 

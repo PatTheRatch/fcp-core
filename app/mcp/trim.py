@@ -337,3 +337,28 @@ def finish(row: Mapping[str, Any] | None, *, weeks: bool = False) -> dict[str, A
             for week in row["weeks"]
         ]
     return out
+
+
+def stash(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """One stash block: how long he has been out, the odds, and the two nets.
+
+    The odds travel with the number, and the sentence saying what they are
+    travels with the odds, because a model reading this will be asked "is he
+    coming back" and the honest answer is a distribution and not a date.
+    """
+    if not row:
+        return None
+    return {
+        "player": row["name"],
+        "days_out": row["days_out"],
+        "back_by_week": {week: n(odds) for week, odds in row["return_odds_by_week"].items()},
+        "expected_dead_weeks": n(row["expected_dead_weeks"]),
+        "dead_weeks_cost": n(row["dead_cost"]),
+        "expected_net": n(row["expected_net"]),
+        f"net_if_not_back_by_week_{row['late_week']}": n(row["net_if_out_past_week"]),
+        "games_counted": n(row["expected_games"]),
+        "games_his_team_has_left": row["healthy_games"],
+        "ir_slot_free": row["ir_slot_free"],
+        "one_line": row["line"],
+        "language": row["language"],
+    }

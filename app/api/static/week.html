@@ -1448,7 +1448,27 @@ function whatIfNumberHtml(a) {
     `<p class="why">The bar is <b>${fixed(a.hurdle, 2)}</b> categories, from ` +
     `${escape(a.hurdle_source)}: ${escape(a.hurdle_note)}.</p>` +
     (priced ? `<p class="note">${priced}</p>` : "") +
+    stashLine(a.stash) +
     `</article>`
+  );
+}
+
+/* One line for a man who is not playing yet, under the number he is part of.
+   No verdict words and no return date -- ESPN's basketball API carries none,
+   and a date would be a fabrication with three weeks of spread behind it.
+   The odds are the NBA's own record for men out this long, and they sit
+   beside the number rather than instead of it. */
+function stashLine(stash) {
+  if (!stash) return "";
+  const fortnight = Math.round((stash.return_odds_by_week["2"] || 0) * 100);
+  return (
+    `<p class="note">Out <b>${stash.days_out} days</b> · ` +
+    `back within a fortnight <b>${fortnight}%</b> · ` +
+    `dead weeks cost <b>${fixed(stash.dead_cost, 2)}</b> · ` +
+    `expected <b>${signed(stash.expected_net, 2)}</b> ` +
+    `(or ${signed(stash.net_if_out_past_week, 2)} if he is not back by ` +
+    `week ${stash.late_week})</p>` +
+    `<p class="hint faint">${escape(stash.language)}</p>`
   );
 }
 

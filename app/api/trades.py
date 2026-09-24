@@ -60,6 +60,7 @@ from app import calibration
 from app.api import pickups
 from app.api.access import TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
+from app.api.pickups import stash_out
 from app.api.schemas import (
     JudgementOut,
     TradeCategoryOut,
@@ -860,6 +861,7 @@ def _side_out(side: SideReport, espn: dict[int, int], finish: Finish | None = No
         expected_per_week=side.expected_per_week,
         summary=side.summary,
         notes=list(side.notes),
+        stashed=[stash_out(block) for block in side.stashed],
     )
 
 
