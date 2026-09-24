@@ -687,9 +687,20 @@ details.disc .inside > .lede{margin-top:0}
 .pulse .lab{display:block;margin-bottom:1px;font-family:var(--display);text-transform:uppercase;
   letter-spacing:.08em;font-size:10.5px;color:var(--muted)}
 .pulse b{font-family:var(--mono);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums}
-.band.yours .pulse b{color:var(--good)}
-.band.theirs .pulse b{color:var(--stop)}
-.band.swing .pulse b{color:var(--accent-deep)}
+.band.yours .pulse > button > b{color:var(--good)}
+.band.theirs .pulse > button > b{color:var(--stop)}
+.band.swing .pulse > button > b{color:var(--accent-deep)}
+/* The score as it stands, under the chance: smaller, tabular, and told
+   apart by weight rather than by a second colour -- the band has already
+   spent the page's colour on the chance. The leading side's figure is in
+   ink and the trailing one muted, so the pair reads as a score and not as
+   two numbers; neither is ever reordered, and no word is added. */
+.pulse .now{display:block;margin-top:3px;font-family:var(--mono);font-size:12px;
+  font-variant-numeric:tabular-nums;letter-spacing:.01em;color:var(--faint);white-space:nowrap}
+.pulse .now b{font-size:12px;font-weight:400;color:var(--faint)}
+.pulse .now b.lead{font-weight:600;color:var(--ink)}
+.pulse .now b.trail{color:var(--muted)}
+.pulse .now i{font-style:normal;padding:0 2px;color:var(--faint)}
 .empty.bandempty{padding:4px 0 0;font-size:14px}
 /* The same strip under a What if answer, where a cell is a cell and not a
    button: there is no second pair of projected totals behind a hypothetical
@@ -735,7 +746,27 @@ details.disc .inside > .lede{margin-top:0}
 .catbox dt{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--muted);padding-top:4px;white-space:nowrap}
 .catbox dd{margin:0;font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
+.catbox dd .v{font-style:normal;padding:0 5px;color:var(--faint)}
+.catbox dd .note{font-family:var(--body);font-size:12.5px;color:var(--muted)}
 .catbox .note{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+/* This week, by man: the score broken out, one row a man, with a Total row
+   that is the score above it. A real table because it is one -- ten columns
+   of numbers with a heading over each. It scrolls sideways on a phone
+   rather than wrapping, which is why the disclosure it sits in starts
+   closed there (`BY_MAN_OPEN` in week.html says why). */
+.byman{font-variant-numeric:tabular-nums}
+.byman thead th{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+  font-size:10.5px;color:var(--muted);font-weight:500}
+.byman td.small,.byman th.small{font-family:var(--mono);font-size:12px;text-align:right}
+.byman td.name{white-space:nowrap}
+.byman tr.sum{border-top:1px solid var(--rule-strong)}
+.byman tr.sum th{text-align:left;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:11px}
+.byman tr.sum td{font-weight:600;color:var(--ink)}
+#by-man-body .whose{margin-top:18px}
+#by-man-body .whose:first-child{margin-top:0}
+#by-man-body .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
 
 /* Tonight: a man a row, name first, then his mark and his game, then what
    ESPN says about him. No headshot: the NBA team's abbreviation in the
@@ -757,6 +788,14 @@ details.disc .inside > .lede{margin-top:0}
   letter-spacing:.02em;overflow-wrap:anywhere}
 .tonight .meta .team{font-family:var(--display);font-weight:600;font-size:12.5px;
   letter-spacing:.09em;color:var(--ink)}
+/* What he actually did, once the ingest has the day: a line of its own
+   under the game, in the mono face and in ink rather than muted, because
+   by the time it exists it is the most solid thing on the row. Nothing at
+   all before then -- see `boxRow` in week.html. */
+.tonight .box{grid-column:1/-1;margin-top:2px;font-family:var(--mono);font-size:11.5px;
+  font-variant-numeric:tabular-nums;letter-spacing:.01em;color:var(--ink);
+  overflow-wrap:anywhere}
+.tonight li.off .box{color:var(--muted)}
 .sideline{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-family:var(--display);
   text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;color:var(--muted)}
 .sideline .n{margin-left:auto;font-family:var(--mono);font-size:10.5px}

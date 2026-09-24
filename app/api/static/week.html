@@ -48,6 +48,10 @@
     <div class="shead"><h2>The nine</h2><span class="tag" id="pulse-tag"></span></div>
     <div id="bands"></div>
     <div id="cat-detail"></div>
+    <details class="disc" id="by-man" hidden>
+      <summary>This week, by man <span class="n" id="by-man-n"></span></summary>
+      <div class="inside"><div id="by-man-body"></div></div>
+    </details>
     <details class="disc" id="pulse-how">
       <summary>How this is worked out</summary>
       <div class="inside"><p class="lede" id="pulse-how-text"></p></div>
@@ -280,6 +284,49 @@ const BAND_WORDS = {
 /** A bye: the schema carries no `on_bye`, only an opponent that is null. */
 const onBye = (report) => report.opponent_espn_team_id === null;
 
+/* ---- the score as it stands ---------------------------------------------
+   `posted` and `opponent_posted` are the engine's own posted-so-far
+   (`app/pickups/state.py`), not the matchup route's stored tallies, and the
+   difference is worth knowing: ESPN's row is the whole period's running
+   total as of the last ingest with no day column to cap it by, while the
+   engine's is what had been played by the morning of the day the page is
+   asked about. On a replayed day the two are wildly different -- the route
+   shows the finished week -- and a page that drew the score from one and
+   the chance from the other would contradict itself in public. So both come
+   from the report, and "how this is worked out" says which.
+
+   Before any game of the period has been played the score is a dash on both
+   sides, because 0–0 reads as a result and a dash reads as "not yet". */
+
+/** Whether either side has posted anything at all this period. */
+function anyPosted(report) {
+  const some = (totals) =>
+    Boolean(totals) && Object.keys(totals).some((key) => isNum(totals[key]) && totals[key] !== 0);
+  return some(report.posted) || some(report.opponent_posted);
+}
+
+/** The score in one category, ours first, the leading side in ink.
+ *
+ *  Which side leads is read with the category's own direction, so in TO the
+ *  lower figure takes the ink; the order is never reversed, and no word is
+ *  added either way -- the chance above already says who is ahead. */
+function scoreCell(report, cat) {
+  if (!anyPosted(report) || onBye(report)) return `<span class="now">${dash}</span>`;
+  const us = totalOf(report.posted, cat);
+  const them = totalOf(report.opponent_posted, cat);
+  let ours = "";
+  let theirs = "";
+  if (isNum(us) && isNum(them) && Math.abs(us - them) > 1e-9) {
+    const weLead = INVERTED.has(cat) ? us < them : us > them;
+    ours = weLead ? "lead" : "trail";
+    theirs = weLead ? "trail" : "lead";
+  }
+  return (
+    `<span class="now"><b class="${ours}">${storedCat(cat, us)}</b>` +
+    `<i>&ndash;</i><b class="${theirs}">${storedCat(cat, them)}</b></span>`
+  );
+}
+
 const nameOf = (id) => {
   const found = ((CONTEXT && CONTEXT.teams) || []).find((t) => t.espn_team_id === id);
   return found ? found.name : id === null || id === undefined ? "nobody" : `team ${id}`;
@@ -333,15 +380,18 @@ function drawMatchup(report) {
 
 /* ---- the nine ----------------------------------------------------------- */
 
-function bandHtml(which, cats, probabilities) {
+function bandHtml(which, cats, report) {
   const [word, range] = BAND_WORDS[which];
+  const probabilities = report.probabilities || {};
   const cells = cats
     .map((cat) => {
-      const p = probabilities ? probabilities[cat] : undefined;
+      const p = probabilities[cat];
       return (
         `<button type="button" data-cat="${escape(cat)}" aria-expanded="false" ` +
         `aria-controls="cat-detail">` +
-        `<span class="lab">${escape(cat)}</span><b>${pct(p)}</b></button>`
+        `<span class="lab">${escape(cat)}</span><b>${pct(p)}</b>` +
+        scoreCell(report, cat) +
+        `</button>`
       );
     })
     .join("");
@@ -362,6 +412,7 @@ function drawBands(report) {
       `<p class="empty">On a bye this period: there is no head-to-head to win a category in.</p>`;
     $("pulse-how-text").textContent =
       "A bye is a week with no opponent, so there is nothing to give a chance to.";
+    $("by-man").hidden = true;
     return;
   }
   const probabilities = report.probabilities || {};
@@ -369,20 +420,136 @@ function drawBands(report) {
   CATS.forEach((cat) => grouped[bandOf(probabilities[cat])].push(cat));
   $("pulse-tag").textContent = `${grouped.swing.length} in the balance`;
   $("bands").innerHTML =
-    bandHtml("swing", grouped.swing, probabilities) +
-    bandHtml("yours", grouped.yours, probabilities) +
-    bandHtml("theirs", grouped.theirs, probabilities);
+    bandHtml("swing", grouped.swing, report) +
+    bandHtml("yours", grouped.yours, report) +
+    bandHtml("theirs", grouped.theirs, report);
   $("bands")
     .querySelectorAll("button[data-cat]")
     .forEach((button) => {
       button.onclick = () => pickCategory(button);
     });
+  drawByMan(report);
   $("pulse-how-text").innerHTML =
-    "Each side's week is what it has posted plus what its roster projects to add over the days " +
-    "left; the chance is head to head, not against the field. The three bands are where this " +
-    `page splits them for the eye — <b>${Math.round(BAND_YOURS * 100)}%</b> and ` +
+    "Under each chance is <b>the score as it stands</b>, yours first: what both sides have " +
+    "actually posted in this period, in the league's own units. The chance above it is head to " +
+    "head and not against the field, and what it is worked out on is that score plus what each " +
+    "roster projects to add over the days left. The three bands are where this page splits the " +
+    `nine for the eye — <b>${Math.round(BAND_YOURS * 100)}%</b> and ` +
     `<b>${Math.round(BAND_THEIRS * 100)}%</b> — and are a choice about ink, not a claim the ` +
-    "model makes. Tap a category for both sides' totals.";
+    "model makes. Tap a category for the score and the projection side by side. " +
+    postedNote(report) +
+    ingestNote();
+}
+
+/** Where the score came from, and the one place it can disagree with ESPN.
+ *
+ *  Both sentences are worth a manager's eye, because he can see the other
+ *  number on ESPN's own site and would otherwise think this page wrong. */
+function postedNote(report) {
+  const espn = report.posted_source === "espn";
+  return (
+    `<br><br>The score is the engine's own posted-so-far, as of the day this page is about — ` +
+    `not the tally on the matchup, which is the whole period's and has no day on it, so on a ` +
+    `past day it is a week that had not been played yet. ` +
+    (espn
+      ? `Today it is ESPN's own running row for the matchup, which carries stat corrections ` +
+        `our box scores may not; the table under it is built from the box scores, so it can ` +
+        `fall short of the score by whatever ESPN has counted and the ingest has not yet stored.`
+      : `It is our stored box scores: the started lines on this period's days before today, ` +
+        `which is exactly what the table under it adds up.`)
+  );
+}
+
+/** The honest limit, in one sentence, wherever a stored line is shown. */
+function ingestNote() {
+  const when = CONTEXT && CONTEXT.box_scores_as_of ? new Date(CONTEXT.box_scores_as_of) : null;
+  if (when === null || Number.isNaN(when.getTime())) {
+    return ` Box scores arrive with the nightly ingest; no successful run is on record for
+      this season, so nothing here is known to be current.`;
+  }
+  return (
+    ` Box scores are as of the last ingest at <b>${clock(when)}</b> on ` +
+    `${dayName(when.toISOString().slice(0, 10))}. They arrive with the nightly pass, so a ` +
+    `line is last night's until an in-game refresh exists.`
+  );
+}
+
+/* ---- this week, by man --------------------------------------------------
+   The score broken out: one row a man, ours and theirs in two tables one
+   under the other, and a totals row that has to equal the score in the
+   bands above it to the number. The report carries the men already sorted
+   by games then points, so nothing here re-ranks them.
+
+   Open on a desk and closed on a phone. At 390 px a ten-column table is a
+   sideways scroll under the one thing a manager opened the page for, and
+   Tonight would start below the fold; at 1280 it costs a third of a screen
+   the page has to spare. The summary says the count either way, so a closed
+   table is an offer and not a hidden fact. */
+const BY_MAN_OPEN = 861;
+
+function byManRows(men) {
+  if (!men.length) {
+    return `<tr><td class="name" colspan="${CATS.length + 3}"><span class="faint">Nobody has
+      started and played yet this period.</span></td></tr>`;
+  }
+  const total = {};
+  men.forEach((man) => {
+    Object.keys(man.line || {}).forEach((key) => {
+      total[key] = (total[key] || 0) + man.line[key];
+    });
+  });
+  const cells = (line) =>
+    CATS.map((cat) => `<td class="small">${storedCat(cat, totalOf(line, cat))}</td>`).join("");
+  const rows = men
+    .map(
+      (man) =>
+        `<tr><td class="name">${cardName(man.espn_player_id, escape(man.name))}</td>` +
+        `<td class="small">${man.games}</td>` +
+        `<td class="small">${Math.round(man.minutes)}</td>` +
+        cells(man.line),
+    )
+    .join("");
+  const games = men.reduce((sum, man) => sum + man.games, 0);
+  const minutes = men.reduce((sum, man) => sum + man.minutes, 0);
+  return (
+    rows +
+    `<tr class="sum"><th scope="row">Total</th><td class="small">${games}</td>` +
+    `<td class="small">${Math.round(minutes)}</td>${cells(total)}</tr>`
+  );
+}
+
+function byManTable(who, men) {
+  return (
+    `<p class="whose">${escape(who)}</p>` +
+    `<div class="scroll"><table class="grid byman"><thead><tr>` +
+    `<th class="l" scope="col">Man</th><th scope="col">G</th><th scope="col">Min</th>` +
+    CATS.map((cat) => `<th class="small" scope="col">${escape(cat)}</th>`).join("") +
+    `</tr></thead><tbody>${byManRows(men)}</tbody></table></div>`
+  );
+}
+
+function drawByMan(report) {
+  const box = $("by-man");
+  if (onBye(report)) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const ours = report.posted_men || [];
+  const theirs = report.opponent_posted_men || [];
+  $("by-man-n").textContent = count(ours.length + theirs.length, "man", "men");
+  $("by-man-body").innerHTML =
+    byManTable(nameOf(report.espn_team_id), ours) +
+    byManTable(nameOf(report.opponent_espn_team_id), theirs) +
+    `<p class="note">Every started line in this period's days before today, which is the ` +
+    `same arithmetic as the score above: each Total row is that side's score, category by ` +
+    `category. A man the team has since dropped is here, because his games are in the score.</p>`;
+  wireCards($("by-man-body"));
+  try {
+    box.open = window.matchMedia(`(min-width: ${BY_MAN_OPEN}px)`).matches;
+  } catch (error) {
+    box.open = false; // no matchMedia: the smaller answer is the safer one
+  }
 }
 
 /** One category opened: the two projected totals and the chance, which are
@@ -402,12 +569,22 @@ function pickCategory(button) {
   const us = nameOf(REPORT.espn_team_id);
   const them = onBye(REPORT) ? dash : nameOf(REPORT.opponent_espn_team_id);
   const width = isNum(p) ? Math.round(p * 100) : 0;
+  // Two rows and not one: the score as it stands beside the projection,
+  // labelled, so "so far 119–124 · projected 187–192 · chance 47%" is read
+  // in the order a manager thinks it. Neither figure is new -- the score is
+  // what the cell above already prints -- and the pair is here because the
+  // difference between them is the days left.
+  const pair = (label, mine, theirs, how) =>
+    `<dt>${escape(label)}</dt><dd>${how(cat, totalOf(mine, cat))}` +
+    `<i class="v">&ndash;</i>${how(cat, totalOf(theirs, cat))}</dd>`;
   $("cat-detail").innerHTML =
-    `<div class="catbox"><p class="cn">${escape(cat)}</p>` +
+    `<div class="catbox"><p class="cn">${escape(cat)}` +
+    `<span class="faint"> · ${escape(us)} against ${escape(them)}</span></p>` +
     `<dl class="facts">` +
-    `<dt>${escape(us)}</dt><dd>${showCat(cat, totalOf(REPORT.projected, cat))}</dd>` +
-    `<dt>${escape(them)}</dt>` +
-    `<dd>${showCat(cat, totalOf(REPORT.opponent_projected, cat))}</dd>` +
+    (anyPosted(REPORT)
+      ? pair("So far", REPORT.posted, REPORT.opponent_posted, storedCat)
+      : `<dt>So far</dt><dd>${dash}<span class="note"> nothing played yet</span></dd>`) +
+    pair("Projected", REPORT.projected, REPORT.opponent_projected, showCat) +
     `<dt>Chance</dt><dd>${pct(p)}</dd>` +
     `</dl>` +
     `<span class="split"><i style="width:${width}%"></i><u></u></span>` +
@@ -501,6 +678,39 @@ function standing(player) {
   return ["active", "on"];
 }
 
+/* ---- a man's line -------------------------------------------------------
+   The stored box score, once the ingest has it: minutes, then the nine in
+   the page's own fixed order (`CATS`), so a reader never has to find PTS
+   in two places on one screen. Both sides use it -- a box score is a
+   league-visible fact and not a plan -- and both get it from a field of the
+   same name, ours on the day's report and theirs on the stored lineup row.
+
+   A zero is kept. A zero is information: three blocks and no blocks are
+   different nights, and a line that printed only what a man did would make
+   0 for 6 look like a night off. */
+function boxLine(line) {
+  if (!line) return "";
+  const n = (v) => (isNum(v) ? String(Math.round(v)) : dash);
+  return [
+    `${n(line.minutes)} min`,
+    `${n(line.field_goals_made)}/${n(line.field_goals_attempted)} fg`,
+    `${n(line.free_throws_made)}/${n(line.free_throws_attempted)} ft`,
+    `${n(line.three_pointers_made)} 3pm`,
+    `${n(line.points)} pts`,
+    `${n(line.rebounds)} reb`,
+    `${n(line.assists)} ast`,
+    `${n(line.steals)} stl`,
+    `${n(line.blocks)} blk`,
+    `${n(line.turnovers)} to`,
+  ].join(" · ");
+}
+
+/** The line as a row of its own, or nothing at all when the ingest has not
+ *  reached the day. Nothing at all and not "no line yet": the game mark on
+ *  the row above already says a game is coming. */
+const boxRow = (line) =>
+  line ? `<span class="box">${escape(boxLine(line))}</span>` : "";
+
 /** One man of tonight: his name, his mark and his game, and his standing. */
 function tonightRow(player, extra) {
   const [word, tone] = standing(player);
@@ -517,7 +727,9 @@ function tonightRow(player, extra) {
     `<li class="${tone === "on" ? "" : "off"}">` +
     `<span class="who">${playerName(player)}</span>` +
     `<span class="st ${tone}">${tone === "on" ? "&#9679; " : ""}${escape(word)}</span>` +
-    `<span class="meta">${bits.join(" &middot; ")}</span></li>`
+    `<span class="meta">${bits.join(" &middot; ")}</span>` +
+    boxRow(player.line) +
+    `</li>`
   );
 }
 
@@ -527,11 +739,15 @@ function tonightRow(player, extra) {
 function theirRow(slot) {
   const hurt = slot.injury_status && String(slot.injury_status).toUpperCase() !== "ACTIVE";
   const word = hurt ? String(slot.injury_status).replace(/_/g, " ").toLowerCase() : "";
+  // The lineups route carries the stat line for the day beside the slot,
+  // so their men read the same as ours once their games are stored.
   return (
     `<li class="one ${hurt ? "off" : ""}">` +
     `<span class="who"><span class="team">${escape(slot.slot)}</span>` +
     `${cardName(slot.player_id, `<b>${escape(slot.player_name)}</b>`)}</span>` +
-    `<span class="st ${hurt ? "doubt" : ""}">${escape(word)}</span></li>`
+    `<span class="st ${hurt ? "doubt" : ""}">${escape(word)}</span>` +
+    boxRow(slot.played ? slot : null) +
+    `</li>`
   );
 }
 
@@ -1705,6 +1921,11 @@ function drawProvenance(report, projection) {
         : ".") +
       ` The bar is <b>${fixed(report.hurdle, 2)}</b> categories, from ` +
       `${escape(report.hurdle_source)}: ${escape(report.hurdle_note)}.</p>`,
+    // The same sentence The nine prints, repeated here because every stored
+    // line on the page -- the score, the by-man table, a man's night in
+    // Tonight -- is as old as the last ingest, and this is the section a
+    // reader comes to when he wants to know how old a number is.
+    `<p class="lede"><b>Box scores:</b>${ingestNote()}</p>`,
   ];
   if (report.faab_overspent) {
     parts.push(

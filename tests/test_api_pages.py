@@ -15,14 +15,26 @@ Four things are checked here, over one seeded league:
 * FAAB counts what was spent by the day being reported on and not a dollar
   more, and never goes negative.
 
-Two seasons are built. `SEASON` is a season the listener ran for: snapshots,
-a wire, and a schedule. `PLAYED` is a season already in the books -- lineup
-days and box scores, and not one snapshot -- which is what every season but
-the current one looks like, and what the fallback exists for.
+and, since the score went on the page (2026-09-23):
+
+* the week report carries what both sides have posted so far, and the men
+  behind it add up to it to the number, which is the invariant the by-man
+  table under THE NINE rests on;
+* the day's own report carries each man's stored line, and the league's
+  lineups route carries the other side's, which is what Tonight prints.
+
+Three seasons are built. `SEASON` is a season the listener ran for:
+snapshots, a wire, and a schedule, and no box score at all, so every day of
+it reads as live. `PLAYED` is a season already in the books -- lineup days
+and box scores, and not one snapshot -- which is what every season but the
+current one looks like, and what the wire fallback exists for. `SCORED` is
+a matchup period caught in the middle, which is the only shape in which the
+score and the men under it can be checked against each other.
 """
 
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,7 +43,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
 from app.api.pages import MANAGER_TEAM
-from app.db.models import LeagueSeason, Player
+from app.api.schemas import StreamReportOut
+from app.db.models import IngestRun, LeagueSeason, Player
+from app.ingest_runs import SUCCEEDED
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from app.pickups.state import (
@@ -58,6 +72,12 @@ from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
 #: The season the listener ran for, and one already played.
 SEASON = 2026
 PLAYED = 2025
+#: A third, built for one question only: a matchup period caught in the
+#: middle, with box scores on the days behind `today` and one on a day after
+#: it. That is what makes the live/replay rule choose the box scores, which
+#: is the only case where the score and the men under it can be checked
+#: against each other.
+SCORED = 2024
 
 #: ESPN team ids, in the order `scoring_db.league_season` hands them out.
 OURS, RIVAL, SPENDER, OVERSPENT = 1, 2, 3, 4
@@ -171,6 +191,41 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
         projected(session, benched, 70, scaled(1.0), season=PLAYED)
         for pro_team in (10, 20, 21):
             games(session, pro_team, EVERY_DAY, season=PLAYED)
+
+        # The mid-period season. Days 1 and 2 are played and stored, day 4
+        # carries a line so the rule reads day 3 as a replay, and ESPN's own
+        # matchup row is deliberately a different number from the sum of
+        # those lines -- which is how the page can be shown to be drawn from
+        # the engine's posted-so-far and not from the matchup route.
+        scored, (us_now, them_now), (running, _) = league_season(
+            session, season=SCORED, team_names=("Us Now", "Them Now"), days_per_period=7
+        )
+        configure(scored, lineup=SMALL_LINEUP, bench=1, injured_reserve=0)
+        matchup(session, running, us_now, them_now, {us_now: POSTED, them_now: POSTED})
+        for name, factor, team in (("Nine", 1.0, us_now), ("Ten", 0.6, us_now)):
+            who = player(session, name)
+            eligible(session, who, ANY, "PG", season=SCORED)
+            snapshot(session, who, pro_team_id=10, on_team_id=team.espn_team_id, season=SCORED)
+            projected(session, who, 70, scaled(factor), season=SCORED)
+            for day in (1, 2):
+                held(session, team, running, who, day, stats=scaled(factor), season=SCORED)
+            # Day 4 is held with no line for one of them, so the day's own
+            # report shows a man with a box score beside a man without one.
+            held(session, team, running, who, 4, season=SCORED)
+        rival_man = player(session, "Eleven")
+        eligible(session, rival_man, ANY, "PG", season=SCORED)
+        snapshot(
+            session,
+            rival_man,
+            pro_team_id=10,
+            on_team_id=them_now.espn_team_id,
+            season=SCORED,
+        )
+        projected(session, rival_man, 70, scaled(0.8), season=SCORED)
+        held(session, them_now, running, rival_man, 1, stats=scaled(0.8), season=SCORED)
+        played(session, player(session, "Nine"), 4, 30.0, scaled(1.0), season=SCORED)
+        for pro_team in (10, 20, 21):
+            games(session, pro_team, EVERY_DAY, season=SCORED)
         session.commit()
     clear_cache()
     yield scoring_factory
@@ -297,6 +352,49 @@ def test_the_week_page_keeps_everything_it_used_to_show(client: TestClient) -> N
     assert "clears the bar" in page and "below the bar" in page, "a bar labels, never hides"
     assert "calibration_note" in page and "calibration_short" in page
     assert "BAND_YOURS" in page and "display choice" in page, "the bands are a choice about ink"
+
+
+def test_the_week_page_shows_the_score_of_every_category(client: TestClient) -> None:
+    """The thing the page did not have until 2026-09-23.
+
+    Every cell of THE NINE prints the chance and, under it, the score as it
+    stands; tapping one opens the score beside the projection and the
+    chance; and the table under the bands breaks the score out a man at a
+    time. All three read the report's own `posted`, never the matchup route,
+    and the page says why.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+
+    assert "function scoreCell(" in page, "the score under the chance"
+    assert "report.posted" in page and "report.opponent_posted" in page
+    assert "storedCat(" in page, "a rate as .459, a count whole"
+    assert "INVERTED.has(cat) ? us < them : us > them" in page, (
+        "the leading side takes the ink, read with the category's own direction"
+    )
+    assert 'id="by-man"' in page and "This week, by man" in page
+    assert "So far" in page and "Projected" in page, "both, labelled, on a tapped category"
+    assert "posted_men" in page and "opponent_posted_men" in page
+    assert "BY_MAN_OPEN" in page, "open on a desk, closed on a phone, and it says why"
+    assert "box_scores_as_of" in page, "how old a stored line is, on the page"
+
+
+def test_the_week_page_prints_a_mans_line_once_his_game_is_stored(
+    client: TestClient,
+) -> None:
+    """Tonight, on both sides.
+
+    The nine and minutes, in the page's own fixed order, from a field of the
+    same name on the day's report and on the stored lineup row, so ours and
+    theirs cannot be written two different ways.
+    """
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+
+    assert "function boxLine(" in page and "boxRow(" in page
+    assert "boxRow(player.line)" in page, "ours, from the day's own report"
+    assert "boxRow(slot.played ? slot : null)" in page, "theirs, from the stored lineups"
+    for unit in ("min", "fg", "ft", "3pm", "pts", "reb", "ast", "stl", "blk", "to"):
+        assert f" {unit}`" in page or f"{unit}`," in page or f'{unit}"' in page, unit
+    assert "A zero is kept" in page, "a zero is information"
 
 
 def test_the_week_page_lets_a_manager_name_his_own_move(client: TestClient) -> None:
@@ -442,6 +540,166 @@ def test_the_context_route_carries_the_schedule_strip(client: TestClient) -> Non
 
 def test_the_context_route_refuses_only_a_season_it_does_not_hold(client: TestClient) -> None:
     assert client.get(f"/leagues/{LEAGUE_ID}/seasons/1999/pages/context").status_code == 404
+
+
+def test_the_context_route_says_how_old_the_box_scores_are(
+    client: TestClient, session: Session
+) -> None:
+    """The honest limit the page prints under The nine.
+
+    Null until a run has succeeded, because a page that named a time with
+    nothing behind it would be worse than one that said it did not know.
+    """
+    body = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/pages/context").json()
+    assert body["box_scores_as_of"] is None
+
+    finished = datetime(2026, 1, 8, 9, 2, tzinfo=UTC)
+    session.add_all(
+        [
+            IngestRun(
+                espn_league_id=LEAGUE_ID,
+                season=SEASON,
+                mode="recent",
+                status=SUCCEEDED,
+                started_at=finished - timedelta(minutes=4),
+                finished_at=finished,
+                detail={},
+            ),
+            # Later, but it failed: a failure stores nothing, so it cannot be
+            # what the box scores on the page are as of.
+            IngestRun(
+                espn_league_id=LEAGUE_ID,
+                season=SEASON,
+                mode="recent",
+                status="failed",
+                started_at=finished + timedelta(hours=1),
+                finished_at=finished + timedelta(hours=1),
+                detail={},
+            ),
+        ]
+    )
+    session.commit()
+
+    body = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/pages/context").json()
+    assert body["box_scores_as_of"].startswith("2026-01-08T09:02")
+
+
+# --------------------------------------------------------------------------
+# The score as it stands, and the men behind it
+
+
+def stream(client: TestClient, season: int, team: int, day: int) -> dict:
+    got = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{season}/teams/{team}/pickups/stream",
+        params={"today": day},
+    )
+    assert got.status_code == 200, got.text
+    return got.json()
+
+
+def test_the_week_report_carries_the_score_as_it_stands(client: TestClient) -> None:
+    """What THE NINE prints under each chance.
+
+    On a day the rule reads as a replay, the score is our stored box scores
+    over the period's days before today -- not ESPN's matchup row, which is
+    the whole period's and on this fixture is a much larger number.
+    """
+    body = stream(client, SCORED, 1, 3)
+
+    assert body["posted_source"] == "box_scores"
+    # Two men, two days each, at full and 0.6 of the same line.
+    assert body["posted"]["PTS"] == pytest.approx(2 * (20.0 + 12.0))
+    assert body["posted"]["PTS"] != POSTED["PTS"], "not ESPN's whole-period row"
+    assert body["opponent_posted"]["PTS"] == pytest.approx(16.0)
+    assert body["projected"]["PTS"] > body["posted"]["PTS"], "the days left are still to come"
+
+
+def test_the_men_behind_the_score_add_up_to_it(client: TestClient) -> None:
+    """The invariant the by-man table rests on.
+
+    Every Total row on the page is that side's score, category by category.
+    If this ever fails, the table has to go rather than be printed beside a
+    figure it disagrees with.
+    """
+    body = stream(client, SCORED, 1, 3)
+
+    for side, men in (("posted", "posted_men"), ("opponent_posted", "opponent_posted_men")):
+        assert body[men], side
+        for abbreviation, value in body[side].items():
+            summed = sum(man["line"].get(abbreviation, 0.0) for man in body[men])
+            assert summed == pytest.approx(value), f"{side} {abbreviation}"
+    assert [man["name"] for man in body["posted_men"]] == ["Nine", "Ten"], "best first"
+    assert [man["games"] for man in body["posted_men"]] == [2, 2]
+    assert all(man["espn_player_id"] > 0 for man in body["posted_men"]), "ESPN ids go out"
+
+
+def test_on_a_live_morning_the_score_is_espns_own_row(client: TestClient) -> None:
+    """The one case the page has to explain rather than simply print.
+
+    This league's listened season has no box score at all, so every day of
+    it is live and the score is ESPN's running matchup row.
+    """
+    body = stream(client, SEASON, OURS, 1)
+
+    assert body["posted_source"] == "espn"
+    assert body["posted"]["PTS"] == POSTED["PTS"]
+    assert body["opponent_posted"]["PTS"] == pytest.approx(POSTED["PTS"] * 0.8)
+    assert body["posted_men"] == [], "nothing has been ingested, so nobody is behind it"
+
+
+def test_a_report_stored_before_the_score_existed_still_validates(client: TestClient) -> None:
+    """Additive, like every field before it: yesterday's stored row still
+    draws, with no score rather than a 500."""
+    body = stream(client, SEASON, OURS, 1)
+    for field in ("posted", "opponent_posted", "posted_source", "posted_men"):
+        del body[field]
+    del body["opponent_posted_men"]
+
+    out = StreamReportOut.model_validate(body)
+
+    assert (out.posted, out.opponent_posted) == ({}, {})
+    assert out.posted_source == ""
+    assert out.posted_men == [] and out.opponent_posted_men == []
+
+
+def test_the_days_own_report_carries_each_mans_stored_line(client: TestClient) -> None:
+    """A man's box score in Tonight, once the ingest has the day.
+
+    Day 4 of the mid-period season has one line stored and nothing else, so
+    the same report shows one man with a line and the rest without -- which
+    is what the page draws as the game mark alone.
+    """
+    got = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SCORED}/teams/1/today", params={"today": 4})
+    assert got.status_code == 200, got.text
+    body = got.json()
+
+    everyone = [seat["player"] for seat in body["lineup"] if seat["player"]]
+    everyone += [one["player"] for one in body["benched"]] + body["idle"]
+    lines = {man["name"]: man["line"] for man in everyone}
+    assert lines["Nine"] is not None
+    assert lines["Nine"]["scoring_period"] == 4
+    assert lines["Nine"]["points"] == STARTER["PTS"]
+    assert lines["Nine"]["minutes"] == 30.0
+    assert lines["Ten"] is None, "no stored line, so the row shows his game and no more"
+
+
+def test_the_lineups_route_carries_the_whole_line_for_the_other_side(
+    client: TestClient,
+) -> None:
+    """Their half of Tonight. A box score is a league-visible fact, which is
+    why this is the league's route and not the team's."""
+    body = client.get(
+        f"/leagues/{LEAGUE_ID}/seasons/{SCORED}/teams/2/lineups",
+        params={"scoring_period": 1, "started": "true"},
+    ).json()
+
+    (row,) = body["items"]
+    assert row["player_name"] == "Eleven"
+    assert row["played"] is True
+    assert row["points"] == pytest.approx(STARTER["PTS"] * 0.8)
+    assert row["three_pointers_made"] == pytest.approx(STARTER["3PM"] * 0.8)
+    assert row["field_goals_attempted"] == pytest.approx(STARTER["FGA"] * 0.8)
+    assert row["minutes"] == 30.0
 
 
 # --------------------------------------------------------------------------
