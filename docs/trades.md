@@ -9,6 +9,25 @@
 
 ## 0. The answer, up front
 
+### Revision R4, 2026-09-24: an OUT man is counted for his expected games, and this record did not move
+
+**What changed.** A man ESPN has ruled out was worth nothing over the rest of
+the season, because the games count waited on an `expected_return_date` ESPN's
+basketball API has no field for. He is now counted for the games he is
+expected to play — the return prior of [`stashes.md`](stashes.md) §2a times the
+ramp of its §3, declared in [`stash_mode.md`](stash_mode.md) before anything
+was re-run. The evaluator reads it through `weekly_lines` like every other
+caller, and each side of a judged deal now carries a `stashed` block for the
+men it is taking on who are out: the odds, the dead weeks and what they cost.
+
+**Why it had to be re-run, and what it said.** Every man's season value comes
+from that games count, so a deal involving anybody out would be a different
+number. It came back **identical** — 25 of 55 deals, rank correlation −0.02,
++0.39 over 174 men, every published digit — because the six seasons this
+record is measured on have no stored injury status at all (snapshots cover the
+season in progress only). It is a guard that nothing else moved, not a test of
+the rule, and §7 of `stashes.md` re-scored in `stash_mode.md` is the test.
+
 ### Revision R3, 2026-09-23: the weekly spread was widened, and this record did not move
 
 **What changed.** `app.pickups.stream.SPREAD_SCALE` is 2.0 since 2026-09-23,

@@ -15,6 +15,28 @@ forecast's own record is published), [`site.md`](site.md),
 
 ## 0. The answer, up front: it is about as sure as it ought to be, except at the ends
 
+### Revision R4, applied 2026-09-24: an OUT man is counted for the games he is expected to play
+
+**What changed.** `app.pickups.state.playable_days` gave a man ESPN had ruled
+out no games at all for the rest of the season, because it waited for an
+`expected_return_date` ESPN's basketball API has no field for. Every
+rest-of-season caller — this engine included, through
+`app.pickups.judge.weekly_lines` — now counts him for his *expected* games:
+each remaining game day weighted by the chance he is back by it, from the
+box-score return prior of [`stashes.md`](stashes.md) §2a, times the ramp of
+its §3. The rule was declared in [`stash_mode.md`](stash_mode.md) before any
+calibration was re-run and was not tuned afterwards. No constant moved.
+
+**This record came back byte-identical, and the reason matters.**
+`player_status_snapshots` holds the season in progress only — 1,095 rows, all
+2027 — so replaying 2026 reads no injury status for anybody and every man in
+it is projected as fit. Every line of the run's output is the same as the run
+before the change, wall time aside (39s, then 37s). That is a **guard rather
+than a calibration**: it says nothing about a healthy roster moved, which is
+what the change claims, and it cannot say whether the rule is right. The
+measurement standing behind the rule is `stashes.md`'s, and §7 of it re-scored
+is in `stash_mode.md`.
+
 ### Revision R3, applied 2026-09-23: the spread was widened by two
 
 **What changed.** `app.pickups.stream.SPREAD_SCALE`, a new constant, is 2.0,

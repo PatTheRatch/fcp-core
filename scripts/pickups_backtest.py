@@ -1394,6 +1394,9 @@ def report(
     lines.append(SPREAD_REVISION)
     lines.append("")
 
+    lines.append(STASH_REVISION)
+    lines.append("")
+
     lines.append("## 1. What is measured, and in what")
     lines.append("")
     lines.append(
@@ -1715,6 +1718,46 @@ def report(
 #: followed it. Written here rather than by hand in the document, for the same
 #: reason `HURDLES_APPLIED` is: a paragraph typed into the markdown does not
 #: survive the next run.
+#: What the OUT-man rule of `docs/stash_mode.md` did to this record, measured
+#: on the run that followed it. Here rather than typed into the markdown, for
+#: the same reason `SPREAD_REVISION` is: a paragraph in the document does not
+#: survive the next run.
+STASH_REVISION = (
+    "## 0.1. Revision, 2026-09-24: a man who is out is counted for the games "
+    "he is expected to play\n"
+    "\n"
+    "**What changed.** `app.pickups.state.playable_days` gave a man ESPN had "
+    "ruled out zero games for the rest of the season, because it waited for an "
+    "`expected_return_date` ESPN's basketball API does not have a field for. "
+    "Every rest-of-season caller now counts him for his expected games "
+    "instead -- each remaining game day weighted by the chance he is back by "
+    "it, from the box-score return prior of `docs/stashes.md` section 2a, "
+    "times the ramp of its section 3 (`docs/stash_mode.md`). The week's own "
+    "seating is untouched: a man out tonight is out tonight.\n"
+    "\n"
+    "**Declared when.** The rule was written down before any of the three "
+    "calibrations was re-run and was not tuned afterwards. No constant moved "
+    "and no hurdle moved.\n"
+    "\n"
+    "**This record cannot see it, and that is a fact about the database.** "
+    "`player_status_snapshots` holds the season in progress only, so a replay "
+    "of 2026 reads no injury status for anybody and every man in it is counted "
+    "as fit. The whole written run came back **line for line identical** to "
+    "the one before the change -- both tilt settings, all twelve hurdle pairs, "
+    "the sweep's own pick, the baseline, the per-team table and the worst "
+    "misses -- and the only difference between the two documents is the "
+    "runtime in the sentence above (5,883s before, 5,773s after).\n"
+    "\n"
+    "That is a **guard rather than a calibration**: it says the healthy path "
+    "did not move, which is exactly what `RosteredPlayer.season_games` claims "
+    "-- that it equals the whole days for everybody who is not ruled out. It "
+    "does not test the rule. What does is section 7 of `docs/stashes.md`, "
+    "re-scored in `docs/stash_mode.md`: the engine's mean error on 2026's "
+    "ninety-one claimed stashes falls from +1.04 categories a stash to "
+    "+0.05.\n"
+)
+
+
 SPREAD_REVISION = (
     "## 0. Revision, 2026-09-23: the weekly spread was widened by two\n"
     "\n"

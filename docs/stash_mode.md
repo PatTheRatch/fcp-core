@@ -211,7 +211,30 @@ Byte-identical apart from the wall time in its own provenance line.
 
 ### 3. Pickups, the 2026 replay: identical
 
-<!-- BACKTEST -->
+At the owner's own hurdles, and neither was moved:
+
+| | before | after |
+|---|---|---|
+| streaming, moves named (of 602 decisions) | 531 | 531 |
+| streaming, categories delivered | +0.13 a matchup | +0.13 |
+| streaming, share that cost nothing or gained | 80.8% | 80.8% |
+| rest of season, moves named | 289 | 289 |
+| rest of season, categories delivered | +1.32 over 30 days | +1.32 |
+| the league's own 1,120 swaps, the baseline | +0.050 a week | +0.050 |
+
+The whole written run — both tilt settings, all twelve hurdle pairs, the
+sweep's own pick, the baseline, the per-team table and the worst misses —
+comes back **line for line identical**: 177 lines against 177, and the only
+difference between the two documents is the runtime in its own provenance
+sentence (5,883s before, 5,773s after). The sweep still picks 0.20 paid /
+0.10 free, which is what is shipped. **Nothing here asks for a constant or a
+hurdle to move.**
+
+That is the guard working, and it is also the limitation stated above: this
+replay has no man ESPN has ruled out in it, because 2026 has no stored injury
+status, so it exercises the healthy path only. What it proves is that the
+healthy path did not move — which is exactly the claim `season_games` makes,
+that it equals the whole days for everybody who is not ruled out.
 
 ### What moved instead
 
