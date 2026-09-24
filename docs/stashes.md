@@ -5,7 +5,7 @@
 **Script:** `scripts/stashes.py` (re-runnable; passes `ruff check`, `ruff format --check` and `mypy`)
 **Instrument:** `player_game_stats` · `pro_team_games` · `transactions` · `transaction_items` · `daily_lineup_slots` · `matchup_team_stats` · `injury_reports`
 **Currency:** categories a week, through `scripts/pickups_backtest.py`'s `Replay` and `app.pickups.judge.standard_lens`
-**Companions:** [`stash_mode.md`](stash_mode.md) (**what this study produced**: the rule, declared and built 2026-09-24), [`availability.md`](availability.md) (the absences and the report-based return prior this calibrates against), [`keepers.md`](keepers.md) (the hold, the replacement level, the `Replay` reuse), [`streaming_lane.md`](streaming_lane.md) (`OPENED_PLACE`, what a dead place costs), [`pickups.md`](pickups.md) §4.4 (the stash lane as designed), [`what_if.md`](what_if.md) (the engine this feeds)
+**Companions:** [`stash_locks.md`](stash_locks.md) (**the successor**: what a dead week costs a team that has already won its place, and what §5 could not measure), [`stash_mode.md`](stash_mode.md) (**what this study produced**: the rule, declared and built 2026-09-24), [`availability.md`](availability.md) (the absences and the report-based return prior this calibrates against), [`keepers.md`](keepers.md) (the hold, the replacement level, the `Replay` reuse), [`streaming_lane.md`](streaming_lane.md) (`OPENED_PLACE`, what a dead place costs), [`pickups.md`](pickups.md) §4.4 (the stash lane as designed), [`what_if.md`](what_if.md) (the engine this feeds)
 **Reproduce:** `PYTHONPATH=. ~/fcp-core/.venv/bin/python scripts/stashes.py --why` — this run was made against the **local** Docker Postgres (`fcp-core-db-1`, `localhost:5432`), not the VPS; on the VPS the interpreter is `/opt/fcp-core/.venv/bin/python` and the injury-report tables of §1b and §3 will be five seasons deep rather than one (limitation 2).
 **Read-only:** every query is a SELECT. Nothing is written to the database. **Runtime 254s** for all eight seasons.
 
@@ -670,6 +670,17 @@ all 2026, all from a handful of days** — there is no stored projection to read
 for a decision day in 2019. The record rank above is the fallback the brief
 allows, and a future run against a season of stored projections could replace it
 without changing anything else.
+
+> **Superseded 2026-09-24 by [`stash_locks.md`](stash_locks.md).** It needed no
+> stored projection: the engine runs on any morning of any stored season in
+> about a second, so that study ran it once per decision morning — 865 of them,
+> 919s — and classified all 2,111 stash decisions as a **lock** (playoff odds
+> ≥ 0.95), **in the race** or **out of it**. The record rank above turned out to
+> be a fair stand-in and not the same thing: no lock sat in the bottom third,
+> but 4.28% of the teams that were out of it sat in the top third. The larger
+> finding is that a lock's dead place costs **0.18** against the 0.38 charged
+> here, because its dead regular weeks buy only seeding. Nothing in this
+> document changed; the successor prices the lock's case beside it.
 
 ### Roster room, and why the column is almost all zeros
 
