@@ -241,6 +241,39 @@ day 80: the league section counts 609 wire moves in the last day;
   category record, which for a played period is the final one — so the
   day-77 digest reports the result of a week that had not been played.
 
+#### The fifth place a leak could have hidden, added 2026-09-24
+
+Four were found here and fixed. A fifth became possible on 2026-09-24, when
+the engine stopped reading every replayed man as fit and started reading a
+status: **the injury status a replayed morning is allowed to see**
+(`docs/replay_status.md`, and `app/pickups/status_source.py`'s docstring).
+There were two ways to get it wrong and both are closed.
+
+**The report.** `app.injuries.status_as_of`'s bound is the whole value of the
+table and it is applied unchanged: only lines with `reported_at <= that
+morning`, and only lines whose `game_date` is that day or later. A replay of
+day N therefore never reads a report the league published after ten o'clock
+Eastern on day N. `tests/test_pickups_status_source.py` proves it on a
+fixture where the later report *would* change the answer — a nine-thirty
+`Out` and a five-thirty `Available` about the same game — and proves the
+converse, that the same line is visible the next morning, so the assertion
+bounds the moment and not the row.
+
+**The snapshot.** The subtler one. `player_status_snapshots` is the
+listener's and the listener runs for the live season, so "does this season
+have snapshots" would have been the obvious gate — and on a replayed day of
+the *live* season it would have read the listener's latest pass, which is
+from after the day being asked about. A page asked for `?today=52` in March
+would have been shown April's status. The gate is therefore **"was a snapshot
+observed at or before that morning"**, which shuts on a replayed day and
+sends it to the league's own report instead. On a genuinely live morning
+nothing changes: the last pass is always older than ten o'clock today, so the
+gate opens and the freshest status per player is used exactly as before.
+
+Two things the four findings left open are still open and were not touched by
+this: the projections are still code-read rather than measured, and
+`bid_fit` still fits on the whole season.
+
 ### 2. Determinism — **PASS**
 
 Team 86, day 77, built twice through two jobs in two worker processes: both

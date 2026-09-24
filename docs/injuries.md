@@ -1,9 +1,12 @@
 # Injuries: what the league said about a man, and when it said it
 
-**Written:** 2026-09-22. **Status:** built and loaded. Nothing reads it yet
-except its own tests — rewiring the consumers is the next job, deliberately
-separate so each number's movement can be seen ("What this unblinds", last
-section).
+**Written:** 2026-09-22. **Status:** built, loaded, and **read by the engine
+since 2026-09-24**. `app.pickups.state.status_on` is the one place a status is
+read, and on a morning the listener had taken no snapshot by, it reads these
+rows ([`replay_status.md`](replay_status.md): the declared source order, the
+mapping onto ESPN's words, the look-ahead proof, and what the three
+calibrations did when it was turned on). The rest of "What this unblinds" is
+still ahead.
 
 Code: migration `0023_injury_reports`, the models `InjuryReport` and
 `InjuryReportRun` in `app/db/models.py`, the reader `app/injury_reports.py`,
@@ -373,7 +376,7 @@ all of them, so each is one command.
 
 The man the reconstructed wire cannot see. Asked of the data:
 
-**His status on the morning of 11 November 2025 (day 21): `None` — the
+**His status on the morning of 11 November 2025 (day 22): `None` — the
 league said nothing current about him.** Not because he was fit, but because
 **Charlotte did not play that day**, and the league only names players whose
 team has a game. This is precisely the trap in the last section: a consumer
@@ -422,17 +425,29 @@ someone else's bandwidth and it only needs doing once.
 
 ## What this unblinds
 
-Nothing below is changed yet. Each is its own piece of work so that the
-movement in each number can be attributed, and each names the doc that has to
-be re-run and rewritten when it is.
+**Three of the six rows below are done, on 2026-09-24**
+([`replay_status.md`](replay_status.md)). `app.pickups.state.build_players`
+now reads a status through `status_on`, and because every recommender,
+report, trade and MCP tool goes through `build_players`, the trade
+calibration, the projected-standings calibration and the pickup backtest were
+all re-run on it and published before-and-after. What a replayed 2026 morning
+turns out to know: 43 of the backtest's 44 decision mornings had a report the
+morning could see, a mean of 42.5 placed lines and 14.8 unplaced names each,
+and **7.9% of rostered man-mornings carry a status at all** — 3.3% of them
+`Out`. The rest of this table is still ahead, and the two rows about the wire
+and the tilt are named as not-done in `replay_status.md`.
+
+Each remaining row is its own piece of work so that the movement in each
+number can be attributed, and each names the doc that has to be re-run and
+rewritten when it is.
 
 | consumer | today | with this | doc that moves |
 |---|---|---|---|
-| **The reconstructed wire** — `app/pickups/state.load_free_agents` | a played season's wire is "whoever played that period and was in nobody's lineup", so an injured free agent is invisible | a man on the report and in nobody's lineup is on the wire, with a status; Brandon Miller reappears in November | docs/in_season_pages.md, "The wire is empty"; docs/pickups.md §4 |
-| **The trade calibration** — `scripts/trade_calibration.py` | both sides projected fully available on the morning of the deal | each side's men discounted by what was actually known that morning | docs/trades.md §7, and the standing "Model availability" line |
+| **The reconstructed wire** — `app/pickups/state.load_free_agents` | **still open.** A played season's wire is "whoever played that period and was in nobody's lineup", so an injured free agent is invisible. The reports can now *describe* a man on the wire but cannot *put* him on it | a man on the report and in nobody's lineup is on the wire, with a status; Brandon Miller reappears in November | docs/in_season_pages.md, "The wire is empty"; docs/pickups.md §4 |
+| **The trade calibration** — `scripts/trade_calibration.py` | ~~both sides projected fully available on the morning of the deal~~ **done 2026-09-24** | each side's men discounted by what was known that morning; 2026's 34 sides went from 32% agreeing in sign to 38% | docs/trades.md §0 R5, docs/replay_status.md §4b |
 | **The beneficiary model** (next) | cannot be built: it needs to know who was out and when | `absences()` gives the runs of Out days directly, which is its input | its own doc, to be written |
-| **The projected-record calibration** (next) | would inherit the blindfold | a week's opponent priced on who was actually out | docs/week_predictor.md |
-| **The pickup backtest's availability discount** — `scripts/pickups_backtest.py` | every player treated as available; the stash logic under-served by construction | a stash judged against a real return, and a start judged against a real absence | docs/pickups_backtest.md §6 |
+| **The projected-record calibration** | ~~would inherit the blindfold~~ **done 2026-09-24** | a week's opponent priced on who was actually out; the final-record error at halfway fell from 7.2 of 171 to 6.3 and the Brier rose 0.2179 to 0.2184 | docs/projected_record.md §0 R5, docs/replay_status.md §4a |
+| **The pickup backtest's availability discount** — `scripts/pickups_backtest.py` | ~~every player treated as available~~ **done 2026-09-24** | a stash judged against a real return, and a start judged against a real absence | docs/pickups_backtest.md §0.2, docs/replay_status.md §4c |
 | **The minutes tilt** — `app/pickups/projection.py` | reads the listener's `player_status_events`, which a played season holds none of, so tilt-on and tilt-off are the same run | a played season gets real status changes, so the tilt can be measured rather than assumed worthless | docs/pickups_backtest.md, "Tilt on and tilt off are the same run here" |
 
 One caution for all of them. `status_as_of` returning `None` means the league
