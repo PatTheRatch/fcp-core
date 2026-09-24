@@ -107,7 +107,7 @@ candidate to drop, and one who is worth keeping is simply too expensive.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import TYPE_CHECKING
@@ -716,6 +716,7 @@ def evaluated_wire(
     *,
     pool: Iterable[int] | None = None,
     pool_size: int = POOL_SIZE,
+    keep: Collection[int] = (),
     tilt: bool = True,
     distributions: Sequence[CategoryDistribution],
     as_of: date | None,
@@ -727,6 +728,10 @@ def evaluated_wire(
     replacement charge a judgement makes is taken over exactly this set
     (`spot_book`), so a caller judging one named move has to read the same
     wire the search would have read or its season term is a different number.
+
+    `keep` are men who survive the cut whatever they rank, which is how a
+    caller asks about a man with no games this week -- a stash. See
+    `_ranked_wire`.
     """
     held = {player.player_id for player in week.roster}
     return _ranked_wire(
@@ -744,6 +749,7 @@ def evaluated_wire(
             if player.player_id not in held
         ],
         pool_size,
+        keep,
     )
 
 
@@ -1313,10 +1319,30 @@ def _id_of(player: RosteredPlayer | None) -> int:
     return player.player_id if player is not None else 0
 
 
-def _ranked_wire(wire: Sequence[Contender], pool_size: int) -> tuple[Contender, ...]:
-    """The best `pool_size` free agents by this week's line: weight times games."""
+def _ranked_wire(
+    wire: Sequence[Contender], pool_size: int, keep: Collection[int] = ()
+) -> tuple[Contender, ...]:
+    """The best `pool_size` free agents by this week's line: weight times games.
+
+    `keep` are men who stay in whatever they rank, for a caller asking about
+    one by name. Without it a man ESPN has ruled out can never be asked about
+    at all: his games this week are none, so this week's line is zero, so he
+    sorts last and a wire longer than `pool_size` drops him -- and a stash is
+    exactly a man with no games this week. The search's own pool is unchanged,
+    because it names nobody; the replacement charge is unchanged too, since it
+    is the best man left after the one being added and a man kept for being
+    named is never the best.
+    """
+    named = {int(player_id) for player_id in keep}
     ranked = sorted(wire, key=lambda c: (-(c.weight * len(c.days)), c.player_id))
-    return tuple(ranked[:pool_size])
+    chosen = list(ranked[:pool_size])
+    taken = {contender.player_id for contender in chosen}
+    chosen.extend(
+        contender
+        for contender in ranked[pool_size:]
+        if contender.player_id in named and contender.player_id not in taken
+    )
+    return tuple(chosen)
 
 
 def _empty_days(

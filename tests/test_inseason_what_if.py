@@ -36,7 +36,8 @@ from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
 from app.inseason.projected import project_standings
 from app.inseason.what_if import Change, trade_finishes, what_if
 from app.pickups.projection import clear_cache as clear_lines
-from app.pickups.stream import stream_recommendations
+from app.pickups.state import load_team_week
+from app.pickups.stream import evaluated_wire, stream_recommendations
 from app.trades import TeamOffer, evaluate_trade
 from tests.pickups_db import (
     ANY,
@@ -618,6 +619,48 @@ def test_adding_a_man_who_is_out_carries_the_stash_block(session: Session) -> No
     assert "not back by week 4" in stash.line
     assert "return record" in stash.language
     assert "diagnosis" in stash.language
+
+
+def test_a_man_with_no_games_this_week_survives_the_cut_when_he_is_named(
+    session: Session,
+) -> None:
+    """The cut that made a stash unaskable.
+
+    `evaluated_wire` keeps the best `pool_size` free agents by *this week's*
+    line, and a man ESPN has ruled out has no games this week, so his line is
+    zero, he sorts last, and a wire longer than the pool drops him. On the
+    real 2026 wire -- ninety-seven men against a pool of eighty -- that meant
+    Brandon Miller, the study's own worked example, came back from the route
+    as "not a free agent".
+    """
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    hurt = _out_on_the_wire(session, built, last_played=1)
+    week = load_team_week(session, _ls(built), ALPHA, TODAY)
+
+    cut = evaluated_wire(
+        session,
+        _ls(built),
+        week,
+        TODAY,
+        pool_size=1,
+        distributions=WEEK,
+        as_of=None,
+    )
+    kept = evaluated_wire(
+        session,
+        _ls(built),
+        week,
+        TODAY,
+        pool_size=1,
+        keep=[hurt.id],
+        distributions=WEEK,
+        as_of=None,
+    )
+
+    assert hurt.id not in {found.player_id for found in cut}
+    assert hurt.id in {found.player_id for found in kept}
+    assert len(kept) == len(cut) + 1, "nobody else is let back in"
 
 
 def test_a_healthy_add_carries_no_stash_block(session: Session) -> None:

@@ -489,6 +489,10 @@ def what_if(
         week,
         today,
         pool=pool,
+        # A man with no games this week sorts last on the week's own line, and
+        # the wire is cut to the best eighty of it -- so without this a stash
+        # is not on the wire a what-if can name at all. See `_ranked_wire`.
+        keep=change.adds,
         tilt=tilt,
         distributions=distributions,
         as_of=as_of,
