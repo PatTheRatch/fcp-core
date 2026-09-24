@@ -70,18 +70,25 @@ have set, and would flatter every pickup.
 
 ONE DEFECT THIS SCRIPT WORKS AROUND
 
-1. NO 2026 SCHEDULE. `app/pickups/state.py` counts a player's remaining games
-   from `pro_team_games`, which holds no 2026 rows at all (only 2027 has any:
-   the listener that writes it started in 2027). With no schedule every player
-   has no game days, `stream._Week.project` seats nobody, and every move's
-   change in expected wins is exactly 0.0 -- so no hurdle can ever be cleared
-   and the whole sweep is identically zero. `app/pickups/bids.py` already notes
-   the gap. WORKAROUND: `rebuild_schedule` reconstructs a player-keyed schedule
-   from the box scores. A played line on scoring period N *is* a game on N, and
+1. NO 2026 SCHEDULE, at the grain the recommender wants it.
+   `app/pickups/state.py` counts a player's remaining games from
+   `pro_team_games`, and when this was written that table held no 2026 rows at
+   all. With no schedule every player has no game days,
+   `stream._Week.project` seats nobody, and every move's change in expected
+   wins is exactly 0.0 -- so no hurdle can ever be cleared and the whole sweep
+   is identically zero. `app/pickups/bids.py` already notes the gap.
+   WORKAROUND: `rebuild_schedule` reconstructs a player-keyed schedule from
+   the box scores. A played line on scoring period N *is* a game on N, and
    `player_game_stats` carries the opponent and the date, so the fact is
-   recoverable at the grain the recommender actually consumes. Verified: 30 NBA
-   teams, 2,461 team-game slots against the 2,460 a full 82-game season needs,
-   no player with two games on one day, no team with two games on one day.
+   recoverable at the grain the recommender actually consumes. Verified: 30
+   NBA teams, 2,461 team-game slots against the 2,460 a full 82-game season
+   needs, no player with two games on one day, no team with two games on one
+   day. The stored 2026 schedule has since been backfilled and is what
+   `season_calendar` reads to date a scoring period for the status source, but
+   `state.schedule` is still substituted here, because the reconstruction is
+   keyed on the player and the stored table on his team -- a different fact
+   about a man who was traded, and not a change to make inside a run that
+   scores something else.
 
 It is installed by attribute substitution on `app.pickups.state`, removed in a
 `finally`, and changes nothing on disk.
@@ -112,9 +119,23 @@ The knowable line (`app.scoring.knowable`) already filters to games before
 `app.pickups.bids.bid_fit` reads the whole season's transactions, which is a
 look-ahead if a bid price is taken as advice; the replay runs the stream side
 with `bids=False` and never scores a bid, so nothing here is priced off future
-claims. Injury status is unavailable historically (no 2026 status snapshots),
-so every player is treated as available and the stash logic is under-served;
-the write-up says so.
+claims.
+
+THE INJURY STATUS, WHICH IS NO LONGER A HOLE
+
+It used to be one: there are no 2026 status snapshots, so every player read as
+available and the stash logic was under-served by construction. Since
+2026-09-24 `app.pickups.state.status_on` applies the declared source order of
+`docs/replay_status.md` -- ESPN's snapshot on a morning the listener had
+already run for, and otherwise the NBA's own official report as of ten o'clock
+Eastern that morning, point-in-time. Nothing is patched here for it: the
+product reads it, so the replay reads it.
+
+What it covers is worth knowing before reading any number below. On the 44
+decision mornings the league's report was there on 43, with a mean of 42.5
+placed lines; **7.9% of rostered man-mornings carry a status at all and 3.3%
+carry `Out`**, because the league names only players whose team plays that day
+and this database holds one snapshot a game date.
 """
 
 from __future__ import annotations
@@ -1394,6 +1415,9 @@ def report(
     lines.append(SPREAD_REVISION)
     lines.append("")
 
+    lines.append(STATUS_REVISION)
+    lines.append("")
+
     lines.append(STASH_REVISION)
     lines.append("")
 
@@ -1625,18 +1649,29 @@ def report(
 
     lines.append("## 5. One defect in the stored data, and one leak now closed")
     lines.append("")
-    lines.append("### The 2026 schedule does not exist")
+    lines.append("### The 2026 schedule is reconstructed, and no longer because it is missing")
     lines.append("")
     lines.append(
         "`app/pickups/state.py` counts a player's remaining games from "
-        "`pro_team_games`, which holds no 2026 rows at all (only 2027 has any; the "
-        "listener that writes it started in 2027). With no schedule every player has "
-        "no game days, `stream._Week.project` seats nobody, and every move's change "
-        "in expected wins is exactly 0.0. **Workaround:** the script reconstructs a "
-        "schedule from the box scores -- a played line on scoring period N is a game "
-        "on N, and the player's NBA team comes from the weekly roster row, the same "
-        "fallback `state.build_players` uses. Verified: 30 NBA teams, 2,461 team-game "
-        "slots against the 2,460 a full 82-game season needs."
+        "`pro_team_games`, which when this was written held no 2026 rows at all (only "
+        "2027 had any; the listener that writes it started in 2027). With no schedule "
+        "every player has no game days, `stream._Week.project` seats nobody, and every "
+        "move's change in expected wins is exactly 0.0. **Workaround:** the script "
+        "reconstructs a schedule from the box scores -- a played line on scoring "
+        "period N is a game on N, and the player's NBA team comes from the weekly "
+        "roster row, the same fallback `state.build_players` uses. Verified: 30 NBA "
+        "teams, 2,461 team-game slots against the 2,460 a full 82-game season needs."
+    )
+    lines.append("")
+    lines.append(
+        "**The stored 2026 schedule has since been backfilled** -- 2,468 rows, and it "
+        "is what `season_calendar` reads to turn a scoring period into the calendar "
+        "date the injury report is asked about (section 0.2). The substitution is "
+        "kept anyway and is now a choice rather than a necessity: the reconstruction "
+        "is keyed on the **player** and the stored table on his **team**, which are "
+        "different facts about a man who was traded mid-season, and swapping them is "
+        "a change to the games every number here rests on. It is not one to make "
+        "inside a run that is scoring something else."
     )
     lines.append("")
     lines.append("### The matchup totals no longer leak the rest of the week")
@@ -1674,8 +1709,12 @@ def report(
         "printed beside the run and enters no score."
     )
     lines.append(
-        "- **No injury history.** There are no 2026 status snapshots, so every player "
-        "is treated as available and the stash logic is under-served by construction."
+        "- **One morning snapshot a day of injury news.** Since 2026-09-24 a replayed "
+        "morning reads the NBA's own official report as of ten o'clock Eastern "
+        "(`docs/replay_status.md`), so a man the league had Out is no longer counted "
+        "fit. What that covers is 7.9% of rostered man-mornings, 3.3% of them `Out`: "
+        "the league names only players whose team plays that day, and the database "
+        "holds one snapshot a game date. A man whose team was idle reads as fit."
     )
     lines.append(
         f"- **{points} decision points a team, {_teams(teams)}.** Small. One season, one league."
@@ -1722,6 +1761,110 @@ def report(
 #: on the run that followed it. Here rather than typed into the markdown, for
 #: the same reason `SPREAD_REVISION` is: a paragraph in the document does not
 #: survive the next run.
+#: What reading the NBA's own injury report on a replayed morning did to this
+#: record, measured on the run that followed it. Here rather than typed into
+#: the markdown, for the same reason `SPREAD_REVISION` is.
+#:
+#: The numbers in the table below are filled from the two runs of 2026-09-24
+#: and are not computed here: this script runs one arm at a time, so a
+#: before-and-after is two runs and a paragraph, exactly as the two revisions
+#: under it were.
+STATUS_REVISION = (
+    "## 0.2. Revision, 2026-09-24: a replayed morning reads the NBA's own "
+    "injury report\n"
+    "\n"
+    "**What changed.** Revision 0.1 below came back byte-identical and the "
+    "reason was the *source*, not the rule: a replayed morning read its "
+    "injury status from `player_status_snapshots`, which the listener writes "
+    "only for the season in progress, so every man in a replayed 2026 was "
+    "counted fit and the rule declared the day before never fired. The engine "
+    "now applies a declared source order (`docs/replay_status.md`): ESPN's "
+    "snapshot on a morning the listener had already taken one by, and "
+    "otherwise the NBA's own official report as of ten o'clock Eastern that "
+    "morning, read point-in-time, with the league's five words mapped onto "
+    "ESPN's. `Out` alone is ruled out, as before, and nothing else moved.\n"
+    "\n"
+    "**Declared when.** The source order was written down before any of the "
+    "three calibrations was re-run and was not tuned afterwards. No constant "
+    "moved and no hurdle moved.\n"
+    "\n"
+    "**What it covers, before any number below is read.** On the 44 decision "
+    "mornings the league's report was there on 43, with a mean of 42.5 placed "
+    "lines and 14.8 names that could not be placed on a player. **7.9% of "
+    "rostered man-mornings carry a status at all and 3.3% carry `Out`**, "
+    "because the league names only players whose team plays that day and this "
+    "database holds one snapshot a game date. Everything that moved, moved on "
+    "one man in ten.\n"
+    "\n"
+    "**What cannot move, and it is the check.** The delivered side of every "
+    "number here is seated from the stored box scores -- `Replay.resolved` "
+    "reads what each man actually posted on each day and knows nothing about "
+    "a status -- so the baseline of the league's own 1,120 swaps and the "
+    "categories any *named* move delivered are arithmetic about what "
+    "happened. What the injury report can move is the recommender's own half: "
+    "which move the search ranks first, and what it claims the move is "
+    "worth.\n"
+    "\n"
+    "**At the owner's own hurdles (stream 0.20, season 0.20/0.10), before and "
+    "after.** Tilt on and tilt off are the same run here, so one table "
+    "serves both:\n"
+    "\n"
+    "| | moves named | categories delivered | share >= 0 | no-move | claimed |\n"
+    "|---|---|---|---|---|---|\n"
+    "| streaming, before | 531 of 602 | +0.13 a matchup | 80.8% | 11.8% | +0.07 |\n"
+    "| streaming, **after** | **547 of 602** | **+0.15 a matchup** | **82.4%** "
+    "| **9.1%** | **+0.08** |\n"
+    "| rest of season, before | 289 | +1.32 over 30 days | 80.3% | 52.0% | +1.62 |\n"
+    "| rest of season, **after** | **325** | **+1.25 over 30 days** | **80.3%** "
+    "| **46.0%** | **+1.68** |\n"
+    "\n"
+    "**The streaming half got better on moves named, categories delivered, "
+    "win rate and no-move rate at once**, which is the first unambiguous "
+    "improvement any of the three records has shown. The bar names sixteen more moves of "
+    "the same 602 decisions, they delivered +0.15 categories a matchup "
+    "against +0.13, and the win rate rose from 80.8% to 82.4%. The direction "
+    "is what a status ought to buy a one-week question: a man the league had "
+    "Out is no longer seated, so he neither displaces a man who could play "
+    "nor is proposed as a pickup, and the search spends its ranking on men "
+    "who were going to be on the floor. The no-move rate fell with it, 11.8% "
+    "to 9.1%, which is the same fact read the other way -- a roster with a "
+    "hole in it has something worth doing.\n"
+    "\n"
+    "**The rest-of-season half named a third more moves and delivered a "
+    "little less each.** 325 against 289 at the same 80.3% win rate, +1.25 "
+    "over thirty days against +1.32. Both halves of that are the return "
+    "prior: an OUT man is now worth a fraction rather than nothing, so a swap "
+    "that takes him on clears the bar where it used to be refused outright, "
+    "and the moves it adds are by construction the marginal ones. The total "
+    "delivered went up (325 x 1.25 = 406 against 289 x 1.32 = 381) and the "
+    "mean went down, which is what widening a filter does.\n"
+    "\n"
+    "**The claim rose faster than the delivery, and the calibration ratio "
+    "fell.** Streaming 1.82 to 1.94 -- still promising less than it delivers "
+    "-- and rest of season 0.81 to 0.74, which is the direction to watch: the "
+    "season side already claimed more than it delivered, and counting an OUT "
+    "man for his expected games claims more still. It is not tuned here and "
+    "nothing was moved on it.\n"
+    "\n"
+    "**The baseline is identical, as it must be**: 1,120 of the league's own "
+    "swaps, +0.050 a week, -0.558 over thirty days, 84.2% at or above zero. "
+    "**The sweep's pick is identical too**: no streaming setting qualifies, "
+    "for the same reason as ever, and rest of season is **0.20 paid / 0.10 "
+    "free**, the pair already shipped. Nothing here asks the owner to move "
+    "anything. Of the 188 lines the before-and-after pair each wrote -- before "
+    "this section was added to the script, so neither carried it -- 138 are "
+    "equal in place, and every difference is inside the four hurdle-grid "
+    "tables and the two sentences that quote them.\n"
+    "\n"
+    "**Wall times.** The before-and-after pair were run concurrently on one "
+    "machine and took **6,840s each**, a third longer than the 5,773s of the "
+    "run before them, which had the machine to itself. The time in this "
+    "document's own first line is a third run, made after this paragraph was "
+    "written so that the document would be *generated* by the script rather "
+    "than have the paragraph pasted into a document the next run overwrites. "
+    "It is the same code and the same rows as the after arm.\n"
+)
+
 STASH_REVISION = (
     "## 0.1. Revision, 2026-09-24: a man who is out is counted for the games "
     "he is expected to play\n"
