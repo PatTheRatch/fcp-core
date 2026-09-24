@@ -87,7 +87,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import InjuryReport, PlayerStatusSnapshot
@@ -274,24 +274,4 @@ def _from_reports(session: Session, on: date, at: datetime) -> StatusRead:
         statuses=statuses,
         placed=len(statuses),
         unmatched=len(missed),
-    )
-
-
-def report_lines_on(session: Session, on: date) -> int:
-    """Status lines the league published that day, whatever the morning saw.
-
-    For a doc's coverage table, not for a read: the read is bounded by the
-    morning and this is not.
-    """
-    return int(
-        session.scalar(
-            select(func.count())
-            .select_from(InjuryReport)
-            .where(
-                InjuryReport.source == NBA_OFFICIAL,
-                InjuryReport.game_date == on,
-                InjuryReport.status.is_not(None),
-            )
-        )
-        or 0
     )
