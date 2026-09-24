@@ -1141,8 +1141,9 @@ def what_if(
         "bid": trim.bid(body["bid"]),
         "roster_room": {"pool_size": body["pool_size"], "historical_wire": body["historical_wire"]},
         "stash": trim.stash(body.get("stash")),
+        "playoffs": trim.playoffs(body.get("playoffs")),
         "notes": body["notes"],
-        "language": f"{LABEL_ONLY} {SECOND_LENS}",
+        "language": f"{LABEL_ONLY} {SECOND_LENS} {body.get('playoff_language', '')}".strip(),
         "provenance": block(
             session, found, keys=WEEK_KEYS, day=int(body["today"]), extra=_projection_note()
         ),

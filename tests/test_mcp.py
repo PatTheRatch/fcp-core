@@ -761,3 +761,10 @@ def test_a_stash_reads_the_same_through_the_tool_as_through_the_route(
     assert answer["stash"]["days_out"] == 7
     assert answer["stash"]["dead_weeks_cost"] > 0
     assert "diagnosis" in answer["stash"]["language"]
+
+    # And the playoff lens, which is on every answer rather than only on a
+    # stash: the same block, number for number, and the caveat with it.
+    assert route["playoffs"] is not None
+    assert answer["playoffs"] == trim.playoffs(route["playoffs"])
+    assert "bracket is not known" in answer["language"]
+    assert "bracket is not known" in route["playoff_language"]

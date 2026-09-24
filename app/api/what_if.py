@@ -56,8 +56,10 @@ from app.api.schemas import (
     FinishOut,
     FinishWeekOut,
     StashOut,
+    TradeCategoryOut,
     WhatIfManOut,
     WhatIfOut,
+    WhatIfPlayoffsOut,
     WhatIfWeekOut,
 )
 from app.db.models import Player
@@ -69,6 +71,7 @@ from app.inseason.what_if import (
     what_if,
 )
 from app.pickups.state import RosteredPlayer
+from app.trades.evaluate import CategoryView
 
 router = APIRouter(tags=["pickups"])
 
@@ -164,6 +167,25 @@ def _espn_of(session: Session, player_ids: list[int]) -> dict[int, int]:
 
 def _man_out(player: RosteredPlayer, starts: int, espn: dict[int, int]) -> WhatIfManOut:
     return WhatIfManOut(**_player_out(player, espn).model_dump(), starts=starts)
+
+
+def category_out(view: CategoryView) -> TradeCategoryOut:
+    """One category before and after, in counts and in the chance of winning it.
+
+    Public and here rather than in `app.api.trades`, because both the trade
+    page and the what-if's playoff lens print the same nine rows and
+    `app.api.trades` already imports this module.
+    """
+    return TradeCategoryOut(
+        abbreviation=view.abbreviation,
+        before=view.before,
+        after=view.after,
+        delta=view.delta,
+        p_before=view.p_before,
+        p_after=view.p_after,
+        p_delta=view.p_delta,
+        moved=view.moved,
+    )
 
 
 def finish_out(finish: Finish) -> FinishOut:
@@ -267,9 +289,39 @@ def _out(report: WhatIf, session: Session, bars: calibration.Bars) -> WhatIfOut:
         historical_wire=report.historical_wire,
         notes=list(report.notes),
         stash=_stash(report),
+        playoffs=_playoffs(report),
+        playoff_language=report.playoff_language,
     )
 
 
 def _stash(report: WhatIf) -> StashOut | None:
     """The stash block, when the change adds or holds a man who is ruled out."""
     return None if report.stash is None else stash_out(report.stash)
+
+
+def _playoffs(report: WhatIf) -> WhatIfPlayoffsOut | None:
+    """The playoff lens, which answers for every move rather than for a stash.
+
+    The same `PlayoffLens` a trade side carries, so the page's trade tab and
+    its what-if tab cannot disagree about what a roster change is worth in
+    March. `measurable` False with a `note` is the answer when the playoff
+    weeks are behind the day or the season stores none.
+    """
+    lens = report.playoffs
+    if lens is None:
+        return None
+    return WhatIfPlayoffsOut(
+        first_scoring_period=lens.first_scoring_period,
+        last_scoring_period=lens.last_scoring_period,
+        weeks=lens.weeks,
+        games_added=lens.games_added,
+        games_dropped=lens.games_dropped,
+        delta_per_week=lens.delta_per_week,
+        delta_total=lens.delta_total,
+        expected_wins_before=lens.expected_wins_before,
+        expected_wins_after=lens.expected_wins_after,
+        categories=[category_out(view) for view in lens.categories],
+        note=lens.note,
+        measurable=lens.measurable,
+        line=lens.line,
+    )

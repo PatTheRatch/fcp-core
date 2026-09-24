@@ -139,6 +139,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -181,6 +182,7 @@ from app.scoring.value import category_wins
 from app.trades.summary import summarise
 
 __all__ = [
+    "PLAYOFF_LANGUAGE",
     "POOL_LIMIT",
     "THIN_GAMES",
     "TRADE_HURDLE",
@@ -196,8 +198,31 @@ __all__ = [
     "TradeReport",
     "evaluate_trade",
     "fill_pool",
+    "playoff_language",
+    "playoff_lens",
+    "playoff_lines",
+    "playoff_span",
     "playoff_window",
 ]
+
+#: What the playoff lens is and is not, in the words a page and an assistant
+#: repeat. The bracket is the one thing about the future this engine refuses
+#: to guess at (`app.inseason.projected.NO_BRACKET`), so the playoff weeks are
+#: priced against the league's own average week instead of against a side.
+PLAYOFF_LANGUAGE = (
+    "the bracket is not known while the regular season is being played -- the pairings "
+    "depend on seeding nobody has earned yet -- so the playoff weeks are priced against "
+    "the league's own average week rather than against an opponent. The games are the "
+    "NBA schedule in that window, less the days a man is ruled out of, with a man who is "
+    "out now counted by the return prior. It is a second lens, not a second bar: nothing "
+    "is labelled against it."
+)
+
+
+def playoff_language() -> str:
+    """`PLAYOFF_LANGUAGE`, as a call, for a caller that prefers one."""
+    return PLAYOFF_LANGUAGE
+
 
 #: Scoring periods between the morning a trade is judged on and the first day
 #: it can be in a lineup. See the module docstring: the setting is in no
@@ -323,6 +348,10 @@ class PlayoffLens:
     categories: tuple[CategoryView, ...]
     #: Games the men involved have scheduled in the window, both sides summed.
     games: int
+    #: The same count split: games the men arriving bring, and games the men
+    #: leaving take with them. `games` is their sum.
+    games_added: int = 0
+    games_dropped: int = 0
     #: Why the lens says nothing, when it says nothing.
     note: str | None = None
 
@@ -333,6 +362,30 @@ class PlayoffLens:
     @property
     def measurable(self) -> bool:
         return self.note is None
+
+    @property
+    def expected_wins_before(self) -> float:
+        """Categories an ordinary playoff week wins, against an average week."""
+        return sum(view.p_before for view in self.categories)
+
+    @property
+    def expected_wins_after(self) -> float:
+        return sum(view.p_after for view in self.categories)
+
+    @property
+    def expected_wins_delta(self) -> float:
+        return self.expected_wins_after - self.expected_wins_before
+
+    @property
+    def line(self) -> str:
+        """The one line a page prints. No verdict words, and the caveat with it."""
+        if not self.measurable:
+            return f"Playoff weeks: {self.note}"
+        return (
+            f"Playoff weeks ({self.weeks:.0f}): {self.delta_per_week:+.2f} a week · "
+            f"{self.games_added} games in against {self.games_dropped} out · "
+            "bracket unknown, priced against an average opponent"
+        )
 
 
 @dataclass(frozen=True)
@@ -735,8 +788,8 @@ def evaluate_trade(
     waivers = waiver_state(wire)
 
     playoffs = playoff_window(session, league_season)
-    playoff_days, playoff_weeks = _playoff_days(playoffs, today)
-    playoff_weekly, playoff_games = _playoff_lines(
+    playoff_days, playoff_weeks = playoff_span(playoffs, today)
+    playoff_weekly, playoff_games = playoff_lines(
         session,
         league_season,
         sorted(weekly),
@@ -1419,7 +1472,7 @@ def _side_notes(side: _Side, weeks: float, opened: int, used: int) -> tuple[str,
     return tuple(out)
 
 
-def _playoff_days(window: tuple[int, int] | None, today: int) -> tuple[tuple[int, ...], float]:
+def playoff_span(window: tuple[int, int] | None, today: int) -> tuple[tuple[int, ...], float]:
     """The playoff scoring periods still ahead, and the weeks they make."""
     if window is None:
         return (), 0.0
@@ -1430,7 +1483,7 @@ def _playoff_days(window: tuple[int, int] | None, today: int) -> tuple[tuple[int
     return tuple(range(first, last + 1)), weeks_between(first, last)
 
 
-def _playoff_lines(
+def playoff_lines(
     session: Session,
     league_season: LeagueSeason,
     player_ids: Sequence[int],
@@ -1466,7 +1519,24 @@ def _playoff_lines(
 
 def _playoff_lens(
     side: _Side,
+    **kwargs: Any,
+) -> PlayoffLens:
+    """`playoff_lens` for one side of a trade, from the side's own tuples."""
+    return playoff_lens(
+        active=side.active,
+        leaving=side.leaving,
+        arriving=side.arriving,
+        fills=side.fills,
+        **kwargs,
+    )
+
+
+def playoff_lens(
     *,
+    active: Sequence[int],
+    leaving: Sequence[int],
+    arriving: Sequence[int],
+    fills: Sequence[int] = (),
     playoff_weekly: Mapping[int, CategoryLine],
     playoff_games: Mapping[int, int],
     playoff_days: tuple[int, ...],
@@ -1481,11 +1551,24 @@ def _playoff_lens(
     floor: float = TYPICAL_PICKUP,
     opened_place: float = OPENED_PLACE,
 ) -> PlayoffLens:
-    """The deal over the playoff weeks alone, or why it cannot be counted."""
+    """One roster change over the playoff weeks alone, or why it cannot be counted.
+
+    `active` is who can be started today, `leaving` everybody the change takes
+    off that list and `arriving` everybody it puts on it. A trade passes its
+    own side's tuples through `_playoff_lens`; a what-if passes the drops and
+    the men moved to injured reserve as `leaving` and the adds as `arriving`,
+    and the two therefore read the same for the same roster change.
+
+    The opponent is the league's own average week (`category_wins`), because
+    while the regular season is being played the bracket is not known --
+    `playoff_language` is the sentence that says so, and a caller that prints
+    a number from here prints that beside it.
+    """
     first = playoff_days[0] if playoff_days else None
     last = playoff_days[-1] if playoff_days else None
-    involved = (*side.leaving, *side.arriving)
-    games = sum(playoff_games.get(player_id, 0) for player_id in involved)
+    added = sum(playoff_games.get(player_id, 0) for player_id in arriving)
+    dropped = sum(playoff_games.get(player_id, 0) for player_id in leaving)
+    games = added + dropped
     empty = PlayoffLens(
         first_scoring_period=first,
         last_scoring_period=last,
@@ -1493,6 +1576,8 @@ def _playoff_lens(
         delta_per_week=0.0,
         categories=(),
         games=games,
+        games_added=added,
+        games_dropped=dropped,
     )
     if window is None:
         return replace(empty, note="this season stores no playoff matchup periods")
@@ -1512,17 +1597,17 @@ def _playoff_lens(
     def value(player_id: int) -> float:
         return lens.value(playoff_weekly.get(player_id, CategoryLine()))
 
-    spare = [player_id for player_id in wire if player_id not in set(side.fills)]
+    spare = [player_id for player_id in wire if player_id not in set(fills)]
     replacement = max([floor, *(value(player_id) for player_id in spare)])
     cost = places_cost(
-        [value(player_id) for player_id in side.leaving],
-        [value(player_id) for player_id in side.arriving],
+        [value(player_id) for player_id in leaving],
+        [value(player_id) for player_id in arriving],
         replacement,
         opened=opened_place,
         typical=floor,
     )
-    before = sum_lines(playoff_weekly.get(player_id, CategoryLine()) for player_id in side.active)
-    after = _after(before, playoff_weekly, side.leaving, side.arriving, filler, opened)
+    before = sum_lines(playoff_weekly.get(player_id, CategoryLine()) for player_id in active)
+    after = _after(before, playoff_weekly, leaving, arriving, filler, opened)
     return replace(
         empty,
         delta_per_week=-cost,

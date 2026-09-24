@@ -339,6 +339,34 @@ def finish(row: Mapping[str, Any] | None, *, weeks: bool = False) -> dict[str, A
     return out
 
 
+def playoffs(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """One roster change over the playoff weeks alone, against an average week.
+
+    The block is always on the answer, so the caveat has to travel with it:
+    the bracket is not known while the regular season is being played and the
+    opponent here is the league's own average, which `language` says outright.
+    When there are no playoff weeks left `measurable` is false and `note` is
+    the sentence why -- and then there is no number to quote.
+    """
+    if not row:
+        return None
+    if not row["measurable"]:
+        return {"measurable": False, "note": row["note"], "one_line": row["line"]}
+    return {
+        "measurable": True,
+        "weeks": n(row["weeks"]),
+        "first_scoring_period": row["first_scoring_period"],
+        "last_scoring_period": row["last_scoring_period"],
+        "games_added": row["games_added"],
+        "games_dropped": row["games_dropped"],
+        "delta_per_week": n(row["delta_per_week"]),
+        "delta_total": n(row["delta_total"]),
+        "expected_categories_before": n(row["expected_wins_before"]),
+        "expected_categories_after": n(row["expected_wins_after"]),
+        "one_line": row["line"],
+    }
+
+
 def stash(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """One stash block: how long he has been out, the odds, and the two nets.
 
@@ -348,7 +376,7 @@ def stash(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """
     if not row:
         return None
-    return {
+    out = {
         "player": row["name"],
         "days_out": row["days_out"],
         "back_by_week": {week: n(odds) for week, odds in row["return_odds_by_week"].items()},
@@ -362,3 +390,19 @@ def stash(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "one_line": row["line"],
         "language": row["language"],
     }
+    found = row.get("lock")
+    if found:
+        out["lock"] = {
+            "playoff_odds": n(found["playoff_odds"]),
+            "seeding_stake": n(found["seeding_stake"]),
+            "back_by_playoffs": n(found["back_by_playoffs"]),
+            "playoff_weeks": n(found["playoff_weeks"]),
+            "playoff_weeks_value": n(found["playoff_weeks_value"]),
+            "dead_weeks_cost": n(found["cost"]),
+            "lock_net": n(found["lock_net"]),
+            "net_if_seed_settled": n(found["net_if_seed_settled"]),
+            "net_if_seed_open": n(found["net_if_seed_open"]),
+            "one_line": found["line"],
+            "language": found["language"],
+        }
+    return out

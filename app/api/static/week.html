@@ -1475,8 +1475,30 @@ function whatIfNumberHtml(a) {
     `<p class="why">The bar is <b>${fixed(a.hurdle, 2)}</b> categories, from ` +
     `${escape(a.hurdle_source)}: ${escape(a.hurdle_note)}.</p>` +
     (priced ? `<p class="note">${priced}</p>` : "") +
+    playoffLine(a.playoffs, a.playoff_language) +
     stashLine(a.stash) +
     `</article>`
+  );
+}
+
+/* The same change over the playoff weeks alone, on every move rather than
+   only on a stash. The bracket is not known while the regular season is being
+   played -- the pairings depend on seeding nobody has earned -- so the
+   opponent is the league's average week, and the line says so rather than
+   letting a reader assume otherwise. No verdict. */
+function playoffLine(playoffs, language) {
+  if (!playoffs) return "";
+  if (!playoffs.measurable) {
+    return `<p class="note">Playoff weeks: ${escape(playoffs.note || "")}</p>`;
+  }
+  return (
+    `<p class="note">Playoff weeks (${Math.round(playoffs.weeks)}): ` +
+    `<b>${signed(playoffs.delta_per_week, 2)}</b> a week · ` +
+    `${playoffs.games_added} games in against ${playoffs.games_dropped} out · ` +
+    `${fixed(playoffs.expected_wins_before, 1)} categories a week becomes ` +
+    `<b>${fixed(playoffs.expected_wins_after, 1)}</b> · ` +
+    `bracket unknown, priced against an average opponent</p>` +
+    `<p class="hint faint">${escape(language || "")}</p>`
   );
 }
 
@@ -1495,7 +1517,29 @@ function stashLine(stash) {
     `expected <b>${signed(stash.expected_net, 2)}</b> ` +
     `(or ${signed(stash.net_if_out_past_week, 2)} if he is not back by ` +
     `week ${stash.late_week})</p>` +
+    lockLine(stash.lock) +
     `<p class="hint faint">${escape(stash.language)}</p>`
+  );
+}
+
+/* And one more line under that one when the team has already won its place.
+   A lock's dead regular weeks buy seeding and nothing else, so they are
+   charged at the chance the seed is still moving; what the place is really
+   buying is the man in the playoff weeks. Still no verdict, and the first
+   line above it is never replaced. */
+function lockLine(lock) {
+  if (!lock) return "";
+  return (
+    `<p class="note">You are a lock ` +
+    `<b>${Math.round(lock.playoff_odds * 100)}%</b> · ` +
+    `the dead weeks cost your seeding <b>${fixed(lock.cost, 2)}</b> · ` +
+    `back for the playoffs <b>${Math.round(lock.back_by_playoffs * 100)}%</b> · ` +
+    `worth <b>${signed(lock.playoff_weeks_value, 2)}</b> over the ` +
+    `${Math.round(lock.playoff_weeks)} playoff weeks · ` +
+    `lock net <b>${signed(lock.lock_net, 2)}</b> ` +
+    `(${signed(lock.net_if_seed_settled, 2)} to ` +
+    `${signed(lock.net_if_seed_open, 2)})</p>` +
+    `<p class="hint faint">${escape(lock.language)}</p>`
   );
 }
 

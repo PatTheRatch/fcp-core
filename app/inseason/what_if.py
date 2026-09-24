@@ -113,7 +113,7 @@ from app.pickups.judge import (
 )
 from app.pickups.projection import rest_of_season_line
 from app.pickups.returns import expected_games_if_out_past
-from app.pickups.stash import LATE_WEEK, Stash, stash_block
+from app.pickups.stash import LATE_WEEK, LOCK_ODDS, Lock, Stash, lock_block, stash_block
 from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
@@ -140,7 +140,15 @@ from app.pickups.stream import (
     week_changes,
 )
 from app.scoring.lines import CategoryLine
-from app.trades.evaluate import TradeReport
+from app.trades.evaluate import (
+    PLAYOFF_LANGUAGE,
+    PlayoffLens,
+    TradeReport,
+    playoff_lens,
+    playoff_lines,
+    playoff_span,
+    playoff_window,
+)
 
 __all__ = [
     "BREAKS_LIMITS",
@@ -421,6 +429,14 @@ class WhatIf:
     #: (`app.pickups.stash`). None when nobody in the change is out, which is
     #: every ordinary pickup.
     stash: Stash | None = None
+    #: The same change counted over the playoff weeks alone, against the
+    #: league's average week -- the trade evaluator's own lens
+    #: (`app.trades.evaluate.playoff_lens`), asked for a pickup. It always
+    #: answers: when there are no playoff weeks left it says so in its `note`
+    #: and `measurable` is False.
+    playoffs: PlayoffLens | None = None
+    #: What that lens is and is not, for a page and an assistant to repeat.
+    playoff_language: str = PLAYOFF_LANGUAGE
 
     @property
     def net(self) -> float:
@@ -564,6 +580,20 @@ def what_if(
         delta_week=changed.delta,
         tilt=tilt,
         as_of=as_of,
+        finish=finish,
+    )
+
+    playoffs = _playoffs(
+        session,
+        league_season,
+        today,
+        week,
+        change,
+        wire,
+        spots,
+        distributions=distributions,
+        tilt=tilt,
+        as_of=as_of,
     )
 
     net = judgement.delta_total
@@ -588,6 +618,85 @@ def what_if(
         historical_wire=pool is None and not has_free_agent_snapshots(session, league_season),
         notes=_notes(week, change, finish),
         stash=stash,
+        playoffs=playoffs,
+    )
+
+
+def _playoffs(
+    session: Session,
+    league_season: LeagueSeason,
+    today: int,
+    week: TeamWeek,
+    change: Change,
+    wire: Sequence[Contender],
+    spots: SpotBook,
+    *,
+    distributions: Sequence[CategoryDistribution],
+    tilt: bool,
+    as_of: date | None,
+) -> PlayoffLens:
+    """The same change counted over the playoff weeks alone.
+
+    The owner, 2026-09-24: *"maybe for all the moves in the what-if we show a
+    playoff impact too. We wouldn't actually know who we are playing, but it
+    could give some indication if people want to think that far ahead."*
+
+    So it is the trade evaluator's own lens (`app.trades.evaluate.playoff_lens`)
+    asked for a pickup rather than for a deal, which is why a trade and a
+    what-if about the same roster change give the same playoff number. The men
+    dropped and the men moved to injured reserve are what leaves the startable
+    list, the men added are what joins it, and the opponent is the league's own
+    average week, because the bracket is not known -- `playoff_language` is the
+    sentence that says so and it travels with the block.
+
+    It always answers. With no playoff periods stored, or with the playoff
+    weeks already behind this day, `measurable` is False and `note` is the
+    sentence saying why.
+    """
+    window = playoff_window(session, league_season)
+    days, weeks = playoff_span(window, today)
+    active = [player.player_id for player in week.active]
+    leaving = (*change.drops, *change.to_ir)
+    arriving = change.adds
+    everyone = sorted({*active, *leaving, *arriving, *(found.player_id for found in wire)})
+    weekly, games = playoff_lines(
+        session,
+        league_season,
+        everyone,
+        today,
+        days,
+        weeks,
+        tilt=tilt,
+        as_of=as_of,
+    )
+    # The men being added are off the wire, so the wire cannot also stand as
+    # their replacement: `fills` is what takes them out of it, which is the
+    # same exclusion `SpotBook.replacement(exclude=...)` makes for the
+    # regular-season half of the very same judgement.
+    spare = [found.player_id for found in wire if found.player_id not in set(arriving)]
+    best = max(
+        spare,
+        key=lambda player_id: spots.lens.value(weekly.get(player_id, CategoryLine())),
+        default=None,
+    )
+    return playoff_lens(
+        active=active,
+        leaving=leaving,
+        arriving=arriving,
+        fills=arriving,
+        playoff_weekly=weekly,
+        playoff_games=games,
+        playoff_days=days,
+        playoff_weeks=weeks,
+        window=window,
+        wire=[found.player_id for found in wire],
+        lens=spots.lens,
+        categories=[one.abbreviation for one in distributions],
+        distributions=distributions,
+        filler=None if best is None else weekly.get(best),
+        opened=max(0, len(leaving) - len(arriving)),
+        floor=spots.floor,
+        opened_place=spots.opened,
     )
 
 
@@ -605,6 +714,7 @@ def _stash(
     delta_week: float,
     tilt: bool,
     as_of: date | None,
+    finish: Finish | None = None,
 ) -> Stash | None:
     """The wait priced, when the change adds or holds a man who is ruled out.
 
@@ -613,6 +723,11 @@ def _stash(
     with one number changed -- the stashed man's own weekly value, re-counted
     from the prior's row he would be on if he were still out in four weeks --
     so it is `judge` answering twice rather than a second engine.
+
+    `finish` is the layer already computed above. When it says the team is a
+    lock -- playoff odds at or above `LOCK_ODDS` as the league stands, which
+    is the `_before` side of every pair on it -- the block gains the playoff
+    lens of `app.pickups.stash.lock_block` beside the first reading.
 
     Nothing here moves the hurdle or the net the page leads with. A stash
     under the bar still shows, with its odds beside it.
@@ -656,7 +771,7 @@ def _stash(
     ).scaled(1.0 / weeks)
     late_spots = replace(spots, values={**spots.values, man.player_id: spots.lens.value(late_line)})
     late = judge(late_spots, delta_week=delta_week, dropped=change.drops, added=change.adds)
-    return stash_block(
+    block = stash_block(
         player_id=man.player_id,
         name=man.name,
         days_out=days_out,
@@ -672,6 +787,82 @@ def _stash(
             if man.expected_return_date is None or as_of is None
             else (man.expected_return_date - as_of).days
         ),
+    )
+    lock = _lock(
+        session,
+        league_season,
+        day,
+        man=man,
+        spots=spots,
+        week=week,
+        finish=finish,
+        tilt=tilt,
+        as_of=as_of,
+    )
+    return block if lock is None else replace(block, lock=lock)
+
+
+def _lock(
+    session: Session,
+    league_season: LeagueSeason,
+    today: int,
+    *,
+    man: RosteredPlayer,
+    spots: SpotBook,
+    week: TeamWeek,
+    finish: Finish | None,
+    tilt: bool,
+    as_of: date | None,
+) -> Lock | None:
+    """The playoff lens, when the team has already won its place.
+
+    The gate is the finish layer's own playoff odds for the league as it
+    stands. What the lens needs beyond that is one quantity this engine does
+    not otherwise compute: what the stashed man is worth **over the playoff
+    weeks alone**, against the wire's best man, which is the trade evaluator's
+    playoffs lens asked for one player (`app.trades.evaluate`). His rate is
+    the one knowable today and only his games change -- his NBA team's over
+    those weeks, counted by the same return prior, from today rather than
+    from the first playoff day.
+
+    None when the team is not a lock, when the season stores no playoff
+    periods, and when the playoff weeks are already behind this day.
+    """
+    if finish is None or finish.playoff_odds_before < LOCK_ODDS:
+        return None
+    window = playoff_window(session, league_season)
+    if window is None:
+        return None
+    first, last = max(window[0], today), window[1]
+    if first > last:
+        return None
+    weeks = weeks_between(first, last)
+    rebuilt = build_players(
+        session, league_season, [man.player_id], tuple(range(first, last + 1)), today=today
+    )
+    if not rebuilt:
+        return None
+    over = rebuilt[0]
+    line = rest_of_season_line(
+        session,
+        int(league_season.season),
+        man.player_id,
+        today,
+        over.season_games,
+        tilt=tilt,
+        as_of=as_of,
+    ).scaled(1.0 / weeks)
+    replacement = spots.replacement(exclude=[man.player_id])
+    return lock_block(
+        playoff_odds=finish.playoff_odds_before,
+        seeding_stake=1.0 - max(finish.seed_odds_before or (0.0,)),
+        days_out=man.days_out or 1,
+        horizon_days=last - today + 1,
+        days_to_playoffs=first - today,
+        playoff_weeks=weeks,
+        playoff_weeks_value=(spots.lens.value(line) - replacement) * weeks,
+        opened=spots.opened,
+        ir_slot_free=week.ir_slot_free,
     )
 
 

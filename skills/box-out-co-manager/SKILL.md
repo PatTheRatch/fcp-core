@@ -107,6 +107,19 @@ return record for men out that long; they are **not a diagnosis, a timeline or
 a date**, and there is no date to give — ESPN's basketball API carries none.
 Never say when he will be back.
 
+**Every `what_if` answer carries `playoffs`** — the same change over the
+playoff weeks alone. Give `weeks`, `delta_per_week`, `games_added` against
+`games_dropped`, and `expected_categories_before`/`after`, and always say that
+the bracket is not known so the opponent is the league's average week. When
+`measurable` is false there is no number: read the `note` out instead.
+
+When `what_if`'s stash block carries a **`lock`**, his team has already won its
+place: give the `playoff_odds`, then `dead_weeks_cost` (seeding is all the dead
+regular weeks buy), `back_by_playoffs` and `playoff_weeks_value`, and quote
+`lock_net` **with** `net_if_seed_settled` and `net_if_seed_open` as its bounds.
+It is a second reading of the same move beside the first, never instead of it,
+and it is not a bar.
+
 ## A trade
 
 Lead with the fit, close with the record.

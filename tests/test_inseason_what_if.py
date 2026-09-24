@@ -35,10 +35,14 @@ from sqlalchemy.orm import Session
 from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
 from app.inseason.projected import project_standings
 from app.inseason.what_if import Change, trade_finishes, what_if
+from app.pickups.judge import Standard
 from app.pickups.projection import clear_cache as clear_lines
+from app.pickups.stash import LOCK_ODDS
 from app.pickups.state import load_team_week
 from app.pickups.stream import evaluated_wire, stream_recommendations
+from app.scoring.lines import CategoryLine
 from app.trades import TeamOffer, evaluate_trade
+from app.trades.evaluate import playoff_lens, playoff_span
 from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
@@ -61,6 +65,10 @@ SEASON_DAYS = list(range(1, PERIODS * 7 + 1))
 #: The day every case is judged on: the first day of the second week, so one
 #: week is banked, one is in front of us and one is still to come.
 TODAY = 8
+
+#: The first day of the last regular week, which is where the playoff-lens
+#: cases ask: by then nobody can catch Alpha and the engine says so outright.
+LAST_WEEK = 15
 
 ALPHA, BRAVO, CHARLIE, DELTA = 1, 2, 3, 4
 
@@ -134,19 +142,26 @@ def _man(
     return who
 
 
-def build(session: Session) -> dict[str, object]:
-    """Four teams of three, a settled first week, and two men on the wire."""
+def build(session: Session, *, playoffs: bool = False) -> dict[str, object]:
+    """Four teams of three, a settled first week, and two men on the wire.
+
+    `playoffs` adds a fourth matchup period, flagged as the playoff round, so
+    the cases about a team that has already won its place have playoff weeks
+    to be about. Every other case leaves it off and reads exactly as before.
+    """
+    stored = PERIODS + 1 if playoffs else PERIODS
     ls, teams, periods = league_season(
         session,
         season=SEASON,
         team_names=("Alpha", "Bravo", "Charlie", "Delta"),
-        periods=PERIODS,
+        periods=stored,
         regular_season_periods=PERIODS,
         days_per_period=7,
     )
     configure(ls, lineup=SMALL_LINEUP, bench=1, injured_reserve=1)
     ls.playoff_team_count = 2
-    for index, window in enumerate(periods):
+    regular, playoff_rounds = periods[:PERIODS], periods[PERIODS:]
+    for index, window in enumerate(regular):
         second = 1 + index % 3
         others = [place for place in range(1, 4) if place != second]
         if index == 0:
@@ -161,8 +176,13 @@ def build(session: Session) -> dict[str, object]:
         else:
             matchup(session, window, teams[0], teams[second])
             matchup(session, window, teams[others[0]], teams[others[1]])
+    # The playoff round is a real week with real pairings: the top two seeds
+    # meet, which is what the bracket does and what `Replay` would read.
+    for window in playoff_rounds:
+        matchup(session, window, teams[0], teams[1])
+    days = SEASON_DAYS + ([] if not playoffs else list(range(PERIODS * 7 + 1, stored * 7 + 1)))
     for pro_team in (10, 20, 30, 40, 50):
-        games(session, pro_team, SEASON_DAYS, season=SEASON)
+        games(session, pro_team, days, season=SEASON)
 
     who: dict[str, Player] = {}
     for index, team in enumerate(teams):
@@ -177,7 +197,7 @@ def build(session: Session) -> dict[str, object]:
                 on_team_id=int(team.espn_team_id),
             )
             for day in (1, TODAY):
-                held(session, team, periods[1], who[name], day, season=SEASON)
+                held(session, team, regular[1], who[name], day, season=SEASON)
     # Alpha also carries a man ESPN has ruled out, so the injured-reserve
     # move is a case this fixture can ask at all.
     who["AlphaOut"] = _man(session, "AlphaOut", NO_BOARDS, pro_team=10, injury="OUT")
@@ -189,7 +209,7 @@ def build(session: Session) -> dict[str, object]:
         injury_status="OUT",
     )
     for day in (1, TODAY):
-        held(session, teams[0], periods[1], who["AlphaOut"], day, season=SEASON)
+        held(session, teams[0], regular[1], who["AlphaOut"], day, season=SEASON)
 
     for name, line in (("Boards", BOARDS), ("Spare", NO_BOARDS)):
         who[name] = _man(session, name, line, pro_team=50)
@@ -667,6 +687,179 @@ def test_a_healthy_add_carries_no_stash_block(session: Session) -> None:
     built = build(session)
     _ls(built).injured_reserve_slots = 0
     assert ask(session, built, add=("Boards",), drop=("AlphaC",)).stash is None
+
+
+# ---------------------------------------------------------------------------
+# the playoff lens, for a team that has already won its place
+# ---------------------------------------------------------------------------
+
+
+def test_a_lock_stashing_gets_the_playoff_lens_beside_the_first_reading(
+    session: Session,
+) -> None:
+    """Alpha won the only settled week nine categories to nothing, two of four
+    teams make this fixture's playoffs, and on the last regular week nobody
+    can catch it: the engine puts it at 1.00, so it is a lock.
+
+    The lens has to arrive **beside** the first reading and never instead of
+    it: every number the page already printed is still there, and the new ones
+    are the seeding stake, the playoff weeks and the net over them.
+    """
+    built = build(session, playoffs=True)
+    _ls(built).injured_reserve_slots = 0
+    _out_on_the_wire(session, built, last_played=1)
+
+    answer = ask(session, built, today=LAST_WEEK, add=("Stashable",), drop=("AlphaC",))
+    stash = answer.stash
+    assert stash is not None
+    # The first reading is untouched.
+    assert stash.days_out == LAST_WEEK - 1
+    assert stash.dead_cost > 0.0
+    assert stash.expected_net == pytest.approx(answer.net - stash.dead_cost)
+
+    lock = stash.lock
+    assert lock is not None, "Alpha is a lock on this morning"
+    assert lock.playoff_odds >= LOCK_ODDS
+    assert lock.playoff_odds == pytest.approx(answer.finish.playoff_odds_before)
+    assert 0.0 <= lock.seeding_stake <= 1.0
+    assert lock.seeding_stake == pytest.approx(1.0 - max(answer.finish.seed_odds_before))
+    assert lock.playoff_weeks == pytest.approx(1.0), "one playoff round, seven days"
+    assert 0.0 < lock.back_by_playoffs < 1.0
+    # The lock's charge is never more than the regular-season reading's, and
+    # it is less whenever the seed is not wide open.
+    assert lock.cost <= stash.dead_cost + 1e-9
+    assert lock.net_if_seed_open <= lock.lock_net <= lock.net_if_seed_settled
+    assert "You are a lock" in lock.line
+    assert "not a second bar" in lock.language
+
+
+def test_a_team_that_is_not_a_lock_gets_the_first_reading_and_nothing_else(
+    session: Session,
+) -> None:
+    """Delta lost its settled week and cannot reach a field of two, so it is
+    nowhere near the band and the block it gets is the ordinary one."""
+    built = build(session, playoffs=True)
+    _ls(built).injured_reserve_slots = 0
+    _out_on_the_wire(session, built, last_played=1)
+
+    answer = ask(session, built, team=DELTA, today=LAST_WEEK, add=("Stashable",), drop=("DeltaC",))
+    assert answer.finish.playoff_odds_before < LOCK_ODDS
+    assert answer.stash is not None
+    assert answer.stash.lock is None
+
+
+def test_every_move_carries_the_playoff_lens_whether_or_not_it_is_a_stash(
+    session: Session,
+) -> None:
+    """The owner's second question: the playoff weeks on every move, not only
+    on a stash and not only for a lock.
+
+    Alpha swaps a healthy man for a healthy man. The block still arrives, it
+    is measurable, and it says how many playoff games each side of the swap
+    brings -- against the league's average week, because the bracket is not
+    known.
+    """
+    built = build(session, playoffs=True)
+    answer = ask(session, built, add=("Boards",), drop=("AlphaC",))
+
+    assert answer.stash is None, "nobody in this change is out"
+    lens = answer.playoffs
+    assert lens is not None
+    assert lens.measurable is True
+    assert lens.note is None
+    assert lens.weeks == pytest.approx(1.0), "one playoff round, seven days"
+    assert lens.first_scoring_period == PERIODS * 7 + 1
+    assert lens.last_scoring_period == (PERIODS + 1) * 7
+    assert lens.games_added > 0 and lens.games_dropped > 0
+    assert lens.games == lens.games_added + lens.games_dropped
+    assert lens.delta_total == pytest.approx(lens.delta_per_week * lens.weeks)
+    # Boards rebounds twice as hard as AlphaC, so the playoff weeks move the
+    # same way the ordinary week does.
+    assert lens.delta_per_week > 0
+    assert lens.expected_wins_after > lens.expected_wins_before
+    assert [view.abbreviation for view in lens.categories] == [one.abbreviation for one in WEEK]
+    assert "Playoff weeks (1)" in lens.line
+    assert "average opponent" in lens.line
+    assert "bracket is not known" in answer.playoff_language
+
+
+def test_the_playoff_lens_says_so_when_the_season_stores_no_playoff_periods(
+    session: Session,
+) -> None:
+    """A sentence rather than a zero, because zero would read as "no change"."""
+    built = build(session)
+    lens = ask(session, built, add=("Boards",), drop=("AlphaC",)).playoffs
+    assert lens is not None
+    assert lens.measurable is False
+    assert lens.note is not None and "stores no playoff matchup periods" in lens.note
+    assert lens.delta_per_week == 0.0
+    assert lens.delta_total == 0.0
+    assert lens.categories == ()
+    assert lens.expected_wins_before == 0.0
+    assert lens.line.startswith("Playoff weeks:")
+
+
+def test_the_playoff_lens_says_so_when_the_weeks_are_behind_the_day() -> None:
+    """The other empty case, asked of the lens directly.
+
+    A what-if cannot be judged on a day past the season, so this branch is
+    unreachable through the engine and is checked where it lives. The window
+    is behind the day, `playoff_span` gives no days, and the lens says which
+    of its reasons applies.
+    """
+    days, weeks = playoff_span((22, 28), 40)
+    assert days == () and weeks == 0.0
+
+    lens = playoff_lens(
+        active=(),
+        leaving=(),
+        arriving=(),
+        playoff_weekly={},
+        playoff_games={},
+        playoff_days=days,
+        playoff_weeks=weeks,
+        window=(22, 28),
+        wire=(),
+        lens=Standard(CategoryLine(), ()),
+        categories=(),
+        distributions=(),
+        filler=None,
+        opened=0,
+    )
+    assert lens.measurable is False
+    assert lens.note is not None and "already behind this day" in lens.note
+    assert lens.line.startswith("Playoff weeks:")
+
+
+def test_a_trade_and_a_what_if_price_the_same_roster_change_the_same_way(
+    session: Session,
+) -> None:
+    """One lens, asked twice.
+
+    `app.trades.evaluate.playoff_lens` is the only implementation; the trade
+    passes its side's tuples and the what-if passes its change's. A second
+    copy would let the trade tab and the what-if tab disagree about March for
+    the same two men.
+    """
+    from app.inseason import what_if as engine
+    from app.trades.evaluate import playoff_lens as shared
+
+    assert engine.playoff_lens is shared
+
+
+def test_without_stored_playoff_periods_there_is_no_lens_to_print(
+    session: Session,
+) -> None:
+    """A season whose playoff rounds are not stored has no playoff weeks to
+    count, so the lens says nothing rather than guessing at a window."""
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    _out_on_the_wire(session, built, last_played=1)
+
+    answer = ask(session, built, today=LAST_WEEK, add=("Stashable",), drop=("AlphaC",))
+    assert answer.finish.playoff_odds_before >= LOCK_ODDS, "Alpha is a lock either way"
+    assert answer.stash is not None
+    assert answer.stash.lock is None
 
 
 def test_a_free_injured_reserve_place_makes_the_wait_free(session: Session) -> None:

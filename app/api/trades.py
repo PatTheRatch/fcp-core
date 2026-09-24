@@ -63,7 +63,6 @@ from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
 from app.api.pickups import stash_out
 from app.api.schemas import (
     JudgementOut,
-    TradeCategoryOut,
     TradeFillCandidateOut,
     TradeFillPoolOut,
     TradeOut,
@@ -76,7 +75,7 @@ from app.api.schemas import (
     TradeRostersOut,
     TradeSideOut,
 )
-from app.api.what_if import finish_out
+from app.api.what_if import category_out, finish_out
 from app.db.models import LeagueSeason, Player, Team
 from app.draft.targets import CategoryDistribution, category_distributions
 from app.inseason.card import pro_team_name
@@ -93,7 +92,6 @@ from app.scoring.lines import CategoryLine
 from app.trades import (
     CALIBRATION_NOTE,
     POOL_LIMIT,
-    CategoryView,
     FillCandidate,
     FillPool,
     PlayerCard,
@@ -847,7 +845,7 @@ def _side_out(side: SideReport, espn: dict[int, int], finish: Finish | None = No
         places_used=side.places_used,
         judgement=_judgement_out(side.judgement),
         season_independent=side.season_independent,
-        categories=[_category_out(view) for view in side.categories],
+        categories=[category_out(view) for view in side.categories],
         playoffs=_playoffs_out(side.playoffs),
         replacement=side.replacement,
         opened_value=side.opened_value,
@@ -882,19 +880,6 @@ def _card_out(card: PlayerCard, espn: dict[int, int]) -> TradePlayerOut:
     )
 
 
-def _category_out(view: CategoryView) -> TradeCategoryOut:
-    return TradeCategoryOut(
-        abbreviation=view.abbreviation,
-        before=view.before,
-        after=view.after,
-        delta=view.delta,
-        p_before=view.p_before,
-        p_after=view.p_after,
-        p_delta=view.p_delta,
-        moved=view.moved,
-    )
-
-
 def _playoffs_out(lens: PlayoffLens) -> TradePlayoffsOut:
     return TradePlayoffsOut(
         first_scoring_period=lens.first_scoring_period,
@@ -903,7 +888,7 @@ def _playoffs_out(lens: PlayoffLens) -> TradePlayoffsOut:
         games=lens.games,
         delta_per_week=lens.delta_per_week,
         delta_total=lens.delta_total,
-        categories=[_category_out(view) for view in lens.categories],
+        categories=[category_out(view) for view in lens.categories],
         note=lens.note,
         measurable=lens.measurable,
     )

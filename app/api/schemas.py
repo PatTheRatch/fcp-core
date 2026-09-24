@@ -820,6 +820,29 @@ class PostedManOut(BaseModel):
     )
 
 
+class LockOut(BaseModel):
+    """The same wait read again for a team that has already won its place."""
+
+    playoff_odds: float = Field(description="The team's playoff odds as the league stands")
+    seeding_stake: float = Field(
+        description="1 - max(seed odds): 0 when the seed is settled and the dead weeks are free"
+    )
+    back_by_playoffs: float = Field(description="P(he plays again by the first playoff day)")
+    playoff_weeks: float
+    playoff_weeks_value: float = Field(
+        description="What he is worth over the playoff weeks against the wire, in categories"
+    )
+    dead_regular_weeks: float
+    dead_playoff_weeks: float
+    benefit: float
+    cost: float
+    lock_net: float
+    net_if_seed_settled: float = Field(description="The same net with the stake at 0")
+    net_if_seed_open: float = Field(description="The same net with the stake at 1")
+    line: str = Field(description="The one line a page prints under the stash line")
+    language: str = Field(description="What the lock's reading is and is not")
+
+
 class StashOut(BaseModel):
     """What holding a man who is not playing is expected to cost and return."""
 
@@ -841,6 +864,10 @@ class StashOut(BaseModel):
     healthy_games: int
     line: str = Field(description="The one line a page prints")
     language: str = Field(description="What the odds are and are not")
+    lock: LockOut | None = Field(
+        default=None,
+        description="The playoff lens, when the team has already won its place; null otherwise",
+    )
 
 
 class StreamReportOut(BaseModel):
@@ -1783,6 +1810,32 @@ class WhatIfWeekOut(BaseModel):
     )
 
 
+class WhatIfPlayoffsOut(BaseModel):
+    """One roster change counted over the playoff matchup periods alone.
+
+    The bracket is not known while the regular season is being played, so the
+    opponent is the league's own average week rather than a side. `measurable`
+    is False when there are no playoff weeks left to count, and `note` says
+    why -- the block is always present so a page never has to guess.
+    """
+
+    first_scoring_period: int | None
+    last_scoring_period: int | None
+    weeks: float
+    games_added: int = Field(description="Games the men arriving have scheduled in the window")
+    games_dropped: int = Field(description="Games the men leaving take with them")
+    delta_per_week: float
+    delta_total: float
+    expected_wins_before: float = Field(
+        description="Categories an ordinary playoff week wins now, against an average week"
+    )
+    expected_wins_after: float
+    categories: list[TradeCategoryOut]
+    note: str | None = Field(description="Why the lens says nothing, when it says nothing")
+    measurable: bool
+    line: str = Field(description="The one line a page prints")
+
+
 class WhatIfOut(BaseModel):
     """A pickup a manager named, in three layers (docs/what_if.md).
 
@@ -1816,3 +1869,8 @@ class WhatIfOut(BaseModel):
         default=None,
         description="What the wait costs, when the man added or moved to IR is ruled out",
     )
+    playoffs: WhatIfPlayoffsOut | None = Field(
+        default=None,
+        description="The same change over the playoff weeks alone, against an average week",
+    )
+    playoff_language: str = Field(default="", description="What the playoff lens is and is not")

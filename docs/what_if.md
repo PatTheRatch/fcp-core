@@ -174,6 +174,71 @@ The page renders one line under the number, in the house style:
 The trades page prints the same line per man under each side's finish block,
 for the men that side is taking on who are out.
 
+#### And, when the team has already won its place: the lock line
+
+Added 2026-09-24 ([`stash_locks.md`](stash_locks.md)). When the finish layer
+puts the team's playoff odds at or above **0.95** as the league stands, the
+stash block carries a `lock` beside the first reading and never instead of it:
+`playoff_odds`, `seeding_stake` (`1 − max(seed odds)`), `back_by_playoffs`,
+`playoff_weeks`, `playoff_weeks_value`, `cost`, `lock_net` and the two bounds
+`net_if_seed_settled` and `net_if_seed_open`.
+
+The reason is measured rather than argued. Over 294 lock stashes in eight
+seasons the dead place costs a lock **0.18 categories against the 0.38 the
+census charges it**, because the median seeding stake is 0.51 — about half of
+every dead regular week is a week the team was not going to be paid for. The
+two nets disagree on the sign for **26.87%** of lock stashes and for **46.38%**
+of the ones whose man reached the bracket, which is why it is worth a line.
+And the engine's own counterfactual says why: taking the stashed man off the
+roster moves a lock's playoff odds by a median **0.006** and the chance of its
+own most likely seed by **0.040**.
+
+> You are a lock (98%) · the dead weeks cost your seeding 0.21 · back for the
+> playoffs 71% · worth +1.20 over the 3 playoff weeks · lock net +0.64 (+0.85
+> to +0.32)
+
+### And on every move: the playoff lens
+
+Added 2026-09-24. The owner: *"maybe for all the moves in the what-if we show
+a playoff impact too. We wouldn't actually know who we are playing, but it
+could give some indication if people want to think that far ahead."*
+
+So every answer carries `playoffs` — the same change counted over the playoff
+matchup periods alone: `weeks`, `games_added` against `games_dropped`,
+`delta_per_week`, `delta_total`, `expected_wins_before` and
+`expected_wins_after`, the nine categories, and `measurable` with a `note`
+when there is nothing to count.
+
+**It is the trade evaluator's own lens, not a second one.**
+`app.trades.evaluate.playoff_lens` was already computing exactly this for each
+side of a deal; it now takes a roster change as plain tuples and the trade
+passes its side's while the what-if passes its own drops, IR moves and adds.
+A trade and a what-if about the same two men therefore give the same March
+number, which two implementations could not have guaranteed.
+
+**The opponent is the league's average week, and the payload says so.** The
+bracket is not known while the regular season is being played — the pairings
+depend on seeding nobody has earned, which is the whole of
+`app.inseason.projected.NO_BRACKET` — so `PLAYOFF_LANGUAGE` travels with the
+block and the page prints it under the line. It is a lens and not a bar.
+
+> Playoff weeks (3): −0.08 a week · 8 games in against 7 out · 4.6 categories
+> a week becomes 4.5 · bracket unknown, priced against an average opponent
+
+**It costs nothing worth naming.** Measured on the stored 2026 season, the
+same swap judged twice with the lens and twice without, on two real mornings:
+
+| day | without | with |
+|---|---|---|
+| 52 | 1.93 s, 2.35 s | 2.27 s, 1.89 s |
+| 80 | 2.03 s, 2.12 s | 1.88 s, 2.10 s |
+
+A mean of **2.11 s without and 2.04 s with**: the difference is smaller than
+the spread between two identical calls. The reason is that the per-game rates
+are already cached per day by the projections above it, so the lens is one
+extra `build_players` pass over the playoff days and a scaling. It is
+therefore always on, and there is no `?playoffs=1` to ask for.
+
 ---
 
 ## 2. The noise, stated

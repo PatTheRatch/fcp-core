@@ -63,6 +63,7 @@ from app.api.schemas import (
     EmptyDayOut,
     GlanceOut,
     JudgementOut,
+    LockOut,
     PickupPlayerOut,
     PostedManOut,
     RungOut,
@@ -96,7 +97,7 @@ from app.pickups.bids import Bid
 from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
-from app.pickups.stash import Stash
+from app.pickups.stash import Lock, Stash
 from app.pickups.state import BoxScore, PostedMan, RosteredPlayer, SeasonCalendar, season_calendar
 from app.pickups.stream import CategoryShift, Move, Schedule, SideGames, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
@@ -750,6 +751,29 @@ def stash_out(stash: Stash) -> StashOut:
         healthy_games=stash.healthy_games,
         line=stash.line,
         language=stash.language,
+        lock=_lock_out(stash.lock),
+    )
+
+
+def _lock_out(lock: Lock | None) -> LockOut | None:
+    """The playoff lens, when the team has already won its place."""
+    if lock is None:
+        return None
+    return LockOut(
+        playoff_odds=lock.playoff_odds,
+        seeding_stake=lock.seeding_stake,
+        back_by_playoffs=lock.back_by_playoffs,
+        playoff_weeks=lock.playoff_weeks,
+        playoff_weeks_value=lock.playoff_weeks_value,
+        dead_regular_weeks=lock.dead_regular_weeks,
+        dead_playoff_weeks=lock.dead_playoff_weeks,
+        benefit=lock.benefit,
+        cost=lock.cost,
+        lock_net=lock.lock_net,
+        net_if_seed_settled=lock.net_if_seed_settled,
+        net_if_seed_open=lock.net_if_seed_open,
+        line=lock.line,
+        language=lock.language,
     )
 
 
