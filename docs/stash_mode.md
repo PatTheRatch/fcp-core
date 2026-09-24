@@ -187,6 +187,8 @@ nothing here could: there is no stored season with a stored status to test it
 against. The measurement that stands behind the rule is `stashes.md`'s, and the
 first real test of it will be a live morning.
 
+Every run's full output is in `docs/runs/`, dated 2026-09-24.
+
 ### 1. The projected standings: identical
 
 | | before | after |
@@ -220,7 +222,59 @@ wrong, and §7 of `stashes.md` is where that is scored.
 
 ## §7 re-scored: the engine's error on 2026's ninety-one stashes
 
-<!-- RESCORE -->
+`scripts/stashes.py` §7 now prints both columns. Re-run whole, 228s, against
+the same local database as the study itself.
+
+**The rule has to be scored off the study's own instrument rather than off
+`build_players`.** This database holds status snapshots for the season in
+progress only, so a 2026 morning has no stored injury status at all and
+`build_players` would call every one of these men fit. The days out are the
+box scores' — which is the count the prior is measured against in the first
+place — and his remaining game days are his own rows. His line is the knowable
+one of the claim morning, the expected share of his team's remaining games,
+`ESPN_AVAILABILITY`, through the study's own lens, times the weeks he was
+actually held after returning.
+
+|  | before | after |
+|---|---|---|
+| projected, mean per stash | 0.00 | **+0.99** |
+| projected, total over the ninety-one | 0.00 | **89.90** |
+| delivered, total | 94.50 | 94.50 |
+| **mean error per stash** | **+1.04** | **+0.05** |
+| median error | +0.00 | +0.00 |
+| mean absolute error | 1.04 | **0.73** |
+
+**The bias is gone and the noise is not, which is what a prior should do.** A
+table measured on eleven thousand absences cannot know that Jaylon Tyson would
+come back in eleven days and deliver nine categories; it can know that a man
+eleven days out is worth something rather than nothing. Across the ninety-one
+the expectation now lands within a twentieth of a category of what they
+delivered in total, and on any one of them it is still out by about
+three quarters of a category either way.
+
+The top of the list, as the script prints it (`error now` is delivered less
+projected):
+
+| day | player | d out | was | now says | he delivered | error was | error now |
+|---|---|---|---|---|---|---|---|
+| 32 | Jaylon Tyson | 11 | 0.00 | 8.11 | 9.00 | 9.00 | +0.89 |
+| 85 | Saddiq Bey | 13 | 0.00 | 2.45 | 8.50 | 8.50 | +6.05 |
+| 37 | Kevin Porter Jr. | 35 | 0.00 | 5.78 | 8.00 | 8.00 | +2.22 |
+| 46 | Kelly Oubre Jr. | 21 | 0.00 | 3.55 | 6.00 | 6.00 | +2.45 |
+| **23** | **Brandon Miller** | **18** | **0.00** | **6.35** | **5.00** | **5.00** | **−1.35** |
+| 29 | Keegan Murray | 28 | 0.00 | 6.26 | 4.00 | 4.00 | −2.26 |
+| 55 | Tari Eason | 30 | 0.00 | 4.67 | 2.00 | 2.00 | −2.67 |
+
+**Read the two columns as two currencies, which is Limitation 3 of the study
+all over again.** `delivered` is `Replay` categories — a category is won, lost
+or tied, so it moves in halves — and `now says` is a marginal through the
+lens. Zero was zero in both, which is why the before column needed no such
+warning and this one does. The error is a size, not a calibration.
+
+And one thing has not changed and is worth saying: **the study's own
+conclusion still holds.** A stash is a lottery ticket with a small known cost
+and a long right tail; the engine can now price the ticket, and the page
+prints the odds beside it rather than a verdict.
 
 ---
 
