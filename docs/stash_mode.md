@@ -151,7 +151,7 @@ both and the odds beside them.
 One line, in the house style, no verdict words, the odds beside the number:
 
 > Out 18 days · back within a fortnight 48% · dead weeks cost 1.58 · expected
-> +0.94 (or −0.82 if he is not back by week 4)
+> −1.76 (or −3.52 if he is not back by week 4)
 
 It carries **no return date**. `availability.md` §2 found a timeline word in 0
 of 6,987 Out runs, and ESPN gives no date at all for basketball. A date would be
@@ -223,6 +223,27 @@ wrong, and §7 of `stashes.md` is where that is scored.
 <!-- RESCORE -->
 
 ---
+
+## Not done, and named so it is not forgotten
+
+**The Week page's wire chooser still shows the best forty and has no search.**
+The engine will now judge any man a caller names — `evaluated_wire` keeps a
+named man whatever he ranks, which it did not before and which is why the
+route used to answer "Brandon Miller is not a free agent" — but the page's own
+list is `/trades/pool`'s top forty by value, and a fringe stash is not in it.
+That is not about the injury: an OUT man's value is return-weighted now, so a
+good player out a fortnight ranks where he should. It is that a manager cannot
+ask about a man the page has not listed. A search box on that list is the fix
+and it is not in this change.
+
+**The first add is still free.** `stashes.md` §3 of "the settings gates" names
+it: a stash spends one of the seven adds a matchup period allows and then
+holds a place that cannot be streamed, so it costs the lane twice. The 0.38
+prices the second cost; nothing prices the first.
+
+**Doubtful and Questionable are untouched.** The availability study's play
+rates are a separate change and folding them in here would have mixed two
+measurements under one declaration.
 
 ## Decisions
 

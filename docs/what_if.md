@@ -134,6 +134,9 @@ Making that true took three names being made public in
   whoever the team holds, cut to the best eighty by that week's line. This one
   matters most: the replacement charge is the best free agent *in that set*,
   so reading a different wire is a different season term for the same swap.
+  It takes a `keep` since 2026-09-24, and the what-if passes the men it was
+  asked about: a man ESPN has ruled out has no games this week, so his line is
+  zero and the cut dropped him, which made a stash unaskable (`stash_mode.md`).
 * `spot_book` -- the lens and the weekly values the charge is taken through.
 * `priced` -- the FAAB bid, so a named pickup that clears the bar is priced by
   the function that prices every other pickup.
@@ -166,7 +169,7 @@ exactly as any other move under the hurdle does.
 The page renders one line under the number, in the house style:
 
 > Out 18 days · back within a fortnight 48% · dead weeks cost 1.58 · expected
-> +0.94 (or −0.82 if he is not back by week 4)
+> −1.76 (or −3.52 if he is not back by week 4)
 
 The trades page prints the same line per man under each side's finish block,
 for the men that side is taking on who are out.

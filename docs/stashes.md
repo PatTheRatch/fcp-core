@@ -5,7 +5,7 @@
 **Script:** `scripts/stashes.py` (re-runnable; passes `ruff check`, `ruff format --check` and `mypy`)
 **Instrument:** `player_game_stats` · `pro_team_games` · `transactions` · `transaction_items` · `daily_lineup_slots` · `matchup_team_stats` · `injury_reports`
 **Currency:** categories a week, through `scripts/pickups_backtest.py`'s `Replay` and `app.pickups.judge.standard_lens`
-**Companions:** [`availability.md`](availability.md) (the absences and the report-based return prior this calibrates against), [`keepers.md`](keepers.md) (the hold, the replacement level, the `Replay` reuse), [`streaming_lane.md`](streaming_lane.md) (`OPENED_PLACE`, what a dead place costs), [`pickups.md`](pickups.md) §4.4 (the stash lane as designed), [`what_if.md`](what_if.md) (the engine this feeds)
+**Companions:** [`stash_mode.md`](stash_mode.md) (**what this study produced**: the rule, declared and built 2026-09-24), [`availability.md`](availability.md) (the absences and the report-based return prior this calibrates against), [`keepers.md`](keepers.md) (the hold, the replacement level, the `Replay` reuse), [`streaming_lane.md`](streaming_lane.md) (`OPENED_PLACE`, what a dead place costs), [`pickups.md`](pickups.md) §4.4 (the stash lane as designed), [`what_if.md`](what_if.md) (the engine this feeds)
 **Reproduce:** `PYTHONPATH=. ~/fcp-core/.venv/bin/python scripts/stashes.py --why` — this run was made against the **local** Docker Postgres (`fcp-core-db-1`, `localhost:5432`), not the VPS; on the VPS the interpreter is `/opt/fcp-core/.venv/bin/python` and the injury-report tables of §1b and §3 will be five seasons deep rather than one (limitation 2).
 **Read-only:** every query is a SELECT. Nothing is written to the database. **Runtime 254s** for all eight seasons.
 
@@ -925,6 +925,21 @@ for −7.08 and −6.44. **The five 2020 rows at exactly −5.70 are the suspens
 
 ## 7. What the engine projects for a stash today, scored
 
+> **Superseded on 2026-09-24, and by this document's own recommendation.**
+> The rule below was replaced by the one declared in
+> [`stash_mode.md`](stash_mode.md), and `scripts/stashes.py`'s section 7 now
+> prints both columns: what the engine said (0.00 for every stash) and what it
+> says now. The re-scored figures are in `stash_mode.md`'s own section 7.
+> Everything in this section is the state of the engine **before** that
+> change, and is kept as written because it is the measurement that caused it.
+>
+> One thing in it turned out to be understated. §Limitations 9 says this
+> database holds no `expected_return_date` and leaves open whether that is
+> ESPN's doing or ours. It is ESPN's, and absolutely: a read-only probe of the
+> league's own player pool on 2026-09-24 found **no such field on the player
+> object at all**, across 1,097 entries of which 136 were OUT, in either kona
+> view. There was never a date to be missing.
+
 `app.pickups.state.playable_days` removes every day before ESPN's
 `expected_return_date` for a man whose status is in `RULED_OUT_STATUSES` (OUT,
 SUSPENSION), and **every day at all when there is no date**. That flows into
@@ -1097,6 +1112,13 @@ Three, and all three already exist as fields:
   rule and needs no new number.
 
 ### 4. Nothing is wired by this document
+
+> **Accepted and built, 2026-09-24.** The owner took proposals 1, 2 and 3
+> above. The rule is `app/pickups/returns.py`, the wait is
+> `app/pickups/stash.py`, and [`stash_mode.md`](stash_mode.md) is the record:
+> what was declared before anything ran, what the three calibrations said,
+> and what section 7 above now scores. No constant moved and no hurdle moved,
+> which is what proposals 1 and 2 asked for.
 
 No constant moved, no route changed, no page edited, no file in `app/` touched.
 It adds one script and one document. The three proposals above are for the owner
