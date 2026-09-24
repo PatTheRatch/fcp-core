@@ -62,10 +62,17 @@ from sqlalchemy.orm import Session
 from app import brand
 from app.api.access import LEAGUE_MEMBER
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep
-from app.api.schemas import PageContextOut, PageDayOut, PagePeriodOut, PageTeamOut
+from app.api.schemas import (
+    InjuriesOut,
+    PageContextOut,
+    PageDayOut,
+    PagePeriodOut,
+    PageTeamOut,
+)
 from app.db.models import IngestRun, LeagueSeason, MatchupPeriod, Team
 from app.ingest_runs import SUCCEEDED
-from app.pickups.state import SeasonCalendar, period_for_day, season_calendar
+from app.mcp.provenance import NO_REPORT, USED_NOTE
+from app.pickups.state import SeasonCalendar, period_for_day, season_calendar, status_on
 from app.projections.sources import ESPN, describe
 
 router = APIRouter(tags=["pages"])
@@ -149,8 +156,31 @@ def page_context(
         # Nothing on these pages is per-player projection data, so nothing is
         # gated; the line says where the numbers came from all the same.
         source_note=describe(ESPN, f"{season} season, from the stored box scores"),
+        injuries=_injuries_out(session, season, day),
         box_scores_as_of=_last_ingest(session, season),
         generated_at=datetime.now(UTC),
+    )
+
+
+def _injuries_out(session: Session, season: int, day: int | None) -> InjuriesOut | None:
+    """Where this day's statuses came from, for "how this is worked out".
+
+    The engine's own answer rather than a second guess at it: `status_on` is
+    what `build_players` read, and it is memoized on the session, so naming
+    the source costs the page nothing. Null with no day, which is a season
+    with no stored schedule -- nothing was read, and the page says so by
+    leaving the line off.
+    """
+    if day is None:
+        return None
+    read = status_on(session, season, day)
+    return InjuriesOut(
+        used=read.source,
+        used_note=USED_NOTE.get(read.source, NO_REPORT),
+        read_as_of=read.read_as_of,
+        reported_at=read.reported_at,
+        placed=read.placed,
+        unmatched=read.unmatched,
     )
 
 

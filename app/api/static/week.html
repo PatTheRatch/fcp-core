@@ -474,6 +474,33 @@ function ingestNote() {
   );
 }
 
+/** Which of the two injury-status sources this day read, and as of when.
+ *
+ *  The context carries the engine's own answer, not a second guess at it:
+ *  `used` is what `build_players` read for this very day. A replayed day
+ *  reads the NBA's own report as of ten o'clock Eastern that morning and
+ *  nothing published after it, which is the whole point of the source order
+ *  (docs/replay_status.md). */
+function injuryNote() {
+  const said = CONTEXT && CONTEXT.injuries;
+  if (!said) {
+    return ` No NBA schedule is stored for this season, so there is no morning to read a
+      status as of, and every man reads as fit.`;
+  }
+  const at = said.read_as_of ? new Date(said.read_as_of) : null;
+  const when =
+    at !== null && !Number.isNaN(at.getTime())
+      ? ` as of <b>${clock(at)}</b> on ${dayName(at.toISOString().slice(0, 10))}`
+      : "";
+  const unplaced = said.unmatched
+    ? ` ${said.unmatched} name${said.unmatched === 1 ? "" : "s"} the league printed that ` +
+      `morning could not be placed on a player and read as fit here; nearly all are ` +
+      `G-League men.`
+    : "";
+  return ` ${escape(said.used_note)}${when}, covering ${said.placed} ` +
+    `${said.placed === 1 ? "player" : "players"}.${unplaced}`;
+}
+
 /* ---- this week, by man --------------------------------------------------
    The score broken out: one row a man, ours and theirs in two tables one
    under the other, and a totals row that has to equal the score in the
@@ -1946,6 +1973,12 @@ function drawProvenance(report, projection) {
     // Tonight -- is as old as the last ingest, and this is the section a
     // reader comes to when he wants to know how old a number is.
     `<p class="lede"><b>Box scores:</b>${ingestNote()}</p>`,
+    // Which of the two status sources this day read, and as of when. On a
+    // live morning it is ESPN's; on a replayed one it is the NBA's own
+    // report as of ten o'clock Eastern that morning, which is the only
+    // source that can answer about a day already played
+    // (docs/replay_status.md).
+    `<p class="lede"><b>Injury statuses:</b>${injuryNote()}</p>`,
   ];
   if (report.faab_overspent) {
     parts.push(

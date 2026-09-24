@@ -8,7 +8,10 @@ payload instead, in one block on every tool result:
     provenance:
       calibration:   per key -- value, source, n, measured_at, note
       projection:    the source line the pages carry
-      injuries:      when the injury report this answer read was published
+      injuries:      which source this answer's statuses came from (`used`:
+                     ESPN's snapshot on a live morning, else the NBA's own
+                     report), when it was published, and how many names the
+                     league printed that no player row could be placed on
       as_of:         the scoring period, its date, and whether the report
                      was the morning's stored one or was built for this call
 
@@ -31,7 +34,8 @@ from app import calibration
 from app.db.models import InjuryReport, LeagueSeason
 from app.injuries import morning_of
 from app.injury_reports import NBA_OFFICIAL
-from app.pickups.state import SeasonCalendar, season_calendar
+from app.pickups import status_source
+from app.pickups.state import SeasonCalendar, season_calendar, status_on
 from app.projections.sources import ESPN, describe
 
 #: What the injury line says when the league published nothing this answer
@@ -78,10 +82,47 @@ def projection_note(league_season: LeagueSeason) -> str:
     return describe(ESPN, f"{int(league_season.season)} season, from the stored box scores")
 
 
-def injuries_as_of(session: Session, on: date | None) -> dict[str, Any]:
-    """When the newest injury report this answer could see was published."""
+#: What the injuries line says about each source the engine may have read.
+#: One sentence each, because a reader who is told "nba_official" and nothing
+#: else still has to guess whether that is the day's answer or a fallback.
+USED_NOTE = {
+    status_source.ESPN: (
+        "ESPN's own status, as the listener last stored it: this is a live "
+        "morning, so ESPN is asked first"
+    ),
+    NBA_OFFICIAL: (
+        "the NBA's own injury report as of ten o'clock Eastern that morning -- "
+        "the read that sees the league's nine o'clock report. The listener had "
+        "taken no snapshot by then, so the league's report is what a manager "
+        "could have known"
+    ),
+    status_source.NO_SOURCE: NO_REPORT,
+}
+
+
+def injuries_as_of(
+    session: Session, season: int, day: int | None, on: date | None
+) -> dict[str, Any]:
+    """Which source this answer's statuses came from, and when it was published.
+
+    `used` is the declared source order's own answer (`app.pickups.state`'s
+    `status_on`, which is what `build_players` read), so a page and a
+    co-manager are told the same thing the engine was told rather than a
+    second guess at it. `unmatched` is the names the league printed that
+    morning which no player row could be found for: they read as healthy here
+    and are nearly all G-League men (docs/injuries.md).
+    """
     if on is None:
-        return {"source": NBA_OFFICIAL, "reported_at": None, "note": NO_REPORT}
+        return {
+            "source": NBA_OFFICIAL,
+            "used": status_source.NO_SOURCE,
+            "reported_at": None,
+            "read_as_of": None,
+            "placed": 0,
+            "unmatched": 0,
+            "note": NO_REPORT,
+            "used_note": NO_REPORT,
+        }
     at = morning_of(on)
     newest = session.scalar(
         select(func.max(InjuryReport.reported_at)).where(
@@ -91,11 +132,20 @@ def injuries_as_of(session: Session, on: date | None) -> dict[str, Any]:
             InjuryReport.status.is_not(None),
         )
     )
+    read = (
+        status_source.read_statuses(session, season, on)
+        if day is None
+        else status_on(session, season, day)
+    )
     return {
         "source": NBA_OFFICIAL,
+        "used": read.source,
         "reported_at": newest.isoformat() if newest is not None else None,
         "read_as_of": at.isoformat(),
+        "placed": read.placed,
+        "unmatched": read.unmatched,
         "note": NO_REPORT if newest is None else "the league's own report, as of that moment",
+        "used_note": USED_NOTE.get(read.source, NO_REPORT),
     }
 
 
@@ -132,7 +182,7 @@ def block(
         },
         "calibration": numbers(session, league_season, keys),
         "projection": {"source_note": projection_note(league_season)},
-        "injuries": injuries_as_of(session, on),
+        "injuries": injuries_as_of(session, int(league_season.season), day, on),
         "read_only": "nothing here can add, drop, bid or accept anything on ESPN",
     }
     if extra:

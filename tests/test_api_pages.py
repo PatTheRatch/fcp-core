@@ -503,6 +503,28 @@ def test_the_context_route_carries_what_the_reports_do_not(client: TestClient) -
     }
 
 
+def test_the_context_route_names_the_status_source_it_read(client: TestClient) -> None:
+    """The "how this is worked out" line is drawn from this, so it names it.
+
+    `SEASON` is the one the listener ran for, so a day of it reads ESPN's own
+    snapshot; `PLAYED` has no snapshot and no stored report either, so
+    nothing could be read and the page says so rather than implying a roster
+    of fit men was checked (`docs/replay_status.md`).
+    """
+    live = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/pages/context?today=3").json()
+
+    assert live["injuries"]["used"] == "espn"
+    assert live["injuries"]["used_note"].startswith("ESPN's own status")
+    assert live["injuries"]["read_as_of"].startswith("2025-10-23"), "ten o'clock Eastern"
+    assert live["injuries"]["placed"] > 0
+    assert live["injuries"]["unmatched"] == 0
+
+    played = client.get(f"/leagues/{LEAGUE_ID}/seasons/{PLAYED}/pages/context?today=3").json()
+
+    assert played["injuries"]["used"] == "none"
+    assert played["injuries"]["placed"] == 0
+
+
 def test_the_context_route_puts_our_team_first(client: TestClient) -> None:
     body = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/pages/context").json()
 

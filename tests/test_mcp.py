@@ -15,6 +15,7 @@ memberships and this file needs a league with box scores in it.
 import asyncio
 import json
 from collections.abc import Iterator, Mapping
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -23,6 +24,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, ListToolsResult, TextContent, TextResourceContents
 from sqlalchemy.orm import Session
 
+from app.api import pages as pages_api
 from app.api import pickups as pickups_api
 from app.api import trades as trades_api
 from app.api import what_if as what_if_api
@@ -573,6 +575,11 @@ def test_every_tool_carries_its_provenance(server: MCPServer, league: dict[str, 
         assert found["season"] == SEASON, name
         assert "source_note" in found["projection"], name
         assert "reported_at" in found["injuries"], name
+        # Which of the two sources the engine actually read for this day, so
+        # a co-manager can say it rather than guess (docs/replay_status.md).
+        assert found["injuries"]["used"] in ("espn", "nba_official", "none"), name
+        assert found["injuries"]["used_note"], name
+        assert found["injuries"]["unmatched"] == 0, name
         assert "read_only" in found, name
         for key, number in found["calibration"].items():
             assert set(number) >= {"value", "source", "n", "note", "measured_at"}, f"{name}:{key}"
@@ -685,6 +692,31 @@ def test_an_unreadable_moment_is_a_sentence_not_a_stack_trace(
         {"league_id": LEAGUE_ID, "season": SEASON, "since": "last tuesday"},
     )
     assert "is not a moment I can read" in said
+
+
+def test_the_status_source_reads_the_same_through_the_tool_as_through_the_route(
+    server: MCPServer, session: Session, league: dict[str, Any]
+) -> None:
+    """The page and the co-manager name one source, or they name two.
+
+    The page draws "how this is worked out" from `pages/context` and the tool
+    from its own provenance block; both are `status_on`'s answer for the same
+    day, so every field they share has to match.
+    """
+    answer = call(server, "week_report", ALL_CALLS["week_report"])
+    route = pages_api.page_context(
+        LEAGUE_ID, league["ls"], session, today=TODAY, me=None
+    ).model_dump(mode="json")
+
+    said = answer["provenance"]["injuries"]
+    assert route["injuries"] is not None
+    for key in ("used", "used_note", "placed", "unmatched"):
+        assert route["injuries"][key] == said[key], key
+    # The two serialise a moment differently -- pydantic writes `Z`, the tool
+    # writes `+00:00` -- so the moment is compared and not its spelling.
+    assert datetime.fromisoformat(route["injuries"]["read_as_of"]) == datetime.fromisoformat(
+        said["read_as_of"]
+    )
 
 
 def test_a_stash_reads_the_same_through_the_tool_as_through_the_route(

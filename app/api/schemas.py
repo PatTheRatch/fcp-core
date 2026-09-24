@@ -1552,6 +1552,38 @@ class PagePeriodOut(BaseModel):
     days: list[PageDayOut]
 
 
+class InjuriesOut(BaseModel):
+    """Where the day's injury statuses came from, in the declared order.
+
+    The same block the MCP provenance carries (`app.mcp.provenance`), so a
+    page and a co-manager name the same source. `used` is what the engine
+    actually read for this day: `espn` on a live morning, `nba_official` on a
+    replayed one, `none` when neither could answer. See
+    `docs/replay_status.md`.
+    """
+
+    used: str = Field(description="`espn`, `nba_official` or `none`")
+    used_note: str = Field(description="The same, as a sentence a page can print")
+    read_as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "The moment the read was bounded by: ten o'clock Eastern that morning, which "
+            "is the read that sees the league's nine o'clock report"
+        ),
+    )
+    reported_at: datetime | None = Field(
+        default=None, description="The newest NBA report published by that moment"
+    )
+    placed: int = Field(description="Players the morning's source had a status for")
+    unmatched: int = Field(
+        default=0,
+        description=(
+            "Names the league printed that morning which no player row could be placed "
+            "on, so they read as healthy here; nearly all G-League men (docs/injuries.md)"
+        ),
+    )
+
+
 class PageContextOut(BaseModel):
     """What the in-season pages need besides the two pickup reports.
 
@@ -1572,6 +1604,14 @@ class PageContextOut(BaseModel):
     teams: list[PageTeamOut]
     our_espn_team_id: int | None
     source_note: str = Field(description="Where the numbers came from, in the page's words")
+    injuries: InjuriesOut | None = Field(
+        default=None,
+        description=(
+            "Where this day's injury statuses came from, in the declared source order "
+            "(docs/replay_status.md). Null when the season has no schedule to date the "
+            "day by, and then nothing was read"
+        ),
+    )
     box_scores_as_of: datetime | None = Field(
         default=None,
         description=(
