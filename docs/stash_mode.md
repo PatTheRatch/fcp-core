@@ -278,6 +278,44 @@ prints the odds beside it rather than a verdict.
 
 ---
 
+## Verified, and on what
+
+Tests: the prior read against its own cells, held above its last row and
+chained past its last column, the density non-negative and summing to the
+curve; fractional games that fall as an absence runs on; the ramp on the weeks
+after a return; ESPN's date winning; a free injured-reserve place making the
+wait free; Doubtful and Questionable untouched; the stash block on the what-if
+and on a man moved to injured reserve; the same block through the MCP tool as
+through the route; a man with no games this week surviving the wire's cut when
+he is named; and a roster with nobody out reading **identically** with the
+whole prior replaced by a table of zeroes, which is the guard the week's own
+numbers need.
+
+**The browser check needed a listener state this database has never had.**
+`player_status_snapshots` and `free_agent_snapshots` only ever hold the season
+in progress, so a 2026 morning has no injury status and no wire, and the rule
+under test fires on a man ESPN has ruled out. So `fcp` was copied — read-only,
+by `pg_dump` — into the private `fcp_stash_test`, and in **that copy** two
+things were written: one snapshot marking Brandon Miller OUT for Charlotte,
+and the day-23 wire as the listener would have seen it (the men
+`historical_free_agents` can reconstruct, plus Miller, who really was a free
+agent that morning — Through The Wire claimed him for $2 — and whom the
+reconstruction cannot see because he did not play). Nothing was written to
+`fcp`. On that copy, single mode, a free port:
+
+* **Week page, `?today=23`, Optimize the MVPs, add Miller and drop AJ Green.**
+  The stash line renders under the number, with the finish under it: 8th to
+  10th, playoff odds 45.7% to 29.0%, against a ±1.0 point band.
+* **The same page with a healthy add** (Harrison Barnes) renders no stash line.
+* **Season page, same day.** The Stashes table has a row in it — the first
+  time that lane has returned anything since it was written.
+
+Wall times: projected calibration 39s before, 37s after; trade calibration 72s
+before, 82s after; the stash study 228s; the two pickup backtests as recorded
+in §0.3 above.
+
+---
+
 ## Not done, and named so it is not forgotten
 
 **The Week page's wire chooser still shows the best forty and has no search.**
