@@ -92,6 +92,14 @@ class Card:
     #: His line per game, and the same over an ordinary week from here on.
     per_game: CategoryLine
     weekly: CategoryLine
+    #: Games the weekly line is actually counted over: `games_left` for a man
+    #: who is not ruled out, and his game days weighted by the chance he is
+    #: back by each of them for a man who is (`app.pickups.returns`). Carried
+    #: beside `games_left` rather than instead of it, because one is a
+    #: schedule fact and the other an expectation.
+    expected_games: float = 0.0
+    #: Calendar days since his last played game, when he is ruled out.
+    days_out: int | None = None
 
     @property
     def thin(self) -> bool:
@@ -129,9 +137,10 @@ def player_card(
     built = build_players(session, league_season, [player_id], days)
     player = built[0] if built else None
     games_left = player.games_remaining_this_period if player is not None else 0
+    expected = player.season_games if player is not None else 0.0
     known = knowable(session, player_id, season, today, as_of=as_of)
     weekly = rest_of_season_line(
-        session, season, player_id, today, games_left, tilt=tilt, as_of=as_of
+        session, season, player_id, today, expected, tilt=tilt, as_of=as_of
     ).scaled(1.0 / weeks)
 
     window = playoff_window(session, league_season)
@@ -152,6 +161,8 @@ def player_card(
         playoff_games=playoff_games,
         playoff_first=playoff_first,
         playoff_last=playoff_last,
+        expected_games=expected,
+        days_out=player.days_out if player is not None else None,
         games_so_far=known.games_so_far,
         had_projection=known.had_projection,
         projection_source=known.source,
@@ -184,6 +195,8 @@ def _playoffs(
     first = max(window[0], today)
     if first > window[1]:
         return window[0], window[1], 0
-    built = build_players(session, league_season, [player_id], tuple(range(first, window[1] + 1)))
+    built = build_players(
+        session, league_season, [player_id], tuple(range(first, window[1] + 1)), today=today
+    )
     games = built[0].games_remaining_this_period if built else 0
     return window[0], window[1], games

@@ -412,7 +412,7 @@ def season_recommendations(
             season,
             player.player_id,
             today,
-            player.games_remaining_this_period,
+            player.season_games,
             tilt=tilt,
             as_of=as_of,
         )

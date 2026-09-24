@@ -1215,6 +1215,13 @@ class PlayerCardOut(BaseModel):
     today: int = Field(description="The day it is read as of; nothing after it is read")
     last_scoring_period: int
     games_left: int = Field(description="Games he is not ruled out of, through the last day")
+    expected_games: float = Field(
+        description="Games the weekly line counts: the same for a fit man, and his game days "
+        "weighted by the chance he is back by each of them for a man who is out"
+    )
+    days_out: int | None = Field(
+        default=None, description="Calendar days since his last played game, when he is out"
+    )
     playoff_games: int
     playoff_first: int | None
     playoff_last: int | None

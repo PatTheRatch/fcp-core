@@ -87,7 +87,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from sqlalchemy import select
@@ -101,10 +101,23 @@ from app.inseason.projected import N_SIMS, SEED, Projection, TeamOutlook, projec
 from app.inseason.projected_calibration import SHORT_NOTE
 from app.listener.events import OUT
 from app.pickups.bids import Bid
-from app.pickups.judge import OPENED_PLACE, TYPICAL_PICKUP, Judgement, judge
+from app.pickups.judge import (
+    DAYS_A_WEEK,
+    OPENED_PLACE,
+    TYPICAL_PICKUP,
+    Judgement,
+    SpotBook,
+    horizon,
+    judge,
+    weeks_between,
+)
+from app.pickups.projection import rest_of_season_line
+from app.pickups.returns import expected_games_if_out_past
+from app.pickups.stash import LATE_WEEK, Stash, stash_block
 from app.pickups.state import (
     RosteredPlayer,
     TeamWeek,
+    build_players,
     has_free_agent_snapshots,
     load_team_week,
     season_calendar,
@@ -403,6 +416,11 @@ class WhatIf:
     pool_size: int
     historical_wire: bool
     notes: tuple[str, ...] = ()
+    #: What the wait costs, when the man added or moved to injured reserve is
+    #: ruled out: the return odds, the dead weeks and the net after them
+    #: (`app.pickups.stash`). None when nobody in the change is out, which is
+    #: every ordinary pickup.
+    stash: Stash | None = None
 
     @property
     def net(self) -> float:
@@ -529,6 +547,21 @@ def what_if(
         seed=seed,
     )[team_id]
 
+    stash = _stash(
+        session,
+        league_season,
+        today,
+        week,
+        change,
+        held,
+        arriving,
+        spots,
+        judgement,
+        delta_week=changed.delta,
+        tilt=tilt,
+        as_of=as_of,
+    )
+
     net = judgement.delta_total
     clears = net >= hurdle or (changed.fills_empty_day and net > 0)
     return WhatIf(
@@ -550,6 +583,86 @@ def what_if(
         pool_size=len(wire),
         historical_wire=pool is None and not has_free_agent_snapshots(session, league_season),
         notes=_notes(week, change, finish),
+        stash=stash,
+    )
+
+
+def _stash(
+    session: Session,
+    league_season: LeagueSeason,
+    today: int,
+    week: TeamWeek,
+    change: Change,
+    held: Mapping[int, RosteredPlayer],
+    arriving: Mapping[int, RosteredPlayer],
+    spots: SpotBook,
+    judgement: Judgement,
+    *,
+    delta_week: float,
+    tilt: bool,
+    as_of: date | None,
+) -> Stash | None:
+    """The wait priced, when the change adds or holds a man who is ruled out.
+
+    The mean arm is the judgement above, less what the dead place costs
+    (`app.pickups.stash`). The second arm is the same judgement made again
+    with one number changed -- the stashed man's own weekly value, re-counted
+    from the prior's row he would be on if he were still out in four weeks --
+    so it is `judge` answering twice rather than a second engine.
+
+    Nothing here moves the hurdle or the net the page leads with. A stash
+    under the bar still shows, with its odds beside it.
+    """
+    wanted = [
+        arriving.get(player_id) or held.get(player_id)
+        for player_id in (*change.adds, *change.to_ir)
+    ]
+    out = [man for man in wanted if man is not None and man.ruled_out]
+    if not out:
+        return None
+    # One line is one line: the man the question is really about is the one
+    # whose absence is longest, which for a single add is the only one.
+    picked = max(out, key=lambda player: (player.days_out or 0, player.player_id))
+
+    # The men handed in were counted over this week; a stash is a season
+    # question, so he is rebuilt over the whole horizon. One player, one pass.
+    _first, last, day = horizon(session, league_season, today)
+    weeks = weeks_between(day, last)
+    rebuilt = build_players(session, league_season, [picked.player_id], tuple(range(day, last + 1)))
+    man = rebuilt[0] if rebuilt else picked
+    days_out = man.days_out or 1
+    late_days = int(LATE_WEEK * DAYS_A_WEEK)
+    late_games = (
+        expected_games_if_out_past(
+            (period - day for period in man.schedule_days),
+            days_out=days_out,
+            past_days=late_days,
+        )
+        if man.expected_return_date is None
+        else man.season_games
+    )
+    late_line = rest_of_season_line(
+        session,
+        int(league_season.season),
+        man.player_id,
+        day,
+        late_games,
+        tilt=tilt,
+        as_of=as_of,
+    ).scaled(1.0 / weeks)
+    late_spots = replace(spots, values={**spots.values, man.player_id: spots.lens.value(late_line)})
+    late = judge(late_spots, delta_week=delta_week, dropped=change.drops, added=change.adds)
+    return stash_block(
+        player_id=man.player_id,
+        name=man.name,
+        days_out=days_out,
+        horizon_days=last - day + 1,
+        opened=spots.opened,
+        ir_slot_free=week.ir_slot_free,
+        net=judgement.delta_total,
+        late_net=late.delta_total,
+        expected_games=man.season_games,
+        healthy_games=len(man.schedule_days),
     )
 
 

@@ -288,15 +288,18 @@ def rest_of_season_line(
     season: int,
     player_id: int,
     today: int,
-    games: int,
+    games: float,
     *,
     tilt: bool = True,
     as_of: date | None = None,
 ) -> CategoryLine:
     """Expected counts over the rest of the season, discounted for availability.
 
-    `games` is his NBA team's remaining games less the days before his
-    return date; `ESPN_AVAILABILITY` then takes the share a season's
+    `games` is his NBA team's remaining games less the days he will not play,
+    and it is a `float` because a man who is ruled out is counted for the
+    games he is *expected* to play rather than for all or none
+    (`app.pickups.state.RosteredPlayer.season_games`, the declared rule of
+    `docs/stash_mode.md`). `ESPN_AVAILABILITY` then takes the share a season's
     unforeseen absences cost.
 
     Memoized for the life of `session` (the module docstring); `games` is

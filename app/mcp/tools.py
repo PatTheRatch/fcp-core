@@ -857,6 +857,13 @@ def player_card(
         out["expected_return_date"] = (
             card.expected_return_date.isoformat() if card.expected_return_date else None
         )
+        out["days_out"] = card.days_out
+        out["expected_games"] = card.expected_games
+        out["expected_games_note"] = (
+            "he is counted for the games he is expected to play, not for none: each game day "
+            "carries the NBA's record of men out this long being back by then, times the ramp "
+            "men come back on (docs/stash_mode.md). It is not a return date and not a diagnosis"
+        )
     return out
 
 

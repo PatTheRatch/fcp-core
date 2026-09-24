@@ -301,6 +301,13 @@ def weekly_lines(
     from: games counted over the horizon, the availability discount taken
     once, divided by the weeks in the window. Returned as lines rather than
     values so one lens can price them all.
+
+    Games are `RosteredPlayer.season_games`, which is the whole days for
+    everybody not ruled out and the expected fraction for a man who is
+    (`app.pickups.returns`, the declared rule of `docs/stash_mode.md`). This
+    is the one place the season charge counts games, so the week report's
+    season half, the rest-of-season report, the trade evaluator, the what-if
+    and the MCP tools all get the rule from here.
     """
     _first, last, today = horizon(session, league_season, today)
     weeks = weeks_between(today, last)
@@ -313,7 +320,7 @@ def weekly_lines(
             season,
             player.player_id,
             today,
-            player.games_remaining_this_period,
+            player.season_games,
             tilt=tilt,
             as_of=as_of,
         ).scaled(1.0 / weeks)

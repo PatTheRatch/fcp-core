@@ -114,6 +114,8 @@ def _card_out(card: Card, espn_player_id: int) -> PlayerCardOut:
         today=card.today,
         last_scoring_period=card.last_scoring_period,
         games_left=card.games_left,
+        expected_games=round(card.expected_games, 2),
+        days_out=card.days_out,
         playoff_games=card.playoff_games,
         playoff_first=card.playoff_first,
         playoff_last=card.playoff_last,

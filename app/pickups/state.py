@@ -30,6 +30,30 @@ day before `expected_return_date` when his status is OUT, and every day when
 it is OUT with no date given. That last rule matches `startable`, which never
 counts an OUT player at all; here he comes back on the day ESPN says he will.
 
+GAMES LEFT OVER A SEASON, WHICH IS A DIFFERENT QUESTION
+
+Counting an OUT man for no games at all is right for tonight and wrong for
+March. ESPN's basketball API carries no return date -- not a null one, no such
+field (`app/listener/pool.py`) -- so `playable_days` gave every ruled-out man
+zero games for the rest of the season, and the recommender projected exactly
+0.00 for all ninety-one of 2026's stashes against the 94.5 categories they
+delivered (`docs/stashes.md` section 7).
+
+So a second count sits beside the first. `expected_games` is the same game
+days weighted by the chance he is back by each of them and by the ramp he
+comes back on (`app.pickups.returns`, the declared rule of
+`docs/stash_mode.md`), as a fraction rather than a whole number. It equals
+`games_remaining_this_period` exactly for a man who is not ruled out, so
+nothing about a healthy roster moves. The week's seating reads `game_days` and
+is untouched; every rest-of-season caller reads `expected_games`.
+
+`days_out` is what that weighting is read by: calendar days since his last
+played game, from `player_game_stats` before `today`. A man with no played
+game falls back to the day before his first missed one, and a man with no
+stored game at all to a single day out, which is the prior's most optimistic
+row -- both are flagged by `days_out` being a stand-in rather than a
+measurement, and both are rare enough to be preseason cases.
+
 WHAT HAS BEEN POSTED SO FAR
 
 `matchup_team_stats` holds one row per (matchup, team, category) and has no
@@ -120,7 +144,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from espn_api.basketball.constant import PRO_TEAM_MAP
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -144,6 +168,8 @@ from app.draft.pool import roster_size_for
 from app.inseason.startable import NO_PRO_TEAM, RULED_OUT_STATUSES
 from app.listener.pool import WAIVERS
 from app.listener.snapshots import latest_snapshots
+from app.pickups.returns import expected_games as prior_expected_games
+from app.pickups.returns import expected_games_from_date
 from app.scoring.lines import COUNTS, CategoryLine
 from app.scoring.replacement import ADD_TYPES
 
@@ -204,6 +230,20 @@ class RosteredPlayer:
     #: out of, ascending.
     game_days: tuple[int, ...]
     on_ir: bool
+    #: His NBA team's game days over the same window, whatever his status.
+    #: `game_days` is this less the days ESPN has ruled him out of, so for
+    #: anybody fit the two are equal. A stash's arithmetic needs the schedule
+    #: rather than the seating, and this saves it a second query.
+    schedule_days: tuple[int, ...] = ()
+    #: Games expected over the same window, as a fraction: `len(game_days)`
+    #: for anyone not ruled out, and the return prior times the ramp for a
+    #: man who is (the module docstring, `app.pickups.returns`). None when
+    #: nobody counted it, and then `season_games` falls back to the whole
+    #: days, which is what every hand-built player in a test wants.
+    expected_games: float | None = None
+    #: Calendar days since his last played game, when he is ruled out and the
+    #: database holds a game of his. None for anybody else.
+    days_out: int | None = None
     #: The day he clears waivers, when the league has him on waivers, and
     #: that day as a scoring period. Set only by `load_free_agents` reading
     #: the latest snapshot; None for a rostered man and for a pool named by
@@ -214,6 +254,18 @@ class RosteredPlayer:
     @property
     def games_remaining_this_period(self) -> int:
         return len(self.game_days)
+
+    @property
+    def season_games(self) -> float:
+        """Games to count over a rest-of-season horizon, fractions allowed.
+
+        The same number as `games_remaining_this_period` for everybody who is
+        not ruled out. For a man who is, the expected count: his game days
+        weighted by the chance he is back by each of them and by the ramp
+        (`app.pickups.returns`). A player nobody counted it for falls back to
+        the whole days, so a hand-built fixture behaves as it always did.
+        """
+        return float(len(self.game_days)) if self.expected_games is None else self.expected_games
 
     @property
     def ruled_out(self) -> bool:
@@ -421,6 +473,87 @@ def playable_days(
             continue
         kept.append(day)
     return tuple(kept)
+
+
+def expected_games(
+    games: Mapping[int, date],
+    days: Iterable[int],
+    *,
+    today: int,
+    injury_status: str | None,
+    expected_return_date: date | None,
+    days_out: int | None,
+) -> float:
+    """Games expected over `days`, as a fraction. The declared OUT-man rule.
+
+    A man who is not ruled out has every game day his NBA team plays, which
+    is `len(playable_days(...))` and the number this engine has always used.
+    A man who is ruled out has each of those days weighted by the chance he is
+    back by it and by the ramp he comes back on (`app.pickups.returns`) --
+    from ESPN's `expected_return_date` when there is one, and from the
+    box-score return prior by `days_out` when there is not.
+
+    `today` is the day the wait is counted from, which is not always the first
+    day of `days`: a trade's playoff window starts in March and a man is out
+    from now.
+    """
+    out = (injury_status or "").upper() in RULED_OUT_STATUSES
+    if not out:
+        return float(
+            len(
+                playable_days(
+                    games,
+                    days,
+                    injury_status=injury_status,
+                    expected_return_date=expected_return_date,
+                )
+            )
+        )
+    playing = [(day, games[day]) for day in sorted(days) if day in games]
+    if expected_return_date is not None:
+        return expected_games_from_date(
+            (when - expected_return_date).days for _day, when in playing
+        )
+    return prior_expected_games(
+        (day - today for day, _when in playing), days_out=days_out if days_out is not None else 1
+    )
+
+
+def days_out_on(
+    session: Session, season: int, player_ids: Sequence[int], today: int
+) -> dict[int, int]:
+    """Calendar days since each man's last played game, before `today`.
+
+    The count `scripts/stashes.py` measures the return prior against: the
+    decision day less his last `played = true` scoring period, and a scoring
+    period is a calendar day in this database. A man with rows but none of
+    them played is counted from the day before his first one; a man with no
+    stored game at all is absent from the answer and the caller stands one day
+    in for him.
+    """
+    ids = sorted({int(player_id) for player_id in player_ids})
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(
+            PlayerGameStat.player_id,
+            func.max(
+                case((PlayerGameStat.played.is_(True), PlayerGameStat.scoring_period), else_=None)
+            ),
+            func.min(PlayerGameStat.scoring_period),
+        )
+        .where(
+            PlayerGameStat.season == season,
+            PlayerGameStat.player_id.in_(ids),
+            PlayerGameStat.scoring_period < today,
+        )
+        .group_by(PlayerGameStat.player_id)
+    ).all()
+    out: dict[int, int] = {}
+    for player_id, last_played, first_row in rows:
+        anchor = int(last_played) if last_played is not None else int(first_row) - 1
+        out[int(player_id)] = max(1, today - anchor)
+    return out
 
 
 def team_row(session: Session, league_season: LeagueSeason, team_id: int) -> Team:
@@ -661,11 +794,17 @@ def build_players(
     *,
     on_ir: frozenset[int] = frozenset(),
     waivers: Mapping[int, tuple[date, int]] | None = None,
+    today: int | None = None,
 ) -> tuple[RosteredPlayer, ...]:
     """`RosteredPlayer` for each id, sorted by id, from the tables named above.
 
     `waivers` is `waiver_clears`' answer for these ids, when the caller has
     read it; without it nobody is on waivers.
+
+    `today` is the day an absence is counted from and defaults to the first of
+    `days`, which is what it is for every caller whose window starts now. A
+    caller asking about a window further out -- a trade's playoff weeks --
+    passes the real day, or every ruled-out man reads as out since March.
     """
     ids = sorted(set(player_ids))
     if not ids:
@@ -693,13 +832,30 @@ def build_players(
     }
     games = schedule(session, season, pro_teams.values(), min(days), max(days)) if days else {}
 
+    from_day = today if today is not None else (min(days) if days else 0)
+    statuses = {
+        player_id: (
+            snapshots[player_id].injury_status if player_id in snapshots else None,
+            snapshots[player_id].expected_return_date if player_id in snapshots else None,
+        )
+        for player_id in ids
+    }
+    # Only a ruled-out man with no date needs the box scores read, which on an
+    # ordinary roster is nobody at all.
+    waiting = [
+        player_id
+        for player_id, (status, returns) in statuses.items()
+        if returns is None and (status or "").upper() in RULED_OUT_STATUSES
+    ]
+    out_for = days_out_on(session, season, waiting, from_day) if waiting else {}
+
     on_waivers = waivers or {}
     players: list[RosteredPlayer] = []
     for player_id in ids:
-        snapshot = snapshots.get(player_id)
-        status = snapshot.injury_status if snapshot is not None else None
-        returns = snapshot.expected_return_date if snapshot is not None else None
+        status, returns = statuses[player_id]
         clears = on_waivers.get(player_id)
+        his_games = games.get(pro_teams[player_id], {})
+        days_out = out_for.get(player_id)
         players.append(
             RosteredPlayer(
                 player_id=player_id,
@@ -710,12 +866,22 @@ def build_players(
                 injury_status=status,
                 expected_return_date=returns,
                 game_days=playable_days(
-                    games.get(pro_teams[player_id], {}),
+                    his_games,
                     days,
                     injury_status=status,
                     expected_return_date=returns,
                 ),
                 on_ir=player_id in on_ir,
+                schedule_days=tuple(day for day in sorted(days) if day in his_games),
+                expected_games=expected_games(
+                    his_games,
+                    days,
+                    today=from_day,
+                    injury_status=status,
+                    expected_return_date=returns,
+                    days_out=days_out,
+                ),
+                days_out=days_out,
                 waiver_clears_at=clears[0] if clears is not None else None,
                 waiver_clears_on=clears[1] if clears is not None else None,
             )

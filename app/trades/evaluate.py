@@ -1424,18 +1424,21 @@ def _playoff_lines(
 
     The rate is the one knowable on `today` -- nothing about March is read in
     January -- and only the games change: his NBA team's, over the playoff
-    weeks, less the days ESPN has ruled him out of.
+    weeks, less the days ESPN has ruled him out of. A man out now is counted
+    over them by the return prior (`app.pickups.returns`), from `today` rather
+    than from the first playoff day, so a fortnight's absence in January is
+    not read as an absence that began in March. `playoff_games` beside it is
+    the whole days, because that is the schedule fact a page prints.
     """
     if not playoff_days or playoff_weeks <= 0:
         return {}, {}
     season = int(league_season.season)
     lines: dict[int, CategoryLine] = {}
     games: dict[int, int] = {}
-    for player in build_players(session, league_season, player_ids, playoff_days):
-        count = player.games_remaining_this_period
-        games[player.player_id] = count
+    for player in build_players(session, league_season, player_ids, playoff_days, today=today):
+        games[player.player_id] = player.games_remaining_this_period
         lines[player.player_id] = rest_of_season_line(
-            session, season, player.player_id, today, count, tilt=tilt, as_of=as_of
+            session, season, player.player_id, today, player.season_games, tilt=tilt, as_of=as_of
         ).scaled(1.0 / playoff_weeks)
     return lines, games
 
