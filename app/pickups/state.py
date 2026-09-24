@@ -15,12 +15,30 @@ row exists, so the roster falls back to the listener's latest status
 snapshots (`on_team_id`), the same source `app.inseason.startable` reads; a
 snapshot does not say who is on injured reserve, so nobody is, then.
 
-Injury status, the return date and the NBA team are always the latest
-snapshot's, never the lineup row's: `daily_lineup_slots.injury_status` is one
-snapshot smeared across the season (`app/draft/availability.py`). A player
-the listener has never seen falls back to the NBA team on his last weekly
-roster row, which is an abbreviation ESPN's client maps to the id the
+The NBA team is always the latest snapshot's, never the lineup row's, and a
+player the listener has never seen falls back to the NBA team on his last
+weekly roster row, which is an abbreviation ESPN's client maps to the id the
 schedule is keyed on.
+
+WHERE A STATUS COMES FROM, WHICH IS NOT THE LINEUP ROW EITHER
+
+The injury status and the return date come from `status_on`, the one place
+this engine reads a status, and it applies the declared source order of
+`app.pickups.status_source` (`docs/replay_status.md`): ESPN's snapshot on a
+morning the listener had already run for, and otherwise **the NBA's own
+official report as of that morning** -- ten o'clock Eastern, the read that
+sees the league's nine o'clock report -- mapped from the league's five words
+into ESPN's. Silence stays silence, and every caller here reads a null status
+as "nothing is known against him", which is what it has always read.
+
+`daily_lineup_slots.injury_status` is not a third source and never was: it is
+one snapshot smeared across the season (`app/draft/availability.py`).
+
+Until 2026-09-24 the only source was the listener's snapshot, so a replayed
+season -- which the listener never runs for -- called every man fit, and the
+ruled-out branches of `playable_days`, `expected_games` and
+`app.pickups.stash` could not fire at all on any stored season. That is what
+`docs/stash_mode.md` §0 found and what this reads around.
 
 GAMES LEFT
 
@@ -168,8 +186,10 @@ from app.draft.pool import roster_size_for
 from app.inseason.startable import NO_PRO_TEAM, RULED_OUT_STATUSES
 from app.listener.pool import WAIVERS
 from app.listener.snapshots import latest_snapshots
+from app.pickups import status_source
 from app.pickups.returns import expected_games as prior_expected_games
 from app.pickups.returns import expected_games_from_date
+from app.pickups.status_source import StatusRead
 from app.scoring.lines import COUNTS, CategoryLine
 from app.scoring.replacement import ADD_TYPES
 
@@ -519,6 +539,26 @@ def expected_games(
     )
 
 
+def status_on(session: Session, season: int, day: int) -> StatusRead:
+    """The morning's statuses for `day`, from the declared source order.
+
+    The one place this engine reads an injury status. `build_players` calls
+    it and every recommender, report, trade and MCP tool goes through
+    `build_players`, so the source order of `app.pickups.status_source` is
+    settled once rather than per caller. A report that wants to name the
+    source in its provenance calls this and reads `as_provenance()`; the
+    answer is memoized on the session, so asking twice costs nothing.
+
+    The scoring period is turned into a calendar date by the season's own
+    schedule, which is the same anchor every other date on a report uses. A
+    season with no schedule has no date, and then only ESPN's snapshots can
+    answer -- which is right, because such a season cannot be replayed either.
+    """
+    calendar = season_calendar(session, season)
+    on = calendar.date_of(day) if calendar is not None else None
+    return status_source.read_statuses(session, season, on)
+
+
 def days_out_on(
     session: Session, season: int, player_ids: Sequence[int], today: int
 ) -> dict[int, int]:
@@ -833,13 +873,8 @@ def build_players(
     games = schedule(session, season, pro_teams.values(), min(days), max(days)) if days else {}
 
     from_day = today if today is not None else (min(days) if days else 0)
-    statuses = {
-        player_id: (
-            snapshots[player_id].injury_status if player_id in snapshots else None,
-            snapshots[player_id].expected_return_date if player_id in snapshots else None,
-        )
-        for player_id in ids
-    }
+    read = status_on(session, season, from_day)
+    statuses = {player_id: read.of(player_id) for player_id in ids}
     # Only a ruled-out man with no date needs the box scores read, which on an
     # ordinary roster is nobody at all.
     waiting = [
