@@ -552,8 +552,8 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     beside them, and keeps the jargon out of them.
     """
     # The one line on the page, and the number it quotes.
-    assert calibration.RECORD_ERROR["half"] == pytest.approx(7.2)
-    assert "7.2 categories" in calibration.SHORT_NOTE
+    assert calibration.RECORD_ERROR["half"] == pytest.approx(6.3)
+    assert "6.3 categories" in calibration.SHORT_NOTE
     assert "halfway mark" in calibration.SHORT_NOTE
 
     # The long note's claims, each against its own constant. Since the spread
@@ -561,27 +561,27 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     # lives in rather than the ends it now almost never reaches.
     assert f"{calibration.N_CATEGORY_CALLS:,} calls" in calibration.CALIBRATION_NOTE
     bands = {row.band: row for row in calibration.CATEGORY_RELIABILITY}
-    for low, said, happened in ((0.1, 15, 15), (0.3, 35, 36), (0.6, 65, 65), (0.8, 85, 85)):
+    for low, said, happened in ((0.1, 15, 18), (0.3, 35, 35), (0.6, 65, 65), (0.8, 85, 82)):
         row = bands[(low, round(low + 0.1, 1))]
         assert _pct(low + 0.05) == said, "the note names the band by its middle"
         assert _pct(row.happened) == happened
-    assert "gave a 15% chance were won 15%" in calibration.CALIBRATION_NOTE
-    assert "ones it gave 35% were won 36%" in calibration.CALIBRATION_NOTE
-    assert "65% were won 65%, and 85% were won 85%" in calibration.CALIBRATION_NOTE
+    assert "gave a 15% chance were won 18%" in calibration.CALIBRATION_NOTE
+    assert "ones it gave 35% were won 35%" in calibration.CALIBRATION_NOTE
+    assert "65% were won 65%, and 85% were won 82%" in calibration.CALIBRATION_NOTE
 
     # The one end it still overclaims, and how little of its weight is there.
     cocky = calibration.CATEGORY_RELIABILITY[-1]
     assert cocky.band == (0.9, 1.0)
-    assert _pct(cocky.happened) == 80
+    assert _pct(cocky.happened) == 84
     assert cocky.n < bands[(0.4, 0.5)].n / 10, "the wide model rarely goes there"
-    assert "above 90% come in about 80% of the time" in calibration.CALIBRATION_NOTE
+    assert "above 90% come in about 84% of the time" in calibration.CALIBRATION_NOTE
 
     best_odds = calibration.PLAYOFF_RELIABILITY[-1]
     assert _pct(best_odds.happened) == 100
     assert "better than 90% made it every time" in calibration.CALIBRATION_NOTE
     middling = next(row for row in calibration.PLAYOFF_RELIABILITY if row.band == (0.6, 0.7))
-    assert _pct(middling.happened) == 50
-    assert "given 60-70% made it 50%" in calibration.CALIBRATION_NOTE
+    assert _pct(middling.happened) == 57
+    assert "given 60-70% made it 57%" in calibration.CALIBRATION_NOTE
 
     # It is worse than a coin at nothing, and it does not claim to be better
     # than the run says.
@@ -600,13 +600,25 @@ def test_the_shipped_widening_is_the_one_the_published_score_was_earned_on() -> 
     This used to be the guard that nobody had quietly widened the spread. The
     owner widened it on 2026-09-23 and the whole calibration was re-run on it
     (docs/spread_revision.md), so the guard is now the other way round: the
-    factor the engine ships, the factor this module says it ships, and the
-    factor whose score is published all have to be the same one.
+    factor the engine ships and the factor this module says it ships have to
+    be the same one.
+
+    `WIDENED` is no longer held equal to `BRIER`, and the reason is worth
+    stating. Those three rows are the run of 2026-09-22, which was
+    status-blind; since 2026-09-24 a replayed morning reads the NBA's own
+    injury report (docs/replay_status.md) and the shipped model scores 0.2184
+    rather than 0.2179. `WIDENED` is kept as the evidence the owner chose the
+    factor on, so it must stay where it was; what still has to hold is that
+    the two scores are the same model to three decimals, and that the
+    ordering the choice rested on survived.
     """
     assert stream.SPREAD_SCALE == calibration.SHIPPED_SCALE
-    assert calibration.WIDENED[calibration.SHIPPED_SCALE] == calibration.BRIER
+    assert calibration.WIDENED[calibration.SHIPPED_SCALE] == pytest.approx(
+        calibration.BRIER, abs=0.001
+    )
     # The other two rows are the diagnostics it was chosen against, and the
     # choice is only defensible while they are worse.
     assert calibration.WIDENED[2.0] < calibration.WIDENED[1.4142] < calibration.WIDENED[1.0]
+    assert calibration.WIDENED[1.4142] > calibration.BRIER
     # And the engine still has no second scale of its own to have been turned.
     assert not hasattr(projected_module, "SIGMA_SCALE")

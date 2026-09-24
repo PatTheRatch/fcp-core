@@ -692,6 +692,10 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     # The one claim the note makes beyond the headline: the consolidation gap.
     assert UNEVEN_ERROR["R1, the old yardstick"] == pytest.approx(0.389)
     assert "about four tenths of a category a week" in CALIBRATION_NOTE
+    # The current run's figure, not R2's. They are different numbers (0.096
+    # against 0.103) and the same sentence, because the note is deliberately
+    # vague about a quantity twenty-five sides only pin to about a tenth.
+    assert UNEVEN_ERROR["R5, the streamed lane"] == pytest.approx(0.096)
     assert UNEVEN_ERROR["R2, the streamed lane"] == pytest.approx(0.103)
     assert "the gap is about a tenth" in CALIBRATION_NOTE
 

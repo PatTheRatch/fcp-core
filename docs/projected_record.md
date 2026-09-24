@@ -5,7 +5,8 @@
 **Status:** built (`app/inseason/projected.py`, `app/api/projected.py`,
 `scripts/projected.py`, `scripts/projected_calibration.py`, the Standings and
 This week pages, the Week page's "Rest of season" section, the digest's
-Standing line). The calibration below is the run of 2026-09-23.
+Standing line). The calibration below is the run of 2026-09-24, the first in
+which a replayed morning could read who was hurt ([`replay_status.md`](replay_status.md)).
 **Companions:** [`pickups.md`](pickups.md) §4.4-4.5 (the one-team projected
 record), [`trades.md`](trades.md) §1 and §7 (each side's record, and how a
 forecast's own record is published), [`site.md`](site.md),
@@ -14,6 +15,60 @@ forecast's own record is published), [`site.md`](site.md),
 ---
 
 ## 0. The answer, up front: it is about as sure as it ought to be, except at the ends
+
+### Revision R5, applied 2026-09-24: a replayed morning reads the NBA's own injury report
+
+**What changed.** R4 below came back byte-identical, and the reason was the
+*source*, not the rule: a replayed morning read its injury status from
+`player_status_snapshots`, which the listener writes only for the season in
+progress, so every man in a replayed 2026 was counted fit. The engine now
+applies a declared source order ([`replay_status.md`](replay_status.md)):
+ESPN's snapshot on a morning the listener had already run for, and otherwise
+**the NBA's own official report as of ten o'clock Eastern that morning**, read
+point-in-time through `app/injuries.py`, with the league's five words mapped
+onto ESPN's. `Out` alone is ruled out, as before. Nothing else moved.
+
+**This is the first run in which the ruled-out branch of the games count fires
+at all**, and it moved both ways.
+
+| | before | after |
+|---|---|---|
+| **overall score** (lower is better; a coin is 0.2500) | **0.2179** | **0.2184** |
+| right side of this week's matchup | 0.584 over 5,320 team-weeks | **0.583** |
+| final record off by, made at the quarter | 8.4 of 171 | **8.1** |
+| final record off by, made at halfway | 7.2 of 171 | **6.3** |
+| final record off by, made at three-quarters | 4.8 of 171 | **5.2** |
+| what it called above 90% happened | 80.4% (n = 317) | **83.5%** (n = 370) |
+| what it called under 10% happened | 19.6% (n = 317) | **16.5%** (n = 370) |
+
+**The headline got slightly worse and the line a manager reads got better.**
+The Brier rose five ten-thousandths and the matchup-winner rate fell a
+thousandth — both inside what one run can separate from noise, and both
+published because they are what the run says. The projected final record at
+halfway, which is the figure this document leads with and the one `SHORT_NOTE`
+prints, improved from 7.2 categories to **6.3**; the three-quarter mark went
+the other way, 4.8 to 5.2.
+
+The two ends are the interesting part. The model reaches them more often — 370
+calls above 0.9 against 317 — and is *better* calibrated when it does. Knowing
+who was Out sharpens the extremes and costs a little in the middle, which is
+the shape to expect from a term that speaks about one rostered man in ten
+(`replay_status.md` §2).
+
+**One thing did not double up.** `scripts/projected_calibration.py` already
+patched around the blindfold itself, reading `statuses_as_of` for the same
+morning and passing the days as `unavailable=`. That patch is now redundant
+rather than additive — an Out man with no return date loses *every* remaining
+day in `playable_days`, which contains the single game day the patch blocks —
+and it was left in place deliberately, because removing it would be a second
+change inside the run that scores the first.
+
+**The constants follow the run.** `app/inseason/projected_calibration.py` and
+its guard tests are updated to these figures; `SHORT_NOTE` now says 6.3.
+`WIDENED` is deliberately *not* updated: those three rows are the
+status-blind run of 2026-09-22 and are the evidence the owner chose the
+spread factor on, so they stay as that run gave them, and the guard test now
+holds them to the shipped score within a thousandth rather than exactly.
 
 ### Revision R4, applied 2026-09-24: an OUT man is counted for the games he is expected to play
 
@@ -83,75 +138,77 @@ changed.
 
 The forecast was replayed against 2026 from thirty-eight mornings -- the first
 day and the midpoint of each of the nineteen regular-season weeks -- with only
-what was on record that day. It made 47,880 per-category calls about every
-week still to play. **It now lands about where it says it will, except at the
-two ends, which it rarely reaches.**
+what was on record that day, including -- since R5 -- who the NBA's own injury
+report had out that morning. It made 47,880 per-category calls about every
+week still to play. **It lands about where it says it will, except at the two
+ends, which it rarely reaches.**
 
 | it said | it happened | calls | calls before R3 |
 |---|---|---|---|
-| 5% | 20% | 317 | 3,872 |
-| 15% | 15% | 1,455 | 4,317 |
-| 25% | 24% | 4,093 | 4,921 |
-| 35% | 36% | 7,585 | 5,182 |
-| 45% | 45% | 10,490 | 5,648 |
-| 55% | 55% | 10,490 | 5,648 |
-| 65% | 65% | 7,585 | 5,182 |
-| 75% | 76% | 4,093 | 4,921 |
-| 85% | 85% | 1,455 | 4,317 |
-| 95% | 80% | 317 | 3,872 |
+| 5% | 17% | 370 | 3,872 |
+| 15% | 18% | 1,644 | 4,317 |
+| 25% | 25% | 4,300 | 4,921 |
+| 35% | 35% | 7,540 | 5,182 |
+| 45% | 46% | 10,086 | 5,648 |
+| 55% | 54% | 10,086 | 5,648 |
+| 65% | 65% | 7,540 | 5,182 |
+| 75% | 75% | 4,300 | 4,921 |
+| 85% | 82% | 1,644 | 4,317 |
+| 95% | 84% | 370 | 3,872 |
 
-The Brier score is **0.2179** where a forecast that said "coin" to everything
+The Brier score is **0.2184** where a forecast that said "coin" to everything
 scores 0.2500. The last column is the rest of the finding: the wide model puts
 two thirds of its calls in the four middle bands and almost none past 90%, so
-the rows that are still wrong are the rows it hardly ever writes. 317 calls of
+the rows that are still wrong are the rows it hardly ever writes. 370 calls of
 47,880 sit above 90%, against 3,872 before.
 
 **It is much better about the week in front of it.** Brier by how far ahead
-the week is: 0.178 for the week being played, 0.210 for the next, 0.215,
+the week is: 0.174 for the week being played, 0.211 for the next, 0.214,
 0.215, 0.215, and then flat at about 0.23 from five weeks out -- barely better
 than a coin. The matchup-winner hit rate does the same, over 5,320 team-weeks
 (both sides of each matchup):
 
 | weeks ahead | 0 | 1 | 2 | 3 | 4 | 5+ |
 |---|---|---|---|---|---|---|
-| hit rate | 0.684 | 0.647 | 0.630 | 0.585 | 0.590 | ~0.55 |
+| hit rate | 0.688 | 0.635 | 0.605 | 0.571 | 0.581 | ~0.55 |
 
 **The record it projects is worth more than the chances behind it.** Mean
 absolute error of a team's projected final category record, of the 171 a
 nineteen-week season contests:
 
-| made at | mean error | worst | mean before R3 |
-|---|---|---|---|
-| the quarter mark (period 5) | **8.4** | 15.5 | 8.7 |
-| the halfway mark (period 10) | **7.2** | 13.3 | 7.4 |
-| the three-quarter mark (period 14) | **4.8** | 12.7 | 4.9 |
+| made at | mean error | worst | before R5 | before R3 |
+|---|---|---|---|---|
+| the quarter mark (period 5) | **8.1** | 14.2 | 8.4 | 8.7 |
+| the halfway mark (period 10) | **6.3** | 15.1 | 7.2 | 7.4 |
+| the three-quarter mark (period 14) | **5.2** | 12.5 | 4.8 | 4.9 |
 
-Seven categories of 171 is a bit over four percent, and about four tenths of a
-category for each week still to be played. The one-line note on every page is
-the halfway figure, from
+Six categories of 171 is under four percent, and about three tenths of a
+category for each week still to be played. The halfway mark is the best it has
+been and the three-quarter mark the worst of the three runs, which is one
+reason to read all three rather than the one the page prints. The one-line
+note on every page is the halfway figure, from
 `app.inseason.projected_calibration.RECORD_ERROR["half"]` with a guard test on
 the sentence.
 
-**The playoff odds are honest at the ends and poor in the middle, and the poor
-band has moved.**
+**The playoff odds are honest at the ends and poor in the middle.**
 
 | it said | it happened | teams |
 |---|---|---|
-| 3% | 10% | 105 |
-| 15% | 23% | 39 |
-| 26% | 24% | 41 |
-| 35% | 27% | 49 |
-| 45% | 33% | 46 |
-| 55% | 57% | 35 |
-| 65% | **50%** | 42 |
-| 76% | 70% | 20 |
-| 85% | 97% | 31 |
-| 98% | 100% | 124 |
+| 3% | 13% | 112 |
+| 15% | 23% | 43 |
+| 25% | 21% | 39 |
+| 34% | 27% | 34 |
+| 45% | 37% | 38 |
+| 55% | **37%** | 38 |
+| 65% | 58% | 40 |
+| 75% | 74% | 35 |
+| 85% | 82% | 34 |
+| 98% | 100% | 119 |
 
-Teams given better than 90% made it every time; teams given 60-70% made it
-half the time. The 50-60% band, which was the worst row of the run before this
-one at 30%, now reads 57%. The middle is still where the error lives, and it
-is exactly the band a manager in a fight actually reads.
+Teams given better than 90% made it every time and the 70-90% bands are close
+to honest; the 40-60% bands are the worst rows, at 37% apiece. The middle is
+still where the error lives, and it is exactly the band a manager in a fight
+actually reads.
 
 ### The proposal, applied 2026-09-23
 

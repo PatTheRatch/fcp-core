@@ -2,26 +2,37 @@
 
 The trade page prints `CALIBRATION_NOTE` verbatim under the number, because a
 manager reading a forecast is owed the forecast's record beside it. The figures
-below are the run of 2026-09-23 (`scripts/trade_calibration.py`, review_days=1,
+below are the run of 2026-09-24 (`scripts/trade_calibration.py`, review_days=1,
 every season the database can reconstruct), written up in `docs/trades.md`
 section 7. Nothing here is computed at runtime: it is a published result, and
 it changes only when the calibration is run again and the doc is rewritten
 with it.
 
-RE-RUN ON 2026-09-23, AND NOT ONE DIGIT MOVED
+RE-RUN ON 2026-09-24, AND THIS TIME IT MOVED
 
-The weekly spread was widened by two that day
-(`app.pickups.stream.SPREAD_SCALE`, docs/spread_revision.md), which changes
-every chance of winning a category in the product, so this calibration was
-re-run whole on the same 55 deals and the same thirty-day window. Every
-published figure came back identical, and the reason is worth keeping in
-front of the next reader: what this module scores is
-`Judgement.delta_season_per_week` and `SideReport.season_independent`, both of
-them *per-week season* terms built from `app.scoring.value.marginal` and
-`places_cost`. Neither reads the head-to-head. The week term that the widening
-does move, `Judgement.delta_week`, is on the page but is not the quantity this
-record is about. So the date below is the newer run and the numbers are the
-ones both runs give.
+Until that morning a replayed day read an injury status from the listener's
+snapshots, which exist only for the season in progress, so **both sides of
+every deal in every one of these six seasons were priced as fully available**
+-- the caution `docs/trades.md` section 7 carried for months. The engine now
+reads the NBA's own official report as of ten o'clock Eastern on the morning
+of the deal when no snapshot is older than it (`docs/replay_status.md`).
+
+The movement is real and it is nearly all in 2026, which is the one season
+whose reports are loaded on this machine: its 34 sides go from 32% agreeing
+in sign to 38% and their rank correlation from -0.31 to -0.16, while the
+pooled rank correlation crosses zero (-0.02 to +0.02) and the mean absolute
+error falls from 0.299 to 0.293. The deal-level headline did not move at all
+-- 25 of 55 -- which is the right shape: ordering two sides of one deal is a
+coarser judgement than valuing a man, and 25 of 55 is a coin either way.
+
+The run before it, on 2026-09-23, widened the weekly spread by two
+(`app.pickups.stream.SPREAD_SCALE`, docs/spread_revision.md) and moved not
+one digit here. The reason is worth keeping in front of the next reader: what
+this module scores is `Judgement.delta_season_per_week` and
+`SideReport.season_independent`, both of them *per-week season* terms built
+from `app.scoring.value.marginal` and `places_cost`. Neither reads the
+head-to-head. The games count they rest on is exactly what the injury report
+moves, which is why this revision reached them and that one did not.
 
 THE SHORT VERSION
 
@@ -37,14 +48,16 @@ that was mostly the two engines pricing an emptied roster place differently
 rather than the forecast: with the forecast alone re-priced it is +0.404, and
 with the hindsight yardstick re-priced beside it, +0.103. The sides where no
 place opens are identical to the run before, to three decimals, which is the
-check that nothing else moved.
+check that nothing else moved. R5 moved both a little further down, to +0.398
+and +0.096, which `UNEVEN_ERROR` keeps beside them.
 
 What the evaluator is better at is men: what it says a player is worth a week
 ranks at +0.39 against what he went on to do, over 174 of them, unchanged by
-R2, and nearly all of that is lost when one side of a deal is subtracted from
-the other. The category-by-category half of the report is not in this sentence
-at all: it is the same week laid out one line at a time, and it does not depend
-on the headline being right.
+R2 and by R5, and nearly all of that is lost when one side of a deal is
+subtracted from the other. Its mean absolute error on a man fell from 0.213
+to 0.211 when the reports became visible. The category-by-category half of the
+report is not in this sentence at all: it is the same week laid out one line at
+a time, and it does not depend on the headline being right.
 
 WHOSE RECORD IT IS
 
@@ -67,6 +80,7 @@ __all__ = [
     "COIN_RANGE",
     "DEALS",
     "MEASURED_ON",
+    "PLAYER_LEVEL_ERROR",
     "PLAYER_LEVEL_SAMPLE",
     "PLAYER_LEVEL_SPEARMAN",
     "PUBLISHED",
@@ -104,10 +118,10 @@ class Measured:
         return self.picked / DEALS if DEALS else 0.0
 
 
-#: The day the published run was made. The run of 2026-09-22 gave the same
-#: figures; see the module docstring for why widening the spread did not move
-#: them.
-MEASURED_ON = "2026-09-23"
+#: The day the published run was made. The runs of 2026-09-22 and 2026-09-23
+#: gave the same figures as each other; see the module docstring for why
+#: widening the spread did not move them and the injury reports did.
+MEASURED_ON = "2026-09-24"
 
 #: Deals the database can both evaluate forward and grade in hindsight, and
 #: the sides they make. Six seasons: 2019, 2021, 2023, 2024, 2025, 2026.
@@ -125,13 +139,13 @@ COIN_RANGE = (20, 35)
 #: The 2x2 declared before the run, primary cell first, and under it the same
 #: forecast read against the yardstick the hindsight grade used before R2.
 PUBLISHED: tuple[Measured, ...] = (
-    Measured("the roster with-and-without", "next 30 days", 25, -0.02, 0.008),
-    Measured("the roster with-and-without", "rest of season", 31, 0.09, 0.013),
-    Measured("the per-man number", "next 30 days", 19, -0.19, -0.065),
-    Measured("the per-man number", "rest of season", 29, 0.02, -0.060),
-    Measured("the roster with-and-without", "next 30 days", 25, 0.00, 0.077, "the old flat level"),
+    Measured("the roster with-and-without", "next 30 days", 25, 0.02, 0.010),
+    Measured("the roster with-and-without", "rest of season", 31, 0.11, 0.016),
+    Measured("the per-man number", "next 30 days", 20, -0.15, -0.065),
+    Measured("the per-man number", "rest of season", 29, 0.05, -0.060),
+    Measured("the roster with-and-without", "next 30 days", 25, 0.04, 0.079, "the old flat level"),
     Measured(
-        "the roster with-and-without", "rest of season", 30, 0.09, 0.082, "the old flat level"
+        "the roster with-and-without", "rest of season", 30, 0.12, 0.084, "the old flat level"
     ),
 )
 
@@ -142,19 +156,25 @@ UNEVEN_SIDES = 25
 #: The mean error on those sides over the primary horizon, in categories a
 #: week: what R1 published on 2026-09-21, the same forecast re-priced by R2
 #: against the old yardstick, and R2 against R2. The middle figure is the one
-#: that says the over-rating was the settlement and not the forecast.
+#: that says the over-rating was the settlement and not the forecast. The two
+#: R5 rows are the same pair on 2026-09-24, with the morning's injury report
+#: visible (docs/replay_status.md); they are the current ones.
 UNEVEN_ERROR = {
     "R1, the old yardstick": 0.389,
     "R2, the old yardstick": 0.404,
     "R2, the streamed lane": 0.103,
+    "R5, the old yardstick": 0.398,
+    "R5, the streamed lane": 0.096,
 }
 
 #: Men in the scored deals, and the rank correlation between what the
 #: evaluator said each was worth a week and what his real box scores were
-#: worth over the same thirty days. The projections carry signal about a
-#: player; the difference between two of them, on two rosters, does not.
+#: worth over the same thirty days, and the mean absolute error beside it.
+#: The projections carry signal about a player; the difference between two of
+#: them, on two rosters, does not.
 PLAYER_LEVEL_SAMPLE = 174
 PLAYER_LEVEL_SPEARMAN = 0.39
+PLAYER_LEVEL_ERROR = 0.211
 
 #: Printed verbatim on the trade page, under the number. No jargon, no
 #: verdict, and no claim the run does not support.

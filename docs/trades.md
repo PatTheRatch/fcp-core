@@ -9,6 +9,51 @@
 
 ## 0. The answer, up front
 
+### Revision R5, 2026-09-24: a replayed morning reads the NBA's own injury report, and this record moved
+
+**What changed.** Until this morning the engine read an injury status from
+`player_status_snapshots`, which the listener only ever writes for the season
+in progress, so **every man in every replayed season was counted fit** — R4
+below says so in as many words, and that is why it came back identical. The
+engine now applies a declared source order (`docs/replay_status.md`): ESPN's
+snapshot on a morning the listener had already run for, and otherwise **the
+NBA's own official report as of ten o'clock Eastern that morning**, read
+point-in-time through `app/injuries.py`. Nothing else moved — not
+`ESPN_AVAILABILITY`, not the hurdles, not `RULED_OUT_STATUSES`, which still
+means `Out` alone of the league's five words.
+
+**Before and after.** This is the first of the three records to have moved at
+all since the spread was widened, and it moved in the right direction.
+
+| | before | after |
+|---|---|---|
+| picked the better side, 55 deals, 30-day window | 25 of 55 (45%) | 25 of 55 (45%) |
+| rank correlation over 110 sides | −0.02 | **+0.02** |
+| sides the sign agreed on | 51% | **53%** |
+| mean absolute error, categories a week | 0.299 | **0.293** |
+| what a man is worth a week, against what he did | Spearman +0.39, MAE 0.213 over 174 men | +0.39, **0.211** |
+| **2026's own 34 sides** | 32%, rank −0.31 | **38%, rank −0.16** |
+
+**Read the last row and not the first.** Six seasons are scored here and the
+reports are loaded for one of them, so 2026 is the only slice that could
+move much, and it is where nearly all of the movement is: the sign agrees on
+38% of its sides against 32%, and its rank correlation halves its distance to
+zero. The deal-level headline did not move at all, which is the right shape —
+ordering two sides of one deal is a coarser judgement than valuing a man.
+
+The worked example is the run's own. Optimize the MVPs gave up Nikola Jokic on
+day 72 and the evaluator called the deal −0.339 a week; with the morning's
+statuses visible it calls it **−0.097**, against a delivered +0.743. Still
+wrong, and a third as wrong.
+
+**What would move it further.** Five more seasons of reports. The VPS holds
+2022–2026 and this machine holds 2026 only; `docs/replay_status.md` §7 has the
+one command.
+
+`PUBLISHED`, `UNEVEN_ERROR` and `CALIBRATION_NOTE` were updated to the new
+measured values, which is the rule of §7: the run is published whichever way
+it falls and the constants follow the run.
+
 ### Revision R4, 2026-09-24: an OUT man is counted for his expected games, and this record did not move
 
 **What changed.** A man ESPN has ruled out was worth nothing over the rest of
