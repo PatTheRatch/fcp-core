@@ -152,6 +152,68 @@ the PDFs: `pdfplumber` is not installed. The deploy step is in
 docs/injuries.md, and wiring it into `schedule.py` is a one-line change to
 make once that step has been done.
 
+## An in-game refresh: measured, not built
+
+**Written 2026-09-23**, when the week page started showing the score as it
+stands and every man's box-score line (docs/in_season_pages.md). Those lines
+come from `player_game_stats`, which is written by `scripts/ingest_league.py
+--recent`, which runs once a night at 09:00 UTC. So **tonight's line is last
+night's** until the next nightly pass, and the page says so: `pages/context`
+carries `box_scores_as_of`, the finish time of the last successful ingest of
+that season, and *How this is worked out* prints it.
+
+Whether to close that gap is the owner's decision, so here is what it costs.
+Nothing below is built.
+
+**What a pass costs.** Measured on this machine against a private database
+(never the dev one), league 3853870, season 2026, on 2026-09-23. Every ESPN
+request the run made was counted by wrapping `requests.get`:
+
+| pass | wall | ESPN requests | of which in ESPN |
+|---|---|---|---|
+| `--recent 1` (one scoring period) | **6.5s**, median of 3 | **13** | 2.7s |
+| `--recent 10` (what the nightly job runs) | 11.7s | 32 | 6.7s |
+| a whole season (`ingest_league.py`, no `--recent`) | 102s | 352 | 63s |
+| one `status_pass`, off-season | 3.7s | 11 | 1.7s |
+
+The stored record agrees: `ingest_runs` on this machine has eleven
+`recent` runs averaging 20.8s (one of them a fallback to a full pass).
+
+**What an hourly game-time refresh would cost.** 19:00–02:00 ET is eight
+hours, so eight `--recent 1` passes a night: **about 104 ESPN requests and
+under a minute of wall time in total**, on top of the 32 the nightly pass
+already makes. That is a third of what one full-season ingest costs, spread
+over a night. The database work is trivial — a `--recent 1` pass rewrites one
+day of lineups, one period's matchup totals and the box scores of one day.
+
+**What the listener already fetches at those hours.** One pass, and only
+one: `PASS_SCHEDULE` is 00:30, 09:00, 15:00 and 22:30 UTC, which in winter
+Eastern is 19:30, 04:00, 10:00 and 17:30. So the `late` pass lands half an
+hour into the window and nothing else does; 20:00 ET through 02:00 ET has no
+scheduled ESPN traffic of ours at all.
+
+**Six of a `--recent 1` pass's thirteen requests are already paid for** at
+19:30 ET by that `late` pass — both start by constructing the ESPN league
+object, which is the `mTeam/mRoster/mMatchup/mSettings/mStandings` bundle,
+`players_wl`, `proTeamSchedules_wl`, `mDraftDetail` and two `mSettings`. What
+a box-score refresh adds over a pass already running is **seven requests**:
+two `mMatchupScore`/`mScoreboard`, four `kona_playercard`, one
+`mTransactions2`.
+
+**So the two shapes to choose between:**
+
+1. **A new hourly label**, `ingame`, enqueuing one `ingest` per league with
+   `--recent 1` at 00:00–07:00 UTC. Eight passes, ~104 requests, simple, and
+   it refreshes the lineups and the matchup totals as well as the lines.
+2. **Fold the day's box scores into a status pass** and move the passes into
+   the window. Seven marginal requests per pass rather than thirteen, but it
+   couples the listener to the ingest, and the listener's league rule (below)
+   means the saving does not generalise to a second league.
+
+Either way the page's honest line stays: `box_scores_as_of` is read from
+`ingest_runs`, so it follows whatever cadence is chosen with no page change.
+And either way the decision is the owner's, not this document's.
+
 ## One listener league
 
 The listener's status snapshots and events are one league's view of who

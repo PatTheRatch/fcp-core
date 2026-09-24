@@ -411,7 +411,7 @@ within ten per cent rather than exact.
 |---|---|---|
 | `my_leagues()` | the leagues and teams this token may read, and which teams' plans are its owner's | 2.5k chars, ~730 tokens |
 | `league_context(league_id, season)` | the rules, roster and IR slots, adds a period, FAAB, the calendar, today's scoring period, the playoff weeks, and all six calibrated numbers with their source and sample | 11k chars, ~3,200 |
-| `week_report(league_id, season, team_id, today?)` | the matchup as projected, the moves worth a look in full, the best of the rest in brief, the empty days, the bar | 12k chars, ~3,750 |
+| `week_report(league_id, season, team_id, today?)` | the score as it stands, the matchup as projected, the moves worth a look in full, the best of the rest in brief, the empty days, the bar | 12k chars, ~3,750 |
 | `season_report(...)` | the best move of each kind, drop candidates, stashes, the churn guard, both bars | 9k chars, ~2,900 |
 | `todays_lineup(...)` | the proposed lineup place by place beside the one that is set, and the places that will produce nothing tonight | 6k chars, ~1,900 |
 | `what_changed(league_id, season, team_id?, since?, until?, today?)` | injuries, adds, drops, claims and trades as one sentence each, newest first | 2.9k chars, ~800 (two days of a real week) |
@@ -423,6 +423,26 @@ within ten per cent rather than exact.
 | `free_agents(league_id, season, team_id, today?, sort?)` | the wire priced at the league standard, best fifteen of however many | 8k chars, ~2,970 |
 | `what_if(league_id, season, team_id, drop?, add?, to_ir?, today?)` | one pickup the manager names: this week's nine before and after, every remaining week, and the projected finish either way, beside the week report's own number for the same move (docs/what_if.md) | 8.7k chars, ~2,420 |
 | `judge_trade(league_id, season, team_id, with_team, give, get, drop?, their_drop?, fill?, their_fill?, today?)` | both sides' nine categories before and after, the number, the playoff lens, each side's projected finish, and the league's trade record verbatim | 21k chars, ~5,850 |
+
+**`week_report` carries the score as it stands.** `posted_so_far` is nine
+numbers a side — `{"mine": {...}, "theirs": {...}, "source": ...}` — and it
+is the first thing to quote when the manager asks how the week is going,
+before any chance or projection (skills/box-out-co-manager/SKILL.md). It is
+the route's own `posted`, the engine's posted-so-far under the live/replay
+rule, so the number a model reads and the number the week page prints are
+one number. `source` is `espn` when it is ESPN's own running matchup row (a
+live morning) and `box_scores` when it is our stored started lines (any
+replayed day).
+
+**It is not the same as `matchup`.** That tool returns ESPN's stored tally
+for the whole period as of the last ingest, with no day column to cap it by;
+on 2026 day 52, team 3, it says `PTS 374–256` — the finished week — where
+`posted_so_far` says `40–84`, which is what had actually been played by that
+morning. Quote `posted_so_far` for "how is my week going"; quote `matchup`
+for "what did that week end up as".
+
+The men behind the score are deliberately **not** in the tool result. That
+is a table for a page, and every figure in it is already in the two lines.
 
 **`what_changed` takes a scoring period.** Its route's default window is the
 last twenty-four hours of real time, which on a season stored months ago is

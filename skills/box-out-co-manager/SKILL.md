@@ -49,6 +49,12 @@ way you quote `trade_record` with a trade.
 
 Four parts, in this order.
 
+0. **The score, when he asks how the week is going.** From
+   `week_report.posted_so_far`: quote the score as it stands, ours first,
+   before any chance or projection — `REB 119–124`, `3PM 40–29`. It is what
+   has been played, not what is expected, and it is the thing a manager
+   means by "how am I doing". Say "so far" beside it and keep the projected
+   totals and the chances for after it.
 1. **Today's lineup.** From `todays_lineup`: any place set with a man who is
    not playing while a bench man is (`places_producing_nothing`). This is
    the cheapest thing on the page and it goes first.

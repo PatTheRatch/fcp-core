@@ -60,10 +60,52 @@ swing band carries the accent rule, because that is the band tonight can
 move. The two thresholds are constants in the page's own script
 (`BAND_YOURS`, `BAND_THEIRS`) with a comment saying they are a display
 choice about ink and not a claim the model makes; nothing in the report
-knows they exist. Tapping a category opens both sides' projected totals and
-the chance, which is what the old tale of the tape printed nine rows of at
-once — and the other side is said to be *our estimate of their side*, there
-where the estimate is.
+knows they exist. Tapping a category opens the score and both sides'
+projected totals with the chance, which is what the old tale of the tape
+printed nine rows of at once — and the other side's projection is said to be
+*our estimate of their side*, there where the estimate is.
+
+**And under every chance, the score as it stands** (2026-09-23). The owner:
+*"what's crazy is that we don't even show the actual score of each of the
+categories on the page."* He was right — the page showed the chance of
+winning a category and, on a tap, both sides' projected end-of-week totals,
+and never `REB 17–35`. Now each cell of the pulse carries the chance and,
+under it in the mono face, **ours first, the score**: a count whole, FG% and
+FT% as `.519–.508`, the leading side's figure in ink and the trailing one
+muted. The lead is read with the category's own direction, so in **TO** the
+lower figure takes the ink; nothing is ever reordered and no verdict word is
+added, because the chance above has already said who is ahead. Before any
+game of the period has been played it is a dash on both sides: `0–0` reads
+as a result and a dash reads as *not yet*. A tapped category then shows
+`So far`, `Projected` and `Chance` as three labelled rows, which is the
+order a manager thinks them in.
+
+**Where the score comes from, and the one place it can disagree with ESPN.**
+`posted` and `opponent_posted` on the week report, which is the engine's own
+posted-so-far (`app/pickups/state.py`, *what has been posted so far*) and
+**not** the matchup route. The two answer different questions and a page
+drawing the score from one and the chance from the other would contradict
+itself in public: `/matchups` is ESPN's stored tally for the whole period as
+of the last ingest, with no day column to cap it by, so on a replayed day it
+is a week that had not been played yet. On 2026 day 52, team 3: the score
+reads `PTS 40–84` and ESPN's stored row for the same matchup says `374–256`,
+the finished week. `posted_source` says which source a score is — `espn` on
+a live morning, when ESPN's running row is kept because it carries stat
+corrections our box scores may not, or `box_scores` on any replayed day —
+and *How this is worked out* prints both sentences.
+
+**This week, by man.** Under the bands, a `<details>`: each side's score
+broken out a row a man — games, minutes and the nine — with a **Total** row
+that equals the score above it to the number. It is always the box scores'
+(`posted_men`, `opponent_posted_men`), always in the engine's own order
+(games, then points), and a man the team has since dropped is in it, because
+his games are in the score. On the one day the two sources can differ — a
+live morning, where ESPN has counted what the ingest has not yet stored —
+the text says so rather than letting a Total row look wrong. It is **open on
+a desk and closed on a phone** (`BY_MAN_OPEN`, 861px): at 390 a ten-column
+table is a sideways scroll under the one thing the manager opened the page
+for, and Tonight would start below the fold. Every name opens the shared
+player card.
 
 **3. Tonight.** Who plays, on both sides. A man a row: his name, his mark
 (`HOU · PG`), his game and its tip-off (`at UTA · 9:00 PM`), and what ESPN
@@ -74,6 +116,27 @@ for the day, from the stored daily lineups (`/teams/{id}/lineups`, the
 league's own route): a fact rather than a projection, and a name opens the
 same card every other name does, which is where the rest of what is known
 about him is. Men with no game are under **Not playing**.
+
+**And his line, once his game is stored** (2026-09-23; the owner, a minute
+after the score: *"we don't even show the actual damn box score"*). Under
+the game, in the mono face: `26 min · 8/19 fg · 3/3 ft · 3 3pm · 22 pts ·
+1 reb · 3 ast · 1 stl · 1 blk · 1 to`. Minutes first and then **the nine in
+the page's own fixed order**, the one the strip and the bands use, so a
+reader never has to find PTS in two places on one screen. **A zero is kept**
+— a zero is information, and a line printing only what a man did would make
+0 for 6 look like a night off. A man whose game the ingest has not reached
+shows the game mark alone, as before; nothing says *no line yet*, because
+the mark above already says a game is coming. Both sides read a field of the
+same name: `line` on the day's own report (`TodayPlayerOut`) and the same
+columns on the stored lineup row (`LineupSlotOut`), so ours and theirs
+cannot be written two different ways. A box score is a league-visible fact
+and not a plan, which is why the opponent's is on the league's own route.
+
+The day's report reads the line **after** every input to the seating is
+built and feeds it to nothing (`app/pickups/today.py`, *and what he actually
+did*): the look-ahead guarantee in that module is about what decides a
+lineup, and this decides nothing. It is the same kind of thing as *as it is
+set* — a stored fact about today, read after the day.
 
 Above them, and **only when the day's own report says there is a decision in
 the lineup** — a place that will produce nothing tonight, or a man on the
@@ -263,6 +326,34 @@ Added 2026-09-23, both additive and neither a new number:
 
 All three are null or empty rather than absent on a report stored before
 they existed, so a morning's stored row still draws.
+
+### And five the score needed
+
+Added 2026-09-23, all additive and all defaulted, so a report the precompute
+stored yesterday still validates and simply draws no score:
+
+* `posted` and `opponent_posted` on the week report (`StreamReportOut`):
+  each side's raw counts so far this period, from `TeamWeek.my_totals`,
+  which is the engine's own posted-so-far under the live/replay rule. The
+  same two fields ride on the what-if's week layer (`WhatIfWeekOut`), one of
+  each and not a before and an after, because a change made today cannot
+  move a day already played.
+* `posted_source`: `espn` or `box_scores`, so the page can say which.
+* `posted_men` and `opponent_posted_men`: the score a man at a time
+  (`PostedManOut` — ESPN id, name, games, minutes and the nine), always from
+  the box scores, in the engine's own order.
+* `line` on a man in the day's own report (`TodayPlayerOut` →
+  `BoxScoreOut`): his stored box score for that day, null until the ingest
+  has it.
+* the rest of the nine on a stored lineup row (`LineupSlotOut`): minutes,
+  steals, blocks, turnovers, threes and both made/attempted pairs beside the
+  points, rebounds and assists that were already there.
+* `box_scores_as_of` on `pages/context`: when the last successful ingest of
+  the season finished, which is how old every stored line on the page is.
+
+`week_report`'s trim carries `posted_so_far` — nine numbers a side and the
+source, and not the men, because a table is a page's job and every figure in
+it is already in those two lines (docs/mcp.md).
 
 ## What changed, on the league's This week page
 
@@ -459,10 +550,12 @@ Everything else comes from one small route added with the pages:
 ### `GET /leagues/{league_id}/seasons/{season}/pages/context`
 
 The day being reported on as a date, the days of its matchup period for the
-schedule strip, every team's name, which team is ours, and the source line.
-One route rather than four calls to existing ones. It never refuses a season
-it holds: a season with no stored schedule still has teams and names, and
-the page says what is missing rather than failing to draw.
+schedule strip, every team's name, which team is ours, the source line, and
+`box_scores_as_of` — when the last successful ingest of the season finished,
+which is how old every stored line on the page is. One route rather than
+four calls to existing ones. It never refuses a season it holds: a season
+with no stored schedule still has teams and names, and the page says what is
+missing rather than failing to draw.
 
 Records come from `/standings`, which already derives a matchup record from
 the stored matchups, so they are not repeated in the context.
@@ -474,6 +567,14 @@ takes the better part of half a minute to build — it searches the whole wire
 and re-runs the week for every candidate move — so a page that refetched
 itself every minute would spend its life loading. The footnote says when the
 answer was built; the reader refreshes.
+
+**And the box scores are older than the page.** Reloading would not help:
+every stored line on it — the score, the by-man table, a man's night in
+Tonight — comes from `player_game_stats`, which the nightly ingest writes
+once a day. So tonight's line is last night's until an in-game refresh
+exists, and the page says which moment it is as of rather than letting a
+stale line pass for a live one. What an hourly game-time refresh would cost,
+measured and not built, is in docs/jobs.md under *An in-game refresh*.
 
 ## The language
 
