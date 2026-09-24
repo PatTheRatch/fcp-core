@@ -31,7 +31,7 @@ The recommender must be allowed to say **"no move clears the hurdle today."** `a
 | `matchup_team_stats` | Each team's per-category totals per matchup, the live state of the current week |
 | `matchup_periods` | Which scoring periods each matchup period covers |
 | `transactions`, `transaction_items` | Every add, drop and FAAB bid, with what winning cost (`/contested-claims`) |
-| `league_seasons` | `lineup_slots`, `bench_slots`, `injured_reserve_slots` (1 from 2027), `position_limits`, `auction_budget` |
+| `league_seasons` | `lineup_slots`, `bench_slots`, `injured_reserve_slots` (**0 in every stored season including 2027** — this note said 1 from 2027 and the stored row says otherwise; read the row), `position_limits`, `auction_budget` |
 | `roster_slots.injury_status`, `daily_lineup_slots.injury_status` | **Do not use.** One snapshot as of the request, smeared across the season. See the module docstring of [`app/draft/availability.py`](../app/draft/availability.py). |
 
 ### Already written, reusable as-is
