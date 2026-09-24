@@ -72,14 +72,19 @@ def filed(
     raw: str = "Nobody, Aaron",
     team: str = "Charlotte Hornets",
 ) -> InjuryReport:
-    """One report line, stored the way the backfill stores it."""
+    """One report line, stored the way the backfill stores it.
+
+    With `who`, the line is placed on that player and the raw spelling is
+    beside the point, which is what a placed line looks like. Without one it
+    is a name the matcher refused, which is the `unmatched` case.
+    """
     row = InjuryReport(
         reported_at=at,
         game_date=game_date,
         game_time="07:00 (ET)",
         matchup="CHA@ATL",
         team=team,
-        player_name_raw=raw if who is None else f"{who.name}, X",
+        player_name_raw=raw if who is None else who.name,
         player_id=None if who is None else who.id,
         status=status,
         reason="Injury/Illness - Right Shoulder; Soreness",
