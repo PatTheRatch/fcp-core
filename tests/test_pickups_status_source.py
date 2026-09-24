@@ -333,16 +333,25 @@ def test_a_roster_the_league_never_named_reads_as_it_did_before(session: Session
     assert with_report == without
 
 
-def test_the_days_read_is_memoized_and_the_season_is_part_of_the_key(
+def test_a_mornings_read_is_held_and_keyed_on_the_season_and_the_day(
     session: Session,
 ) -> None:
-    """Two calls about one morning are one query; a second season is its own."""
+    """Two calls about one morning are one read; another day is its own.
+
+    A replayed morning is asked about once per team and once per wire, so the
+    memo is what keeps that to two queries. It is keyed on the season as well
+    as the day, because one database holds nine of them.
+    """
     ls: LeagueSeason
     ls, (home, _), (first, _) = league_season(session, days_per_period=7)
     configure(ls)
     a_guard(session, home, first)
 
-    first_read = status_on(session, SEASON, 3)
+    held = status_on(session, SEASON, 3)
 
-    assert status_on(session, SEASON, 3) is first_read
-    assert status_on(session, SEASON, 4) is not first_read
+    assert status_on(session, SEASON, 3) is held
+    assert status_on(session, SEASON, 4) is not held
+    assert set(session.info["pickups_status_source"]) == {
+        (SEASON, day_date(3)),
+        (SEASON, day_date(4)),
+    }
