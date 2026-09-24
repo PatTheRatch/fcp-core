@@ -151,7 +151,7 @@ lock is not buying its place with that roster spot. It is buying a seed.
 **late** — a median of three regular weeks left against the race's ten — and
 `docs/stashes.md` §4c already showed that late is where stashing cannot work.
 The locks' *standard* net is the worst of the three groups (median −0.15,
-positive 29.25%), and under the lens **53.06% of lock stashes have no playoff
+positive 29.25%), and under the lens **46.94% of lock stashes have no playoff
 weeks at all** because the man was gone or dropped before the bracket started.
 The lens makes the wait cheaper and makes the benefit harder to earn, and both
 of those are true at once.
@@ -478,8 +478,9 @@ says none of them arrived in the weeks a lock is actually playing for. **That
 is exactly why the page prints both lines and neither replaces the other.**
 
 Through The Wire — the owner's team, and the subject of `docs/stashes.md` §6b —
-made **20 of the 66**, more than any other side, and its best was Kawhi Leonard
-held from day 88 for a lock net of **+1.17**.
+made **25 of the 66**, more than any other side (The Infirmary 16, Brighton
+Bears 15, Foxes ShutUpNDribble 5, Masters of their Domain 4, Fantastic 5 one),
+and its best was Kawhi Leonard held from day 88 for a lock net of **+1.17**.
 
 ### 4b. The best and the worst lock stash in eight seasons
 
