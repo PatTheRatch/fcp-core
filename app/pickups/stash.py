@@ -67,7 +67,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.db.models import LeagueSeason
-from app.pickups.judge import SpotBook, horizon, weeks_between
+from app.pickups.judge import DAYS_A_WEEK, SpotBook, horizon, weeks_between
 from app.pickups.projection import rest_of_season_line
 from app.pickups.returns import (
     PRIOR_SOURCE,
@@ -87,12 +87,6 @@ __all__ = [
     "held_stashes",
     "stash_block",
 ]
-
-#: Days in a matchup period, the divisor that turns a dead day into a dead
-#: week. `app.pickups.judge.DAYS_A_WEEK`, repeated here rather than imported
-#: because `judge` imports `state` which imports `returns`, and this module
-#: sits on top of all three.
-DAYS_A_WEEK = 7.0
 
 #: The weeks a page prints the return odds for.
 ODDS_WEEKS: tuple[int, ...] = (1, 2, 4, 8)
