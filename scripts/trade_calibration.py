@@ -75,13 +75,21 @@ with 55 deals a hit rate is mostly noise and a reader is owed the yardstick.
 
 WHAT THIS CANNOT MEASURE
 
-A played season has no listener data: no injury statuses, no ownership, no
-recorded wire. So the evaluator runs with every player treated as available
-and with the reconstructed wire (`app.pickups.state.historical_free_agents`,
-whoever played that day and was in nobody's lineup). Both flatter it -- a man
-who was day-to-day when the deal was made is projected as healthy on both
-sides -- and neither can be fixed from stored rows. The sample is also small,
-and the write-up says so in its first sentence.
+A played season has no listener data: no ownership, no recorded wire. So the
+evaluator runs with the reconstructed wire
+(`app.pickups.state.historical_free_agents`, whoever played that day and was
+in nobody's lineup), which cannot see a free agent who did not play and knows
+nothing about waivers. The sample is also small, and the write-up says so in
+its first sentence.
+
+**The injury half of that caution is gone since 2026-09-24.** Both sides used
+to be projected as fully available on the morning of the deal, because the
+only status source was the listener's. A replayed morning now reads the NBA's
+own official report as of ten o'clock Eastern that day (`docs/replay_status.md`,
+the declared source order), so a man the league had Out is discounted on
+whichever side he is on. Only 2026 has reports loaded on this machine, and it
+is where nearly all of the movement in the run of 2026-09-24 is; the VPS holds
+2022 to 2026.
 
 The two engines still settle an uneven trade differently, though less than
 they did: both now price a place the deal empties at the streamed lane, but

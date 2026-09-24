@@ -727,17 +727,26 @@ all we allow:
   only part anybody acts on and the magnitude is demonstrably noise.
 - Show the player-level number on the page, which is the part that measured
   well, rather than only the deal-level difference, which did not.
-- Model availability. Every run of this calibration has ended in the same
-  sentence.
+- ~~Model availability. Every run of this calibration has ended in the same
+  sentence.~~ **Done on 2026-09-24**, and the run that scored it is R5 in §0:
+  a replayed morning reads the NBA's own report ([`replay_status.md`](replay_status.md)).
+  What is left of it is the five seasons whose reports are not loaded on this
+  machine, which is one command on the VPS.
 
 ### What a played season costs the measurement
 
 Everything in §7 is run without listener data, because the listener has never
 run for a played season:
 
-- **No injury statuses.** Every player is projected as fully available on the
-  morning of the deal, on both sides. A man who was day-to-day when the trade
-  was agreed is invisible, which is precisely the information a manager had.
+- ~~**No injury statuses.**~~ **Fixed 2026-09-24** (§0 R5,
+  [`replay_status.md`](replay_status.md)). Every player used to be projected as
+  fully available on the morning of the deal, on both sides, because the only
+  status source was the listener's and the listener never runs for a played
+  season. A replayed morning now reads the NBA's own official report as of ten
+  o'clock Eastern that day. Two limits remain: the reports are loaded here for
+  2026 only, so the other five seasons are still status-blind, and the league
+  names only players whose team plays that day, so a man whose team was idle
+  still reads as fit.
 - **A reconstructed wire.** `app.pickups.state.historical_free_agents` —
   whoever played that scoring period and was in nobody's lineup. It cannot see
   a free agent who did not play, and it knows nothing about waivers, so the
