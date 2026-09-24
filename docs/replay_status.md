@@ -634,3 +634,13 @@ the live season: the scheduled `injury_pass` stores every quarter-hour
 (`injuries.md`, "the pass is scheduled"). This database holds one morning
 snapshot a game date for 2026, which is what §2's coverage figures are
 measured on.
+
+### The VPS run, 2026-09-24 — five seasons of statuses
+
+Run on the VPS the same day, where the reports cover 2022–2026
+(`docs/runs/2026-09-24-trade-calibration-vps-five-seasons.md`): the deal-level
+record is unmoved at **25 of 55**, the side-level rank correlation is
+**+0.04** (+0.02 with 2026's statuses alone, −0.02 status-blind), mean
+absolute error 0.286. Four more seasons of knowing who was Out on the morning
+of a deal move the trade number a little, in the right direction, and leave it
+a coin at picking the winner — which is what its published note says.
