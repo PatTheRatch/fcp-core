@@ -143,6 +143,34 @@ runs the search, takes its best move, asks for the same move by name, and
 compares every one of those numbers. The day somebody changes one path the
 other fails, rather than drifting.
 
+### And, when the man is not playing yet: the stash block
+
+Added 2026-09-24 ([`stash_mode.md`](stash_mode.md)). When the man being added
+or moved to injured reserve is one ESPN has ruled out, the answer carries a
+`stash` beside the three layers: `days_out`, `return_odds_by_week` (P back by
+weeks 1, 2, 4 and 8), `expected_dead_weeks`, `dead_cost`, `expected_net`,
+`net_if_out_past_week` and `ir_slot_free`, with a `language` saying the odds
+are the NBA's own return record for men out this long and **not a diagnosis, a
+timeline or a date**. There is no date to print: ESPN's basketball API carries
+no return-date field at all.
+
+Two things about it are worth being clear on, because both are easy to get
+wrong. **It is not a second opinion on the move.** The engine already prices
+what a ruled-out man is worth — his expected games feed `rest_of_season_line`
+like anyone else's — so `expected_net` is the judgement's own net less one
+term the judgement cannot see: that the roster place he is holding cannot be
+streamed while he waits. **And it is not a bar.** Nothing is labelled against
+it; a stash under the hurdle comes back in full with its number and its odds,
+exactly as any other move under the hurdle does.
+
+The page renders one line under the number, in the house style:
+
+> Out 18 days · back within a fortnight 48% · dead weeks cost 1.58 · expected
+> +0.94 (or −0.82 if he is not back by week 4)
+
+The trades page prints the same line per man under each side's finish block,
+for the men that side is taking on who are out.
+
 ---
 
 ## 2. The noise, stated

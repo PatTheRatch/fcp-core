@@ -685,3 +685,47 @@ def test_an_unreadable_moment_is_a_sentence_not_a_stack_trace(
         {"league_id": LEAGUE_ID, "season": SEASON, "since": "last tuesday"},
     )
     assert "is not a moment I can read" in said
+
+
+def test_a_stash_reads_the_same_through_the_tool_as_through_the_route(
+    server: MCPServer, session: Session, league: dict[str, Any]
+) -> None:
+    """The stash block too: the route and the tool, number for number.
+
+    A man ESPN has ruled out who last played on day 1, asked about on day 8.
+    The page and an assistant must not be able to give a manager two different
+    answers about what the wait costs.
+    """
+    ls = league["ls"]
+    ls.injured_reserve_slots = 0
+    hurt = player(session, "Hurt")
+    eligible(session, hurt, ANY, "PG")
+    snapshot(session, hurt, pro_team_id=20, on_team_id=0, injury_status="OUT")
+    projected(session, hurt, 70, STARTER)
+    played(session, hurt, 1, 32.0, STARTER)
+    on_the_wire(session, ls, hurt)
+    session.flush()
+
+    dropped = int(league["who"]["HomeWeak"].espn_player_id)
+    added = int(hurt.espn_player_id)
+    answer = call(
+        server,
+        "what_if",
+        {
+            "league_id": LEAGUE_ID,
+            "season": SEASON,
+            "team_id": HOME,
+            "drop": [dropped],
+            "add": [added],
+            "today": TODAY,
+        },
+    )
+    route = what_if_api.what_if_report(
+        ls, league["home"], session, drop=[dropped], add=[added], today=TODAY
+    ).model_dump(mode="json")
+
+    assert route["stash"] is not None
+    assert answer["stash"] == trim.stash(route["stash"])
+    assert answer["stash"]["days_out"] == 7
+    assert answer["stash"]["dead_weeks_cost"] > 0
+    assert "diagnosis" in answer["stash"]["language"]

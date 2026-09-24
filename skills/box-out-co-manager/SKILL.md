@@ -98,6 +98,15 @@ those words: the change is inside the simulation's own noise. And quote
 `judge_trade` carries the same `finish` on each side, and it is read the same
 way.
 
+**When the man is not playing yet, `stash` is on the answer** — and on
+`week_report`'s `men_who_are_out`, `season_report`'s stash candidates and each
+side of `judge_trade`. Say `days_out`, the `back_by_week` odds and
+`dead_weeks_cost`, then `expected_net` **with** `net_if_not_back_by_week_4`
+beside it, because the distribution is the answer. The odds are the NBA's own
+return record for men out that long; they are **not a diagnosis, a timeline or
+a date**, and there is no date to give — ESPN's basketball API carries none.
+Never say when he will be back.
+
 ## A trade
 
 Lead with the fit, close with the record.

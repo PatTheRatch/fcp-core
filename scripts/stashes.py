@@ -139,7 +139,7 @@ import statistics
 import sys
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date
@@ -169,7 +169,8 @@ from app.draft.targets import CategoryDistribution
 from app.injuries import morning_of, status_as_of
 from app.pickups.bids import free_agents_on
 from app.pickups.judge import Standard, standard_lens
-from app.pickups.projection import per_game_line
+from app.pickups.projection import ESPN_AVAILABILITY, per_game_line
+from app.pickups.returns import expected_games
 from app.scoring.lines import COUNTS, CategoryLine
 from app.scoring.replacement import ADD_TYPES, OPENED_PLACE, TYPICAL_PICKUP
 
@@ -1955,42 +1956,118 @@ def miller_walkthrough(
     print(f"  first games back (day, minutes): {played}\n")
 
 
-def section_seven(rows: Sequence[Stash], names: dict[int, str], returns: int) -> None:
+def section_seven(
+    rows: Sequence[Stash],
+    names: dict[int, str],
+    returns: int,
+    *,
+    wire: WireBook | None = None,
+    boxes: Mapping[tuple[int, int], Sequence[Box]] | None = None,
+) -> None:
     print("== 7. what the engine projects for a stash today, scored ==")
     print(
-        "`app.pickups.state.playable_days` drops every day before ESPN's\n"
-        "`expected_return_date` for a man whose status is in `RULED_OUT_STATUSES`\n"
-        "(OUT, SUSPENSION), and every day at all when there is no date. This\n"
-        f"database holds {returns} rows with an `expected_return_date` in any\n"
-        "season, so the engine's projected games for a stash is zero, its\n"
-        "rest-of-season line is the empty line, and its value is 0.00 a week.\n"
+        "BEFORE 2026-09-24. `app.pickups.state.playable_days` dropped every day\n"
+        "before ESPN's `expected_return_date` for a man whose status is in\n"
+        "`RULED_OUT_STATUSES` (OUT, SUSPENSION), and every day at all when there\n"
+        f"was no date. This database holds {returns} rows with an\n"
+        "`expected_return_date` in any season -- and a read-only probe of ESPN's\n"
+        "own kona views on 2026-09-24 found the field does not exist for\n"
+        "basketball at all -- so the engine's projected games for a stash was\n"
+        "zero, its rest-of-season line the empty line, its value 0.00 a week.\n"
+        "\n"
+        "AFTER. `docs/stash_mode.md`'s declared rule: each remaining game day\n"
+        "carries the chance he is back by it (the section 2a prior, read by the\n"
+        "days out this study measures) times the ramp of section 3. The column\n"
+        "below is that projection made on the claim morning -- his knowable\n"
+        "per-game line, the expected share of his team's remaining games,\n"
+        "`ESPN_AVAILABILITY`, through this study's own lens -- multiplied by the\n"
+        "weeks he was actually held after returning, which is the stretch the\n"
+        "`delivered` column covers.\n"
+        "\n"
+        "The two columns are the two currencies of Limitation 3 and the error\n"
+        "between them is read as a size, not as a calibration: `delivered` is\n"
+        "`Replay` categories and `engine says` is a marginal through the lens.\n"
+        "Zero was zero in both, which is why the before column needed no such\n"
+        "warning and this one does.\n"
     )
     stashes = [s for s in rows if s.season == 2026 and s.kind == "claim" and s.stash]
+    projected_now = {
+        (stash.player, stash.day): engine_projection(stash, wire, boxes) for stash in stashes
+    }
     body = []
     for stash in sorted(stashes, key=lambda s: -sum(s.weekly)):
+        says = projected_now[(stash.player, stash.day)] * stash.weeks_after
         body.append(
             [
                 str(stash.day),
                 names.get(stash.player, str(stash.player))[:20],
                 str(stash.days_out),
                 "0.00",
+                two(says),
                 two(sum(stash.weekly)),
                 two(sum(stash.weekly)),
+                two(sum(stash.weekly) - says),
                 str(stash.weeks_after),
             ]
         )
     table(
-        ["day", "player", "d out", "engine says", "he delivered", "error", "weeks"],
+        [
+            "day",
+            "player",
+            "d out",
+            "was",
+            "now says",
+            "he delivered",
+            "error was",
+            "error now",
+            "weeks",
+        ],
         body,
     )
     delivered = [sum(s.weekly) for s in stashes]
+    now = [projected_now[(s.player, s.day)] * s.weeks_after for s in stashes]
+    errors = [sum(s.weekly) - projected_now[(s.player, s.day)] * s.weeks_after for s in stashes]
+    weekly_now = [projected_now[(s.player, s.day)] for s in stashes]
     print(
-        f"2026 claimed stashes n={len(stashes)}: the engine projects 0.00 for every one.\n"
-        f"Median delivered over the weeks held after return {two(median_of(delivered))} "
-        f"categories, mean {two(mean_of(delivered))}, total {two(sum(delivered))}.\n"
-        f"Men the engine would have valued at zero who returned and were held: "
+        f"2026 claimed stashes n={len(stashes)}.\n"
+        f"BEFORE: the engine projected 0.00 for every one, so its mean error was "
+        f"the mean delivered, {two(mean_of(delivered))} a stash "
+        f"(median {two(median_of(delivered))}, total {two(sum(delivered))}).\n"
+        f"AFTER: it projects a mean of {two(mean_of(weekly_now))} categories a week "
+        f"(median {two(median_of(weekly_now))}), which over the weeks each was held "
+        f"comes to a mean of {two(mean_of(now))} a stash and {two(sum(now))} in total.\n"
+        f"Mean error {two(mean_of(errors))} a stash, median {two(median_of(errors))}, "
+        f"mean absolute {two(mean_of([abs(e) for e in errors]))}.\n"
+        f"Men who returned and were held: "
         f"{sum(1 for s in stashes if s.weeks_after)} of {len(stashes)}.\n"
     )
+
+
+def engine_projection(
+    stash: Stash,
+    wire: WireBook | None,
+    boxes: Mapping[tuple[int, int], Sequence[Box]] | None,
+) -> float:
+    """What the engine now says a stash is worth a week, on the claim morning.
+
+    The declared rule applied to this study's own instrument, because a replay
+    cannot read it off a snapshot: this database holds status snapshots for the
+    season in progress only, so a 2026 morning has no stored injury status at
+    all and `build_players` would call every one of these men fit. The days out
+    are the box scores' (section 0), which is the count the prior is measured
+    against in the first place, and his remaining game days are his own rows.
+    """
+    if wire is None or boxes is None:
+        return 0.0
+    his = boxes.get((stash.season, stash.player), ())
+    ahead = [box.day for box in his if box.day >= stash.day]
+    if not ahead:
+        return 0.0
+    share = expected_games((day - stash.day for day in ahead), days_out=stash.days_out) / len(ahead)
+    per_game = per_game_line(wire.session, stash.season, stash.player, stash.day, tilt=False)
+    if not per_game.counts:
+        return 0.0
+    return wire.weekly(stash.day, per_game.scaled(share * ESPN_AVAILABILITY))
 
 
 def headline(rows: Sequence[Stash], years: Sequence[int]) -> str:
@@ -2197,7 +2274,13 @@ def main() -> int:
     section_five([s for s in rows if s.stash], years)
     section_six(rows, names, team_names)
     miller_walkthrough(rows, boxes, names, calendars)
-    section_seven(rows, names, returns_stored)
+    section_seven(
+        rows,
+        names,
+        returns_stored,
+        wire=WireBook(session, calendars[max(years)]),
+        boxes=boxes,
+    )
 
     if args.why:
         why(rows, counts, years)

@@ -565,3 +565,108 @@ def test_the_change_dataclass_leaves_the_roster_in_the_order_it_was_held() -> No
     assert change.after([1, 2, 3, 4]) == (1, 4, 9, 10)
     assert Change(team_id=ALPHA).empty is True
     assert change.empty is False
+
+
+# ---------------------------------------------------------------------------
+# the stash view: adding or holding a man who is not playing yet
+# ---------------------------------------------------------------------------
+
+
+def _out_on_the_wire(session: Session, built: dict[str, object], last_played: int) -> Player:
+    """A free agent ESPN has ruled out, who last played on `last_played`."""
+    who = player(session, "Stashable")
+    eligible(session, who, ANY, "PG")
+    snapshot(session, who, pro_team_id=50, on_team_id=0, injury_status="OUT")
+    projected(session, who, 70, BOARDS, season=SEASON)
+    for day in range(1, last_played + 1):
+        played(session, who, day, 30.0, BOARDS, season=SEASON)
+    on_the_wire(session, _ls(built), who)
+    session.flush()
+    _who(built)["Stashable"] = who
+    return who
+
+
+def test_adding_a_man_who_is_out_carries_the_stash_block(session: Session) -> None:
+    """The line the page prints, with every number behind it.
+
+    He last played on day 1 and it is day 8, so he is seven days out, which is
+    a row the prior measures directly.
+    """
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    _out_on_the_wire(session, built, last_played=1)
+
+    answer = ask(session, built, add=("Stashable",), drop=("AlphaC",))
+
+    stash = answer.stash
+    assert stash is not None
+    assert stash.name == "Stashable"
+    assert stash.days_out == 7
+    assert sorted(stash.return_odds_by_week) == [1, 2, 4, 8]
+    assert 0.0 < stash.return_odds_by_week[2] < 1.0
+    assert stash.return_odds_by_week[8] >= stash.return_odds_by_week[2]
+    assert stash.ir_slot_free is False
+    assert stash.expected_dead_weeks > 0.0
+    assert stash.dead_cost > 0.0
+    # The mean arm is the recommender's own net, less the wait. Nothing is
+    # re-derived and nothing is labelled against it.
+    assert stash.expected_net == pytest.approx(answer.net - stash.dead_cost)
+    assert stash.net_if_out_past_week < stash.expected_net
+    assert 0.0 < stash.expected_games < stash.healthy_games
+    assert "Out 7 days" in stash.line
+    assert "back within a fortnight" in stash.line
+    assert "not back by week 4" in stash.line
+    assert "return record" in stash.language
+    assert "diagnosis" in stash.language
+
+
+def test_a_healthy_add_carries_no_stash_block(session: Session) -> None:
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    assert ask(session, built, add=("Boards",), drop=("AlphaC",)).stash is None
+
+
+def test_a_free_injured_reserve_place_makes_the_wait_free(session: Session) -> None:
+    """The setting decides, and it is read from the stored row.
+
+    With a place free the man goes to injured reserve and the roster place he
+    would have held goes on being streamed, so the wait costs nothing and the
+    net is the judgement's own.
+    """
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    _out_on_the_wire(session, built, last_played=1)
+    charged = ask(session, built, add=("Stashable",), drop=("AlphaC",))
+
+    _ls(built).injured_reserve_slots = 2
+    session.flush()
+    clear_lines()
+    free = ask(session, built, add=("Stashable",), drop=("AlphaC",))
+
+    assert charged.stash is not None
+    assert free.stash is not None
+    assert free.stash.ir_slot_free is True
+    assert free.stash.dead_cost == 0.0
+    assert free.stash.expected_dead_weeks == 0.0
+    assert free.stash.expected_net == pytest.approx(free.net)
+    assert charged.stash.dead_cost > 0.0
+
+
+def test_a_man_moved_to_injured_reserve_carries_the_block_too(session: Session) -> None:
+    built = build(session)
+    answer = ask(session, built, add=("Boards",), to_ir=("AlphaOut",))
+    assert answer.stash is not None
+    assert answer.stash.name == "AlphaOut"
+
+
+def test_the_week_report_names_the_men_it_is_counting_for_a_fraction(
+    session: Session,
+) -> None:
+    built = build(session)
+    _ls(built).injured_reserve_slots = 0
+    session.flush()
+    report = stream_recommendations(
+        session, _ls(built), ALPHA, TODAY, distributions=WEEK, bids=False
+    )
+    assert [stash.name for stash in report.stashed] == ["AlphaOut"]
+    assert report.stashed[0].days_out >= 1

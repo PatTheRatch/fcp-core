@@ -51,6 +51,31 @@ calibration(session, league_id, key) -> Calibrated(value, source, n, note, paylo
 
 and a page or a report that wants several reads them together (`bars`).
 
+### What is not a calibration key, and where the settings are read instead
+
+Two kinds of number are deliberately **not** in this table, and the line
+between them is worth stating because it has been got wrong once already.
+
+**A fact about the NBA is not a per-league number.** The return prior and the
+ramp of [`stash_mode.md`](stash_mode.md) — how likely a man out N days is to
+play again within M, and what he is worth in his first two weeks back — are
+measured over 11,473 absences from the box scores. They are shipped as
+constants in `app/pickups/returns.py` with their provenance, not as keys: the
+league they were measured on contributes no more to them than any other
+league's history would, and a per-league re-measurement would be noise with a
+different name.
+
+**A league setting is read from the stored settings, every time, and never
+assumed.** `league_seasons.injured_reserve_slots` is the one a stash turns on:
+with a free slot the wait costs nothing, without one it costs a roster place.
+`app.pickups.state.TeamWeek.ir_slot_free` reads it against the roster's own IR
+occupancy and everything downstream reads that. `docs/pickups.md` §4.4 and
+`app/pickups/season.py` both used to say this league gains a slot in 2027; the
+stored 2027 row says **0**, and a behaviour gated on the sentence rather than
+the row would have been silently wrong for a season. `acquisition_budget`,
+`uses_faab`, the roster shape, the team count and the scored categories are
+read the same way, from the row.
+
 ## Where a number comes from, in order
 
 1. **`owner`** — the league's own manager set it on the account page, with
