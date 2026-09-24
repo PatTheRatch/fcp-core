@@ -171,6 +171,7 @@ from app.pickups.bids import free_agents_on
 from app.pickups.judge import Standard, standard_lens
 from app.pickups.projection import ESPN_AVAILABILITY, per_game_line
 from app.pickups.returns import expected_games
+from app.pickups.state import build_players, status_on
 from app.scoring.lines import COUNTS, CategoryLine
 from app.scoring.replacement import ADD_TYPES, OPENED_PLACE, TYPICAL_PICKUP
 
@@ -1989,21 +1990,38 @@ def section_seven(
         "`Replay` categories and `engine says` is a marginal through the lens.\n"
         "Zero was zero in both, which is why the before column needed no such\n"
         "warning and this one does.\n"
+        "\n"
+        "RE-SCORED 2026-09-24, with the status visible on the claim morning\n"
+        "(`docs/replay_status.md`). Two columns are new. `league said` is what\n"
+        "the NBA's own report had for the man at ten o'clock Eastern on the day\n"
+        "the claim was made, which is what the engine now reads. `engine says`\n"
+        "is the same projection made off `app.pickups.state.build_players` --\n"
+        "the real path a report takes -- rather than off this study's own\n"
+        "instrument: his games share is the engine's `season_games` over his\n"
+        "NBA team's remaining games, where `now says` uses his own box-score\n"
+        "days and the days out this study measures. The lens, the per-game line\n"
+        "and `ESPN_AVAILABILITY` are the same in both, so the gap between the\n"
+        "two columns is the instrument and nothing else.\n"
     )
     stashes = [s for s in rows if s.season == 2026 and s.kind == "claim" and s.stash]
     projected_now = {
         (stash.player, stash.day): engine_projection(stash, wire, boxes) for stash in stashes
     }
+    said = {(stash.player, stash.day): morning_status(stash, wire) for stash in stashes}
+    engine = {(stash.player, stash.day): engine_path_projection(stash, wire) for stash in stashes}
     body = []
     for stash in sorted(stashes, key=lambda s: -sum(s.weekly)):
-        says = projected_now[(stash.player, stash.day)] * stash.weeks_after
+        key = (stash.player, stash.day)
+        says = projected_now[key] * stash.weeks_after
         body.append(
             [
                 str(stash.day),
                 names.get(stash.player, str(stash.player))[:20],
                 str(stash.days_out),
+                said[key] or "silent",
                 "0.00",
                 two(says),
+                two(engine[key] * stash.weeks_after),
                 two(sum(stash.weekly)),
                 two(sum(stash.weekly)),
                 two(sum(stash.weekly) - says),
@@ -2015,8 +2033,10 @@ def section_seven(
             "day",
             "player",
             "d out",
+            "league said",
             "was",
             "now says",
+            "engine says",
             "he delivered",
             "error was",
             "error now",
@@ -2028,6 +2048,8 @@ def section_seven(
     now = [projected_now[(s.player, s.day)] * s.weeks_after for s in stashes]
     errors = [sum(s.weekly) - projected_now[(s.player, s.day)] * s.weeks_after for s in stashes]
     weekly_now = [projected_now[(s.player, s.day)] for s in stashes]
+    by_engine = [engine[(s.player, s.day)] * s.weeks_after for s in stashes]
+    engine_errors = [sum(s.weekly) - engine[(s.player, s.day)] * s.weeks_after for s in stashes]
     print(
         f"2026 claimed stashes n={len(stashes)}.\n"
         f"BEFORE: the engine projected 0.00 for every one, so its mean error was "
@@ -2041,6 +2063,70 @@ def section_seven(
         f"Men who returned and were held: "
         f"{sum(1 for s in stashes if s.weeks_after)} of {len(stashes)}.\n"
     )
+    counted: dict[str, list[Stash]] = {}
+    for stash in stashes:
+        counted.setdefault(said[(stash.player, stash.day)] or "silent", []).append(stash)
+    split = ", ".join(
+        f"{label} {len(group)}"
+        for label, group in sorted(counted.items(), key=lambda pair: -len(pair[1]))
+    )
+    print(
+        f"WHAT THE LEAGUE SAID on the ninety-one claim mornings: {split}.\n"
+        f"THROUGH THE ENGINE'S OWN PATH (`build_players`, the status source, the "
+        f"NBA schedule): a mean of {two(mean_of(by_engine))} a stash and "
+        f"{two(sum(by_engine))} in total, mean error {two(mean_of(engine_errors))}, "
+        f"mean absolute {two(mean_of([abs(e) for e in engine_errors]))}.\n"
+        f"A man the report did not name that morning is not ruled out, so the "
+        f"engine counts him for all his team's games and the two columns part "
+        f"company on exactly those men.\n"
+    )
+
+
+def morning_status(stash: Stash, wire: WireBook | None) -> str | None:
+    """What the day's source had for this man on the morning of the claim.
+
+    `app.pickups.state.status_on`'s own answer, which is the engine's: ESPN's
+    snapshot on a live morning and the NBA's own report as of ten o'clock
+    Eastern on a replayed one (`docs/replay_status.md`). None means the league
+    said nothing current about him -- not that he was fit, and on a claim
+    morning it usually means his team was not playing that day.
+    """
+    if wire is None:
+        return None
+    status, _returns = status_on(wire.session, stash.season, stash.day).of(stash.player)
+    return status
+
+
+def engine_path_projection(stash: Stash, wire: WireBook | None) -> float:
+    """The same projection made the way a report makes it, not the study's way.
+
+    `build_players` over the rest of the regular season on the claim morning,
+    so the status source, `RULED_OUT_STATUSES`, the return prior and the NBA
+    schedule are all the product's own. His games share is `season_games` over
+    his team's remaining games; everything after that -- the per-game line,
+    `ESPN_AVAILABILITY`, the lens -- is what `engine_projection` uses, so the
+    two columns differ in the instrument and in nothing else.
+    """
+    if wire is None:
+        return 0.0
+    last = max(
+        (final for _first, final, playoff in wire.calendar.periods.values() if not playoff),
+        default=wire.calendar.last_day,
+    )
+    if last < stash.day:
+        return 0.0
+    days = tuple(range(stash.day, last + 1))
+    built = build_players(wire.session, wire.league, [stash.player], days)
+    if not built:
+        return 0.0
+    man = built[0]
+    if not man.schedule_days:
+        return 0.0
+    share = man.season_games / len(man.schedule_days)
+    per_game = per_game_line(wire.session, stash.season, stash.player, stash.day, tilt=False)
+    if not per_game.counts:
+        return 0.0
+    return wire.weekly(stash.day, per_game.scaled(share * ESPN_AVAILABILITY))
 
 
 def engine_projection(
@@ -2050,12 +2136,13 @@ def engine_projection(
 ) -> float:
     """What the engine now says a stash is worth a week, on the claim morning.
 
-    The declared rule applied to this study's own instrument, because a replay
-    cannot read it off a snapshot: this database holds status snapshots for the
-    season in progress only, so a 2026 morning has no stored injury status at
-    all and `build_players` would call every one of these men fit. The days out
-    are the box scores' (section 0), which is the count the prior is measured
-    against in the first place, and his remaining game days are his own rows.
+    The declared rule applied to this study's own instrument. Until
+    2026-09-24 it had to be: a replayed 2026 morning had no stored status at
+    all and `build_players` would have called every one of these men fit. It
+    is kept beside `engine_path_projection` because the days out are the box
+    scores' (section 0), which is the count the prior is measured against in
+    the first place, and his remaining game days are his own rows rather than
+    his team's.
     """
     if wire is None or boxes is None:
         return 0.0

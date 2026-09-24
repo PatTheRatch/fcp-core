@@ -170,6 +170,16 @@ its odds, which is the owner's rule.
 
 Re-run whole, the way `spread_revision.md` did it.
 
+> **Read this section with [`replay_status.md`](replay_status.md) beside it.**
+> Everything below is right and everything below is now history. The reason
+> the three records could not see this change was the *status source*, and
+> that was replaced the same day: a replayed morning now reads the NBA's own
+> official report when the listener took no snapshot by then. All three were
+> re-run again on the new source and two of them moved. The guard the tables
+> below record still stands — it is what says the healthy path did not move —
+> but the sentence "there is no stored season with a stored status to test it
+> against" is no longer true, and §7 below is re-scored accordingly.
+
 ### The honest headline first: **on this database the three records cannot see
 this change at all, and that is a fact about the database.**
 
@@ -245,18 +255,19 @@ wrong, and §7 of `stashes.md` is where that is scored.
 
 ## §7 re-scored: the engine's error on 2026's ninety-one stashes
 
-`scripts/stashes.py` §7 now prints both columns. Re-run whole, 228s, against
-the same local database as the study itself.
+`scripts/stashes.py` §7 prints four columns. Re-run whole, 228s on
+2026-09-24 and **416s** on the re-score below, against the same local database
+as the study itself.
 
-**The rule has to be scored off the study's own instrument rather than off
-`build_players`.** This database holds status snapshots for the season in
-progress only, so a 2026 morning has no stored injury status at all and
-`build_players` would call every one of these men fit. The days out are the
-box scores' — which is the count the prior is measured against in the first
-place — and his remaining game days are his own rows. His line is the knowable
-one of the claim morning, the expected share of his team's remaining games,
-`ESPN_AVAILABILITY`, through the study's own lens, times the weeks he was
-actually held after returning.
+**Originally the rule had to be scored off the study's own instrument rather
+than off `build_players`**, because this database held status snapshots for
+the season in progress only, so a 2026 morning had no stored injury status and
+`build_players` would have called every one of these men fit. The days out are
+the box scores' — which is the count the prior is measured against in the
+first place — and his remaining game days are his own rows. His line is the
+knowable one of the claim morning, the expected share of his team's remaining
+games, `ESPN_AVAILABILITY`, through the study's own lens, times the weeks he
+was actually held after returning.
 
 |  | before | after |
 |---|---|---|
@@ -266,6 +277,52 @@ actually held after returning.
 | **mean error per stash** | **+1.04** | **+0.05** |
 | median error | +0.00 | +0.00 |
 | mean absolute error | 1.04 | **0.73** |
+
+### Re-scored again, 2026-09-24, with the status visible on the claim morning
+
+Since [`replay_status.md`](replay_status.md) the engine's own path can be
+scored directly, so the section now prints it beside the instrument's: the
+same per-game line, the same `ESPN_AVAILABILITY`, the same lens, and the games
+share taken from `build_players` — the status source, `RULED_OUT_STATUSES`,
+the return prior and the NBA schedule, exactly as a report takes them.
+
+**What the league said on the ninety-one claim mornings:**
+
+| | mornings |
+|---|---|
+| silent — his team was not playing, or the league filed nothing by ten | **57** |
+| `Out` | **17** |
+| `Questionable` | 10 |
+| `Probable` | 7 |
+
+| | the engine, before | the study's instrument | **the engine's own path** |
+|---|---|---|---|
+| projected, mean per stash | 0.00 | +0.99 | **+1.17** |
+| projected, total over the ninety-one | 0.00 | 89.90 | **106.06** |
+| delivered, total | 94.50 | 94.50 | 94.50 |
+| **mean error per stash** | **+1.04** | +0.05 | **−0.13** |
+| mean absolute error | 1.04 | 0.73 | **0.71** |
+
+**The engine's own path is a shade more accurate and overshoots rather than
+undershoots**, and the reason is in the first table: **only 34 of the 91 claim
+mornings had the league say anything about the man, and only 17 said `Out`.**
+On the other 57 he reads as fit, so the engine counts him for all his team's
+remaining games, and the total runs 106.06 against a delivered 94.50. The
+study's instrument reads an absence off the box scores and so sees every one
+of the ninety-one; the engine reads the morning's report and sees a third of
+them.
+
+That gap is not a defect in either. A claim is usually made on a day the man's
+team is *not* playing — which is exactly when the league says nothing about
+him — and one morning snapshot a day cannot close it. Two things would: the
+full-cadence load the scheduled `injury_pass` now writes for the live season
+(`injuries.md`, "the pass is scheduled"), and carrying a *stale* Out line
+across a team's off day the way `app.injuries.absences` already does for the
+beneficiary work. The second is a change to the point-in-time rule and would
+need its own declaration; it is named here and not made.
+
+The `before` column is unchanged in both tables, and the middle column is the
+run published above, character for character.
 
 **The bias is gone and the noise is not, which is what a prior should do.** A
 table measured on eleven thousand absences cannot know that Jaylon Tyson would

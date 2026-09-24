@@ -153,6 +153,16 @@ every stash here is exactly zero. A live morning with a populated listener
 snapshot would behave differently for the men ESPN has dated — but the same
 table is the only source the engine reads, and it has never held a date.
 
+> **Twice superseded, both on 2026-09-24.** The rule changed first
+> ([`stash_mode.md`](stash_mode.md): an OUT man's games are expected, not
+> zero), and then the source did
+> ([`replay_status.md`](replay_status.md): a replayed morning reads the NBA's
+> own official report when the listener took no snapshot by then). Both
+> changes are re-scored in §7 and neither alters what is written above, which
+> is the state that caused them. The probe named in §7's own banner settled
+> the open question in this limitation: there is no `expected_return_date`
+> field on ESPN's basketball player object at all.
+
 ---
 
 ## The answer, up front
@@ -193,12 +203,27 @@ with ten to fifteen weeks left against **12.95%** with four or fewer), and how
 long he is out (40.89% at 8–14 days against **11.33%** at 29+). §4d turns those
 three into one table a manager can read.
 
-**The engine cannot see any of it.** For all 91 of 2026's claimed stashes the
-recommender's projected value on the claim morning is **0.00**, because
-`playable_days` counts an OUT man with no return date for zero games forever and
-this database has never held a return date. Fifty-three of those ninety-one
-returned and were held. The error is not a bias to correct; it is the whole
-quantity.
+**The engine could not see any of it, and now it can see most of it.** When
+this was written, all 91 of 2026's claimed stashes were projected at **0.00**
+on the claim morning: `playable_days` counted an OUT man with no return date
+for zero games forever, and this database has never held a return date.
+Fifty-three of the ninety-one returned and were held, so the error was not a
+bias to correct but the whole quantity — **+1.04 categories a stash**.
+
+Two changes on 2026-09-24 closed most of it. The rule
+([`stash_mode.md`](stash_mode.md)) counts an OUT man for his *expected* games,
+and the source ([`replay_status.md`](replay_status.md)) lets a replayed
+morning read the NBA's own official report. §7 is re-scored on both: through
+the engine's own path the ninety-one are now projected at **1.17 a stash**
+against the 1.04 they delivered — **a mean error of −0.13 and a mean absolute
+error of 0.71**, where it was +1.04 and 1.04.
+
+**The limit is now coverage, not arithmetic.** On only **34 of the 91 claim
+mornings** did the league say anything at all about the man, and on only
+**17** did it say `Out`; on the other 57 his team was not playing that day and
+the report is silent, so the engine still counts him for all his team's
+remaining games. That is the honest shape of what one morning snapshot a day
+can support.
 
 ---
 
@@ -925,13 +950,18 @@ for −7.08 and −6.44. **The five 2020 rows at exactly −5.70 are the suspens
 
 ## 7. What the engine projects for a stash today, scored
 
-> **Superseded on 2026-09-24, and by this document's own recommendation.**
-> The rule below was replaced by the one declared in
-> [`stash_mode.md`](stash_mode.md), and `scripts/stashes.py`'s section 7 now
-> prints both columns: what the engine said (0.00 for every stash) and what it
-> says now. The re-scored figures are in `stash_mode.md`'s own section 7.
-> Everything in this section is the state of the engine **before** that
-> change, and is kept as written because it is the measurement that caused it.
+> **Superseded twice on 2026-09-24, the first time by this document's own
+> recommendation.** The rule below was replaced by the one declared in
+> [`stash_mode.md`](stash_mode.md), and then the status source was replaced by
+> the one declared in [`replay_status.md`](replay_status.md), so a claim
+> morning now reads the NBA's own report. `scripts/stashes.py`'s section 7
+> prints four columns: what the league said that morning, what the engine said
+> (0.00 for every stash), what the rule says off this study's own instrument,
+> and what it says through `build_players` — the path a report really takes.
+> The re-scored figures are in `stash_mode.md`'s own section 7.
+> Everything in this section is the state of the engine **before** those
+> changes, and is kept as written because it is the measurement that caused
+> them.
 >
 > One thing in it turned out to be understated. §Limitations 9 says this
 > database holds no `expected_return_date` and leaves open whether that is
