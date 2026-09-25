@@ -57,10 +57,14 @@
     <div class="ws-account" id="owners-account" data-title="Every owner, every season">
       <p data-k="Owners, not teams">Owners last longer than teams: a team is renamed, its owner is the same
       person. Regular-season matchups, all seasons stored.</p>
+      <p data-k="The order">Ranked the way the league is: on the category record, by all-time category
+      win share, (won + tied/2) / (won + lost + tied), then categories won, then fewest lost. The
+      matchup record, which ESPN does not report for a category league, is counted from the stored
+      matchups and sits in the last column.</p>
     </div>
     <div class="ws-panel flush"><div class="scroll"><table class="ws-grid">
-      <thead><tr><th>Owner</th><th>Seasons</th><th>Matchups</th><th>Share</th><th>Titles</th>
-        <th>Best finish</th></tr></thead>
+      <thead><tr><th class="l">Owner</th><th>Seasons</th><th>Categories</th><th>Cat. share</th>
+        <th>Titles</th><th>Best finish</th><th>Matchups</th></tr></thead>
       <tbody id="owners"></tbody>
     </table></div></div>
   </section>
@@ -71,7 +75,8 @@
       <p class="ws-toolbar"><label for="h2h-owner">One owner against everyone he has met:</label>
         <span class="ws-field sel"><select class="ws-select" id="h2h-owner"></select></span></p>
       <div class="scroll"><table class="ws-grid">
-        <thead><tr><th>Against</th><th>Record</th><th>Meetings</th><th>Seasons</th></tr></thead>
+        <thead><tr><th class="l">Against</th><th>Categories</th><th>Meetings</th><th>Seasons</th>
+          <th>Matchups</th></tr></thead>
         <tbody id="h2h"></tbody>
       </table></div>
     </div>
@@ -90,8 +95,10 @@
 /* History, the league's page: the narratives. Two of this season (the
    category profiles, the notable matchups) and two of every season (the
    owners' records, head to head). Four existing routes, drawn as they come:
-   nothing here is computed but an average to order the profiles by, and a
-   share of wins. */
+   nothing here is computed but an average to order the profiles by. The
+   owners' table is in the route's order, which is the league's ranking rule
+   (category win share in a category league), and both record tables lead
+   with categories, the matchup record last. */
 
 const WHERE = place();
 
@@ -144,19 +151,22 @@ function notableRows(rows) {
     : `<tr><td colspan="4" class="empty">None this season.</td></tr>`;
 }
 
+/* The owners come in the route's own order, which is the league's: all-time
+   category win share in a category league. The matchup record is the last
+   column, a figure beside the order. */
 function drawOwners(owners) {
   $("owners").innerHTML = owners
     .map((o) => {
-      const games = o.matchups_won + o.matchups_lost + o.matchups_tied;
       const finishes = (o.seasons || []).map((s) => s.final_standing).filter((f) => isNum(f) && f > 0);
       const best = finishes.length ? Math.min(...finishes) : null;
       return (
         `<tr><td class="name">${ownerLabel(o)}</td>` +
         `<td>${(o.seasons || []).length}</td>` +
-        `<td>${wlt(o.matchups_won, o.matchups_lost, o.matchups_tied)}</td>` +
-        `<td>${games ? (o.matchups_won / games).toFixed(3).replace(/^0/, "") : dash}</td>` +
+        `<td>${wlt(o.categories_won, o.categories_lost, o.categories_tied)}</td>` +
+        `<td>${isNum(o.share) ? o.share.toFixed(3).replace(/^0/, "") : dash}</td>` +
         `<td>${o.titles || dash}</td>` +
-        `<td>${best === null ? dash : `#${best}`}</td></tr>`
+        `<td>${best === null ? dash : `#${best}`}</td>` +
+        `<td class="muted">${wlt(o.matchups_won, o.matchups_lost, o.matchups_tied)}</td></tr>`
       );
     })
     .join("");
@@ -167,12 +177,18 @@ function drawHeadToHead(owners, pairs, chosen) {
   const rows = [];
   pairs.forEach((pair) => {
     if (pair.owner_a === chosen) {
-      rows.push({ other: pair.owner_b, name: pair.owner_b_name, won: pair.a_wins, lost: pair.b_wins, pair });
+      rows.push({
+        other: pair.owner_b, name: pair.owner_b_name, won: pair.a_wins, lost: pair.b_wins,
+        took: pair.a_categories, gave: pair.b_categories, pair,
+      });
     } else if (pair.owner_b === chosen) {
-      rows.push({ other: pair.owner_a, name: pair.owner_a_name, won: pair.b_wins, lost: pair.a_wins, pair });
+      rows.push({
+        other: pair.owner_a, name: pair.owner_a_name, won: pair.b_wins, lost: pair.a_wins,
+        took: pair.b_categories, gave: pair.a_categories, pair,
+      });
     }
   });
-  rows.sort((a, b) => b.pair.meetings - a.pair.meetings || b.won - a.won);
+  rows.sort((a, b) => b.pair.meetings - a.pair.meetings || b.took - a.took);
   $("h2h").innerHTML = rows.length
     ? rows
         .map((row) => {
@@ -180,13 +196,14 @@ function drawHeadToHead(owners, pairs, chosen) {
           const label = other ? ownerLabel(other) : escape(row.name || `owner ${row.other}`);
           return (
             `<tr><td class="name">${label}</td>` +
-            `<td>${wlt(row.won, row.lost, row.pair.ties)}</td>` +
+            `<td>${wlt(row.took, row.gave, row.pair.categories_tied)}</td>` +
             `<td>${row.pair.meetings}</td>` +
-            `<td class="small">${(row.pair.seasons || []).join(", ")}</td></tr>`
+            `<td class="small">${(row.pair.seasons || []).join(", ")}</td>` +
+            `<td class="muted">${wlt(row.won, row.lost, row.pair.ties)}</td></tr>`
           );
         })
         .join("")
-    : `<tr><td colspan="4" class="empty">He has met nobody yet.</td></tr>`;
+    : `<tr><td colspan="5" class="empty">He has met nobody yet.</td></tr>`;
 }
 
 async function start() {
@@ -245,8 +262,8 @@ async function start() {
   if (chosen !== null) drawHeadToHead(everyone, pairList, chosen);
 
   $("foot").innerHTML =
-    `Refreshed at <b>${clock()}</b>. Read-only. Byes are left out of every record, and a ` +
-    `tie counts as neither.` +
+    `Refreshed at <b>${clock()}</b>. Read-only. Byes are left out of every record; a tied ` +
+    `category counts half in the share, and a tied matchup as neither.` +
     failed.map((r) => `<br>Not shown: ${escape(r.detail)}.`).join("");
   $("body").hidden = false;
 }

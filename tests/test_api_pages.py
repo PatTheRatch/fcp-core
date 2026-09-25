@@ -281,6 +281,42 @@ def test_each_page_is_served(client: TestClient, path: str, wanted: str) -> None
     assert "/pages/static/shell.js" in response.text
 
 
+def test_the_standings_lead_with_categories_and_put_matchups_last(client: TestClient) -> None:
+    """A head-to-head each-category league is ranked on categories: the
+    category record and its share lead the table, the matchup record is the
+    last column, and nothing tells the reader the order is matchups won."""
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/standings").text
+    assert "By matchups won" not in page
+    assert "Ranked the way the league is" in page
+    now = [
+        page.index('head: soonView ? "Categories so far" : "Categories"'),
+        page.index('head: "Cat. share"'),
+        page.index('head: "Best run"'),
+        page.index('head: "Worst run"'),
+        page.index('head: "Ended on"'),
+        page.index('head: "Finish"'),
+        page.index("    matchups,\n  ];\n}"),
+    ]
+    assert now == sorted(now), "categories, share, runs, finish, then matchups"
+    soon = [
+        page.index('head: "Proj. categories"'),
+        page.index('head: "Playoffs"'),
+        page.index('head: "Proj. matchups"'),
+    ]
+    assert soon == sorted(soon), "projected categories and the odds lead; matchups last"
+    # The place is the route's, and the share is the route's, a tie half.
+    assert "r.place" in page
+    assert "isNum(row.share)" in page
+
+
+def test_the_history_tables_lead_with_categories(client: TestClient) -> None:
+    page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/history").text
+    owners = page.index("<th>Categories</th><th>Cat. share</th>")
+    assert owners < page.index("<th>Best finish</th><th>Matchups</th>")
+    assert "<th>Categories</th><th>Meetings</th>" in page
+    assert "all-time category" in page
+
+
 def test_a_page_never_tells_anyone_what_to_do(client: TestClient) -> None:
     """The language rule: ideas, not instructions (docs/pickups.md section 4).
 

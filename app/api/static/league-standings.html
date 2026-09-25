@@ -27,9 +27,10 @@
     <div class="ws-sect-head"><h2 class="ws-label">The table</h2><span class="ws-k" id="tag">regular season</span>
       <button type="button" class="ws-btn sm quiet" data-account="table-account" aria-haspopup="dialog">How this is worked out</button></div>
     <div class="ws-account" id="table-account" data-title="The table">
-      <p id="lede" data-k="The order">By matchups won, then fewest lost, then categories won. ESPN reports
-      no matchup record, so that one is counted from the stored matchups; the category record is
-      ESPN's own, and counts categories rather than matchups. Byes count neither way.</p>
+      <p id="lede" data-k="The order">Ranked the way the league is: on the category record. The
+      category record is ESPN's own; the matchup record, which ESPN does not report for a category
+      league, is counted from the stored matchups and sits in the last column. Byes count neither
+      way.</p>
     </div>
     <div class="ws-seg views" id="views" role="group" aria-label="Which table" hidden>
       <button type="button" id="view-now" aria-pressed="true">As it stands</button>
@@ -53,18 +54,27 @@
 <script>
 "use strict";
 
-/* Standings, the league's page: the standings route (the derived matchup
-   record beside ESPN's category record) and the streaks route (each team's
-   longest runs and the one the season ended on), joined on the team id. The
-   reader's own team is shaded; a team's name opens its plan only where the
-   reader may open it: his own, or every team in single mode, where the one
-   user is an operator.
+/* Standings, the league's page: the standings route and the streaks route
+   (each team's longest runs and the one the season ended on), joined on the
+   team id. The reader's own team is shaded; a team's name opens its plan only
+   where the reader may open it: his own, or every team in single mode, where
+   the one user is an operator.
+
+   The table is in the route's own order, which is the league's ranking rule
+   (app/scoring/ranking.py): a head-to-head each-category league is ranked on
+   its CATEGORIES -- win share, then the tied teams' record against each
+   other, then categories won, then fewest lost -- so the category record and
+   its share lead the row, and the matchup record, which ESPN does not report
+   for this format, is the last column: a figure beside the order, never the
+   order. A finished season is ESPN's own published table, and the drawer says
+   where the rule would have put a team differently.
 
    Two views of one table. "As it stands" is what the season has decided.
    "Projected" is where it is heading (/projected, docs/projected_record.md):
    every team's remaining weeks played head to head against the real opponent
-   each week, summed onto what is banked. It shows the projected matchup and
-   category records and the odds of making the playoffs; the odds of each
+   each week, summed onto what is banked. It leads with the projected
+   category record and the odds of making the playoffs, with the projected
+   matchup record last; the odds of each
    individual place open under the row on a click or a tap, because fourteen
    more columns is not a table anybody can read on a phone.
 
@@ -88,46 +98,45 @@ const run = (n, word) => (isNum(n) && n > 0 ? `${n} ${word}` : dash);
 
 function columns(view, extra) {
   const soonView = view === "soon";
-  /* In the projected view the "now" columns are the record **as it stood on
-     the day the projection was made**, not the season's final one. On a live
-     morning those are the same thing; on a replayed day (`?today=` a past
-     day) they are not, and showing a finished season's record beside a
+  /* In the projected view the "so far" columns are the record **as it stood
+     on the day the projection was made**, not the season's final one. On a
+     live morning those are the same thing; on a replayed day (`?today=` a
+     past day) they are not, and showing a finished season's record beside a
      projection from January would be two different questions in one row. */
   const banked = (r) => (soonView && r.soon ? r.soon.banked_matchups : null);
-  const base = [
-    { head: "", cls: "rank", cell: (r, i) => `<td class="rank">${i + 1}</td>`, sort: null },
-    { head: "Team", cls: "l", cell: (r) => r.nameCell, sort: (r) => r.name, best: "up" },
-    {
-      head: soonView ? "Matchups so far" : "Matchups",
-      cell: (r) => {
-        const now = banked(r);
-        return now
-          ? `<td>${wlt(now[0], now[1], now[2])}</td>`
-          : `<td>${wlt(r.matchups_won, r.matchups_lost, r.matchups_tied)}</td>`;
-      },
-      sort: (r) => (banked(r) ? banked(r)[0] : r.matchups_won),
-      best: "down",
+  /* The place is the route's own -- the league's ranking rule, or ESPN's
+     published table for a finished season -- whatever column the reader has
+     sorted on; the projected view's is the simulation's order. */
+  const rank = {
+    head: "",
+    cls: "rank",
+    cell: (r, i) => `<td class="rank">${!soonView && r.place ? r.place : i + 1}</td>`,
+    sort: null,
+  };
+  const team = { head: "Team", cls: "l", cell: (r) => r.nameCell, sort: (r) => r.name, best: "up" };
+  const categories = {
+    head: soonView ? "Categories so far" : "Categories",
+    cell: (r) =>
+      soonView && r.soon
+        ? `<td>${record([r.soon.banked_won, r.soon.banked_lost])}</td>`
+        : `<td>${wlt(r.categories_won, r.categories_lost, r.categories_tied)}</td>`,
+    sort: (r) => (soonView && r.soon ? r.soon.banked_won : r.categories_won),
+    best: "down",
+  };
+  const matchups = {
+    head: soonView ? "Matchups so far" : "Matchups",
+    cell: (r) => {
+      const now = banked(r);
+      return now
+        ? `<td class="muted">${wlt(now[0], now[1], now[2])}</td>`
+        : `<td class="muted">${wlt(r.matchups_won, r.matchups_lost, r.matchups_tied)}</td>`;
     },
-    {
-      head: soonView ? "Categories so far" : "Categories",
-      cell: (r) =>
-        soonView && r.soon
-          ? `<td>${record([r.soon.banked_won, r.soon.banked_lost])}</td>`
-          : `<td>${wlt(r.categories_won, r.categories_lost, r.categories_tied)}</td>`,
-      sort: (r) => (soonView && r.soon ? r.soon.banked_won : r.categories_won),
-      best: "down",
-    },
-  ];
+    sort: (r) => (banked(r) ? banked(r)[0] : r.matchups_won),
+    best: "down",
+  };
   if (soonView) {
     const byes = extra && extra.bye_count > 0;
     const soon = [
-      {
-        head: "Proj. matchups",
-        cell: (r) => `<td>${r.soon ? fixed(r.soon.projected_matchups[0], 1) + "–" +
-          fixed(r.soon.projected_matchups[1], 1) : dash}</td>`,
-        sort: (r) => (r.soon ? r.soon.projected_matchups[0] : undefined),
-        best: "down",
-      },
       {
         head: "Proj. categories",
         cell: (r) => `<td>${r.soon ? record(r.soon.projected_record) : dash}</td>`,
@@ -153,10 +162,25 @@ function columns(view, extra) {
         best: "down",
       });
     }
-    return [...base, ...soon];
+    return [
+      rank,
+      team,
+      categories,
+      ...soon,
+      matchups,
+      {
+        head: "Proj. matchups",
+        cell: (r) => `<td class="muted">${r.soon ? fixed(r.soon.projected_matchups[0], 1) + "–" +
+          fixed(r.soon.projected_matchups[1], 1) : dash}</td>`,
+        sort: (r) => (r.soon ? r.soon.projected_matchups[0] : undefined),
+        best: "down",
+      },
+    ];
   }
   return [
-    ...base,
+    rank,
+    team,
+    categories,
     {
       head: "Cat. share",
       cell: (r) => `<td>${isNum(r.share) ? r.share.toFixed(3).replace(/^0/, "") : dash}</td>`,
@@ -182,6 +206,7 @@ function columns(view, extra) {
       sort: (r) => r.final_standing,
       best: "up",
     },
+    matchups,
   ];
 }
 
@@ -220,13 +245,13 @@ function prepare(ctx, standings, streaks, projection) {
   const opens = (id) => (ctx && ctx.mode === "single") || id === ours;
   return standings.map((row) => {
     const streak = runs.get(row.espn_team_id);
-    const decided = row.categories_won + row.categories_lost + row.categories_tied;
     return {
       ...row,
       streak,
       soon: soon.get(row.espn_team_id) || null,
       ours: row.espn_team_id === ours,
-      share: decided ? row.categories_won / decided : undefined,
+      // The route's own share, a tie counted half: (W + T/2) / (W + L + T).
+      share: isNum(row.share) ? row.share : undefined,
       ended: streak && streak.final_streak_result
         ? `${streak.final_streak_result === "WIN" ? "W" : "L"}${streak.final_streak}` : dash,
       nameCell: `<td class="name">${opens(row.espn_team_id)
@@ -318,26 +343,46 @@ function wireTable() {
         other.setAttribute("aria-pressed", String(which === view)),
       );
       $("tag").textContent = view === "soon" ? "projected" : "regular season";
-      $("lede").innerHTML = view === "soon" ? projectedLede() : NOW_LEDE;
+      $("lede").innerHTML = view === "soon" ? projectedLede() : nowLede();
       draw();
     });
   });
 }
 
-const NOW_LEDE =
-  "By matchups won, then fewest lost, then categories won. ESPN reports no matchup record, " +
-  "so that one is counted from the stored matchups; the category record is ESPN's own, and " +
-  "counts categories rather than matchups. Byes count neither way.";
+/** The order in the route's own words, and where ESPN's published table and
+    the rule part company (2023's second and third: a division leader seeded
+    first). */
+function nowLede() {
+  const rows = STATE.rows;
+  const first = rows[0];
+  const unit = first ? first.unit : "categories";
+  const order = first && first.order_note ? first.order_note : "category win share";
+  const differs = rows.filter((r) => r.place_note);
+  const matchupsLine = unit === "categories"
+    ? "The category record is ESPN's own. The matchup record, which ESPN does not report for " +
+      "a category league, is counted from the stored matchups and sits in the last column: a " +
+      "figure beside the order, not the order."
+    : "This league is ranked on matchups; the category record is ESPN's own.";
+  return (
+    `Ranked on <b>${escape(unit)}</b>: ${escape(order)}. Cat. share is ` +
+    `(won + tied/2) / (won + lost + tied). ${matchupsLine} Byes count neither way.` +
+    (differs.length
+      ? `<br><br>Where ESPN's published order differs from the share order: ` +
+        differs.map((r) => `${escape(r.place_note)}.`).join(" ")
+      : "")
+  );
+}
 
 function projectedLede() {
   const p = STATE.projection;
-  if (!p) return NOW_LEDE;
+  if (!p) return nowLede();
   return (
     `Where the season is heading, from the rosters as they stand on day <b>${p.as_of}</b>` +
     (p.as_of_date ? ` (${dayName(p.as_of_date)})` : "") +
     `: each of the <b>${count(p.periods.length, "week")}</b> left played head to head against ` +
     `the real opponent, added to what is banked. Tap a playoff figure for the odds of each ` +
-    `place. Ordered by ${escape(p.tiebreak)}.`
+    `place. Each simulated table is ranked by ${escape(p.tiebreak)}; the projected matchups ` +
+    `are the last column, a figure beside the order.`
   );
 }
 
@@ -364,15 +409,17 @@ async function start() {
   }
   const rows = standings.body;
   const played = rows.some((r) => r.matchups_won + r.matchups_lost + r.matchups_tied > 0);
+  const unit = rows.length ? rows[0].unit : "categories";
   $("sub").innerHTML = played
-    ? `${count(rows.length, "team")}. The regular season's matchups, byes left out.`
+    ? `${count(rows.length, "team")}. The regular season, ranked on ${escape(unit)}.`
     : `${count(rows.length, "team")}, and no matchup decided yet this season.`;
   STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], null);
+  $("lede").innerHTML = nowLede();
   draw();
   wireTable();
   const FOOT =
-    `Refreshed at <b>${clock()}</b>. Read-only. A tie breaks a run rather than extending it, ` +
-    `so "5 won" is five wins in a row.` +
+    `Refreshed at <b>${clock()}</b>. Read-only. The runs are of matchups: a tie breaks one ` +
+    `rather than extending it, so "5 won" is five wins in a row.` +
     (streaks.ok ? "" : `<br>No runs: ${escape(streaks.detail)}.`);
   $("foot").innerHTML = FOOT;
   $("body").hidden = false;
