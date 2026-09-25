@@ -985,3 +985,22 @@ def test_the_overview_ranks_by_the_category_record(client: TestClient) -> None:
     cut = script.split("function drawStandings()")[1].split("\n}\n")[0]
     assert "matchups_won" not in cut, "matchups are not in the cut"
     assert cut.index(">Categories<") < cut.index(">Cat. share<") < cut.index(">Proj.<")
+
+
+def test_single_mode_sends_the_owner_from_the_front_door_to_his_overview(
+    client: TestClient,
+) -> None:
+    """`/` in single mode is the shell's page, which goes on to the team the
+    context route calls ours: the Overview, at the team's own address."""
+    home = client.get("/")
+    assert home.status_code == 200 and "shell.js" in home.text
+    assert (
+        'teamUrl(ctx.league.id, ctx.myTeam.season, ctx.myTeam.espn_team_id, "overview")'
+        in home.text
+    )
+    assert 'leagueUrl(ctx.league.id, ctx.season, "week")' in home.text, "no team: This week"
+    context = client.get(f"/leagues/{LEAGUE_ID}/seasons/{SEASON}/pages/context").json()
+    assert context["our_espn_team_id"] == OURS, "the team the shell names as his"
+    assert client.get(OVERVIEW).status_code == 200
+    script = client.get("/pages/static/pages.js").text
+    assert 'which && which !== "overview" ? `/${which}` : ""' in script, "the team's own address"

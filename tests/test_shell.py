@@ -542,6 +542,21 @@ def test_what_changed_prints_the_api_sentence_and_leaves_the_card_a_hook() -> No
 # ---------------------------------------------------------------------------
 
 
+def test_the_rail_marks_overview_current_on_the_overview_and_nowhere_else() -> None:
+    """The rail's first item is the team's own address, and the one page it
+    carries `aria-current` on is that one; it no longer says it is to come."""
+    shell = (STATIC / "shell.js").read_text()
+    item = shell.split("parts.push(\n    myTeam\n")[1].split(");")[0]
+    assert 'teamPage("overview")' in item, "the team's own address"
+    assert 'current(ours && where.section === "team-overview")' in item, "current there only"
+    assert "still to come" not in shell and "title=" not in item, "the title attribute is gone"
+    pages = (STATIC / "pages.js").read_text()
+    assert '"team-overview"' in pages, "the team's own address is the overview section"
+    # Every other team page has a suffix, so no other page is that section:
+    # the rail's item and the top bar's words are the only two readers.
+    assert shell.count('"team-overview"') == 2
+
+
 def test_the_overview_opens_to_its_manager_alone(sign_in: SignIn) -> None:
     """The team pages' check: the verified manager, entitled; a stranger to
     the team hears the one line and nothing else."""
@@ -564,6 +579,26 @@ def test_the_overview_closes_with_billing(sign_in: SignIn, monkeypatch: pytest.M
     assert refused.status_code == 402
     assert "The team layer is part of the paid plan." in refused.text
     assert alice.get(league_page("week")).status_code == 200, "the free tier's This week"
+
+
+def test_a_claimed_viewer_lands_on_his_overview(sign_in: SignIn) -> None:
+    """`/` is the shell's page; the shell's team is his verified claim, and
+    the page goes on to that team's Overview (with none, This week)."""
+    alice = sign_in("alice@example.com")
+    home = alice.get("/")
+    assert home.status_code == 200 and "shell.js" in home.text
+    assert 'ctx.myTeam.espn_team_id, "overview")' in home.text
+    claims = alice.get("/auth/me").json()["leagues"]
+    teams = [
+        team
+        for league in claims
+        if league["espn_league_id"] == LEAGUE_A
+        for team in league["teams"]
+    ]
+    held = [(t["season"], t["espn_team_id"], t["state"]) for t in teams]
+    assert held == [(SEASON, 3, "verified")]
+    shell = (STATIC / "shell.js").read_text()
+    assert 'const verified = (league.teams || []).filter((t) => t.state === "verified")' in shell
 
 
 def test_before_the_draft_the_overview_draws_only_what_needs_no_roster(

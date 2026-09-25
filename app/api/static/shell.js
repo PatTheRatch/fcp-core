@@ -216,10 +216,14 @@ function railHtml(ctx, where) {
     teamUrl(league.id, myTeam.season, myTeam.espn_team_id, page) + keep + (anchor || "");
   const parts = [];
 
+  // Overview is the team's own address (docs/site.md), and the one page it
+  // is marked current on. Without a team it is the league's This week, as
+  // `/` is, and marks nothing.
   parts.push(
     myTeam
-      ? `<a class="ws-nav ws-overview" href="${escape(teamPage("week"))}" ` +
-          `title="The overview is still to come; this is your matchup"><span class="ws-dot"></span>Overview</a>`
+      ? `<a class="ws-nav ws-overview" href="${escape(teamPage("overview"))}"` +
+          `${current(ours && where.section === "team-overview")}>` +
+          `<span class="ws-dot"></span>Overview</a>`
       : `<a class="ws-nav ws-overview" href="${escape(leagueUrl(league.id, season, "week") + keep)}">` +
           `<span class="ws-dot"></span>Overview</a>`,
   );
@@ -309,6 +313,9 @@ const signedOutHtml = () =>
 
 /** The words in the top bar at phone width: where this page is. */
 function whereWords(ctx, where) {
+  if (where.section === "team-overview") {
+    return `Overview${ctx && ctx.myTeam ? ` · ${ctx.myTeam.name}` : ""}`;
+  }
   const team = TEAM_SECTIONS.find(([key]) => where.section === `team-${key}`);
   if (team) return `${team[1]}${ctx && ctx.myTeam ? ` · ${ctx.myTeam.name}` : ""}`;
   const league = LEAGUE_SECTIONS.find(([key, , page]) => page && key === where.section);

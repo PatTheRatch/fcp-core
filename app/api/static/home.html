@@ -37,14 +37,27 @@
 
 /* `/` for someone signed in: the shell has already chosen his default
    league (the one this browser last looked at, else his first) and its
-   newest season, so this page only goes there -- to This week -- or says
-   there is no league yet. `replace`, so Back does not come here again. */
+   newest season, and the team he manages there (his verified claim, or in
+   single mode the team the context route calls ours). So this page only
+   goes on: to that team's Overview, or with no team to the league's This
+   week, or it says there is no league yet. `replace`, so Back does not come
+   here again. */
+
+/** Where `/` goes for this viewer, from what the shell found. */
+function homeFor(ctx) {
+  if (!ctx || !ctx.league || !ctx.season) return null;
+  if (ctx.myTeam) {
+    return teamUrl(ctx.league.id, ctx.myTeam.season, ctx.myTeam.espn_team_id, "overview");
+  }
+  return leagueUrl(ctx.league.id, ctx.season, "week");
+}
 
 async function start() {
   startTheme();
   const ctx = await SHELL;
-  if (ctx && ctx.league && ctx.season) {
-    window.location.replace(leagueUrl(ctx.league.id, ctx.season, "week"));
+  const next = homeFor(ctx);
+  if (next) {
+    window.location.replace(next);
     return;
   }
   $("title").textContent = "Welcome";
