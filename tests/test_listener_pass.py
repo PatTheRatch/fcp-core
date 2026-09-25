@@ -42,6 +42,7 @@ from app.listener.status import (
     label_for,
     next_pass_after,
     run_status_pass,
+    run_wire_pass,
 )
 from tests.fakes import (
     BOX_LINE,
@@ -402,3 +403,69 @@ def test_the_next_pass_is_the_next_slot_even_across_midnight() -> None:
         2026, 11, 3, 22, 30, tzinfo=UTC
     )
     assert next_pass_after(NEXT) == datetime(2026, 11, 4, 9, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# the draft date, while it can still move
+# ---------------------------------------------------------------------------
+
+AUCTION = datetime(2026, 11, 7, 18, tzinfo=UTC)
+MOVED = datetime(2026, 11, 14, 18, tzinfo=UTC)
+
+
+def _pending(session: Session) -> LeagueSeason:
+    """The season row, as the settings pass left it: its auction still ahead."""
+    _run(session, _league(_entries()))
+    stored = session.scalars(select(LeagueSeason)).one()
+    stored.drafted_at = AUCTION
+    session.commit()
+    return stored
+
+
+def test_a_pending_draft_is_read_again_and_a_moved_one_is_seen(session: Session) -> None:
+    """The date every projection gates on (docs/intake.md, "The draft date"):
+    an auction moved a week later is seen the morning it moves."""
+    stored = _pending(session)
+    asked: list[Any] = []
+
+    def moved(league: Any) -> datetime:
+        asked.append(league)
+        return MOVED
+
+    result = _run(session, _league(_entries()), fetch_draft=moved)
+
+    assert len(asked) == 1, "one request"
+    session.refresh(stored)
+    assert stored.drafted_at == MOVED
+    assert result.draft_checked and result.drafted_at == MOVED
+    assert result.describe()["drafted_at"] == MOVED.isoformat()
+
+
+def test_a_draft_that_has_happened_is_not_asked_about(session: Session) -> None:
+    """After the draft its date is history; the default fake's is 2025-10-18."""
+    _run(session, _league(_entries()))
+
+    def never(league: Any) -> datetime:
+        raise AssertionError("a held draft's date was asked for")
+
+    result = _run(session, _league(_entries()), fetch_draft=never)
+
+    assert result.draft_checked is False
+    assert "drafted_at" not in result.describe()
+
+
+def test_the_wire_pass_reads_a_pending_draft_too(session: Session) -> None:
+    stored = _pending(session)
+
+    result = run_wire_pass(
+        session,
+        _league(_entries()),
+        label="report",
+        now=NOW,
+        fetch_draft=lambda league: None,
+    )
+    session.commit()
+
+    session.refresh(stored)
+    assert stored.drafted_at is None, "ESPN unscheduled it, and the row says so"
+    assert result.draft_checked is True

@@ -13,6 +13,11 @@ day otherwise. One pass is:
 5. Fetch news for the players with a fresh event and for the tracked
    team's roster. One request each, so bounded.
 
+And, while the season's draft is still ahead, re-read ESPN's draft date
+(`refresh_draft_date`), one request: every projection gates on that date
+(`app.inseason.drafted`), and a rescheduled auction has to be seen the day it
+moves rather than at the next full ingest. The wire pass does the same.
+
 Everything here takes a `Session` and fakes for the fetches, so the whole
 pass is testable without ESPN. The script wraps it in `record_run` so a
 silent listener shows up in `ingest_runs` like a silent ingest does.
@@ -44,7 +49,12 @@ from app.espn import (
     fetch_player_pool,
     pro_schedule,
 )
-from app.ingest import get_or_create_player, ingest_season_settings
+from app.ingest import (
+    draft_is_pending,
+    get_or_create_player,
+    ingest_season_settings,
+    scheduled_draft,
+)
 from app.listener.events import Event, Observation, diff, minutes_events
 from app.listener.pool import (
     PoolEntry,
@@ -80,6 +90,7 @@ MAX_NEWS_REQUESTS = 80
 
 PoolFetch = Callable[..., list[dict[str, Any]]]
 NewsFetch = Callable[[ESPNLeague, int], list[dict[str, Any]]]
+DraftFetch = Callable[[ESPNLeague], datetime | None]
 
 
 @dataclass
@@ -101,6 +112,9 @@ class PassResult:
     news_players: int = 0
     news_items: int = 0
     requests: int = 0
+    #: Set when the pass re-read a pending draft's date: what ESPN says now.
+    draft_checked: bool = False
+    drafted_at: datetime | None = None
 
     def describe(self) -> dict[str, Any]:
         detail: dict[str, Any] = {
@@ -120,6 +134,8 @@ class PassResult:
         }
         if self.skipped:
             detail["skipped"] = self.skipped
+        if self.draft_checked:
+            detail["drafted_at"] = self.drafted_at.isoformat() if self.drafted_at else None
         return detail
 
 
@@ -166,6 +182,28 @@ def _league_season(session: Session, league: ESPNLeague) -> LeagueSeason:
     stored = ingest_season_settings(session, league)
     session.flush()
     return stored
+
+
+def refresh_draft_date(
+    league_season: LeagueSeason,
+    league: ESPNLeague,
+    result: PassResult,
+    fetch_draft: DraftFetch = scheduled_draft,
+) -> None:
+    """Re-read ESPN's draft date while the draft is still ahead. One request.
+
+    `league_seasons.drafted_at` is the fact every projection gates on
+    (`app.inseason.drafted`, docs/intake.md "The draft date"). The settings
+    pass writes it once; this keeps it true while it can still change, so an
+    auction moved a week later is seen the morning it moves. After the draft
+    the date is history and nothing is asked. Does not commit.
+    """
+    if not draft_is_pending(league_season.drafted_at, result.observed_at):
+        return
+    league_season.drafted_at = fetch_draft(league)
+    result.draft_checked = True
+    result.drafted_at = league_season.drafted_at
+    result.requests += 1
 
 
 def rewrite_pro_schedule(session: Session, league: ESPNLeague, season: int) -> int:
@@ -309,6 +347,7 @@ def run_status_pass(
     force: bool = False,
     fetch_pool: PoolFetch = fetch_player_pool,
     fetch_news: NewsFetch = fetch_player_news,
+    fetch_draft: DraftFetch = scheduled_draft,
 ) -> PassResult:
     """One pass over the league's player pool. Does not commit.
 
@@ -322,6 +361,7 @@ def run_status_pass(
     result = PassResult(label=label, season=season, observed_at=observed_at, in_season=False)
 
     league_season = _league_season(session, league)
+    refresh_draft_date(league_season, league, result, fetch_draft)
     result.pro_games = rewrite_pro_schedule(session, league, season)
     result.in_season = is_in_season(session, season, observed_at)
     if not result.in_season and not force and snapshotted_on(session, season, observed_at):
@@ -457,6 +497,7 @@ def run_wire_pass(
     now: datetime | None = None,
     force: bool = False,
     fetch_pool: PoolFetch = fetch_player_pool,
+    fetch_draft: DraftFetch = scheduled_draft,
 ) -> PassResult:
     """The league's own half of a pass, for a league the listener does not
     follow: its free agents and waivers, as `free_agent_snapshots` rows.
@@ -475,6 +516,7 @@ def run_wire_pass(
     season = int(league.year)
     result = PassResult(label=label, season=season, observed_at=observed_at, in_season=False)
     league_season = _league_season(session, league)
+    refresh_draft_date(league_season, league, result, fetch_draft)
     result.in_season = is_in_season(session, season, observed_at)
     if (
         not result.in_season

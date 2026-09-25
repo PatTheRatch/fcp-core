@@ -76,6 +76,34 @@ the row would have been silently wrong for a season. `acquisition_budget`,
 `uses_faab`, the roster shape, the team count and the scored categories are
 read the same way, from the row.
 
+### The draft date: the fact every projection gates on
+
+`league_seasons.drafted_at` is ESPN's scheduled draft for the season, and
+since 2026-09-25 it is the first thing every projection, plan and judgement
+reads (`app.inseason.drafted`, docs/site.md "Readiness"): before it, nobody
+has a roster, whatever ESPN's roster feed shows -- and before a draft that
+feed shows every team holding last season's final roster on every future
+day, which on 2026-09-23 the ingest stored for 2027 as 23,892 lineup rows
+and every page then projected. It is an intake fact like the roster shape,
+read from the row and never assumed, and it has three steps of its own:
+
+| step | does | when |
+|---|---|---|
+| read | ESPN's draft settings (`app.espn.fetch_draft_settings`, the `mSettings` view): type, date, order, budget | every settings pass -- `ingest_league_structure`, so the intake's `intake_ingest`, the nightly ingest and the upcoming-season refresh (`app.league_ingest._refresh_upcoming`) all write it |
+| refreshed | the date read again, one request | every status pass and wire pass while the draft is still ahead (`app.listener.status.refresh_draft_date`), so an auction moved a week later is seen the morning it moves; after the draft, never |
+| shown | the date, the type, whether it is held, and the sentence | `league_context`'s `draft` and `my_leagues`' `newest_season_draft` (docs/mcp.md); the `intake_ingest` job's payload (`draft`); every not-ready answer's `readiness.note` |
+
+The rule it feeds: a season is **not drafted** while its date is ahead, or
+when no date is known and no pick, move or scored matchup proves a draft
+was held (2019-2025 here have no date and are proved by their picks). No
+date at all is what ESPN answers before a draft is scheduled, and the
+sentence then says so: "The draft has not been scheduled; there are no
+rosters to project until it is held." The ingest writes no lineup day for a
+season that is not drafted (`app.ingest.ingest_daily_lineups`), and the
+rows stored before that rule existed were removed with
+`scripts/clear_undrafted_lineups.py`, which refuses any season the rule
+calls drafted.
+
 ## Where a number comes from, in order
 
 1. **`owner`** — the league's own manager set it on the account page, with

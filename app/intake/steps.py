@@ -36,12 +36,13 @@ from typing import Any
 
 import requests
 from espn_api.requests.espn_requests import ESPNAccessDenied, ESPNInvalidLeague, ESPNUnknownError
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import calibration, intake, league_ingest, memberships
 from app.calibration import Calibrated
 from app.config import Settings
-from app.db.models import League
+from app.db.models import League, LeagueSeason
 from app.espn import ESPNSettings, current_season, fetch_league, prior_seasons
 from app.intake import measure
 from app.jobs import JobError, JobRef
@@ -133,6 +134,11 @@ def run_intake_ingest(
     leaves the database consistent about what it holds. The seasons that
     landed go into the job's payload, which is where the steps after it read
     what there is to measure.
+
+    And the newest season's draft date (`draft`): the fact every projection
+    gates on (`app.inseason.drafted`, docs/intake.md "The draft date"). The
+    ingest already stored it with the settings; the payload says it, so a
+    league's intake record shows when its rosters become real.
     """
     with factory() as session:
         league = _league(session, job)
@@ -157,13 +163,38 @@ def run_intake_ingest(
 
     with factory() as session:
         league = _league(session, job)
-        _record(session, job, {"seasons": landed, "not_offered": sorted(set(missing))})
+        _record(
+            session,
+            job,
+            {
+                "seasons": landed,
+                "not_offered": sorted(set(missing)),
+                "draft": _newest_draft(session, league),
+            },
+        )
         connection = memberships.active_connection(session, league.id)
         if connection is not None:
             memberships.record_check(session, connection, None)
             memberships.verify_connection_owner(session, connection, settings)
         session.commit()
     return f"league {espn_league_id}: read {len(landed)} season(s), {_years(landed)}"
+
+
+def _newest_draft(session: Session, league: League) -> dict[str, Any] | None:
+    """The newest stored season's draft: its season, type and date, or None."""
+    newest = session.scalar(
+        select(LeagueSeason)
+        .where(LeagueSeason.league_id == league.id)
+        .order_by(LeagueSeason.season.desc())
+        .limit(1)
+    )
+    if newest is None:
+        return None
+    return {
+        "season": int(newest.season),
+        "type": newest.draft_type,
+        "drafted_at": newest.drafted_at.isoformat() if newest.drafted_at else None,
+    }
 
 
 def _years(seasons: list[int]) -> str:
