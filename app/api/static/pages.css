@@ -380,6 +380,77 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 .ws-tag.neg{color:var(--neg);border-color:currentColor}
 .ws-tag.accent{color:var(--accent-text);border-color:var(--accent)}
 
+/* ---- the screener table -------------------------------------------------
+   Dense rows under a header that stays put, numbers in the data face and
+   right-aligned, a header that sorts on a click, columns that can be put
+   away, and a row that opens the drawer. No radius on the table itself: it
+   sits in a panel whose edges it shares. */
+.ws-scr{border:1px solid var(--line);border-radius:var(--r-panel);background:var(--panel);
+  overflow:hidden;font-size:var(--t-md);line-height:1.3}
+.ws-scr-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);
+  padding:6px var(--sp-3);border-bottom:1px solid var(--line)}
+.ws-scr-tools .ws-scr-cap{font-weight:600;color:var(--fg)}
+.ws-scr-tools .ws-scr-n{color:var(--fg-3);font-family:var(--font-data);font-size:var(--t-xs)}
+.ws-scr-tools .ws-cols{margin-left:auto;position:relative;border:0;background:none}
+.ws-scr-tools .ws-cols > summary{min-height:26px;border:1px solid var(--line-strong);
+  border-radius:var(--r-control);font-size:var(--t-sm)}
+.ws-cols .ws-cols-list{position:absolute;right:0;top:calc(100% + 4px);z-index:5;min-width:180px;
+  max-height:320px;overflow:auto;padding:6px 0;background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:var(--r-control);box-shadow:var(--shadow-float)}
+.ws-cols label{display:flex;align-items:center;gap:8px;padding:4px 12px;font-size:var(--t-sm);
+  cursor:pointer;white-space:nowrap}
+.ws-cols label:hover{background:var(--inset)}
+.ws-cols input{accent-color:var(--fg)}
+/* Positioned, so a screen-reader label in a cell far to the right is held
+   inside the frame's own scroll rather than widening the page. */
+.ws-scr-frame{position:relative;overflow:auto;max-height:var(--scr-h,480px);
+  -webkit-overflow-scrolling:touch}
+.ws-table{width:100%;border-collapse:separate;border-spacing:0}
+.ws-table th{position:sticky;top:0;z-index:1;height:28px;padding:0 var(--sp-2);background:var(--inset);
+  border-bottom:1px solid var(--line-strong);font-family:var(--font-data);font-size:var(--t-2xs);
+  font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);text-align:right;
+  white-space:nowrap}
+.ws-table th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
+  background:none;border:0;padding:0;cursor:pointer;display:inline-flex;gap:3px;align-items:center}
+.ws-table th button::after{content:"";width:.7em;text-align:left;color:var(--fg-3)}
+.ws-table th[aria-sort="descending"] button::after{content:"\25BE";color:var(--fg)}
+.ws-table th[aria-sort="ascending"] button::after{content:"\25B4";color:var(--fg)}
+.ws-table th[aria-sort] {color:var(--fg)}
+.ws-table td{height:var(--row);padding:0 var(--sp-2);border-bottom:1px solid var(--line);
+  text-align:right;white-space:nowrap;font-family:var(--font-data);font-size:var(--t-sm);
+  font-variant-numeric:tabular-nums}
+.ws-table th.l,.ws-table td.l{text-align:left}
+.ws-table td.txt{font-family:var(--font-ui);font-size:var(--t-md)}
+.ws-table td.c,.ws-table th.c{text-align:center}
+.ws-table tbody tr{cursor:default}
+.ws-table tbody tr.pickable{cursor:pointer}
+.ws-table tbody tr:hover td{background:var(--inset)}
+/* The row being inspected: the comparison in focus, in orange's wash. */
+.ws-table tbody tr.is-selected td{background:var(--accent-wash)}
+.ws-table tbody tr.is-selected td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.ws-table tbody tr:last-child td{border-bottom:0}
+.ws-table .ws-rowname{font:inherit;font-weight:600;color:var(--fg);background:none;border:0;padding:0;
+  cursor:pointer;text-align:left}
+.ws-table .ws-rowname:hover{text-decoration:underline;text-underline-offset:3px}
+.ws-table .ws-rowname:focus-visible{outline-offset:1px}
+.ws-table td .ws-bb{margin-left:8px}
+.ws-table .ws-muted{color:var(--fg-3)}
+/* The category glyphs: a change to the viewer's roster in one character
+   or two -- the shape says the size, the colour only repeats it. */
+.ws-g{display:inline-block;min-width:1.6em;text-align:center;font-family:var(--font-data);
+  font-weight:600;letter-spacing:-.02em;color:var(--neutral)}
+.ws-g.p1,.ws-g.p2{color:var(--pos)} .ws-g.n1,.ws-g.n2{color:var(--neg)}
+/* FIT: what a man is worth to this roster. The figure, and a bar as long
+   as its share of the column's largest -- green for a gain, red for a cost. */
+.ws-fit{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end}
+.ws-fit i{display:block;width:44px;height:6px;background:var(--inset);position:relative}
+.ws-fit i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w,0%);background:currentColor}
+.ws-fit.pos{color:var(--pos)} .ws-fit.neg{color:var(--neg)}
+.ws-fit b{font-weight:600;min-width:4.2em;text-align:right}
+.ws-legend{display:flex;flex-wrap:wrap;gap:4px var(--sp-4);margin:0;padding:6px var(--sp-3);
+  border-top:1px solid var(--line);font-size:var(--t-xs);color:var(--fg-2)}
+.ws-legend span{white-space:nowrap}
+
 /* ===========================================================================
    EACH PAGE'S OWN FURNITURE -- the report house style, kept as it was while
    the pages move into the workstation language one at a time (the order is

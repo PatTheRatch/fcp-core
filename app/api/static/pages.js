@@ -480,6 +480,228 @@ function startTheme() {
 /** A negative in the new components carries a true minus sign. */
 const minus = (text) => String(text).replace(/^-/, "−");
 
+/** The glyph scale's steps, in probability: a change under half a point
+ *  is no change worth a mark (the same half point The read and the strip
+ *  have always used), and five points or more is a large one. */
+const GLYPH_STEPS = [0.005, 0.05];
+
+/** A change to the viewer's own roster as one or two characters:
+ *  ++ large gain, + gain, · nothing worth a mark, − cost, −− large cost. */
+function glyph(delta, steps) {
+  const [small, large] = steps || GLYPH_STEPS;
+  if (!isNum(delta) || Math.abs(delta) < small) return { mark: "·", cls: "z", word: "no change" };
+  const up = delta > 0;
+  const big = Math.abs(delta) >= large;
+  return {
+    mark: up ? (big ? "++" : "+") : big ? "−−" : "−",
+    cls: `${up ? "p" : "n"}${big ? 2 : 1}`,
+    word: `${big ? "large " : ""}${up ? "gain" : "cost"}`,
+  };
+}
+
+/** The glyph as a cell: the mark for the eye, the words for a reader. */
+function glyphHtml(delta, said, steps) {
+  const g = glyph(delta, steps);
+  const words = said || g.word;
+  return (
+    `<span class="ws-g ${g.cls}" title="${escape(words)}" aria-hidden="true">${g.mark}</span>` +
+    `<span class="sr">${escape(words)}</span>`
+  );
+}
+
+/** What the marks mean, in the unit they were cut in. */
+function glyphLegend(unit, steps) {
+  const [small, large] = steps || GLYPH_STEPS;
+  const at = (v) => `${+(v * 100).toFixed(1)}`;
+  return (
+    `<span><span class="ws-g p2">++</span> ${at(large)}+ ${unit} better</span>` +
+    `<span><span class="ws-g p1">+</span> ${at(small)}–${at(large)} better</span>` +
+    `<span><span class="ws-g z">·</span> under ${at(small)}</span>` +
+    `<span><span class="ws-g n1">−</span> ${at(small)}–${at(large)} worse</span>` +
+    `<span><span class="ws-g n2">−−</span> ${at(large)}+ worse</span>` +
+    `<span class="faint">green and red are changes to your roster, not grades of a player</span>`
+  );
+}
+
+/** FIT: a figure for this roster, with a bar as long as its share of the
+ *  largest in its column. A figure under half a hundredth is grey. */
+function fitHtml(value, largest, places) {
+  if (!isNum(value)) return `<span class="ws-fit">${dash}</span>`;
+  const tone = Math.abs(value) < 0.005 ? "" : value > 0 ? "pos" : "neg";
+  const share = isNum(largest) && largest > 0 ? Math.min(100, (Math.abs(value) / largest) * 100) : 0;
+  return (
+    `<span class="ws-fit ${tone}"><i style="--w:${share.toFixed(0)}%"></i>` +
+    `<b>${minus(signed(value, places === undefined ? 2 : places))}</b></span>`
+  );
+}
+
+/** A name in a screener row: the row's own control, which inspects it. */
+const rowNameHtml = (key, text) =>
+  `<button type="button" class="ws-rowname" data-row="${escape(key)}" aria-haspopup="dialog">` +
+  `${escape(text)}</button>`;
+
+/**
+ * The screener table: dense rows, a sticky header, sortable columns, columns
+ * that can be put away (kept per viewer), and a row that opens the drawer.
+ *
+ * @param host   the element it is drawn into
+ * @param spec   {id, caption, rows, key(row), columns, sort: [key, "desc"|"asc"],
+ *                onSelect(row, trigger), legend (html), height (css length)}
+ *               A column is {key, label, title, align: "l"|"c"|"", text: bool,
+ *               value(row) for sorting, cell(row) -> html, hidden: bool, lock: bool}.
+ * @returns      {draw, rows(list), clear()}
+ */
+function screener(host, spec) {
+  const storeKey = `fcp-cols-${spec.id}`;
+  let hidden = new Set(spec.columns.filter((c) => c.hidden).map((c) => c.key));
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(storeKey) || "null");
+    if (Array.isArray(kept)) hidden = new Set(kept);
+  } catch (error) {
+    /* nothing kept: the columns start as the page set them */
+  }
+  let rows = spec.rows || [];
+  let [sortKey, sortDir] = spec.sort || [null, "desc"];
+  let selected = null;
+
+  const shown = () => spec.columns.filter((c) => c.lock || !hidden.has(c.key));
+  const sorted = () => {
+    const column = spec.columns.find((c) => c.key === sortKey);
+    if (!column || !column.value) return rows;
+    const sign = sortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const x = column.value(a);
+      const y = column.value(b);
+      if (typeof x === "string" || typeof y === "string") {
+        return sign * String(x).localeCompare(String(y));
+      }
+      const xs = isNum(x) ? x : -Infinity;
+      const ys = isNum(y) ? y : -Infinity;
+      return sign * (xs - ys);
+    });
+  };
+
+  function draw() {
+    const columns = shown();
+    const head = columns
+      .map((c) => {
+        const cls = [c.align || ""].filter(Boolean).join(" ");
+        const sort = c.key === sortKey ? ` aria-sort="${sortDir === "asc" ? "ascending" : "descending"}"` : "";
+        const label = escape(c.label);
+        const title = c.title ? ` title="${escape(c.title)}"` : "";
+        return (
+          `<th scope="col" class="${cls}"${sort}${title}>` +
+          (c.value ? `<button type="button" data-sort="${escape(c.key)}">${label}</button>` : label) +
+          `</th>`
+        );
+      })
+      .join("");
+    const body = sorted()
+      .map((row) => {
+        const key = String(spec.key(row));
+        const cells = columns
+          .map((c) => {
+            const cls = [c.align || "", c.text ? "txt" : ""].filter(Boolean).join(" ");
+            return `<td class="${cls}">${c.cell(row)}</td>`;
+          })
+          .join("");
+        const cls = [spec.onSelect ? "pickable" : "", key === selected ? "is-selected" : ""]
+          .filter(Boolean)
+          .join(" ");
+        return `<tr data-key="${escape(key)}" class="${cls}">${cells}</tr>`;
+      })
+      .join("");
+    const toggles = spec.columns
+      .filter((c) => !c.lock)
+      .map(
+        (c) =>
+          `<label><input type="checkbox" data-col="${escape(c.key)}"` +
+          `${hidden.has(c.key) ? "" : " checked"}> ${escape(c.title || c.label)}</label>`,
+      )
+      .join("");
+    host.innerHTML =
+      `<div class="ws-scr">` +
+      `<div class="ws-scr-tools"><span class="ws-scr-cap">${escape(spec.caption)}</span>` +
+      `<span class="ws-scr-n">${count(rows.length, "row")}</span>` +
+      (toggles
+        ? `<details class="ws-disc ws-cols"><summary>Columns</summary>` +
+          `<div class="ws-cols-list">${toggles}</div></details>`
+        : "") +
+      `</div>` +
+      `<div class="ws-scr-frame" style="--scr-h:${escape(spec.height || "480px")}" ` +
+      `tabindex="0" role="region" aria-label="${escape(spec.caption)}">` +
+      `<table class="ws-table"><caption class="sr">${escape(spec.caption)}</caption>` +
+      `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>` +
+      (spec.legend ? `<p class="ws-legend">${spec.legend}</p>` : "") +
+      `</div>`;
+    wire();
+  }
+
+  function wire() {
+    host.querySelectorAll("th button[data-sort]").forEach((button) => {
+      button.onclick = () => {
+        const key = button.dataset.sort;
+        sortDir = key === sortKey && sortDir === "desc" ? "asc" : "desc";
+        sortKey = key;
+        draw();
+        const again = host.querySelector(`th button[data-sort="${CSS.escape(key)}"]`);
+        if (again) again.focus();
+      };
+    });
+    host.querySelectorAll("input[data-col]").forEach((box) => {
+      box.onchange = () => {
+        if (box.checked) hidden.delete(box.dataset.col);
+        else hidden.add(box.dataset.col);
+        try {
+          window.localStorage.setItem(storeKey, JSON.stringify([...hidden]));
+        } catch (error) {
+          /* private window: the choice lasts as long as the page */
+        }
+        const open = true;
+        draw();
+        const cols = host.querySelector(".ws-cols");
+        if (cols) cols.open = open;
+        const again = host.querySelector(`input[data-col="${CSS.escape(box.dataset.col)}"]`);
+        if (again) again.focus();
+      };
+    });
+    if (!spec.onSelect) return;
+    host.querySelectorAll("tbody tr").forEach((tr) => {
+      tr.onclick = (event) => {
+        // A control of the row's own (a pick, a card) does its own thing.
+        const control = event.target.closest("button, a, input, select, label");
+        if (control && !control.classList.contains("ws-rowname")) return;
+        const row = rows.find((each) => String(spec.key(each)) === tr.dataset.key);
+        if (!row) return;
+        select(tr.dataset.key);
+        spec.onSelect(row, tr.querySelector(".ws-rowname") || tr);
+      };
+    });
+  }
+
+  function select(key) {
+    selected = key;
+    host.querySelectorAll("tbody tr").forEach((tr) => {
+      tr.classList.toggle("is-selected", tr.dataset.key === key);
+    });
+  }
+
+  draw();
+  return {
+    draw,
+    rows(next) {
+      rows = next || [];
+      draw();
+    },
+    clear() {
+      select(null);
+    },
+  };
+}
+
+/** A category's change in chance, in points: "+3 pts". */
+const points = (delta) => `${minus(signed(delta * 100, 0))} pts`;
+
 /** ESPN's injury status as the few letters a tag has room for. */
 const STATUS_MARKS = {
   QUESTIONABLE: "Q",

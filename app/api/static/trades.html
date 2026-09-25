@@ -376,42 +376,6 @@ const poolKey = () =>
   [DEAL.other, DEAL.give.join("."), DEAL.take.join("."), DEAL.drop.join("."),
     DEAL.theirDrop.join(".")].join("|");
 
-/** A row: one free agent, what he is worth to us, what he is, and his week. */
-function fillRow(side, man, chosen) {
-  const flags = [];
-  if (man.hurt) {
-    flags.push(
-      `<span class="badge hurt">${escape(String(man.injury_status || "hurt").toLowerCase())}` +
-      `${man.expected_return_date ? `, back ${escape(dayName(man.expected_return_date))}` : ""}` +
-      `</span>`,
-    );
-  }
-  if (man.on_waivers) {
-    flags.push(
-      `<span class="badge waivers">on waivers` +
-      `${man.waiver_clears_at ? `, clears ${escape(weekday(man.waiver_clears_at))}` : ""}` +
-      `</span>`,
-    );
-  }
-  const meta = [man.position || "", man.pro_team || "", `${man.games_left}g`,
-    `${fixed(man.value, 2)} a week to an average team`]
-    .filter(Boolean)
-    .join(" · ");
-  const strip = stripHtml(
-    Object.fromEntries(CATS.map((cat) => [cat, { text: showCat(cat, man.weekly[cat]) }])),
-  );
-  return (
-    `<li><button type="button" class="fill" data-side="${side}" ` +
-    `data-id="${man.espn_player_id}" aria-pressed="${chosen ? "true" : "false"}">` +
-    `<span class="who">${escape(man.name)}${flags.join("")}</span>` +
-    `<span class="worth ${man.worth >= 0 ? "up" : "down"}">${signed(man.worth, 3)}</span>` +
-    `<span class="meta">${escape(meta)}</span>` +
-    `<span class="strip">${strip}</span></button>` +
-    `<button type="button" class="info" data-card="${man.espn_player_id}" ` +
-    `aria-label="Card for ${escape(man.name)}">card</button></li>`
-  );
-}
-
 /** The top row: what the report does when nobody is named.
  *
  *  Its number is not in the same currency as a man's, and the row says so.
@@ -441,9 +405,6 @@ function leaveOpenRow(side, pool, chosen) {
 function fillsSideHtml(side, pool) {
   const chosen = chosenFor(side);
   const whose = side === "ours" ? "our side" : "our estimate of their side, not what they think";
-  const rows = (pool.candidates || []).map((man) =>
-    fillRow(side, man, chosen.includes(man.espn_player_id)),
-  );
   return (
     `<div class="side">` +
     `<h3>${escape(pool.team_name)}</h3>` +
@@ -451,9 +412,82 @@ function fillsSideHtml(side, pool) {
     `<p class="hint">${pool.pool_size} free agents on the wire` +
     `${pool.historical_wire ? ", historical wire (no snapshots)" : ""}. ` +
     `Ranked by what each would be worth to this roster once the deal is done.</p>` +
-    `<ul class="wire">${leaveOpenRow(side, pool, chosen.length === 0)}${rows.join("")}</ul>` +
+    `<ul class="wire">${leaveOpenRow(side, pool, chosen.length === 0)}</ul>` +
+    `<div class="fill-table" data-side="${side}"></div>` +
     `</div>`
   );
+}
+
+/* The wire as the workstation's screener table (docs/design_system.md, the
+   first page to use it): the same men, the same two figures and the same
+   order the list had -- FIT is `worth`, what he is worth to this roster once
+   the deal is done, and League is `value`, the league standard -- sortable,
+   with columns that can be put away. "Use" names him for the opened place
+   exactly as tapping his row in the list did; a click anywhere else on the
+   row opens his card in the drawer. */
+function fillTable(host, side, pool) {
+  const chosen = chosenFor(side);
+  const men = pool.candidates || [];
+  const largest = Math.max(0, ...men.map((man) => Math.abs(man.worth)));
+  const status = (man) => {
+    const tags = [];
+    if (man.hurt) {
+      tags.push(
+        `<span class="ws-tag">${escape(String(man.injury_status || "hurt").toLowerCase())}` +
+          `${man.expected_return_date ? `, back ${escape(dayName(man.expected_return_date))}` : ""}</span>`,
+      );
+    }
+    if (man.on_waivers) {
+      tags.push(
+        `<span class="ws-tag">on waivers` +
+          `${man.waiver_clears_at ? `, clears ${escape(weekday(man.waiver_clears_at))}` : ""}</span>`,
+      );
+    }
+    return tags.join(" ") || `<span class="ws-muted">healthy</span>`;
+  };
+  let table = null;
+  table = screener(host, {
+    id: `trades-pool-${side}`,
+    caption: `The wire · day ${pool.today}`,
+    rows: men,
+    key: (man) => man.espn_player_id,
+    sort: ["fit", "desc"],
+    height: "440px",
+    columns: [
+      {
+        key: "use", label: "Use", align: "l", lock: true,
+        cell: (man) => {
+          const on = chosen.includes(man.espn_player_id);
+          return (
+            `<button type="button" class="ws-btn sm fill-pick" data-side="${side}" ` +
+            `data-id="${man.espn_player_id}" aria-pressed="${on ? "true" : "false"}" ` +
+            `aria-label="${on ? "Named" : "Name"} ${escape(man.name)} for the open place">` +
+            `${on ? "✓ In" : "Use"}</button>`
+          );
+        },
+      },
+      {
+        key: "name", label: "Player", align: "l", text: true, lock: true, value: (man) => man.name,
+        cell: (man) => rowNameHtml(man.espn_player_id, man.name) + `<span class="ws-bb">${escape(bbMark(man))}</span>`,
+      },
+      { key: "status", label: "Status", align: "l", value: (man) => (man.hurt || man.on_waivers ? 1 : 0), cell: status },
+      { key: "gl", label: "GL", title: "Games left", value: (man) => man.games_left, cell: (man) => String(man.games_left) },
+      {
+        key: "fit", label: "Fit", title: "FIT: worth to this roster after the deal, categories a week",
+        value: (man) => man.worth, cell: (man) => fitHtml(man.worth, largest, 3),
+      },
+      {
+        key: "league", label: "League", title: "A week to an average team: the league standard",
+        value: (man) => man.value, cell: (man) => fixed(man.value, 2),
+      },
+      ...CATS.map((cat) => ({
+        key: `w-${cat}`, label: cat, title: `${cat}: his week`,
+        value: (man) => man.weekly[cat], cell: (man) => showCat(cat, man.weekly[cat]),
+      })),
+    ],
+    onSelect: (man, trigger) =>
+      openCard(man.espn_player_id, trigger, { onClose: () => table && table.clear() }),
+  });
 }
 
 function drawFills() {
@@ -472,17 +506,23 @@ function drawFills() {
   $("fills-sides").className = sides.length > 1 ? "two" : "";
   $("fills-sides").innerHTML = sides.map((side) => fillsSideHtml(side, POOLS[side])).join("");
   $("fills").hidden = false;
-  $("fills-sides").querySelectorAll(".fill").forEach((button) => {
-    button.onclick = () => {
-      const id = numberOr(button.dataset.id);
-      const chosen = id === null ? [] : [id];
-      if (button.dataset.side === "ours") DEAL.fill = chosen;
-      else DEAL.theirFill = chosen;
-      mirror();
-      drawFills();
-      judge();
-    };
+  $("fills-sides").querySelectorAll(".fill-table").forEach((host) => {
+    fillTable(host, host.dataset.side, POOLS[host.dataset.side]);
   });
+  // One handler for the whole section rather than one per button: the table
+  // redraws itself when it is sorted or a column is put away, and a handler
+  // set on a button would go with the button.
+  $("fills-sides").onclick = (event) => {
+    const button = event.target.closest(".fill, .fill-pick");
+    if (!button) return;
+    const id = numberOr(button.dataset.id);
+    const chosen = id === null ? [] : [id];
+    if (button.dataset.side === "ours") DEAL.fill = chosen;
+    else DEAL.theirFill = chosen;
+    mirror();
+    drawFills();
+    judge();
+  };
   wireCards($("fills-sides"));
 }
 
