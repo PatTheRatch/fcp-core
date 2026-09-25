@@ -2,7 +2,8 @@
 
 **League:** Full Court Press (ESPN 3853870), nine-category H2H
 **Written:** 2026-09-22, alongside the build
-**Status:** built (`app/inseason/projected.py`, `app/api/projected.py`,
+**Status:** built, and since 2026-09-25 ranked on categories (revision R6,
+§0) (`app/inseason/projected.py`, `app/scoring/ranking.py`, `app/api/projected.py`,
 `scripts/projected.py`, `scripts/projected_calibration.py`, the Standings and
 This week pages, the Week page's "Rest of season" section, the digest's
 Standing line). The calibration below is the run of 2026-09-24, the first in
@@ -111,6 +112,72 @@ PYTHONPATH=. python scripts/projected_calibration.py --season 2026 --field espn 
 PYTHONPATH=. python scripts/stash_locks.py > docs/runs/2026-09-25-stash-locks-before.txt
 # then the engine change, then (C): the same three with -after in the names
 ```
+
+### Revision R6, the results, 2026-09-25: run as declared, published as they fell
+
+The runs are in `docs/runs/2026-09-25-projected-calibration-{before,after}[-espn].{txt,json}`
+and `docs/runs/2026-09-25-stash-locks-{before,after}.txt`; the before runs are
+the code at the declaration's commit, `ee14b37`. Each projected calibration
+took 35-40 seconds, 38 checkpoints at 2,000 simulated seasons; the lock study
+1,055s before and 1,317s after. All full runs; none was subset.
+
+**(A) reproduces the published table exactly**, every line, so the before
+column is the published one.
+
+**(B) is identical to (A).** In 2026 the seven teams the matchup order put in
+the playoff places are the seven ESPN seeded -- in a different order (The
+Infirmary 2nd by matchups, 4th by ESPN; Fantastic 5 5th and 2nd) but the same
+set -- so the published playoff table happened to be scored against the right
+field. Everything that moved below moved because the forecast's own order
+changed, not the truth.
+
+**(C) is identical against its own table and against ESPN's**, which is the
+check that `final_table` now reproduces ESPN's 2026 field.
+
+**What did not move, as declared.** The Brier score (0.2184) overall and by
+weeks ahead, the matchup-winner rate (0.583 over 5,320 team-weeks) and the
+record error (8.1, 6.3 and 5.2 at the three marks) are identical to every
+digit the run prints. The category reliability table prints identically; its
+JSON bucket means differ in the sixteenth significant figure, because the
+teams are now summed in a different order (the projection lists them by
+expected place, which moved). On 2026 day 52, all fourteen teams' projected
+category records, their banked records, every weekly category chance, the
+mean simulated matchup record, and team 3's week report came out byte for
+byte the same before and after.
+
+**What moved: the playoff odds**, the table under "The playoff odds" below,
+both columns. The lower half is better -- under 10% happened 5% rather than
+13%, and the 30-60% bands, the worst rows before at 27%, 37% and 37%, are
+now 33%, 47% and 52% -- and the 60-90% bands are worse: 60-70% happened 49%
+(was 58%), 70-80% 61% (was 74%), 80-90% 77% (was 82%). More teams sit above
+90% (139 against 119) and every one of them made it. Not declared, and given
+only as arithmetic on the two published tables: weighted by teams, the
+average gap between what a band said and what happened is 0.048 after
+against 0.069 before. `app.inseason.projected_calibration.PLAYOFF_RELIABILITY`
+and `CALIBRATION_NOTE` now carry the after column ("teams given 60-70% made it
+49%"), the before column is kept as `PLAYOFF_RELIABILITY_BY_MATCHUPS`, and
+nothing was tuned.
+
+**What moved: the lock study.** More teams are locks (381 of 1,720 classified
+stash decisions against 294), and the headline figure holds: a lock's dead
+place costs 0.15 categories a week against the census's 0.38 (0.18 before).
+[`stash_locks.md`](stash_locks.md) has the addendum with both columns.
+
+**What moved on 2026 day 52** (`/projected`, the same seed): the places, the
+finishes and the odds. Brighton Bears 2nd -> 1st (playoffs 98.5% -> 98.1%,
+first place 35% -> 29%); Through The Wire 3rd -> 2nd (94.0% -> 97.2%); The
+Infirmary 1st -> 3rd (98.8% -> 97.5%); Masters of their Domains 92.2% ->
+97.4%; Fantastic 5 78.0% -> 87.5%; Optimize the MVPs 8th -> 6th (41.7% ->
+53.7%); Foxes 6th -> 7th (65.8% -> 48.0%); Chat GTP inspired 11th -> 9th
+(21.8% -> 33.2%); Fast and Curryous 29.7% -> 22.8%; Uncle Dennis's Phone
+25.7% -> 19.1%. The standings route for 2026 is now ESPN's own table, and
+the rule's order equals it place for place; the old matchup order had The
+Infirmary 2nd, Fantastic 5 5th and Masters 6th.
+
+**Timing.** The simulation is 0.43s of a warm 2.7s run on 2026 day 80,
+against 0.20s of 2.5s before: the head-to-head term reads the meetings a
+simulated season drew only for teams level on share, and building the
+records is most of the rest. §6's figures are otherwise unchanged.
 
 ### Revision R5, applied 2026-09-24: a replayed morning reads the NBA's own injury report
 
@@ -286,25 +353,28 @@ note on every page is the halfway figure, from
 `app.inseason.projected_calibration.RECORD_ERROR["half"]` with a guard test on
 the sentence.
 
-**The playoff odds are honest at the ends and poor in the middle.**
+**The playoff odds are honest at the ends, and since R6 the error sits in the
+upper middle.** Ranked on category win share (revision R6), with the column
+before it -- ranked by matchups won -- beside it:
 
-| it said | it happened | teams |
-|---|---|---|
-| 3% | 13% | 112 |
-| 15% | 23% | 43 |
-| 25% | 21% | 39 |
-| 34% | 27% | 34 |
-| 45% | 37% | 38 |
-| 55% | **37%** | 38 |
-| 65% | 58% | 40 |
-| 75% | 74% | 35 |
-| 85% | 82% | 34 |
-| 98% | 100% | 119 |
+| it said (R6) | it happened (R6) | teams (R6) | it said (before) | it happened (before) | teams (before) |
+|---|---|---|---|---|---|
+| 2% | 5% | 119 | 3% | 13% | 112 |
+| 15% | 21% | 43 | 15% | 23% | 43 |
+| 25% | 33% | 40 | 25% | 21% | 39 |
+| 34% | 33% | 36 | 34% | 27% | 34 |
+| 46% | 47% | 38 | 45% | 37% | 38 |
+| 55% | 52% | 29 | 55% | 37% | 38 |
+| 65% | **49%** | 35 | 65% | 58% | 40 |
+| 75% | **61%** | 23 | 75% | 74% | 35 |
+| 86% | 77% | 30 | 85% | 82% | 34 |
+| 98% | 100% | 139 | 98% | 100% | 119 |
 
-Teams given better than 90% made it every time and the 70-90% bands are close
-to honest; the 40-60% bands are the worst rows, at 37% apiece. The middle is
-still where the error lives, and it is exactly the band a manager in a fight
-actually reads.
+Teams given better than 90% made it every time, and more teams are given it;
+teams given under 10% made it 5% of the time rather than 13%; the 30-60%
+bands, the worst rows before, are now within five points. The 60-90% bands
+went the other way and are now the rows to distrust: teams given 60-70% made
+it 49% and 70-80% made it 61%.
 
 ### The proposal, applied 2026-09-23
 
@@ -501,13 +571,20 @@ ten-vector is folded out once per matchup and sampled by its cumulative form.
 That is the same distribution sampled nine times more cheaply, and it is what
 keeps ten thousand seasons to about a second.
 
-The table is ordered by **matchups won, then fewest lost, then categories
-won** -- the order `app.api.leagues.get_standings` and `app.digest._place_of`
-both use, and whose first term is this league's own
-`raw_settings.schedule.playoffSeedingRule`, `H2H_RECORD`. ESPN does not
-publish what breaks a tie beyond that, so an exact tie on all three is broken
-by a number drawn per team per simulated season: ordering by team id would
-hand the same team the better seed in all ten thousand.
+The table is ordered by **the league's ranking rule**
+(`app.scoring.ranking.ranking_rule`, read off the scoring type; revision R6
+in §0): for this league, ESPN's Head-to-Head Each Category, **category win
+share, then the tied teams' category record against each other -- their
+banked meetings plus the ones that simulated season drew -- then categories
+won, then fewest lost**. It is the order the standings route, the digest's
+place line and the history page use, from the same rule. Until 2026-09-25
+this read "matchups won, then fewest lost, then categories won", which is
+how a most-categories league is ranked and not this one. Anything the rule
+leaves level is broken by a number drawn per team per simulated season:
+ordering by team id would hand the same team the better seed in all ten
+thousand. The random numbers are drawn in the same sequence whatever the
+rule, so the mean simulated matchup record (`projected_matchups`) does not
+depend on it.
 
 Out of that: `finishes` (P of each place, summing to one), `playoff_odds` (the
 top `playoff_team_count` places) and `bye_odds`. The byes are derived rather
@@ -766,9 +843,9 @@ Player names carry the shared card, as everywhere else on the site.
 6. **Ties are half.** The normal model gives a tie no mass, and a level
    category reads 0.5, which is what `category_record` scores a tie at. The
    two therefore agree in the limit rather than by a special case.
-7. **The tiebreak beyond the first three terms is random, per simulated
-   season.** ESPN does not publish it and a deterministic fallback would bias
-   every draw the same way.
+7. **The table is ranked on categories (revision R6), and what the rule
+   leaves level is random, per simulated season.** A deterministic fallback
+   would bias every draw the same way.
 8. **The per-team precomputes were not changed.** §3, the named seam.
 
 ## 9. Not done

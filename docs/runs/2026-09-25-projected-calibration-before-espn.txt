@@ -1,0 +1,80 @@
+PROJECTED STANDINGS, replayed on 2026
+  38 checkpoints, 2000 simulated seasons each
+  basis: weekly spreads from seasons before this one, era adjustment off; availability from the NBA's own injury reports as of 10am Eastern that day
+  shipped spread scale 2.0000 x --sigma-scale 1.0000 = 2.0000 applied to every weekly spread
+
+BRIER, per-category probabilities: 0.2184 over 47880 of them
+  weeks ahead        n     Brier
+            0      4788    0.1737
+            1      4536    0.2107
+            2      4284    0.2142
+            3      4032    0.2153
+            4      3780    0.2152
+            5      3528    0.2221
+            6      3276    0.2266
+            7      3024    0.2266
+            8      2772    0.2317
+            9      2520    0.2300
+           10      2268    0.2323
+           11      2016    0.2321
+           12      1764    0.2340
+           13      1512    0.2279
+           14      1260    0.2310
+           15      1008    0.2371
+           16       756    0.2270
+           17       504    0.2482
+           18       252    0.2345
+
+RELIABILITY, per category: predicted against what happened
+  bucket          n    predicted   happened
+  0.0-0.1        370      0.069      0.165
+  0.1-0.2       1644      0.158      0.183
+  0.2-0.3       4300      0.256      0.250
+  0.3-0.4       7540      0.354      0.354
+  0.4-0.5      10086      0.452      0.456
+  0.5-0.6      10086      0.548      0.544
+  0.6-0.7       7540      0.646      0.646
+  0.7-0.8       4300      0.744      0.750
+  0.8-0.9       1644      0.842      0.817
+  0.9-1.0        370      0.931      0.835
+
+MATCHUP WINNERS: 0.583 over 5320 team-weeks (a coin is 0.500)
+  weeks ahead        n   hit rate
+            0        532      0.688
+            1        504      0.635
+            2        476      0.605
+            3        448      0.571
+            4        420      0.581
+            5        392      0.561
+            6        364      0.544
+            7        336      0.571
+            8        308      0.539
+            9        280      0.564
+           10        252      0.516
+           11        224      0.536
+           12        196      0.520
+           13        168      0.607
+           14        140      0.471
+           15        112      0.571
+           16         84      0.714
+           17         56      0.536
+           18         28      0.643
+
+PROJECTED FINAL CATEGORY RECORD, mean absolute error, in categories
+  quarter        made at period  5   mean 8.13   worst 14.22   n 14
+  half           made at period 10   mean 6.32   worst 15.10   n 14
+  three-quarter  made at period 14   mean 5.17   worst 12.45   n 14
+
+PLAYOFF ODDS: teams given X% made it Y% (who made it: ESPN's stored standing)
+  bucket          n    predicted   happened
+  0.0-0.1        112      0.026      0.134
+  0.1-0.2         43      0.147      0.233
+  0.2-0.3         39      0.246      0.205
+  0.3-0.4         34      0.343      0.265
+  0.4-0.5         38      0.447      0.368
+  0.5-0.6         38      0.546      0.368
+  0.6-0.7         40      0.654      0.575
+  0.7-0.8         35      0.754      0.743
+  0.8-0.9         34      0.846      0.824
+  0.9-1.0        119      0.979      1.000
+

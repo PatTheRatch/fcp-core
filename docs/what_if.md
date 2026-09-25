@@ -185,15 +185,18 @@ stash block carries a `lock` beside the first reading and never instead of it:
 `playoff_weeks`, `playoff_weeks_value`, `cost`, `lock_net` and the two bounds
 `net_if_seed_settled` and `net_if_seed_open`.
 
-The reason is measured rather than argued. Over 294 lock stashes in eight
-seasons the dead place costs a lock **0.18 categories against the 0.38 the
-census charges it**, because the median seeding stake is 0.51 — about half of
-every dead regular week is a week the team was not going to be paid for. The
-two nets disagree on the sign for **26.87%** of lock stashes and for **46.38%**
-of the ones whose man reached the bracket, which is why it is worth a line.
-And the engine's own counterfactual says why: taking the stashed man off the
-roster moves a lock's playoff odds by a median **0.006** and the chance of its
-own most likely seed by **0.040**.
+The reason is measured rather than argued. Re-run on 2026-09-25 with the
+table ranked on category win share, as the league is (revision R6; the
+figures ranked by matchups won are in brackets): over **381** lock stashes
+in eight seasons (294) the dead place costs a lock **0.15 categories against
+the 0.38 the census charges it** (0.18), because the median seeding stake is
+0.52 (0.51) — about half of every dead regular week is a week the team was
+not going to be paid for. The two nets disagree on the sign for **27.56%**
+of lock stashes (26.87%) and for **46.56%** of the ones whose man reached
+the bracket (46.38%), which is why it is worth a line. And the engine's own
+counterfactual says why: taking the stashed man off the roster moves a
+lock's playoff odds by a median **0.007** (0.006) and the chance of its own
+most likely seed by **0.050** (0.040).
 
 > You are a lock (98%) · the dead weeks cost your seeding 0.21 · back for the
 > playoffs 71% · worth +1.20 over the 3 playoff weeks · lock net +0.64 (+0.85

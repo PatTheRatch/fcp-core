@@ -61,11 +61,14 @@ categories in 171 -- under four percent, and about three tenths of a category
 per week still to play. The quarter mark gives 8.1 and the three-quarter mark
 5.2.
 
-The playoff odds are honest at the ends and poor in the middle. Teams given
-better than 90% made it 100% of the time and teams given under 10% made it
-13.4%; but teams given 60-70% made it 57% and teams given 40-50% made it 37%.
-The middle is where the remaining error lives, and it is the band a manager
-actually reads.
+The playoff odds are honest at the ends and not in the upper middle. Since
+revision R6 (2026-09-25) every simulated table is ranked the way the league
+is, on category win share, and the odds were re-run on that order: teams given
+better than 90% made it 100% of the time (139 teams) and teams given under 10%
+made it 5.0%; the 30-60% bands are now close to honest (33%, 47%, 52%); but
+teams given 60-70% made it 49% and 70-80% made it 61%. Before R6, ranked by
+matchups won, the same bands read 13.4% at the bottom, 37% and 37% at 40-60%
+and 57% at 60-70%. docs/projected_record.md, revision R6, has both columns.
 
 WHAT IS STILL NOT TUNED HERE
 
@@ -93,6 +96,7 @@ __all__ = [
     "MEASURED_ON",
     "N_CATEGORY_CALLS",
     "PLAYOFF_RELIABILITY",
+    "PLAYOFF_RELIABILITY_BY_MATCHUPS",
     "RECORD_ERROR",
     "REPLAYED_SEASON",
     "SHIPPED_SCALE",
@@ -173,7 +177,25 @@ CATEGORY_RELIABILITY: tuple[Reliability, ...] = (
 )
 
 #: The same for the playoff odds: teams given X% made it Y%.
+#: The run of 2026-09-25 (revision R6), the table ranked on category win
+#: share; `PLAYOFF_RELIABILITY_BY_MATCHUPS` is the same run before R6.
 PLAYOFF_RELIABILITY: tuple[Reliability, ...] = (
+    Reliability((0.0, 0.1), 119, 0.020, 0.050),
+    Reliability((0.1, 0.2), 43, 0.149, 0.209),
+    Reliability((0.2, 0.3), 40, 0.248, 0.325),
+    Reliability((0.3, 0.4), 36, 0.341, 0.333),
+    Reliability((0.4, 0.5), 38, 0.461, 0.474),
+    Reliability((0.5, 0.6), 29, 0.550, 0.517),
+    Reliability((0.6, 0.7), 35, 0.651, 0.486),
+    Reliability((0.7, 0.8), 23, 0.748, 0.609),
+    Reliability((0.8, 0.9), 30, 0.855, 0.767),
+    Reliability((0.9, 1.0), 139, 0.978, 1.000),
+)
+
+#: The playoff odds as published before revision R6, when the simulated table
+#: was ranked by matchups won. Kept, like `WIDENED`, as the evidence the
+#: revision is read against, not as anything the product prints.
+PLAYOFF_RELIABILITY_BY_MATCHUPS: tuple[Reliability, ...] = (
     Reliability((0.0, 0.1), 112, 0.026, 0.134),
     Reliability((0.1, 0.2), 43, 0.147, 0.233),
     Reliability((0.2, 0.3), 39, 0.246, 0.205),
@@ -223,8 +245,9 @@ CALIBRATION_NOTE = (
     "ahead about 55%, where a coin gives 50%. The record it projects holds up "
     "better than the chances behind it -- made at the halfway mark of 2026, each "
     "team's final category record was off by 6.3 of 171 on average, and by 5.2 with "
-    "a quarter of the season left. The playoff odds are trustworthy at the extremes "
-    "and not in the middle: teams given better than 90% made it every time, and "
-    "teams given 60-70% made it 57%. Read these numbers as one input to a decision "
-    "that is yours."
+    "a quarter of the season left. The playoff odds, ranked on category win share "
+    "as the league is, are trustworthy at the extremes and not in the upper middle: "
+    "teams given better than 90% made it every time and teams given under 10% made "
+    "it 5% of the time, but teams given 60-70% made it 49%. Read these numbers as one "
+    "input to a decision that is yours."
 )

@@ -631,3 +631,64 @@ nothing is labelled against it.
    study imports the first one rather than copying it, and the only change to
    the document is a pointer from §5, which said playoff odds were unavailable
    and now says where they are.
+
+---
+
+## Addendum, 2026-09-25: re-run with the table ranked on categories (revision R6)
+
+**What changed.** The engine this study classifies on ranked every simulated
+table by **matchups won**. This league is ESPN's Head-to-Head *Each
+Category*, ranked on the category record, so from 2026-09-25 the simulated
+tables are ranked by **category win share, then the tied teams' category
+record against each other, then categories won, then fewest lost**
+([`projected_record.md`](projected_record.md) §0, revision R6, where the
+change and this re-run were declared before the engine moved). A lock is now
+a lock by the league's own order. Nothing else moved: `LOCK_ODDS` 0.95,
+`RACE_FLOOR` 0.25, `OPENED_PLACE`, the return prior, `N_SIMS` and `SEED` are
+as they were, and nothing was tuned on what came back.
+
+**Reproduce:** the same command. Before (the code as published, at commit
+`ee14b37`) reproduces every figure above to the digit; the full outputs are
+`docs/runs/2026-09-25-stash-locks-before.txt` and `-after.txt`. Wall time
+**1,055s before, 1,317s after** -- 871 then 923 engine runs over the same 865
+decision mornings, 0.99s then 1.21s a run; the after run shared the machine
+with the test suite for most of its length, and the simulation itself went
+from 0.20s to 0.43s of a 2.5-2.8s warm run (the head-to-head term).
+
+| figure | before (by matchups) | after (by categories) |
+|---|---|---|
+| lock stashes (of 1,720 classified) | 294 (17.09%) | **381 (22.15%)** |
+| race / out | 740 / 686 | 618 / 721 |
+| locks, without 2019 / without 2019-2020 | 285 / 256 | 363 / 332 |
+| a lock's median regular weeks left | 3 | 5 |
+| lock, median standard net / positive | −0.15 / 29.25% | −0.11 / 32.02% |
+| lock, median lock net / positive | −0.08 / 19.39% | −0.08 / 20.73% |
+| median seeding stake | 0.51 | 0.52 |
+| **median lock cost, against the standard 0.38** | **0.18** | **0.15** |
+| settled seeds (stake ≤ 0.10) | 17 | 45 |
+| the two nets agree on the sign | 73.13% | 72.44% |
+| lock says yes, standard no / the reverse | 8.50% / 18.37% | 8.14% / 19.42% |
+| reached the playoffs: n, agree on the sign | 138, 53.62% | 189, 53.44% |
+| back and held for playoff week one | 46.94% | 49.61% |
+| counterfactual: lock stashes that reached the playoffs | 131 | 183 |
+| median / largest move in playoff odds from holding him | +0.0060 / +0.1984 | +0.0066 / +0.3899 |
+| median / largest move in the chance of its own likeliest seed | +0.0401 / +0.3357 | +0.0500 / +0.3833 |
+| break-even, a man worth 1.00-2.00 a week (stake 0.25 / 0.50 / 1.00) | 0.16 / 0.32 / 0.64 (n 23) | 0.16 / 0.32 / 0.64 (n 31) |
+
+**What it says.** The category order calls more teams locks -- 381 against
+294, and more of them earlier (a median five regular weeks left against
+three). The reading is that a category record of 171 separates the top of a
+table sooner than a record of 19 matchups does; this run shows that it
+happened, not why. The finding stands and is a little stronger:
+a lock's dead place costs **0.15** categories a week against the 0.38 the
+census charges, the two nets still disagree on the sign for about **28%** of
+lock stashes and **47%** of the ones that reached the bracket, and holding
+the man still buys a seed far more than a place (median +0.050 on the
+likeliest seed against +0.007 on the playoff odds). The one row that moved
+the other way is the tail: the largest single playoff-odds move is now
++0.39 (Kyrie Irving, 2023 day 19, a lock on 0.96), where before it was +0.20.
+
+The per-season, per-level, per-tier and seeding-stake tables above are the
+before column; `docs/runs/2026-09-25-stash-locks-after.txt` has every one of
+them after, and they are not rewritten here so the two can be read side by
+side.

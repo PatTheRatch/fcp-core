@@ -582,8 +582,20 @@ def test_the_published_note_says_what_the_published_numbers_say() -> None:
     assert _pct(best_odds.happened) == 100
     assert "better than 90% made it every time" in calibration.CALIBRATION_NOTE
     middling = next(row for row in calibration.PLAYOFF_RELIABILITY if row.band == (0.6, 0.7))
-    assert _pct(middling.happened) == 57
-    assert "given 60-70% made it 57%" in calibration.CALIBRATION_NOTE
+    assert _pct(middling.happened) == 49
+    assert "given 60-70% made it 49%" in calibration.CALIBRATION_NOTE
+    floor = calibration.PLAYOFF_RELIABILITY[0]
+    assert floor.band == (0.0, 0.1) and _pct(floor.happened) == 5
+    assert "under 10% made it 5% of the time" in calibration.CALIBRATION_NOTE
+    assert "ranked on category win share" in calibration.CALIBRATION_NOTE
+    # The pre-R6 table is kept as evidence and is the one the old note quoted.
+    before = next(
+        row for row in calibration.PLAYOFF_RELIABILITY_BY_MATCHUPS if row.band == (0.6, 0.7)
+    )
+    assert _pct(before.happened) == 57
+    assert sum(row.n for row in calibration.PLAYOFF_RELIABILITY) == sum(
+        row.n for row in calibration.PLAYOFF_RELIABILITY_BY_MATCHUPS
+    )
 
     # It is worse than a coin at nothing, and it does not claim to be better
     # than the run says.
