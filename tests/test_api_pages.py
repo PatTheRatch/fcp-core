@@ -353,7 +353,10 @@ def test_the_week_page_keeps_everything_it_used_to_show(client: TestClient) -> N
         assert wanted in page, wanted
     assert "clears the bar" in page and "below the bar" in page, "a bar labels, never hides"
     assert "calibration_note" in page and "calibration_short" in page
-    assert "BAND_YOURS" in page and "display choice" in page, "the bands are a choice about ink"
+    # The bands are drawn by the shared script since the Overview draws them too.
+    script = client.get("/pages/static/pages.js").text
+    assert "bandsHtml(report)" in page
+    assert "BAND_YOURS" in script and "display choice" in script, "the bands are a choice about ink"
 
 
 def test_the_week_page_shows_the_score_of_every_category(client: TestClient) -> None:
@@ -366,11 +369,14 @@ def test_the_week_page_shows_the_score_of_every_category(client: TestClient) -> 
     and the page says why.
     """
     page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+    script = client.get("/pages/static/pages.js").text
 
-    assert "function scoreCell(" in page, "the score under the chance"
-    assert "report.posted" in page and "report.opponent_posted" in page
-    assert "storedCat(" in page, "a rate as .459, a count whole"
-    assert "INVERTED.has(cat) ? us < them : us > them" in page, (
+    assert "function scoreCell(" in script, "the score under the chance, drawn once for two pages"
+    assert "function scoreCell(" not in page, "moved, not forked"
+    assert "report.posted" in script and "report.opponent_posted" in script
+    assert "REPORT.posted" in page and "REPORT.opponent_posted" in page, "and the tapped category"
+    assert "storedCat(" in script, "a rate as .459, a count whole"
+    assert "INVERTED.has(cat) ? us < them : us > them" in script, (
         "the leading side takes the ink, read with the category's own direction"
     )
     assert 'id="by-man"' in page and "This week, by man" in page
@@ -390,13 +396,18 @@ def test_the_week_page_prints_a_mans_line_once_his_game_is_stored(
     theirs cannot be written two different ways.
     """
     page = client.get(f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}/week").text
+    # A man's row of Tonight is the shared script's, which the Overview's
+    # TONIGHT is drawn with as well.
+    script = client.get("/pages/static/pages.js").text
 
-    assert "function boxLine(" in page and "boxRow(" in page
-    assert "boxRow(player.line)" in page, "ours, from the day's own report"
-    assert "boxRow(slot.played ? slot : null)" in page, "theirs, from the stored lineups"
+    assert "function boxLine(" in script and "boxRow(" in script
+    assert "function boxLine(" not in page, "moved, not forked"
+    assert "boxRow(player.line)" in script, "ours, from the day's own report"
+    assert "boxRow(slot.played ? slot : null)" in script, "theirs, from the stored lineups"
+    assert "tonightRow(player)" in page and "theirRow" in page, "the week page draws with them"
     for unit in ("min", "fg", "ft", "3pm", "pts", "reb", "ast", "stl", "blk", "to"):
-        assert f" {unit}`" in page or f"{unit}`," in page or f'{unit}"' in page, unit
-    assert "A zero is kept" in page, "a zero is information"
+        assert f" {unit}`" in script or f"{unit}`," in script or f'{unit}"' in script, unit
+    assert "A zero is kept" in script, "a zero is information"
 
 
 def test_the_week_page_lets_a_manager_name_his_own_move(client: TestClient) -> None:

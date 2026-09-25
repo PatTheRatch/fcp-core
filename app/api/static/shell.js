@@ -645,6 +645,57 @@ document.addEventListener("click", (event) => {
   DRAWER.open(accountSpec(source, trigger));
 });
 
+/* ---- a move's working, in the drawer -------------------------------------
+   What a move block's Inspect opens (`moveBlockHtml`, pages.js): each figure
+   of the move's number with where it came from -- the week report's own
+   fields -- and the categories it moves, before and after. /design's move
+   and the Overview's THE WIRE open the same drawer from this one function
+   (moved here from design.html). */
+function inspectMove(move, report, context, trigger) {
+  const j = move.judgement || {};
+  const rows = [
+    ["Net", `<span class="ws-data">${minus(signed(move.net, 3))}</span> categories: this week plus the change in an ordinary week over the weeks left`],
+    ["This week", `<span class="ws-data">${minus(signed(j.delta_week, 3))}</span> expected categories in matchup period ${report.matchup_period}`],
+    ["A week after", `<span class="ws-data">${minus(signed(j.delta_season_per_week, 3))}</span> over <span class="ws-data">${fixed(j.weeks_remaining, 1)}</span> weeks`],
+    ["Record", `<span class="ws-data">${record(j.record_without)}</span> without, <span class="ws-data">${record(j.record_with)}</span> with`],
+    ["The bar", `<span class="ws-data">${fixed(report.hurdle, 2)}</span> categories, from ${escape(report.hurdle_source)}: ${escape(report.hurdle_note)}`],
+    ["Label", move.clears_hurdle ? "over the bar: worth a look. A label, not advice." : "under the bar, shown in full all the same"],
+  ];
+  if (move.bid) rows.push(["Bid", bidNote(move.bid)]);
+  // The FAAB ladder, as the Matchup page's read shows it: what the tool
+  // bids, what each dollar wins, and what the man is worth to this roster.
+  const ladder = bidLadder(move.bid);
+  if (ladder) rows.push(["Ladder", ladder]);
+  rows.push(["The wire", `${escape(wire(report))}, ${count(report.pool_size, "free agent")}`]);
+  if (context) rows.push(["Numbers", escape(context.source_note)]);
+  const shifts = (move.moved || [])
+    .map(
+      (s) =>
+        `<tr><td class="l">${escape(s.abbreviation)}</td><td>${pct(s.before)}</td><td>${pct(s.after)}</td>` +
+        `<td class="${s.delta > 0 ? "ws-pos" : "ws-neg"}">${points(s.delta)}</td></tr>`,
+    )
+    .join("");
+  DRAWER.open({
+    key: `move-${move.add.espn_player_id}-${move.drop ? move.drop.espn_player_id : "open"}`,
+    trigger,
+    kicker: "A move · how this is worked out",
+    title: `${move.add.name}${move.drop ? ` for ${move.drop.name}` : ""}`,
+    meta: `<b>${escape(bbMark(move.add))}</b> · judged on day ${report.scoring_periods_remaining[0]}`,
+    body:
+      `<section class="ws-dsec"><span class="ws-k">The number</span><dl class="ws-facts">` +
+      rows.map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
+      `</dl></section>` +
+      (shifts
+        ? `<section class="ws-dsec"><span class="ws-k">The categories it moves, this week</span>` +
+          `<div class="ws-scr"><table class="ws-table"><thead><tr><th class="l" scope="col">Cat</th>` +
+          `<th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr></thead>` +
+          `<tbody>${shifts}</tbody></table></div></section>`
+        : "") +
+      `<p class="ws-note">From <span class="ws-data">pickups/stream</span>, the week report ` +
+      `(docs/pickups.md, section 4.3). Nothing here touches ESPN.</p>`,
+  });
+}
+
 /* ---- the player card, in the drawer --------------------------------------
    Every page that prints a name hangs the card off it, and the card opens
    into the drawer: a click on a desk, a tap on a phone, Enter from the

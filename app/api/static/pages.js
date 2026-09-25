@@ -792,6 +792,322 @@ function moveBlockHtml(move, report) {
   );
 }
 
+/* ---- the nine as three bands ------------------------------------------
+   The Matchup page's THE NINE, and the Overview's MATCHUP, drawn by this
+   one piece of code so the two cannot drift (moved here from week.html).
+
+   Where the nine are split for the eye. A display choice, not a model claim:
+   every cell prints its own chance, and nothing in the report knows these
+   numbers exist. */
+const BAND_YOURS = 0.65;
+const BAND_THEIRS = 0.35;
+
+/** Which band a chance falls in. An unknown chance is a swing: it is the
+ *  band that says "this is not settled", which is true of a missing one. */
+const bandOf = (p) => (!isNum(p) ? "swing" : p >= BAND_YOURS ? "yours" : p <= BAND_THEIRS ? "theirs" : "swing");
+
+const BAND_WORDS = {
+  yours: ["Likely yours", `at or over ${Math.round(BAND_YOURS * 100)}%`],
+  swing: ["Swing", `${Math.round(BAND_THEIRS * 100)}–${Math.round(BAND_YOURS * 100)}%`],
+  theirs: ["Likely theirs", `at or under ${Math.round(BAND_THEIRS * 100)}%`],
+};
+
+/** A bye: the schema carries no `on_bye`, only an opponent that is null. */
+const onBye = (report) => report.opponent_espn_team_id === null;
+
+/* ---- the score as it stands ---------------------------------------------
+   `posted` and `opponent_posted` are the engine's own posted-so-far
+   (`app/pickups/state.py`), not the matchup route's stored tallies, and the
+   difference is worth knowing: ESPN's row is the whole period's running
+   total as of the last ingest with no day column to cap it by, while the
+   engine's is what had been played by the morning of the day the page is
+   asked about. On a replayed day the two are wildly different -- the route
+   shows the finished week -- and a page that drew the score from one and
+   the chance from the other would contradict itself in public. So both come
+   from the report, and "how this is worked out" says which.
+
+   Before any game of the period has been played the score is a dash on both
+   sides, because 0–0 reads as a result and a dash reads as "not yet". An
+   answer with no `posted` at all (the glance, which carries the chances and
+   not the score) reads the same way: a dash until the week report lands. */
+
+/** Whether either side has posted anything at all this period. */
+function anyPosted(report) {
+  const some = (totals) =>
+    Boolean(totals) && Object.keys(totals).some((key) => isNum(totals[key]) && totals[key] !== 0);
+  return some(report.posted) || some(report.opponent_posted);
+}
+
+/** The score in one category, ours first, the leading side in ink.
+ *
+ *  Which side leads is read with the category's own direction, so in TO the
+ *  lower figure takes the ink; the order is never reversed, and no word is
+ *  added either way -- the chance above already says who is ahead. */
+function scoreCell(report, cat) {
+  if (!anyPosted(report) || onBye(report)) return `<span class="now">${dash}</span>`;
+  const us = totalOf(report.posted, cat);
+  const them = totalOf(report.opponent_posted, cat);
+  let ours = "";
+  let theirs = "";
+  if (isNum(us) && isNum(them) && Math.abs(us - them) > 1e-9) {
+    const weLead = INVERTED.has(cat) ? us < them : us > them;
+    ours = weLead ? "lead" : "trail";
+    theirs = weLead ? "trail" : "lead";
+  }
+  return (
+    `<span class="now"><b class="${ours}">${storedCat(cat, us)}</b>` +
+    `<i>&ndash;</i><b class="${theirs}">${storedCat(cat, them)}</b></span>`
+  );
+}
+
+/** One band: its words, then a cell a category -- the chance, and the score
+ *  as it stands under it. On the Matchup page each cell is a button that
+ *  opens both sides' totals; `still` draws the same cells as cells, for a
+ *  page with nothing behind them to open. */
+function bandHtml(which, cats, report, still) {
+  const [word, range] = BAND_WORDS[which];
+  const probabilities = report.probabilities || {};
+  const cells = cats
+    .map((cat) => {
+      const p = probabilities[cat];
+      const inner = `<span class="lab">${escape(cat)}</span><b>${pct(p)}</b>` + scoreCell(report, cat);
+      return still
+        ? `<div class="cell">${inner}</div>`
+        : `<button type="button" data-cat="${escape(cat)}" aria-expanded="false" ` +
+            `aria-controls="cat-detail">${inner}</button>`;
+    })
+    .join("");
+  return (
+    `<div class="band ${which}">` +
+    `<p class="blab">${escape(word)} <span class="n">${escape(range)}</span></p>` +
+    (cats.length
+      ? `<div class="pulse">${cells}</div>`
+      : `<p class="empty bandempty">None this week.</p>`) +
+    `</div>`
+  );
+}
+
+/** The nine in their three bands, swing first: the markup, and how many are
+ *  in the balance (the section's tag on both pages). */
+function bandsHtml(report, still) {
+  const probabilities = report.probabilities || {};
+  const grouped = { yours: [], swing: [], theirs: [] };
+  CATS.forEach((cat) => grouped[bandOf(probabilities[cat])].push(cat));
+  return {
+    swing: grouped.swing.length,
+    html:
+      bandHtml("swing", grouped.swing, report, still) +
+      bandHtml("yours", grouped.yours, report, still) +
+      bandHtml("theirs", grouped.theirs, report, still),
+  };
+}
+
+/* ---- tonight ------------------------------------------------------------
+   A man of tonight as the Matchup page's Tonight draws him, and as the
+   Overview's TONIGHT does, out of the same functions (moved here from
+   week.html). Every name is a trigger for the shared player card
+   (`cardName` and `wireCards`, shell.js); each block calls `wireCards`
+   after its own innerHTML, because the card is attached to elements and
+   not delegated from the document. */
+
+/** A tip-off in the reader's own zone. The payload carries the moment, never
+ *  a clock, because the same report is read in three of them. */
+function tipOff(iso) {
+  if (!iso) return "";
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+const playerName = (player) =>
+  player ? cardName(player.espn_player_id, `<b>${escape(player.name)}</b>`) : dash;
+
+/** "at MIL", or "no game" in the muted style. */
+const gameCell = (player) =>
+  player && player.game
+    ? `<span class="mono">${escape(player.game.describe)}</span>`
+    : `<span class="faint">no game</span>`;
+
+/** A flag beside a name: injured, on injured reserve, and the return date. */
+function statusCell(player) {
+  if (!player) return "";
+  if (player.status === "ir") return `<span class="flag">injured reserve</span>`;
+  if (player.status !== "injured") return "";
+  const back = player.expected_return_date;
+  return (
+    `<span class="flag">${escape(player.injury_status || "injured")}` +
+    `${back ? `, back ${dayName(back)}` : ""}</span>`
+  );
+}
+
+/** What ESPN says about a man tonight, as a word and a tone. `status` and
+ *  `plays` are the payload's; nothing here decides anything about him. */
+function standing(player) {
+  if (player.status === "ir") return ["injured reserve", "out"];
+  if (player.injury_status) {
+    const word = String(player.injury_status).replace(/_/g, " ").toLowerCase();
+    if (word === "active") return player.plays ? ["active", "on"] : ["no game", ""];
+    return [word, word === "out" || word === "suspension" ? "out" : "doubt"];
+  }
+  if (!player.plays) return player.game ? ["out", "out"] : ["no game", ""];
+  return ["active", "on"];
+}
+
+/* ---- a man's line -------------------------------------------------------
+   The stored box score, once the ingest has it: minutes, then the nine in
+   the page's own fixed order (`CATS`), so a reader never has to find PTS
+   in two places on one screen. Both sides use it -- a box score is a
+   league-visible fact and not a plan -- and both get it from a field of the
+   same name, ours on the day's report and theirs on the stored lineup row.
+
+   A zero is kept. A zero is information: three blocks and no blocks are
+   different nights, and a line that printed only what a man did would make
+   0 for 6 look like a night off. */
+function boxLine(line) {
+  if (!line) return "";
+  const n = (v) => (isNum(v) ? String(Math.round(v)) : dash);
+  return [
+    `${n(line.minutes)} min`,
+    `${n(line.field_goals_made)}/${n(line.field_goals_attempted)} fg`,
+    `${n(line.free_throws_made)}/${n(line.free_throws_attempted)} ft`,
+    `${n(line.three_pointers_made)} 3pm`,
+    `${n(line.points)} pts`,
+    `${n(line.rebounds)} reb`,
+    `${n(line.assists)} ast`,
+    `${n(line.steals)} stl`,
+    `${n(line.blocks)} blk`,
+    `${n(line.turnovers)} to`,
+  ].join(" · ");
+}
+
+/** The line as a row of its own, or nothing at all when the ingest has not
+ *  reached the day. Nothing at all and not "no line yet": the game mark on
+ *  the row above already says a game is coming. */
+const boxRow = (line) =>
+  line ? `<span class="box">${escape(boxLine(line))}</span>` : "";
+
+/** One man of tonight: his name, his mark and his game, and his standing. */
+function tonightRow(player, extra) {
+  const [word, tone] = standing(player);
+  const mark = [player.pro_team, player.position].filter(Boolean).join(" · ");
+  const game = player.game
+    ? [player.game.describe, tipOff(player.game.at)].filter(Boolean).join(" · ")
+    : "no game";
+  const bits = [
+    mark ? `<span class="team">${escape(mark)}</span>` : "",
+    escape(game),
+    extra || "",
+  ].filter(Boolean);
+  return (
+    `<li class="${tone === "on" ? "" : "off"}">` +
+    `<span class="who">${playerName(player)}</span>` +
+    `<span class="st ${tone}">${tone === "on" ? "&#9679; " : ""}${escape(word)}</span>` +
+    `<span class="meta">${bits.join(" &middot; ")}</span>` +
+    boxRow(player.line) +
+    `</li>`
+  );
+}
+
+/** Their side, from the lineups the ingest stored for the day: who they have
+ *  in a starting place tonight. A fact, not a projection -- what the page
+ *  estimates about them is the totals in the nine, and says so there. */
+function theirRow(slot) {
+  const hurt = slot.injury_status && String(slot.injury_status).toUpperCase() !== "ACTIVE";
+  const word = hurt ? String(slot.injury_status).replace(/_/g, " ").toLowerCase() : "";
+  // The lineups route carries the stat line for the day beside the slot,
+  // so their men read the same as ours once their games are stored.
+  return (
+    `<li class="one ${hurt ? "off" : ""}">` +
+    `<span class="who"><span class="team">${escape(slot.slot)}</span>` +
+    `${cardName(slot.player_id, `<b>${escape(slot.player_name)}</b>`)}</span>` +
+    `<span class="st ${hurt ? "doubt" : ""}">${escape(word)}</span>` +
+    boxRow(slot.played ? slot : null) +
+    `</li>`
+  );
+}
+
+/* ---- what changed ---------------------------------------------------------
+   The league's news as This week's What changed draws it, and the
+   Overview's RECENT (moved here from league-week.html). Every sentence is
+   the API's (app/inseason/changes.py), the same one the digest sends; the
+   page groups and marks it and works nothing out. */
+
+/** The one word that labels a line, in the house's vocabulary rather than
+ *  the feed's field names. */
+const CHANGE_WORDS = {
+  status: "injury",
+  minutes: "minutes",
+  ownership: "owned",
+  add: "add",
+  claim: "claim",
+  drop: "drop",
+  trade: "trade",
+  waiver_clear: "waivers",
+  lineup: "roster",
+};
+
+/** A moment as the feed prints one: the hour and minute, UTC. */
+function utcTime(iso) {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return dash;
+  return when.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  });
+}
+
+/** The API's sentence with each player's name turned into the shared card's
+ *  trigger (`cardName` in shell.js), so a name in the feed opens the same
+ *  card a name in a table does. The sentence itself is never rebuilt: the
+ *  name is found in it and only that run of characters is replaced, so what
+ *  the reader sees is still the API's words. A name the API did not put in
+ *  the sentence, or a player it has no ESPN id for, is simply left alone. */
+function withPlayers(change) {
+  let html = escape(change.text);
+  for (const person of change.players || []) {
+    const mark = escape(person.name || "");
+    if (!mark || !person.espn_player_id) continue;
+    const at = html.indexOf(mark);
+    if (at < 0) continue;
+    html =
+      html.slice(0, at) +
+      cardName(person.espn_player_id, mark, "inline") +
+      html.slice(at + mark.length);
+  }
+  return html;
+}
+
+function changeHtml(change) {
+  const whose = change.mine ? " ours" : change.opponent ? " theirs" : "";
+  return (
+    `<li class="change${whose}${change.severity === 0 ? " urgent" : ""}">` +
+    `<span class="when">${utcTime(change.at)}</span>` +
+    `<span class="what">${withPlayers(change)}</span>` +
+    `<span class="kind">${escape(CHANGE_WORDS[change.kind] || change.kind)}</span>` +
+    `</li>`
+  );
+}
+
+/** The feed as days, newest first. Grouping is by the UTC date the API
+ *  stamped, which is the date its window was drawn on. */
+function changedHtml(items) {
+  const days = [];
+  for (const change of items) {
+    const day = String(change.at).slice(0, 10);
+    if (!days.length || days[days.length - 1].day !== day) days.push({ day, items: [] });
+    days[days.length - 1].items.push(change);
+  }
+  return days
+    .map(
+      (group) =>
+        `<h3 class="dayhead">${dayName(group.day)}</h3>` +
+        `<ul class="feed">${group.items.map(changeHtml).join("")}</ul>`,
+    )
+    .join("");
+}
+
 /** The page could not be drawn: say what happened, in the page, not the console. */
 function fail(message) {
   const where = $("failed");

@@ -112,20 +112,6 @@ const SO_FAR = ` <span class="faint">&middot; so far</span>`;
  *  a day, and the route's default without one is the last 24 hours. */
 const CHANGED_DAYS = 2;
 
-/** The one word that labels a line, in the house's vocabulary rather than
- *  the feed's field names. */
-const CHANGE_WORDS = {
-  status: "injury",
-  minutes: "minutes",
-  ownership: "owned",
-  add: "add",
-  claim: "claim",
-  drop: "drop",
-  trade: "trade",
-  waiver_clear: "waivers",
-  lineup: "roster",
-};
-
 /** The period to show: the one asked for, else the one today is in, else
     the nearest one that has begun (after the season, its last one). */
 function pickPeriod(today, periods, asked) {
@@ -345,67 +331,10 @@ function changedWindow(context) {
   return { since: since.toISOString(), until: until.toISOString() };
 }
 
-/** A moment as the feed prints one: the hour and minute, UTC. */
-function utcTime(iso) {
-  const when = new Date(iso);
-  if (Number.isNaN(when.getTime())) return dash;
-  return when.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  });
-}
-
-/** The API's sentence with each player's name turned into the shared card's
- *  trigger (`cardName` in shell.js), so a name in the feed opens the same
- *  card a name in a table does. The sentence itself is never rebuilt: the
- *  name is found in it and only that run of characters is replaced, so what
- *  the reader sees is still the API's words. A name the API did not put in
- *  the sentence, or a player it has no ESPN id for, is simply left alone. */
-function withPlayers(change) {
-  let html = escape(change.text);
-  for (const person of change.players || []) {
-    const mark = escape(person.name || "");
-    if (!mark || !person.espn_player_id) continue;
-    const at = html.indexOf(mark);
-    if (at < 0) continue;
-    html =
-      html.slice(0, at) +
-      cardName(person.espn_player_id, mark, "inline") +
-      html.slice(at + mark.length);
-  }
-  return html;
-}
-
-function changeHtml(change) {
-  const whose = change.mine ? " ours" : change.opponent ? " theirs" : "";
-  return (
-    `<li class="change${whose}${change.severity === 0 ? " urgent" : ""}">` +
-    `<span class="when">${utcTime(change.at)}</span>` +
-    `<span class="what">${withPlayers(change)}</span>` +
-    `<span class="kind">${escape(CHANGE_WORDS[change.kind] || change.kind)}</span>` +
-    `</li>`
-  );
-}
-
-/** The feed as days, newest first. Grouping is by the UTC date the API
- *  stamped, which is the date its window was drawn on. */
-function changedHtml(items) {
-  const days = [];
-  for (const change of items) {
-    const day = String(change.at).slice(0, 10);
-    if (!days.length || days[days.length - 1].day !== day) days.push({ day, items: [] });
-    days[days.length - 1].items.push(change);
-  }
-  return days
-    .map(
-      (group) =>
-        `<h3 class="dayhead">${dayName(group.day)}</h3>` +
-        `<ul class="feed">${group.items.map(changeHtml).join("")}</ul>`,
-    )
-    .join("");
-}
+/* A line of the feed, its day heading, the name in it that opens a card and
+   the word that labels it are pages.js's (`changedHtml`, `changeHtml`,
+   `withPlayers`, `CHANGE_WORDS`), which the Overview's RECENT is drawn
+   with too. */
 
 async function drawChanged(context, ours, asked) {
   const window = changedWindow(context);

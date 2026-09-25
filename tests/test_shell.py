@@ -521,11 +521,15 @@ def test_what_changed_prints_the_api_sentence_and_leaves_the_card_a_hook() -> No
     once that has landed.
     """
     page = (STATIC / "league-week.html").read_text()
+    # The line itself is the shared script's since the Overview's RECENT
+    # prints the same feed.
+    script = (STATIC / "pages.js").read_text()
 
     assert "What changed" in page
     assert "/changes?" in page, "the feed comes from the route, not from the page"
     assert 'id="changed-mine"' in page and 'for="changed-mine"' in page, "the filter, labelled"
     assert "change.mine || change.opponent" in page, "the flags are the API's, not the page's"
-    assert "cardName(person.espn_player_id" in page, "a name in a sentence opens the card"
+    assert "changedHtml(shown)" in page, "the shared line, not a copy"
+    assert "cardName(person.espn_player_id" in script, "a name in a sentence opens the card"
     assert 'wireCards($("changed-body"))' in page, "and is wired again on every redraw"
-    assert "escape(change.text)" in page, "the sentence is printed, never rebuilt"
+    assert "escape(change.text)" in script, "the sentence is printed, never rebuilt"

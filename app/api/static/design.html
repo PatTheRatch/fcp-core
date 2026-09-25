@@ -378,48 +378,10 @@ function playsOn(id) {
   return days.length ? days.join(" / ") : "";
 }
 
-/** How a move's number is worked out, as the drawer shows it: each figure
- *  with where it came from, the report's own fields. */
-function moveInspect(move, trigger) {
-  const j = move.judgement || {};
-  const rows = [
-    ["Net", `<span class="ws-data">${minus(signed(move.net, 3))}</span> categories: this week plus the change in an ordinary week over the weeks left`],
-    ["This week", `<span class="ws-data">${minus(signed(j.delta_week, 3))}</span> expected categories in matchup period ${REPORT.matchup_period}`],
-    ["A week after", `<span class="ws-data">${minus(signed(j.delta_season_per_week, 3))}</span> over <span class="ws-data">${fixed(j.weeks_remaining, 1)}</span> weeks`],
-    ["Record", `<span class="ws-data">${record(j.record_without)}</span> without, <span class="ws-data">${record(j.record_with)}</span> with`],
-    ["The bar", `<span class="ws-data">${fixed(REPORT.hurdle, 2)}</span> categories, from ${escape(REPORT.hurdle_source)}: ${escape(REPORT.hurdle_note)}`],
-    ["Label", move.clears_hurdle ? "over the bar: worth a look. A label, not advice." : "under the bar, shown in full all the same"],
-  ];
-  if (move.bid) rows.push(["Bid", bidNote(move.bid)]);
-  rows.push(["The wire", `${escape(wire(REPORT))}, ${count(REPORT.pool_size, "free agent")}`]);
-  if (CONTEXT) rows.push(["Numbers", escape(CONTEXT.source_note)]);
-  const shifts = (move.moved || [])
-    .map(
-      (s) =>
-        `<tr><td class="l">${escape(s.abbreviation)}</td><td>${pct(s.before)}</td><td>${pct(s.after)}</td>` +
-        `<td class="${s.delta > 0 ? "ws-pos" : "ws-neg"}">${points(s.delta)}</td></tr>`,
-    )
-    .join("");
-  DRAWER.open({
-    key: `move-${move.add.espn_player_id}-${move.drop ? move.drop.espn_player_id : "open"}`,
-    trigger,
-    kicker: "A move · how this is worked out",
-    title: `${move.add.name}${move.drop ? ` for ${move.drop.name}` : ""}`,
-    meta: `<b>${escape(bbMark(move.add))}</b> · judged on day ${REPORT.scoring_periods_remaining[0]}`,
-    body:
-      `<section class="ws-dsec"><span class="ws-k">The number</span><dl class="ws-facts">` +
-      rows.map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
-      `</dl></section>` +
-      (shifts
-        ? `<section class="ws-dsec"><span class="ws-k">The categories it moves, this week</span>` +
-          `<div class="ws-scr"><table class="ws-table"><thead><tr><th class="l" scope="col">Cat</th>` +
-          `<th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr></thead>` +
-          `<tbody>${shifts}</tbody></table></div></section>`
-        : "") +
-      `<p class="ws-note">From <span class="ws-data">pickups/stream</span>, the week report ` +
-      `(docs/pickups.md, section 4.3). Nothing here touches ESPN.</p>`,
-  });
-}
+/** A move's Inspect opens shell.js's `inspectMove`, which the Overview's
+ *  THE WIRE opens as well: each figure of the number with where it came
+ *  from, the report's own fields. */
+const moveInspect = (move, trigger) => inspectMove(move, REPORT, CONTEXT, trigger);
 
 function drawMove() {
   const plan = REPORT.recommended && REPORT.recommended.length ? REPORT.recommended : REPORT.moves || [];
