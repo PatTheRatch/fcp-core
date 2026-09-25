@@ -31,6 +31,7 @@ from app.inseason.projected import bye_seats, final_table, project_standings
 from app.pickups import stream
 from app.pickups.stream import head_to_head
 from app.scoring.lines import CategoryLine
+from app.scoring.ranking import ranking_rule
 from tests.pickups_db import (
     ANY,
     SMALL_LINEUP,
@@ -486,8 +487,9 @@ def test_final_table_is_the_settled_record_in_the_league_s_own_order(
 ) -> None:
     ls, teams, windows = build(session)
     # Alpha wins all three; Delta wins the two it is not playing Alpha in;
-    # Bravo wins one; Charlie wins none. So the table is Alpha, Delta, Bravo,
-    # Charlie, on matchups won, which is the first term of `TIEBREAK`.
+    # Bravo wins one; Charlie wins none, each nine categories to nothing. So
+    # the table is Alpha, Delta, Bravo, Charlie on category win share, which
+    # here is also the matchup order; the next test pulls the two apart.
     _settle(session, windows[0], teams[0], teams[1], winner="HOME")
     _settle(session, windows[0], teams[2], teams[3], winner="AWAY")
     _settle(session, windows[1], teams[0], teams[2], winner="HOME")
@@ -622,3 +624,166 @@ def test_the_shipped_widening_is_the_one_the_published_score_was_earned_on() -> 
     assert calibration.WIDENED[1.4142] > calibration.BRIER
     # And the engine still has no second scale of its own to have been turned.
     assert not hasattr(projected_module, "SIGMA_SCALE")
+
+
+# ---------------------------------------------------------------------------
+# the order: the league's ranking rule, not matchups won
+# ---------------------------------------------------------------------------
+
+
+def _split(
+    session: Session,
+    period: MatchupPeriod,
+    home: Team,
+    away: Team,
+    *,
+    home_takes: int,
+) -> None:
+    """Settle an existing matchup `home_takes` categories to the rest."""
+    row = session.scalar(
+        select(Matchup).where(
+            Matchup.matchup_period_id == period.id,
+            Matchup.home_team_id == home.id,
+            Matchup.away_team_id == away.id,
+        )
+    )
+    assert row is not None, "no such matchup to settle"
+    row.winner = "HOME" if home_takes >= 5 else "AWAY"
+    row.home_categories_won, row.home_categories_lost = home_takes, 9 - home_takes
+    session.execute(MatchupTeamStat.__table__.delete().where(MatchupTeamStat.matchup_id == row.id))
+    categories = session.scalars(
+        select(LeagueSeasonCategory)
+        .where(LeagueSeasonCategory.league_season_id == period.league_season_id)
+        .order_by(LeagueSeasonCategory.position)
+    ).all()
+    for position, category in enumerate(categories):
+        home_won = position < home_takes
+        for team, won in ((home, home_won), (away, not home_won)):
+            session.add(
+                MatchupTeamStat(
+                    matchup_id=row.id,
+                    team_id=team.id,
+                    abbreviation=category.abbreviation,
+                    value=1.0,
+                    result="WIN" if won else "LOSS",
+                    league_season_category_id=category.id,
+                )
+            )
+    session.flush()
+
+
+def test_the_final_table_is_category_share_where_matchups_say_otherwise(
+    session: Session,
+) -> None:
+    """The bug, pinned. Alpha wins two matchups five to four and loses the
+    third nought to nine: two matchups, ten categories of twenty-seven.
+    Bravo wins one matchup nine to nothing. By matchups Alpha is ahead of
+    Bravo; by categories -- how a head-to-head each-category league is
+    ranked -- Bravo is ahead of Alpha."""
+    ls, teams, windows = build(session)
+    alpha, bravo, charlie, delta = teams
+    # Round robin: period 1 Alpha-Bravo, Charlie-Delta; 2 Alpha-Charlie,
+    # Bravo-Delta; 3 Alpha-Delta, Bravo-Charlie.
+    _split(session, windows[0], alpha, bravo, home_takes=5)
+    _split(session, windows[0], charlie, delta, home_takes=5)
+    _split(session, windows[1], alpha, charlie, home_takes=5)
+    _split(session, windows[1], bravo, delta, home_takes=9)
+    _split(session, windows[2], alpha, delta, home_takes=0)
+    _split(session, windows[2], bravo, charlie, home_takes=4)
+    session.flush()
+    # Categories: Alpha 10-17, Bravo 17-10, Charlie 14-13, Delta 13-14.
+    # Matchups:   Alpha 2-1,  Bravo 1-2,  Charlie 2-1,  Delta 1-2.
+    table = final_table(session, ls, 10_000)
+    assert table == tuple(team.espn_team_id for team in (bravo, charlie, delta, alpha)), (
+        "category win share, not matchups won"
+    )
+
+
+def test_a_tie_of_share_goes_to_the_team_that_won_the_meeting(session: Session) -> None:
+    """Bravo and Charlie both finish 14-13; Charlie beat Bravo five to four,
+    so Charlie is ahead, whatever categories won alone would say."""
+    ls, teams, windows = build(session)
+    alpha, bravo, charlie, delta = teams
+    _split(session, windows[0], alpha, bravo, home_takes=4)  # Bravo 5-4
+    _split(session, windows[0], charlie, delta, home_takes=4)  # Charlie 4-5
+    _split(session, windows[1], alpha, charlie, home_takes=4)  # Charlie 5-4
+    _split(session, windows[1], bravo, delta, home_takes=5)  # Bravo 5-4
+    _split(session, windows[2], alpha, delta, home_takes=9)
+    _split(session, windows[2], bravo, charlie, home_takes=4)  # Charlie 5-4
+    session.flush()
+    table = final_table(session, ls, 10_000)
+    # Alpha 17-10; Bravo 14-13; Charlie 14-13; Delta 9-18.
+    assert table == tuple(team.espn_team_id for team in (alpha, charlie, bravo, delta))
+
+
+def _certain(home: int, away: int, home_takes: int) -> projected_module._Draw:
+    """A simulated week whose result is known: `home_takes` of nine."""
+    cumulative = tuple(0.0 if taken < home_takes else 1.0 for taken in range(10))
+    return projected_module._Draw(home=home, away=away, cumulative=cumulative, contested=9)
+
+
+def test_the_simulated_table_is_seeded_by_the_rule() -> None:
+    """Nothing left to play and the banked record decides: team 0 has the
+    matchups, team 1 the categories. The category league seeds team 1 first
+    every time; a most-categories league seeds team 0 first."""
+    categories = ranking_rule(LeagueSeason(scoring_type="H2H_CATEGORY", raw_settings={}))
+    matchups = ranking_rule(LeagueSeason(scoring_type="H2H_MOST_CATEGORIES", raw_settings={}))
+    banked_matchups = [(3, 0, 0), (1, 2, 0)]
+    banked_categories = [(15.0, 12.0), (18.0, 9.0)]
+    by_categories, _ = projected_module._simulate(
+        [], banked_matchups, banked_categories, teams=2, n_sims=50, seed=1, rule=categories
+    )
+    by_matchups, _ = projected_module._simulate(
+        [], banked_matchups, banked_categories, teams=2, n_sims=50, seed=1, rule=matchups
+    )
+    assert by_categories == [[0.0, 1.0], [1.0, 0.0]]
+    assert by_matchups == [[1.0, 0.0], [0.0, 1.0]]
+
+
+def test_the_simulation_reads_the_meetings_it_drew_for_a_tie_of_share() -> None:
+    """Level on share after the last week, the two are separated by their
+    record against each other: the banked meeting and the one simulated."""
+    rule = ranking_rule(LeagueSeason(scoring_type="H2H_CATEGORY", raw_settings={}))
+    # Team 0 takes the simulated week 5-4, so both end 14-13, and team 0 is
+    # 5-4 up on the meeting that decided it.
+    finishes, _ = projected_module._simulate(
+        [_certain(0, 1, 5)],
+        [(0, 1, 0), (1, 0, 0)],
+        [(9.0, 9.0), (10.0, 8.0)],
+        teams=2,
+        n_sims=20,
+        seed=1,
+        rule=rule,
+    )
+    assert finishes[0] == [1.0, 0.0]
+    # A banked meeting the other way, 9-0 to team 1, outweighs it: 5-13.
+    finishes, _ = projected_module._simulate(
+        [_certain(0, 1, 5)],
+        [(0, 1, 0), (1, 0, 0)],
+        [(9.0, 9.0), (10.0, 8.0)],
+        teams=2,
+        n_sims=20,
+        seed=1,
+        rule=rule,
+        banked_meetings={(0, 1): (0.0, 9.0, 0.0), (1, 0): (9.0, 0.0, 0.0)},
+    )
+    assert finishes[0] == [0.0, 1.0]
+
+
+def test_the_rule_does_not_move_the_simulated_matchup_record() -> None:
+    """The draws come in the same sequence whatever the order, so the mean
+    matchup record is the same number under either rule -- what makes the
+    per-team figures byte-identical across the ranking revision."""
+    categories = ranking_rule(LeagueSeason(scoring_type="H2H_CATEGORY", raw_settings={}))
+    matchups = ranking_rule(LeagueSeason(scoring_type="H2H_MOST_CATEGORIES", raw_settings={}))
+    coin = tuple(projected_module._category_wins([0.5] * 9))
+    draws = [
+        projected_module._Draw(home=0, away=1, cumulative=coin, contested=9),
+        projected_module._Draw(home=2, away=3, cumulative=coin, contested=9),
+        projected_module._Draw(home=0, away=2, cumulative=coin, contested=9),
+        projected_module._Draw(home=1, away=3, cumulative=coin, contested=9),
+    ]
+    args = ([(1, 0, 0)] * 4, [(5.0, 4.0)] * 4)
+    one = projected_module._simulate(draws, *args, teams=4, n_sims=500, seed=7, rule=categories)
+    two = projected_module._simulate(draws, *args, teams=4, n_sims=500, seed=7, rule=matchups)
+    assert one[1] == two[1]

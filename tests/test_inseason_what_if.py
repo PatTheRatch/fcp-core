@@ -30,9 +30,18 @@ manager can act on, in the house style of docs/trades.md section 10.
 from collections.abc import Iterator, Mapping
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
+from app.db.models import (
+    LeagueSeason,
+    LeagueSeasonCategory,
+    Matchup,
+    MatchupPeriod,
+    MatchupTeamStat,
+    Player,
+    Team,
+)
 from app.inseason.projected import project_standings
 from app.inseason.what_if import Change, trade_finishes, what_if
 from app.pickups.judge import Standard
@@ -142,12 +151,16 @@ def _man(
     return who
 
 
-def build(session: Session, *, playoffs: bool = False) -> dict[str, object]:
+def build(
+    session: Session, *, playoffs: bool = False, settled: bool | None = None
+) -> dict[str, object]:
     """Four teams of three, a settled first week, and two men on the wire.
 
     `playoffs` adds a fourth matchup period, flagged as the playoff round, so
     the cases about a team that has already won its place have playoff weeks
     to be about. Every other case leaves it off and reads exactly as before.
+    `settled` (on with `playoffs`) gives the first two weeks real category
+    results, which is what a case asked on the last regular week reads.
     """
     stored = PERIODS + 1 if playoffs else PERIODS
     ls, teams, periods = league_season(
@@ -180,6 +193,16 @@ def build(session: Session, *, playoffs: bool = False) -> dict[str, object]:
     # meet, which is what the bracket does and what `Replay` would read.
     for window in playoff_rounds:
         matchup(session, window, teams[0], teams[1])
+    if playoffs if settled is None else settled:
+        # The lock cases are asked on the last regular week, with the first two
+        # settled. The table is ordered by the category record (the league is
+        # head to head, each category), so those two weeks carry real category
+        # results: the home side took all nine each time.
+        for window in regular[:2]:
+            for row in session.scalars(
+                select(Matchup).where(Matchup.matchup_period_id == window.id)
+            ).all():
+                _decide(session, row, teams)
     days = SEASON_DAYS + ([] if not playoffs else list(range(PERIODS * 7 + 1, stored * 7 + 1)))
     for pro_team in (10, 20, 30, 40, 50):
         games(session, pro_team, days, season=SEASON)
@@ -216,6 +239,39 @@ def build(session: Session, *, playoffs: bool = False) -> dict[str, object]:
         on_the_wire(session, ls, who[name])
     session.flush()
     return {"ls": ls, "teams": teams, "periods": periods, "who": who}
+
+
+def _decide(session: Session, row: Matchup, teams: list[Team]) -> None:
+    """Every category of a settled matchup to the home side, nine to nothing."""
+    categories = session.scalars(
+        select(LeagueSeasonCategory).where(
+            LeagueSeasonCategory.league_season_id == teams[0].league_season_id
+        )
+    ).all()
+    row.home_categories_won, row.home_categories_lost, row.categories_tied = 9, 0, 0
+    for team_id, result in ((row.home_team_id, "WIN"), (row.away_team_id, "LOSS")):
+        for category in categories:
+            found = session.scalar(
+                select(MatchupTeamStat).where(
+                    MatchupTeamStat.matchup_id == row.id,
+                    MatchupTeamStat.team_id == team_id,
+                    MatchupTeamStat.abbreviation == category.abbreviation,
+                )
+            )
+            if found is None:
+                session.add(
+                    MatchupTeamStat(
+                        matchup_id=row.id,
+                        team_id=team_id,
+                        abbreviation=category.abbreviation,
+                        value=0.0,
+                        result=result,
+                        league_season_category_id=category.id,
+                    )
+                )
+            else:
+                found.result = result
+    session.flush()
 
 
 def _ls(built: dict[str, object]) -> LeagueSeason:
@@ -697,9 +753,10 @@ def test_a_healthy_add_carries_no_stash_block(session: Session) -> None:
 def test_a_lock_stashing_gets_the_playoff_lens_beside_the_first_reading(
     session: Session,
 ) -> None:
-    """Alpha won the only settled week nine categories to nothing, two of four
+    """Alpha won both settled weeks nine categories to nothing, two of four
     teams make this fixture's playoffs, and on the last regular week nobody
-    can catch it: the engine puts it at 1.00, so it is a lock.
+    can catch it on the category record -- a team that ties its share has lost
+    to Alpha nine to nothing -- so the engine puts it at 1.00: a lock.
 
     The lens has to arrive **beside** the first reading and never instead of
     it: every number the page already printed is still there, and the new ones
@@ -852,7 +909,7 @@ def test_without_stored_playoff_periods_there_is_no_lens_to_print(
 ) -> None:
     """A season whose playoff rounds are not stored has no playoff weeks to
     count, so the lens says nothing rather than guessing at a window."""
-    built = build(session)
+    built = build(session, settled=True)
     _ls(built).injured_reserve_slots = 0
     _out_on_the_wire(session, built, last_played=1)
 

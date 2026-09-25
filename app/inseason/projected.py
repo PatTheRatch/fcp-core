@@ -29,7 +29,9 @@ WHAT IT DOES, IN ORDER
    record.
 6. A Monte Carlo over those per-category probabilities gives the distribution
    of finishes: playoff odds, each seed's probability, and the bye odds where
-   the format has one.
+   the format has one. Each simulated table is ordered by the league's own
+   ranking rule (`app.scoring.ranking`): in a head-to-head each-category
+   league, this one, that is category win share, not matchups won.
 
 THE VARIANCE MODEL, WHICH IS THE ONE JUDGEMENT CALL HERE
 
@@ -117,13 +119,20 @@ from app.pickups.projection import per_game_line
 from app.pickups.state import RosteredPlayer, build_players, load_team_week, season_calendar
 from app.pickups.stream import Contender, head_to_head, seat, weight
 from app.scoring.lines import CategoryLine
+from app.scoring.ranking import (
+    RankingRule,
+    Record,
+    category_meetings,
+    lookup,
+    matchup_records,
+    ranking_rule,
+)
 
 __all__ = [
     "BYE_NOTE",
     "NO_BRACKET",
     "N_SIMS",
     "SEED",
-    "TIEBREAK",
     "Projection",
     "TeamOutlook",
     "Week",
@@ -143,14 +152,14 @@ N_SIMS = 10_000
 #: of a more meaningful constant.
 SEED = 3853870
 
-#: How the table is ordered, in the words the page prints. It is the order
-#: `app.api.leagues.get_standings` and `app.digest._place_of` both put teams
-#: in, and this league's `raw_settings.schedule.playoffSeedingRule` is
-#: `H2H_RECORD`, which is the first term of it. ESPN does not publish what
-#: breaks a tie beyond that, so an exact tie is broken at random, once per
-#: simulated season, rather than by team id -- which would hand the same team
-#: the better seed in every one of ten thousand draws.
-TIEBREAK = "matchups won, then fewest lost, then categories won"
+# How the table is ordered is not a constant here any more: it is the
+# league's ranking rule (`app.scoring.ranking.ranking_rule`), read off the
+# scoring type, and `Projection.tiebreak` carries its words. Until 2026-09-25
+# this module ordered by matchups won, which is not how a head-to-head
+# each-category league is ranked (docs/projected_record.md, revision R6).
+# Whatever the rule leaves level is broken at random, once per simulated
+# season, rather than by team id -- which would hand the same team the better
+# seed in every one of ten thousand draws.
 
 #: What the payload says when the playoff rounds were left out.
 NO_BRACKET = (
@@ -425,19 +434,28 @@ class _Draw:
 def _simulate(
     draws: Sequence[_Draw],
     banked_matchups: Sequence[tuple[int, int, int]],
-    banked_categories: Sequence[float],
+    banked_categories: Sequence[tuple[float, float]],
     *,
     teams: int,
     n_sims: int,
     seed: int,
+    rule: RankingRule,
+    banked_meetings: Mapping[tuple[int, int], tuple[float, float, float]] | None = None,
 ) -> tuple[list[list[float]], list[tuple[float, float, float]]]:
     """Seed probabilities per team, and the mean final matchup record.
 
     Each simulated season plays every remaining matchup once, adds the
-    banked record, and orders the table by `TIEBREAK`. An exact tie on all
-    three terms is broken by a number drawn per team per season, because
-    ESPN does not publish what breaks it and ordering by team id would hand
-    the same team the better seed ten thousand times running.
+    banked record, and orders the table by the league's ranking `rule`: in a
+    category league, the category record -- won and lost, a banked tie
+    already counted half to each -- and, among teams level on share, their
+    category record against each other, banked meetings plus the ones this
+    season drew. Whatever the rule leaves level is broken by a number drawn
+    per team per season, because ordering by team id would hand the same
+    team the better seed ten thousand times running.
+
+    The random numbers are drawn in the same sequence whatever the rule, one
+    per matchup and then one per team, so the simulated matchup record does
+    not depend on how the table is ordered.
     """
     counts = [[0] * teams for _ in range(teams)]
     total_won = [0.0] * teams
@@ -445,15 +463,26 @@ def _simulate(
     total_tied = [0.0] * teams
     rng = random.Random(seed)
     order = list(range(teams))
+    met_before = dict(banked_meetings or {})
+    # Which draws each ordered pair met in, and whether the first was at home.
+    pairs: dict[tuple[int, int], list[tuple[int, bool]]] = {}
+    for at, draw in enumerate(draws):
+        pairs.setdefault((draw.home, draw.away), []).append((at, True))
+        pairs.setdefault((draw.away, draw.home), []).append((at, False))
     for _ in range(n_sims):
         won = [record[0] for record in banked_matchups]
         lost = [record[1] for record in banked_matchups]
         tied = [record[2] for record in banked_matchups]
-        categories = list(banked_categories)
-        for draw in draws:
+        categories = [record[0] for record in banked_categories]
+        conceded = [record[1] for record in banked_categories]
+        takes = [0] * len(draws)
+        for at, draw in enumerate(draws):
             taken = bisect.bisect_left(draw.cumulative, rng.random())
+            takes[at] = taken
             categories[draw.home] += taken
+            conceded[draw.home] += draw.contested - taken
             categories[draw.away] += draw.contested - taken
+            conceded[draw.away] += taken
             if taken * 2 > draw.contested:
                 won[draw.home] += 1
                 lost[draw.away] += 1
@@ -464,7 +493,25 @@ def _simulate(
                 tied[draw.home] += 1
                 tied[draw.away] += 1
         coin = [rng.random() for _ in order]
-        table = sorted(order, key=lambda i: (-won[i], lost[i], -categories[i], coin[i]))
+
+        def met(a: int, b: int, takes: list[int] = takes) -> tuple[float, float, float]:
+            w, lo, ti = met_before.get((a, b), (0.0, 0.0, 0.0))
+            for at, at_home in pairs.get((a, b), ()):
+                mine = takes[at] if at_home else draws[at].contested - takes[at]
+                w, lo = w + mine, lo + draws[at].contested - mine
+            return w, lo, ti
+
+        table = [
+            record.team
+            for record in rule.order(
+                [
+                    Record(i, categories[i], conceded[i], 0.0, won[i], lost[i], tied[i])
+                    for i in order
+                ],
+                met,
+                coin.__getitem__,
+            )
+        ]
         for place, team in enumerate(table):
             counts[team][place] += 1
         for team in order:
@@ -488,65 +535,35 @@ def _banked_matchups(
 ) -> dict[int, tuple[int, int, int]]:
     """Each team's matchup record in regular-season weeks already finished.
 
-    Counted the way `app.api.leagues.get_standings` counts it -- a bye is not
-    a win -- and bounded at `today`, so no week still being played is in it.
+    `app.scoring.ranking.matchup_records`, the count the standings route
+    makes -- a bye is not a win -- bounded at `today`, so no week still
+    being played is in it.
     """
-    rows = session.execute(
-        select(Matchup.home_team_id, Matchup.away_team_id, Matchup.winner)
-        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
-        .where(
-            MatchupPeriod.league_season_id == league_season.id,
-            MatchupPeriod.is_playoff.is_(False),
-            MatchupPeriod.final_scoring_period < today,
-            Matchup.away_team_id.is_not(None),
-        )
-    ).all()
-    out: dict[int, tuple[int, int, int]] = {}
-
-    def add(team_id: int, won: int, lost: int, tied: int) -> None:
-        have = out.get(team_id, (0, 0, 0))
-        out[team_id] = (have[0] + won, have[1] + lost, have[2] + tied)
-
-    for home, away, winner in rows:
-        if away is None:
-            continue
-        if winner == "HOME":
-            add(int(home), 1, 0, 0)
-            add(int(away), 0, 1, 0)
-        elif winner == "AWAY":
-            add(int(away), 1, 0, 0)
-            add(int(home), 0, 1, 0)
-        elif winner == "TIE":
-            add(int(home), 0, 0, 1)
-            add(int(away), 0, 0, 1)
-    return out
+    return matchup_records(session, league_season, before=today)
 
 
 def final_table(session: Session, league_season: LeagueSeason, today: int) -> tuple[int, ...]:
-    """The league's order as it stands on `today`, by `TIEBREAK`: ESPN team ids.
+    """The league's order as it stands on `today`, by its ranking rule: ESPN team ids.
 
     The settled record alone, with nothing projected, ordered the way the
-    simulation orders a finished season. A caller past the last day of the
-    season gets the table as it finally stood, which is what the calibration
-    measures its playoff odds against.
+    simulation orders a finished season: in a category league, category win
+    share, then the tied teams' record against each other, then categories
+    won, then fewest lost. A caller past the last day of the season gets the
+    table as it finally stood, which is what the calibration measures its
+    playoff odds against. A complete tie stays in ESPN team id order.
     """
+    rule = ranking_rule(league_season)
     matchups = _banked_matchups(session, league_season, today)
     teams = session.scalars(
         select(Team).where(Team.league_season_id == league_season.id).order_by(Team.espn_team_id)
     ).all()
-    categories = {
-        team.id: banked_record(session, league_season, int(team.espn_team_id), today)[0]
-        for team in teams
-    }
-    order = sorted(
-        teams,
-        key=lambda team: (
-            -matchups.get(team.id, (0, 0, 0))[0],
-            matchups.get(team.id, (0, 0, 0))[1],
-            -categories[team.id],
-        ),
-    )
-    return tuple(int(team.espn_team_id) for team in order)
+    records = []
+    for team in teams:
+        won, lost = banked_record(session, league_season, int(team.espn_team_id), today)
+        records.append(Record(team.id, won, lost, 0.0, *matchups.get(team.id, (0, 0, 0))))
+    meetings = lookup(category_meetings(session, league_season, before=today))
+    by_row = {team.id: team for team in teams}
+    return tuple(int(by_row[record.team].espn_team_id) for record in rule.order(records, meetings))
 
 
 def _source_note(season: int, distributions: Sequence[CategoryDistribution]) -> str:
@@ -598,6 +615,7 @@ def project_standings(
     `today`, and when `rosters` names a team this season does not have.
     """
     _first, last, today = horizon(session, league_season, today)
+    rule = ranking_rule(league_season)
     season = int(league_season.season)
     calendar = season_calendar(session, season)
     as_of = calendar.date_of(today) if calendar is not None else None
@@ -741,13 +759,20 @@ def project_standings(
         for team in teams
     }
     matchups = _banked_matchups(session, league_season, today)
+    meetings = {
+        (index[a], index[b]): (float(w), float(lo), float(ti))
+        for (a, b), (w, lo, ti) in category_meetings(session, league_season, before=today).items()
+        if a in index and b in index
+    }
     finishes, records = _simulate(
         draws,
         [matchups.get(team.id, (0, 0, 0)) for team in teams],
-        [banked[team.id][0] for team in teams],
+        [banked[team.id] for team in teams],
         teams=len(teams),
         n_sims=n_sims,
         seed=seed,
+        rule=rule,
+        banked_meetings=meetings,
     )
 
     playoff_teams = int(league_season.playoff_team_count or 0)
@@ -780,7 +805,7 @@ def project_standings(
         bye_count=byes,
         playoffs_projected=not regular,
         playoff_note=NO_BRACKET if regular else "",
-        tiebreak=TIEBREAK,
+        tiebreak=rule.words,
         n_sims=n_sims,
         seed=seed,
         source_note=_source_note(season, distributions),

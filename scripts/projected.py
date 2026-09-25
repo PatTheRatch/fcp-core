@@ -92,7 +92,12 @@ def _table(report: Projection) -> None:
     print(f"  {len(report.periods)} weeks left; ordered by {report.tiebreak}")
     print()
     bye = "   BYE" if report.bye_count else ""
-    print(f"{'':3}{'team':<30}{'now':>10}{'projected':>12}{'categories':>14}{'playoffs':>10}{bye}")
+    # The categories lead, because a category league is ranked on them; the
+    # matchup record is the last column, a figure beside the order.
+    print(
+        f"{'':3}{'team':<30}{'cats now':>12}{'proj. cats':>14}{'playoffs':>10}{bye}"
+        f"{'matchups':>10}{'proj.':>11}"
+    )
     for place, team in enumerate(report.teams, start=1):
         won, lost, tied = team.banked_matchups
         now = f"{won}-{lost}" + (f"-{tied}" if tied else "")
@@ -100,8 +105,9 @@ def _table(report: Projection) -> None:
         odds = f"{team.playoff_odds * 100:.0f}%"
         bye_odds = f"{team.bye_odds * 100:5.0f}%" if team.bye_odds is not None else ""
         print(
-            f"{place:<3}{team.name[:30]:<30}{now:>10}{projected:>12}"
+            f"{place:<3}{team.name[:30]:<30}{_record(team.banked):>12}"
             f"{_record(team.projected_record):>14}{odds:>10}{bye_odds:>7}"
+            f"{now:>10}{projected:>11}"
         )
     print()
     if report.playoff_note:
