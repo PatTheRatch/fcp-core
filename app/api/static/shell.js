@@ -284,6 +284,7 @@ function accountHtml(ctx, where) {
   const { me } = ctx;
   const items = [groupHtml(escape(me.email))];
   items.push(itemHtml("/account/projections", "Projections", where.section === "projections"));
+  items.push(itemHtml("/design", "The design language", where.section === "design"));
   if (me.mode === "single") {
     items.push(groupHtml("Single mode: nobody signs in"));
   } else {
@@ -301,6 +302,11 @@ function accountHtml(ctx, where) {
     `<ul class="ws-navlist">${links}</ul>`;
 }
 
+/** Signed out, on the one open page that draws the shell: the way in. */
+const signedOutHtml = () =>
+  `<p class="ws-group">Signed out</p>` +
+  `<ul class="ws-navlist">${navHtml("/sign-in?next=%2Fdesign", "Sign in", false)}</ul>`;
+
 /** The words in the top bar at phone width: where this page is. */
 function whereWords(ctx, where) {
   const team = TEAM_SECTIONS.find(([key]) => where.section === `team-${key}`);
@@ -309,6 +315,7 @@ function whereWords(ctx, where) {
   if (league) return league[1];
   const account = ACCOUNT_SECTIONS.find(([key]) => key === where.section);
   if (account) return account[1];
+  if (where.section === "design") return "The design language";
   if (where.section === "claim") return "Claim your team";
   return "";
 }
@@ -418,8 +425,12 @@ function wirePhoneNav() {
 /* ---- what the shell knows ---------------------------------------------- */
 
 async function shellContext(where) {
-  const [me, listed] = await Promise.all([get("/auth/me"), get("/leagues")]);
-  if (!me.ok) return null;
+  const open = where.section === "design";
+  const [me, listed] = await Promise.all([
+    get("/auth/me", { signedOutOk: open }),
+    get("/leagues", { signedOutOk: open }),
+  ]);
+  if (!me.ok) return open && me.status === 401 ? { signedOut: true } : null;
   const claims = new Map((me.body.leagues || []).map((l) => [l.espn_league_id, l]));
   // /leagues is the viewer's leagues (every one in single mode); a claim in
   // a league he is no longer a member of opens nothing, so it is not listed.
@@ -612,7 +623,7 @@ document.addEventListener("keydown", (event) => {
    `cardName(id, text)` is the markup for a name that opens one; call
    `wireCards(root)` after any innerHTML that writes some. `CARD_SCOPE`
    says which league, season and day the card is read in when the page's
-   own address does not. */
+   own address does not (the design page). */
 
 /** One fetch per player per page, kept for as long as the page is open. */
 const CARDS = new Map();
@@ -870,6 +881,10 @@ async function startShell() {
   if (typeof SCENARIO !== "undefined") SCENARIO.subscribe(drawScenario);
   const ctx = await shellContext(where);
   if (!ctx || !main || !account) return ctx;
+  if (ctx.signedOut) {
+    main.innerHTML = signedOutHtml();
+    return ctx;
+  }
   if (ctx.league && where.league !== null) rememberLeague(ctx.league.id);
   main.innerHTML = railHtml(ctx, where);
   account.innerHTML = accountHtml(ctx, where);

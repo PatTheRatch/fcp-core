@@ -133,6 +133,8 @@ PAGES = (
     "/pages/static/pages.css",
     "/pages/static/pages.js",
     "/pages/static/shell.js",
+    "/pages/static/scenario.js",
+    "/design",
 )
 
 

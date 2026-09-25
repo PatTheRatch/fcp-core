@@ -32,6 +32,7 @@ const $ = (id) => document.getElementById(id);
  *    /l/{league}/{season}/team/{team}/{week|season|moves}
  *    /account/{connections|projections|alerts}
  *    /pages/claim/{league}/{season}
+ *    /design
  *
  *  plus ?today= (a scoring period), ?period= (a matchup period, This week
  *  only) and ?me= (whose team is ours, by name, for the context route). */
@@ -66,6 +67,8 @@ function place() {
     where.section = "claim";
   } else if (parts[0] === "account") {
     where.section = parts[1] || null;
+  } else if (parts[0] === "design") {
+    where.section = "design";
   }
   return where;
 }
@@ -110,6 +113,11 @@ async function get(url, options) {
   const quiet = Boolean(options && options.quiet);
   const response = await fetch(url, { headers: { accept: "application/json" } });
   if (response.ok) return { ok: true, status: response.status, body: await response.json() };
+  // An open page (/design) asks who is there without sending a stranger to
+  // sign in: signed out is an answer it draws, not an error.
+  if (response.status === 401 && options && options.signedOutOk) {
+    return { ok: false, status: 401, detail: "Signed out" };
+  }
   if (response.status === 401) {
     toSignIn();
     return { ok: false, status: 401, detail: "Signing in…" };
@@ -720,6 +728,67 @@ const statusMark = (status) => {
 /** "BKN · SF": a man's team and position, the mark this site uses for him. */
 const bbMark = (player) =>
   [player && player.pro_team, player && player.position].filter(Boolean).join(" · ");
+
+/**
+ * One move from a week report, in the owner's format: the man and the
+ * number, then DROP, GAIN and COST, then the facts and Inspect. GAIN and
+ * COST are the categories whose chance the move changes by half a point or
+ * more, in points (`move.moved`, the report's own). The label is the bar's
+ * and it hides nothing: a move under the bar is drawn the same way.
+ *
+ * @param move   a `recommended` or `moves` entry of `pickups/stream`
+ * @param report the report it came from, for the bar
+ */
+function moveBlockHtml(move, report) {
+  const add = move.add || {};
+  const gains = (move.moved || []).filter((s) => s.delta >= 0.005);
+  const costs = (move.moved || []).filter((s) => s.delta <= -0.005);
+  const shifts = (list) =>
+    list.length
+      ? list
+          .map(
+            (s) =>
+              `<span>${escape(s.abbreviation)} <span class="ws-data ${s.delta > 0 ? "ws-pos" : "ws-neg"}">` +
+              `${points(s.delta)}</span></span>`,
+          )
+          .join("")
+      : `<span class="faint">none by half a point</span>`;
+  const out = move.drop
+    ? [
+        "Drop",
+        `${cardName(move.drop.espn_player_id, escape(move.drop.name))}` +
+          ` <span class="ws-bb">${escape(bbMark(move.drop))}</span>`,
+      ]
+    : move.to_ir
+      ? ["To IR", cardName(move.to_ir.espn_player_id, escape(move.to_ir.name))]
+      : ["Into", "the open place"];
+  const bid = move.bid && move.bid.sample ? `bid $${move.bid.amount}` : "";
+  const facts = [
+    `${move.add_starts} of ${add.games_remaining} games left`,
+    bid,
+    move.fills_empty_day ? "fills an empty day" : "",
+  ].filter(Boolean);
+  const label = move.clears_hurdle
+    ? `<span class="ws-tag accent">${escape(WORTH_A_LOOK.toLowerCase())}</span>`
+    : `<span class="ws-tag">under the ${fixed(report ? report.hurdle : null, 2)} bar</span>`;
+  const tone = move.net >= 0.005 ? "ws-pos" : move.net <= -0.005 ? "ws-neg" : "";
+  return (
+    `<article class="ws-move">` +
+    `<div class="ws-move-head"><span class="ws-move-name">` +
+    `${cardName(add.espn_player_id, escape(add.name))}</span>` +
+    `<span class="ws-bb">${escape(bbMark(add))}</span>` +
+    `<span class="ws-move-net ${tone}">${minus(signed(move.net, 2))}<small>CATEGORIES</small></span>` +
+    `</div>` +
+    `<dl class="ws-move-rows">` +
+    `<dt>${escape(out[0].toUpperCase())}</dt><dd>${out[1]}</dd>` +
+    `<dt>GAIN</dt><dd>${shifts(gains)}</dd>` +
+    `<dt>COST</dt><dd>${shifts(costs)}</dd>` +
+    `</dl>` +
+    `<div class="ws-move-foot"><span class="ws-bb">${escape(facts.join(" · "))}</span>${label}` +
+    `<button type="button" class="ws-btn sm quiet" data-inspect="move">Inspect →</button></div>` +
+    `</article>`
+  );
+}
 
 /** The page could not be drawn: say what happened, in the page, not the console. */
 function fail(message) {

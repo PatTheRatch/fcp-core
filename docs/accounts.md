@@ -151,6 +151,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /auth/callback` | open | the link itself is the credential |
 | `POST /auth/sign-out` | open | acts only on the caller's own cookie |
 | `GET /pages/static/{name}` | open | the shared CSS and JS, no data |
+| `GET /design` | open | the design language (docs/design_system.md); the file carries no data, and its specimens read league routes behind their own checks, so signed out it draws the language and no numbers |
 | `GET /` | open | the landing page signed out; signed in, the shell's home, which finds his league in the browser; no data either way |
 | `GET /auth/me` | signed in | the caller's own account |
 | `GET /me/alerts` | signed in | where the digest goes: the server's own recipients, to its owner only |

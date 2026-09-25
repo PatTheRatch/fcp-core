@@ -203,6 +203,9 @@ OPEN_ROUTES = (
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    # The design language (docs/design_system.md): a static file with no data
+    # in it. Its specimens read league routes, each behind its own check.
+    "GET /design",
     # The OAuth front door (docs/mcp.md). Each of these is open because the
     # spec says so and because none of them gives anything away: the metadata
     # describes the server, registering stores an app's name and gets no

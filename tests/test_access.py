@@ -651,6 +651,9 @@ OPEN = {
     ("GET", "/auth/callback"),
     ("POST", "/auth/sign-out"),
     ("GET", "/pages/static/{name}"),
+    # The design language: a static file with no data in it; its specimens
+    # read league routes, each behind its own check (docs/design_system.md).
+    ("GET", "/design"),
     # The landing page signed out; signed in, a page that goes to his league.
     ("GET", "/"),
     # The OAuth front door (docs/mcp.md, tests/test_oauth.py). Open because

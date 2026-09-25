@@ -48,7 +48,7 @@ from tests.test_access import (  # noqa: F401
 #: What answers a stranger. Every one of them either says nothing about
 #: anybody (`/health`), is the way in (`/sign-in`, the two auth posts, the
 #: callback, whose link is itself the credential), or carries no data
-#: (`/`, the shared stylesheet and scripts).
+#: (`/`, `/design`, the shared stylesheet and scripts).
 #: The OAuth front door is open for the same reason: the metadata describes
 #: the server, registering gets no secret, and the token and revocation
 #: endpoints are held to a one-time code with PKCE or to holding the token
@@ -62,6 +62,7 @@ OPEN = {
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    "GET /design",
     "GET /.well-known/oauth-authorization-server",
     "POST /oauth/register",
     "POST /oauth/token",

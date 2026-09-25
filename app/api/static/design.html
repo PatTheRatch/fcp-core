@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("fcp-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<title>Design language · {{brand}}</title>
+<meta name="description" content="The workstation's tokens, voices, colours, shell, drawer, table and controls, on a league's stored season.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Oswald:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<main class="ws-main ws-doc" id="doc">
+
+<header class="ws-doc-head">
+  <p class="ws-k">{{brand}} · the design language</p>
+  <h1 class="ws-doc-title">A roster-planning workstation</h1>
+  <p class="ws-p">Serious analytical software for people who manage fantasy basketball
+    competitively. Basketball gives it personality; forecasting and scenario analysis give it
+    purpose. Every specimen with a number in it reads that number from a real route on a
+    league's stored season, on one day: <span class="ws-data" id="doc-scope">reading which league
+    is yours…</span></p>
+  <p class="warnline" id="failed" hidden></p>
+</header>
+
+<section class="ws-sect" id="tokens" aria-labelledby="tokens-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="tokens-h">Tokens</h2>
+    <span class="ws-k">read from the stylesheet, both themes</span></div>
+  <p class="ws-p">Every colour on the site is one of these. Light is designed first and dark on its
+    own, with the same three surfaces and the same three steps of text, so the hierarchy reads
+    the same in either. Until you choose, the page follows your system.</p>
+  <div class="ws-scr"><div class="ws-scr-frame" style="--scr-h:none" tabindex="0" role="region"
+    aria-label="Colour tokens"><table class="ws-table" id="token-table">
+    <caption class="sr">Colour tokens in both themes</caption>
+    <thead><tr><th class="l" scope="col">Token</th><th class="l" scope="col">What it is for</th>
+      <th class="l" scope="col">Light</th><th class="l" scope="col">Dark</th></tr></thead>
+    <tbody></tbody></table></div></div>
+  <div class="ws-spec-grid" style="margin-top:12px">
+    <div class="ws-spec"><span class="ws-k">Space</span>
+      <p class="ws-bb">4 · 8 · 12 · 16 · 24 · 32 px</p></div>
+    <div class="ws-spec"><span class="ws-k">Radius</span>
+      <p class="ws-bb">4 control · 6 container · 0 table</p></div>
+    <div class="ws-spec"><span class="ws-k">Type</span>
+      <p class="ws-bb">10.5 · 11 · 12 · 13 · 14 · 16 · 20 px</p></div>
+    <div class="ws-spec"><span class="ws-k">Row</span>
+      <p class="ws-bb">30 px screener · 224 px rail · 400 px drawer</p></div>
+  </div>
+  <div class="t-light ws-probe" id="probe-light" aria-hidden="true"></div>
+  <div class="t-dark ws-probe" id="probe-dark" aria-hidden="true"></div>
+</section>
+
+<section class="ws-sect" id="voices" aria-labelledby="voices-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="voices-h">Three voices</h2>
+    <span class="ws-k">one job each</span></div>
+  <div class="ws-spec-grid three">
+    <div class="ws-spec">
+      <span class="ws-k">The interface · IBM Plex Sans</span>
+      <p class="ws-voice-ui" id="voice-ui">Add a man off the wire, drop one who is not playing,
+        and see what it does to this week, the weeks after it and the finish.</p>
+      <p class="ws-note">Every label, sentence and control. 13–14 px in a row, 400 and 500, 600
+        for a name.</p>
+    </div>
+    <div class="ws-spec">
+      <span class="ws-k">The accent · Oswald</span>
+      <p class="ws-voice-accent"><span class="ws-label">Matchup</span> <span class="ws-label">Roster</span>
+        <span class="ws-label">The wire</span> <span class="ws-label">Scenario</span>
+        <span class="ws-label">Standings</span></p>
+      <p class="ws-note">A major section's label, in capitals, and nothing smaller than that: never
+        every heading, never a sentence.</p>
+    </div>
+    <div class="ws-spec">
+      <span class="ws-k">The data · IBM Plex Mono, tabular</span>
+      <table class="ws-voice-data" id="voice-data"><tbody></tbody></table>
+      <p class="ws-note">Every figure. Every column of numbers is tabular, so a column reads
+        down.</p>
+    </div>
+  </div>
+</section>
+
+<section class="ws-sect" id="colour" aria-labelledby="colour-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="colour-h">Four colours that mean something</h2>
+    <span class="ws-k">everything else is grey</span></div>
+  <div class="ws-spec-grid four">
+    <div class="ws-spec ws-sw-card"><i class="ws-sw" style="background:var(--accent)"></i>
+      <span class="ws-k">Orange · Box Out's</span>
+      <p class="ws-note">Scarce. The page you are on, the scenario in view, the row being
+        compared, at most one series in a chart. Never a button, never a status.</p></div>
+    <div class="ws-spec ws-sw-card"><i class="ws-sw" style="background:var(--pos)"></i>
+      <span class="ws-k">Green · favourable</span>
+      <p class="ws-note">A change that helps <b>your</b> roster. Never "a good player".</p></div>
+    <div class="ws-spec ws-sw-card"><i class="ws-sw" style="background:var(--neg)"></i>
+      <span class="ws-k">Red · unfavourable</span>
+      <p class="ws-note">A change that costs <b>your</b> roster. Never "a bad player", never an
+        injury.</p></div>
+    <div class="ws-spec ws-sw-card"><i class="ws-sw" style="background:var(--neutral)"></i>
+      <span class="ws-k">Grey · everything else</span>
+      <p class="ws-note">A status (Q, OUT), a count, a label, a change too small to call.</p></div>
+  </div>
+  <p class="ws-p" id="colour-example" style="margin-top:12px">One move, both colours:
+    <span class="faint">reading the day's report…</span></p>
+  <details class="ws-disc" id="contrast-disc">
+    <summary>Contrast of every small face, both themes <span class="ws-k" id="contrast-min"></span></summary>
+    <div class="ws-disc-body"><div id="contrast"></div></div>
+  </details>
+</section>
+
+<section class="ws-sect" id="geometry" aria-labelledby="geometry-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="geometry-h">Geometry</h2>
+    <span class="ws-k">borders and surfaces, not shadows</span></div>
+  <div class="ws-levels">
+    <div class="ws-level canvas"><span class="ws-k">canvas · the ground</span>
+      <div class="ws-level panel"><span class="ws-k">panel · 6 px, a hairline</span>
+        <div class="ws-level inset"><span class="ws-k">inset · a header, a hover, a well</span></div>
+      </div>
+      <div class="ws-level panel shares"><span class="ws-k">panels share an edge</span></div>
+    </div>
+  </div>
+  <p class="ws-p" style="margin-top:12px">A shadow is for something that genuinely sits above the
+    page: the drawer and a menu, and nothing else.</p>
+</section>
+
+<section class="ws-sect" id="shell-spec" aria-labelledby="shell-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="shell-h">Scenario</h2>
+    <span class="ws-k" id="scn-tag">the rail and the bar</span></div>
+  <p class="ws-p">The rail at the left is the live shell: your team's pages, the league's, the
+    scenario and the switcher, with the page you are on marked in orange. At a phone's width it
+    folds into the top bar's Menu. The bar at the top of this page is the live scenario bar,
+    set from a real <b>What if</b> answer: <span id="scn-what">reading it…</span> Its toggle
+    switches the panel below between the roster as it stands and the scenario; Reset clears
+    it; Inspect opens where each of its three numbers came from.</p>
+  <div id="scn-panel"></div>
+</section>
+
+<section class="ws-sect" id="move" aria-labelledby="move-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="move-h">A move</h2>
+    <span class="ws-k" id="move-tag">the day's week report</span></div>
+  <p class="ws-p">The owner's format: the man and the number, DROP, GAIN and COST as rows, the
+    facts and Inspect. GAIN and COST are the categories whose chance of being won this week the
+    move changes by half a point or more. Inspect opens how the number is worked out, in the
+    drawer.</p>
+  <div id="move-block" class="ws-move-wrap"><p class="ws-note">Reading the day's week report; it
+    searches the whole wire, so a cold server takes about half a minute.</p></div>
+</section>
+
+<section class="ws-sect" id="table" aria-labelledby="table-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="table-h">The wire</h2>
+    <span class="ws-k">the screener table</span></div>
+  <p class="ws-p">Dense rows under a header that stays put, sortable on a click, columns you can
+    put away (your choice is kept in this browser), a row that opens the drawer. The first
+    table is every move the day's report considered, its nine as glyphs; the second is the
+    day's wire with <b>FIT</b>, what each man is worth to this roster in a week.</p>
+  <div id="moves-table"><p class="ws-note">Reading the day's week report…</p></div>
+  <div id="pool-table" style="margin-top:16px"><p class="ws-note">Reading the day's wire…</p></div>
+</section>
+
+<section class="ws-sect" id="controls" aria-labelledby="controls-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="controls-h">Controls</h2>
+    <span class="ws-k">sharp, one height, both themes</span></div>
+  <div class="ws-pair" id="control-pair"></div>
+</section>
+
+<section class="ws-sect" id="basketball" aria-labelledby="bb-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="bb-h">Basketball, without pictures</h2>
+    <span class="ws-k">the abbreviation is the mark</span></div>
+  <p class="ws-p">No headshots, no silhouettes, no initials in circles. A man is his team and his
+    position; a night is who is played and when; a week is how many games and on which days.</p>
+  <div id="bb-rows"><p class="ws-note">Reading the day's lineup…</p></div>
+</section>
+
+<section class="ws-sect" id="forbidden" aria-labelledby="forbidden-h">
+  <div class="ws-sect-head"><h2 class="ws-label" id="forbidden-h">Not here</h2>
+    <span class="ws-k">and why</span></div>
+  <ul class="ws-list">
+    <li><b>Large KPI cards, giant greetings, generous whitespace.</b> A manager comes to compare;
+      a figure is read beside the figures it is compared with.</li>
+    <li><b>Gradients, glass, oversized rounded cards, pills everywhere.</b> Hierarchy is borders
+      and three surfaces; anything else is decoration.</li>
+    <li><b>Avatars, silhouettes, initials, player photographs.</b> None, ever. PHI · SG is the
+      mark.</li>
+    <li><b>Verdicts.</b> A bar labels a move and hides none; the word is "worth a look". Every
+      number's provenance is one click away, in the drawer. The other side of a deal is our
+      estimate of their side. Nothing here acts on ESPN.</li>
+  </ul>
+</section>
+
+</main>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/scenario.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* The design language, drawn on real data (docs/design_system.md).
+
+   The tokens, the voices, the geometry and the controls are drawn from the
+   stylesheet itself -- the token table reads the computed value of each one
+   in both themes, so it cannot drift from the file. Every specimen with a
+   number in it reads that number from a real route, on one stored day of
+   one season of the viewer's own league: day 52 of 2026. Nothing on this
+   page is invented, and nothing is worked out here but the contrast ratios,
+   which are arithmetic on the tokens.
+
+   Five reads, all the league's own routes behind their own checks: the
+   context (names and dates), the week report (the move, the moves table,
+   the colour example), the wire (the FIT table), the day's lineup (the
+   basketball marks), and one What if -- the report's own first move -- for
+   the scenario bar. */
+
+const DESIGN = { season: 2026, day: 52 };
+
+/* ---- the tokens --------------------------------------------------------- */
+
+const TOKENS = [
+  ["--canvas", "the ground: the rail and the page"],
+  ["--panel", "what sits on it: a table, the bar, the drawer"],
+  ["--inset", "inside a panel: a header row, a hover"],
+  ["--line", "a hairline between rows and panels"],
+  ["--line-strong", "a control's edge, a header's rule"],
+  ["--fg", "text"],
+  ["--fg-2", "secondary text"],
+  ["--fg-3", "tertiary text, labels"],
+  ["--accent", "orange: selected, current, in focus"],
+  ["--accent-text", "orange to be read at 11 px"],
+  ["--accent-wash", "the selected row, the scenario in view"],
+  ["--pos", "a change that helps your roster"],
+  ["--pos-wash", "behind a favourable change"],
+  ["--neg", "a change that costs your roster"],
+  ["--neg-wash", "behind an unfavourable change"],
+  ["--neutral", "everything else"],
+  ["--focus", "the keyboard's ring"],
+];
+
+const tokenOf = (probe, name) => getComputedStyle($(probe)).getPropertyValue(name).trim();
+
+function drawTokens() {
+  const swatch = (value) =>
+    `<span class="ws-swatch-line"><i class="ws-sw sm" style="background:${escape(value)}"></i>` +
+    `<span class="ws-data">${escape(value.toUpperCase())}</span></span>`;
+  $("token-table").querySelector("tbody").innerHTML = TOKENS.map(
+    ([name, role]) =>
+      `<tr><td class="l">${escape(name)}</td><td class="l txt">${escape(role)}</td>` +
+      `<td class="l">${swatch(tokenOf("probe-light", name))}</td>` +
+      `<td class="l">${swatch(tokenOf("probe-dark", name))}</td></tr>`,
+  ).join("");
+}
+
+/* ---- contrast: WCAG's ratio, on the tokens as the stylesheet has them ---- */
+
+function luminance(hex) {
+  const clean = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16) / 255);
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function ratio(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const TEXTS = ["--fg", "--fg-2", "--fg-3", "--accent-text", "--pos", "--neg"];
+const GROUNDS = ["--canvas", "--panel", "--inset", "--accent-wash"];
+
+function drawContrast() {
+  let worst = Infinity;
+  const table = (probe, word) => {
+    const rows = TEXTS.map((text) => {
+      const cells = GROUNDS.map((ground) => {
+        const r = ratio(tokenOf(probe, text), tokenOf(probe, ground));
+        worst = Math.min(worst, r);
+        return `<td class="${r < 4.5 ? "ws-neg" : ""}">${r.toFixed(2)}</td>`;
+      }).join("");
+      return `<tr><td class="l">${escape(text)}</td>${cells}</tr>`;
+    }).join("");
+    return (
+      `<div class="ws-scr" style="margin-bottom:12px"><div class="ws-scr-tools">` +
+      `<span class="ws-scr-cap">${word}</span></div><div class="ws-scr-frame" style="--scr-h:none">` +
+      `<table class="ws-table"><thead><tr><th class="l" scope="col">Text</th>` +
+      GROUNDS.map((g) => `<th scope="col">on ${escape(g.slice(2))}</th>`).join("") +
+      `</tr></thead><tbody>${rows}</tbody></table></div></div>`
+    );
+  };
+  $("contrast").innerHTML =
+    table("probe-light", "Light") +
+    table("probe-dark", "Dark") +
+    `<p class="ws-note">WCAG 2 ratios, worked out here from the tokens. AA for small text is 4.5.</p>`;
+  $("contrast-min").textContent = `lowest ${worst.toFixed(2)}`;
+}
+
+/* ---- the voices and the controls: the stylesheet, no data --------------- */
+
+function drawVoices() {
+  const rows = [
+    ["FG%", ".513"],
+    ["REB", "12.5"],
+    ["NET", "+0.49"],
+    ["WEEK", "−0.02"],
+  ];
+  $("voice-data").querySelector("tbody").innerHTML = rows
+    .map(([k, v]) => `<tr><th scope="row" class="ws-k">${k}</th><td class="ws-data">${v}</td></tr>`)
+    .join("");
+  $("voice-data").insertAdjacentHTML(
+    "afterend",
+    `<p class="ws-note">(These four are type specimens, not figures from the league.)</p>`,
+  );
+}
+
+function controlsHtml(which) {
+  return (
+    `<div class="ws-pair-side t-${which}"><span class="ws-k">${which}</span>` +
+    `<div class="ws-row"><button type="button" class="ws-btn primary">Run</button>` +
+    `<button type="button" class="ws-btn">Judge this trade</button>` +
+    `<button type="button" class="ws-btn quiet">Inspect →</button>` +
+    `<button type="button" class="ws-btn" disabled>Save scenario</button></div>` +
+    `<div class="ws-row"><div class="ws-seg scn" role="group" aria-label="Which roster (${which})">` +
+    `<button type="button" aria-pressed="false">Baseline</button>` +
+    `<button type="button" aria-pressed="true">Scenario</button></div>` +
+    `<div class="ws-seg" role="group" aria-label="Horizon (${which})">` +
+    `<button type="button" aria-pressed="true">Week</button>` +
+    `<button type="button" aria-pressed="false">Season</button>` +
+    `<button type="button" aria-pressed="false">Playoffs</button></div></div>` +
+    `<div class="ws-row"><label class="sr" for="sel-${which}">Trade with (${which})</label>` +
+    `<span class="ws-field sel"><select class="ws-select" id="sel-${which}">` +
+    `<option>choose a team</option><option>the other side</option></select></span>` +
+    `<label class="sr" for="find-${which}">Search players (${which})</label>` +
+    `<span class="ws-field search"><input class="ws-input" id="find-${which}" type="search" ` +
+    `placeholder="Search players"></span></div>` +
+    `<div class="ws-row"><span class="ws-tag">Q</span><span class="ws-tag">OUT</span>` +
+    `<span class="ws-tag">waivers</span><span class="ws-tag">B2B</span>` +
+    `<span class="ws-tag accent">worth a look</span><span class="ws-tag pos">REB +</span>` +
+    `<span class="ws-tag neg">PTS −</span></div>` +
+    `<details class="ws-disc"><summary>How this is worked out</summary>` +
+    `<div class="ws-disc-body ws-note">A disclosure: a real details element, the marker a sign.` +
+    `</div></details>` +
+    `</div>`
+  );
+}
+
+function drawControls() {
+  $("control-pair").innerHTML = controlsHtml("light") + controlsHtml("dark");
+  // The segmented toggles are live: one pressed at a time, in each group.
+  $("control-pair").querySelectorAll(".ws-seg").forEach((group) => {
+    group.querySelectorAll("button").forEach((button) => {
+      button.onclick = () =>
+        group.querySelectorAll("button").forEach((each) =>
+          each.setAttribute("aria-pressed", each === button ? "true" : "false"),
+        );
+    });
+  });
+}
+
+/* ---- the specimens on real data ----------------------------------------- */
+
+let CTX = null;
+let CONTEXT = null;
+let REPORT = null;
+let WHATIF = null;
+
+/** A day as its weekday: "Thu". */
+function dayOfWeek(day) {
+  const found = CONTEXT && CONTEXT.period ? CONTEXT.period.days.find((d) => d.scoring_period === day) : null;
+  if (!found || !found.calendar_date) return `day ${day}`;
+  return new Date(`${found.calendar_date}T12:00:00Z`).toLocaleDateString(undefined, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+/** The days a man of ours plays in the rest of the period, from the week
+ *  report's own games table: "Thu / Sat". */
+function playsOn(id) {
+  const days = ((REPORT && REPORT.schedule && REPORT.schedule.days) || [])
+    .filter((d) => d.mine && (d.mine.men || []).some((m) => m.espn_player_id === id))
+    .map((d) => dayOfWeek(d.scoring_period));
+  return days.length ? days.join(" / ") : "";
+}
+
+/** How a move's number is worked out, as the drawer shows it: each figure
+ *  with where it came from, the report's own fields. */
+function moveInspect(move, trigger) {
+  const j = move.judgement || {};
+  const rows = [
+    ["Net", `<span class="ws-data">${minus(signed(move.net, 3))}</span> categories: this week plus the change in an ordinary week over the weeks left`],
+    ["This week", `<span class="ws-data">${minus(signed(j.delta_week, 3))}</span> expected categories in matchup period ${REPORT.matchup_period}`],
+    ["A week after", `<span class="ws-data">${minus(signed(j.delta_season_per_week, 3))}</span> over <span class="ws-data">${fixed(j.weeks_remaining, 1)}</span> weeks`],
+    ["Record", `<span class="ws-data">${record(j.record_without)}</span> without, <span class="ws-data">${record(j.record_with)}</span> with`],
+    ["The bar", `<span class="ws-data">${fixed(REPORT.hurdle, 2)}</span> categories, from ${escape(REPORT.hurdle_source)}: ${escape(REPORT.hurdle_note)}`],
+    ["Label", move.clears_hurdle ? "over the bar: worth a look. A label, not advice." : "under the bar, shown in full all the same"],
+  ];
+  if (move.bid) rows.push(["Bid", bidNote(move.bid)]);
+  rows.push(["The wire", `${escape(wire(REPORT))}, ${count(REPORT.pool_size, "free agent")}`]);
+  if (CONTEXT) rows.push(["Numbers", escape(CONTEXT.source_note)]);
+  const shifts = (move.moved || [])
+    .map(
+      (s) =>
+        `<tr><td class="l">${escape(s.abbreviation)}</td><td>${pct(s.before)}</td><td>${pct(s.after)}</td>` +
+        `<td class="${s.delta > 0 ? "ws-pos" : "ws-neg"}">${points(s.delta)}</td></tr>`,
+    )
+    .join("");
+  DRAWER.open({
+    key: `move-${move.add.espn_player_id}-${move.drop ? move.drop.espn_player_id : "open"}`,
+    trigger,
+    kicker: "A move · how this is worked out",
+    title: `${move.add.name}${move.drop ? ` for ${move.drop.name}` : ""}`,
+    meta: `<b>${escape(bbMark(move.add))}</b> · judged on day ${REPORT.scoring_periods_remaining[0]}`,
+    body:
+      `<section class="ws-dsec"><span class="ws-k">The number</span><dl class="ws-facts">` +
+      rows.map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
+      `</dl></section>` +
+      (shifts
+        ? `<section class="ws-dsec"><span class="ws-k">The categories it moves, this week</span>` +
+          `<div class="ws-scr"><table class="ws-table"><thead><tr><th class="l" scope="col">Cat</th>` +
+          `<th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr></thead>` +
+          `<tbody>${shifts}</tbody></table></div></section>`
+        : "") +
+      `<p class="ws-note">From <span class="ws-data">pickups/stream</span>, the week report ` +
+      `(docs/pickups.md, section 4.3). Nothing here touches ESPN.</p>`,
+  });
+}
+
+function drawMove() {
+  const plan = REPORT.recommended && REPORT.recommended.length ? REPORT.recommended : REPORT.moves || [];
+  if (!plan.length) {
+    $("move-block").innerHTML = `<p class="ws-note">${escape(NOTHING_CLEARS)} on this day, and the report considered no move.</p>`;
+    return null;
+  }
+  const move = plan[0];
+  $("move-tag").textContent = `day ${REPORT.scoring_periods_remaining[0]} · pickups/stream`;
+  $("move-block").innerHTML = moveBlockHtml(move, REPORT);
+  const inspect = $("move-block").querySelector("[data-inspect]");
+  inspect.onclick = () => moveInspect(move, inspect);
+  wireCards($("move-block"));
+
+  const gain = (move.moved || []).find((s) => s.delta >= 0.005);
+  const cost = (move.moved || []).find((s) => s.delta <= -0.005);
+  $("colour-example").innerHTML =
+    `One move, both colours: adding <b>${escape(move.add.name)}</b> moves ` +
+    (gain ? `<span class="ws-data ws-pos">${escape(gain.abbreviation)} ${points(gain.delta)}</span>` : "nothing up") +
+    ` beside ` +
+    (cost ? `<span class="ws-data ws-neg">${escape(cost.abbreviation)} ${points(cost.delta)}</span>` : "nothing down") +
+    ` — the chance of winning each this week, for <b>your</b> roster. The same man is neither.`;
+  return move;
+}
+
+function drawMovesTable() {
+  const moves = REPORT.moves || [];
+  const shift = (move, cat) => {
+    const found = (move.moved || []).find((s) => s.abbreviation === cat);
+    return found ? found.delta : 0;
+  };
+  const largest = Math.max(0, ...moves.map((m) => Math.abs(m.net)));
+  const columns = [
+    {
+      key: "add", label: "Add", title: "The man added", align: "l", text: true, lock: true,
+      value: (m) => m.add.name,
+      cell: (m) => rowNameHtml(`${m.add.espn_player_id}-${m.drop ? m.drop.espn_player_id : "x"}`, m.add.name) +
+        `<span class="ws-bb">${escape(bbMark(m.add))}</span>`,
+    },
+    {
+      key: "drop", label: "Drop", title: "The man dropped", align: "l", text: true,
+      value: (m) => (m.drop ? m.drop.name : ""),
+      cell: (m) => (m.drop ? escape(m.drop.name) : m.to_ir ? `${escape(m.to_ir.name)} to IR` : "open place"),
+    },
+    {
+      key: "net", label: "Net", title: "Net: categories, this week plus the weeks after",
+      value: (m) => m.net, cell: (m) => fitHtml(m.net, largest, 2),
+    },
+    {
+      key: "week", label: "Wk", title: "This week, in categories",
+      value: (m) => m.judgement.delta_week, cell: (m) => minus(signed(m.judgement.delta_week, 3)),
+    },
+    {
+      key: "after", label: "/Wk", title: "An ordinary week from here on, in categories",
+      value: (m) => m.judgement.delta_season_per_week,
+      cell: (m) => minus(signed(m.judgement.delta_season_per_week, 3)),
+    },
+    ...CATS.map((cat) => ({
+      key: `c-${cat}`, label: cat, title: `${cat}: change in the chance of winning it this week`,
+      align: "c", value: (m) => shift(m, cat),
+      cell: (m) => glyphHtml(shift(m, cat), `${cat} ${points(shift(m, cat))}`),
+    })),
+    {
+      key: "games", label: "GL", title: "Games left for the man added, of those he starts",
+      value: (m) => m.add_starts, cell: (m) => `${m.add_starts}/${m.add.games_remaining}`,
+    },
+    {
+      key: "label", label: "Bar", title: "The bar's label: it hides nothing", align: "l",
+      value: (m) => (m.clears_hurdle ? 1 : 0),
+      cell: (m) => (m.clears_hurdle ? `<span class="ws-tag accent">worth a look</span>` : `<span class="ws-tag">under</span>`),
+    },
+  ];
+  screener($("moves-table"), {
+    id: "design-moves",
+    caption: `Every move considered · day ${REPORT.scoring_periods_remaining[0]}`,
+    rows: moves,
+    key: (m) => `${m.add.espn_player_id}-${m.drop ? m.drop.espn_player_id : "x"}`,
+    columns,
+    sort: ["net", "desc"],
+    height: "320px",
+    legend: glyphLegend("pts"),
+    onSelect: (move, trigger) => moveInspect(move, trigger),
+  });
+}
+
+function drawPoolTable(pool) {
+  const men = pool.candidates || [];
+  const largest = Math.max(0, ...men.map((m) => Math.abs(m.worth)));
+  let table = null;
+  const status = (m) => {
+    const tags = [];
+    if (m.hurt) tags.push(`<span class="ws-tag">${escape(statusMark(m.injury_status) || "hurt")}</span>`);
+    if (m.on_waivers) tags.push(`<span class="ws-tag">waivers${m.waiver_clears_at ? ` · ${escape(weekday(m.waiver_clears_at).slice(0, 3))}` : ""}</span>`);
+    return tags.join(" ") || `<span class="ws-muted">·</span>`;
+  };
+  table = screener($("pool-table"), {
+    id: "design-pool",
+    caption: `The wire · day ${pool.today} · ${pool.pool_size} free agents${pool.historical_wire ? ", historical" : ""}`,
+    rows: men,
+    key: (m) => m.espn_player_id,
+    sort: ["fit", "desc"],
+    height: "360px",
+    columns: [
+      {
+        key: "name", label: "Player", align: "l", text: true, lock: true, value: (m) => m.name,
+        cell: (m) => rowNameHtml(m.espn_player_id, m.name) + `<span class="ws-bb">${escape(bbMark(m))}</span>`,
+      },
+      { key: "status", label: "Status", align: "l", value: (m) => (m.hurt ? 1 : 0) + (m.on_waivers ? 1 : 0), cell: status },
+      { key: "gl", label: "GL", title: "Games left in the season", value: (m) => m.games_left, cell: (m) => String(m.games_left) },
+      {
+        key: "fit", label: "Fit", title: "FIT: what he is worth to this roster in a week, in categories",
+        value: (m) => m.worth, cell: (m) => fitHtml(m.worth, largest, 3),
+      },
+      {
+        key: "value", label: "League", title: "What he gives an ordinary place, league standard",
+        value: (m) => m.value, cell: (m) => fixed(m.value, 3),
+      },
+      ...CATS.map((cat) => ({
+        key: `w-${cat}`, label: cat, title: `${cat}: his week`, hidden: ["FT%", "TO"].includes(cat),
+        value: (m) => m.weekly[cat], cell: (m) => showCat(cat, m.weekly[cat]),
+      })),
+    ],
+    onSelect: (man, trigger) =>
+      openCard(man.espn_player_id, trigger, { onClose: () => table && table.clear() }),
+  });
+}
+
+/** The scenario panel: the nine, the roster as it stands and the scenario,
+ *  with the column the bar has in view marked. Both columns are the
+ *  answer's own (`week.before`, `week.after`). */
+function drawScenarioPanel(state) {
+  if (!WHATIF) return;
+  const week = WHATIF.week;
+  const view = state.active ? state.view : null;
+  const rows = CATS.map((cat) => {
+    const before = week.before ? week.before[cat] : undefined;
+    const after = week.after ? week.after[cat] : undefined;
+    const delta = isNum(before) && isNum(after) ? after - before : undefined;
+    return (
+      `<tr><td class="l">${escape(cat)}</td>` +
+      `<td class="${view === "baseline" ? "ws-focus" : ""}">${pct(before)}</td>` +
+      `<td class="${view === "scenario" ? "ws-focus" : ""}">${state.active ? pct(after) : dash}</td>` +
+      `<td class="c">${state.active ? glyphHtml(delta, `${cat} ${isNum(delta) ? points(delta) : ""}`) : ""}</td></tr>`
+    );
+  }).join("");
+  const head = (word, on) => `<th scope="col" class="${on ? "ws-focus" : ""}">${word}</th>`;
+  $("scn-panel").innerHTML =
+    `<div class="ws-scr" style="max-width:34rem"><div class="ws-scr-tools">` +
+    `<span class="ws-scr-cap">The nine this week · chance of winning each</span>` +
+    `<span class="ws-scr-n">${state.active ? `${state.view} in view` : "reset: baseline only"}</span></div>` +
+    `<div class="ws-scr-frame" style="--scr-h:none"><table class="ws-table">` +
+    `<thead><tr><th class="l" scope="col">Cat</th>${head("Baseline", view === "baseline")}` +
+    `${head("Scenario", view === "scenario")}<th class="c" scope="col">Change</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table></div>` +
+    `<p class="ws-legend">${glyphLegend("pts")}</p></div>` +
+    (state.active
+      ? ""
+      : `<p class="ws-note" style="margin-top:8px"><button type="button" class="ws-btn sm" id="scn-again">` +
+        `Set the scenario again</button></p>`);
+  const again = $("scn-again");
+  if (again) again.onclick = () => setScenario();
+}
+
+function setScenario() {
+  SCENARIO.set(
+    SCENARIO.fromWhatIf(WHATIF, {
+      league: CTX.league.id,
+      season: DESIGN.season,
+      team: WHATIF.espn_team_id,
+      today: WHATIF.today,
+    }),
+  );
+}
+
+function drawBasketball(today) {
+  const seats = (today.lineup || []).filter((seat) => seat.player);
+  const time = (iso) =>
+    iso ? new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+  const rows = seats.slice(0, 6).map((seat) => {
+    const p = seat.player;
+    const status = p.injury_status && p.injury_status !== "ACTIVE"
+      ? `<span class="ws-tag" title="${escape(String(p.injury_status).toLowerCase())}">${escape(statusMark(p.injury_status))}</span>`
+      : "";
+    const game = p.game ? `${escape(p.game.describe)} · ${escape(time(p.game.at))}` : "no game";
+    const days = playsOn(p.espn_player_id);
+    return (
+      `<tr><td class="l ws-k">${escape(seat.slot)}</td>` +
+      `<td class="l txt">${cardName(p.espn_player_id, escape(p.name))} <span class="ws-bb">${escape(bbMark(p))}</span> ${status}</td>` +
+      `<td class="l"><span class="ws-bb">${game}</span></td>` +
+      `<td class="l"><span class="ws-bb">${count(p.games_remaining, "game")} left</span></td>` +
+      `<td class="l"><span class="ws-bb">${escape(days)}</span></td></tr>`
+    );
+  });
+  $("bb-rows").innerHTML =
+    `<div class="ws-scr"><div class="ws-scr-tools"><span class="ws-scr-cap">Tonight · ` +
+    `${escape(dayName(today.calendar_date))} · day ${today.today}</span>` +
+    `<span class="ws-scr-n">${count(today.teams_playing, "NBA team")} playing</span></div>` +
+    `<div class="ws-scr-frame" style="--scr-h:none"><table class="ws-table">` +
+    `<thead><tr><th class="l" scope="col">Slot</th><th class="l" scope="col">Player</th>` +
+    `<th class="l" scope="col">Tonight</th><th class="l" scope="col">Left</th>` +
+    `<th class="l" scope="col">Plays</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></div>` +
+    `<p class="ws-note">Tip-off in your own time zone. "Plays" is the rest of the matchup period, ` +
+    `from the week report's games table.</p>`;
+  wireCards($("bb-rows"));
+}
+
+/** The team whose day this is: yours in 2026, as your claim or (single
+ *  mode) the context route names it. */
+function ourTeam() {
+  const claimed = ((CTX.league && CTX.league.teams) || []).find(
+    (t) => t.season === DESIGN.season && t.state === "verified",
+  );
+  if (claimed) return claimed.espn_team_id;
+  return CONTEXT ? CONTEXT.our_espn_team_id : null;
+}
+
+function noData(sentence) {
+  ["move-block", "moves-table", "pool-table", "bb-rows"].forEach((id) => {
+    $(id).innerHTML = `<p class="ws-note">${escape(sentence)}</p>`;
+  });
+  $("colour-example").textContent = sentence;
+  $("scn-what").textContent = sentence;
+  $("doc-scope").textContent = sentence;
+}
+
+async function start() {
+  startTheme();
+  drawTokens();
+  drawContrast();
+  drawVoices();
+  drawControls();
+  CTX = await SHELL;
+  if (!CTX || CTX.signedOut) {
+    noData("Sign in to see these specimens on your own league's stored season.");
+    return;
+  }
+  if (!CTX.league || !CTX.league.seasons.includes(DESIGN.season)) {
+    noData(`Your league has no stored ${DESIGN.season} season to draw the specimens from.`);
+    return;
+  }
+  CARD_SCOPE.league = CTX.league.id;
+  CARD_SCOPE.season = DESIGN.season;
+  CARD_SCOPE.today = DESIGN.day;
+  const base = `/leagues/${CTX.league.id}/seasons/${DESIGN.season}`;
+  const day = `today=${DESIGN.day}`;
+  const context = await get(`${base}/pages/context?${day}`, { quiet: true });
+  CONTEXT = context.ok ? context.body : null;
+  const team = ourTeam();
+  if (team === null) {
+    noData(`No team of yours in ${DESIGN.season} to draw the specimens from.`);
+    return;
+  }
+  const teamName = CONTEXT ? (CONTEXT.teams.find((t) => t.espn_team_id === team) || {}).name : "";
+  $("doc-scope").textContent =
+    `${leagueName(CTX, CTX.league.id)} · ${DESIGN.season} · ${teamName || `team ${team}`} · ` +
+    `day ${DESIGN.day}${CONTEXT && CONTEXT.today_date ? ` (${dayName(CONTEXT.today_date)})` : ""}.`;
+  const other = CONTEXT ? CONTEXT.teams.find((t) => t.espn_team_id !== team) : null;
+
+  const asked = {
+    report: get(`${base}/teams/${team}/pickups/stream?${day}`, { quiet: true }),
+    today: get(`${base}/teams/${team}/today?${day}`, { quiet: true }),
+    pool: other
+      ? get(`${base}/teams/${team}/trades/pool?with_team=${other.espn_team_id}&side=ours&${day}`, { quiet: true })
+      : Promise.resolve({ ok: false, detail: "no other team" }),
+  };
+
+  asked.pool.then((pool) => {
+    if (pool.ok && pool.body.readiness.ready) drawPoolTable(pool.body);
+    else $("pool-table").innerHTML = `<p class="ws-note">The wire could not be read: ${escape(pool.detail || "not ready")}.</p>`;
+  });
+
+  const report = await asked.report;
+  if (!report.ok) {
+    ["move-block", "moves-table"].forEach((id) => {
+      $(id).innerHTML = `<p class="ws-note">The week report could not be read: ${escape(report.detail)}.</p>`;
+    });
+    return;
+  }
+  REPORT = report.body;
+  const move = drawMove();
+  drawMovesTable();
+  const today = await asked.today;
+  if (today.ok) drawBasketball(today.body);
+  else $("bb-rows").innerHTML = `<p class="ws-note">The day's lineup could not be read.</p>`;
+
+  if (!move) return;
+  $("scn-what").textContent = `add ${move.add.name}${move.drop ? `, drop ${move.drop.name}` : ""}, judged on day ${DESIGN.day}.`;
+  const query = new URLSearchParams({ add: move.add.espn_player_id, today: DESIGN.day });
+  if (move.drop) query.set("drop", move.drop.espn_player_id);
+  if (move.to_ir) query.set("to_ir", move.to_ir.espn_player_id);
+  $("scn-tag").textContent = "reading the What if…";
+  const answer = await get(`${base}/teams/${team}/what-if?${query.toString()}`, { quiet: true });
+  if (!answer.ok) {
+    $("scn-tag").textContent = "the What if could not be read";
+    $("scn-panel").innerHTML = `<p class="ws-note">${escape(answer.detail)}</p>`;
+    return;
+  }
+  WHATIF = answer.body;
+  $("scn-tag").textContent = `what-if · day ${WHATIF.today}`;
+  SCENARIO.subscribe(drawScenarioPanel);
+  setScenario();
+}
+
+start();
+</script>
+</body>
+</html>

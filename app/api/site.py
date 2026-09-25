@@ -11,12 +11,15 @@
     /l/{league_id}/{season}/team/{team_id}/moves    the scorecard of this team's own moves
     /l/{league_id}/{season}/team/{team_id}/trades   what a proposed trade would do to both
     /account/connections | /projections | /alerts   the viewer's own account
+    /design                                   the design language, open, no data in it
     GET /me/alerts                            the one JSON route the pages needed
 
 Every page is a file in `app/api/static/`, read per request like the in-season
-pages always were, and every page draws the same shell (`shell.js`: the league
-switcher, the sections, My team, the account menu), fed by `/auth/me` and
-`/leagues`. docs/site.md has the whole map and what each page reads.
+pages always were, and every page draws the same shell (`shell.js`: the rail
+with the team's and the league's pages, the scenario, the league switcher and
+the account; the scenario bar; the inspection drawer), fed by `/auth/me` and
+`/leagues`. docs/site.md has the whole map and what each page reads, and
+docs/design_system.md the language the shell is drawn in.
 
 WHO MAY OPEN WHAT
 
@@ -89,6 +92,19 @@ def home(request: Request, session: SessionDep, settings: SettingsDep) -> HTMLRe
     """
     viewer = resolve_viewer(request, session, settings)
     return _page("landing.html" if viewer is None else "home.html")
+
+
+@router.get("/design", include_in_schema=False, response_class=HTMLResponse)
+def design_page() -> HTMLResponse:
+    """The workstation's design language, drawn on a league's stored season.
+
+    Open, so it declares no check, and the file carries no data: the tokens,
+    the voices and the controls are drawn from the stylesheet, and every
+    specimen that shows a number reads it from a league route behind that
+    route's own check. Signed out, the page draws the language and says the
+    specimens need a league (docs/design_system.md).
+    """
+    return _page("design.html")
 
 
 # ---------------------------------------------------------------------------

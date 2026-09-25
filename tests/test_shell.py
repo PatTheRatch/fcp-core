@@ -343,6 +343,7 @@ SHELL_PAGES = [
     "home.html",
     "claim.html",
     "join.html",
+    "design.html",
 ]
 
 
@@ -436,7 +437,7 @@ def test_the_scenario_is_a_seam_with_one_writer() -> None:
     setters = [
         name for name in sorted(STATIC.glob("*.html")) if "SCENARIO.set(" in name.read_text()
     ]
-    assert [p.name for p in setters] == ["week.html"]
+    assert [p.name for p in setters] == ["design.html", "week.html"]
 
 
 def test_the_week_page_leaves_its_navigation_to_the_shell() -> None:
@@ -456,6 +457,16 @@ def test_orange_is_never_a_buttons_fill() -> None:
     tokens = css.split(":root,.t-light{")[1].split("}")[0]
     for name in ("--accent:", "--pos:", "--neg:", "--neutral:"):
         assert name in tokens, name
+
+
+def test_the_design_page_is_open_and_carries_no_data(anon: TestClient) -> None:
+    """Signed out it is served, with no league's anything in the file: its
+    specimens read league routes, which still refuse a stranger."""
+    page = anon.get("/design")
+    assert page.status_code == 200
+    assert '<div id="shell"></div>' in page.text
+    assert "signedOutOk" in (STATIC / "shell.js").read_text()
+    assert anon.get(f"/leagues/{LEAGUE_A}/seasons/{SEASON}/pages/context").status_code == 401
 
 
 #: A declaration at the top level of a classic script: one global scope is
