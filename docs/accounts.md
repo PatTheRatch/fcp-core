@@ -227,6 +227,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/pool` | team manager + entitled | the wire on the day, ranked by what each man would be worth in the place this deal opens |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/report` | team manager + entitled | a proposed trade judged from both sides (docs/trades.md) |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/what-if` | team manager + entitled | one named pickup judged: this week, the rest of the season and the projected finish before and after (docs/what_if.md) |
+| `GET /l/{league_id}/{season}/team/{team_id}` | team manager + entitled (page) | the Overview: the team's morning briefing, from routes each behind its own check |
 | `GET /l/{league_id}/{season}/team/{team_id}/week` | team manager + entitled (page) | the week page |
 | `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |
 | `GET /l/{league_id}/{season}/team/{team_id}/moves` | team manager + entitled (page) | the scorecard of the team's own moves, in the paid layer (its data route is league scope) |

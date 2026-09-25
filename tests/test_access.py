@@ -249,6 +249,11 @@ def week_page(team: int) -> str:
     return f"/l/{LEAGUE_A}/{SEASON}/team/{team}/week"
 
 
+def overview_page(team: int) -> str:
+    """The team's own address: its Overview, behind the team pages' check."""
+    return f"/l/{LEAGUE_A}/{SEASON}/team/{team}"
+
+
 #: A pickups route that passed its checks and then found nothing to report
 #: on: these leagues have no draft, no schedule and no lineups, so the route
 #: answers 200 with `readiness` and no number -- and a 200 is the sign the
@@ -276,7 +281,12 @@ def test_signed_out_is_401_on_a_league_route(anon: TestClient) -> None:
 
 
 def test_signed_out_is_sent_to_sign_in_from_a_page(anon: TestClient) -> None:
-    for path in (week_page(3), f"/l/{LEAGUE_A}/{SEASON}/standings", "/account/alerts"):
+    for path in (
+        week_page(3),
+        overview_page(3),
+        f"/l/{LEAGUE_A}/{SEASON}/standings",
+        "/account/alerts",
+    ):
         sent = anon.get(path + "?today=5", follow_redirects=False)
         assert sent.status_code == 303
         assert sent.headers["location"].startswith("/sign-in?next=")
@@ -342,6 +352,10 @@ def test_a_manager_of_team_5_is_refused_team_3s_plan(sign_in: SignIn) -> None:
     assert page.status_code == 403
     assert "This team&#x27;s plan is its manager&#x27;s." in page.text
     assert bob.get(week_page(5)).status_code == 200
+    overview = bob.get(overview_page(3))
+    assert overview.status_code == 403
+    assert "This team&#x27;s plan is its manager&#x27;s." in overview.text
+    assert bob.get(overview_page(5)).status_code == 200
 
 
 def test_an_unknown_team_is_refused_not_revealed(sign_in: SignIn) -> None:
@@ -366,6 +380,7 @@ def test_the_entitlement_waits_on_billing(
     assert alice.get(trades(3)).status_code == 402
     assert alice.get(what_if(3)).status_code == 402
     assert alice.get(week_page(3)).status_code == 402
+    assert alice.get(overview_page(3)).status_code == 402
     # The free league pages do not ask.
     assert alice.get(standings(LEAGUE_A)).status_code == 200
 

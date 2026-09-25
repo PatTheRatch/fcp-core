@@ -56,7 +56,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "app" / "api" / "static"
 
 LEAGUE_SECTIONS = ("week", "standings", "draft", "history")
-TEAM_SECTIONS = ("week", "season", "moves", "trades")
+#: The team's pages; "" is the team's own address, its Overview.
+TEAM_SECTIONS = ("", "week", "season", "moves", "trades")
 ACCOUNT_SECTIONS = ("connections", "projections", "alerts")
 
 LEAGUE_REFUSED = "This league&#x27;s pages are its members&#x27;."
@@ -68,7 +69,7 @@ def league_page(section: str, league: int = LEAGUE_A) -> str:
 
 
 def team_page(team: int, which: str, league: int = LEAGUE_A) -> str:
-    return f"/l/{league}/{SEASON}/team/{team}/{which}"
+    return f"/l/{league}/{SEASON}/team/{team}" + (f"/{which}" if which else "")
 
 
 LEAGUE_PAGES = [league_page(s) for s in LEAGUE_SECTIONS]
@@ -341,6 +342,7 @@ SHELL_PAGES = [
     "projections.html",
     "alerts.html",
     "home.html",
+    "overview.html",
     "claim.html",
     "join.html",
     "design.html",
@@ -533,3 +535,56 @@ def test_what_changed_prints_the_api_sentence_and_leaves_the_card_a_hook() -> No
     assert "cardName(person.espn_player_id" in script, "a name in a sentence opens the card"
     assert 'wireCards($("changed-body"))' in page, "and is wired again on every redraw"
     assert "escape(change.text)" in script, "the sentence is printed, never rebuilt"
+
+
+# ---------------------------------------------------------------------------
+# the Overview
+# ---------------------------------------------------------------------------
+
+
+def test_the_overview_opens_to_its_manager_alone(sign_in: SignIn) -> None:
+    """The team pages' check: the verified manager, entitled; a stranger to
+    the team hears the one line and nothing else."""
+    alice = sign_in("alice@example.com")
+    mine = alice.get(team_page(3, ""))
+    assert mine.status_code == 200 and 'id="matchup-section"' in mine.text
+    bob = sign_in("bob@example.com")
+    refused = bob.get(team_page(3, ""))
+    assert refused.status_code == 403
+    assert TEAM_REFUSED in refused.text and "shell.js" not in refused.text
+    assert bob.get(team_page(5, "")).status_code == 200
+    carol = sign_in("carol@example.com")
+    assert carol.get(team_page(3, "")).status_code == 403
+
+
+def test_the_overview_closes_with_billing(sign_in: SignIn, monkeypatch: pytest.MonkeyPatch) -> None:
+    alice = sign_in("alice@example.com")
+    monkeypatch.setattr(access, "BILLING_ENABLED", True)
+    refused = alice.get(team_page(3, ""))
+    assert refused.status_code == 402
+    assert "The team layer is part of the paid plan." in refused.text
+    assert alice.get(league_page("week")).status_code == 200, "the free tier's This week"
+
+
+def test_before_the_draft_the_overview_draws_only_what_needs_no_roster(
+    sign_in: SignIn,
+) -> None:
+    """These leagues have no draft, so every projection route answers with
+    `readiness`; the page prints its sentence once, keeps STANDINGS and
+    RECENT, makes the draft the one line of NEEDS ATTENTION, and leaves
+    MATCHUP, THE WIRE and TONIGHT out rather than empty."""
+    alice = sign_in("alice@example.com")
+    base = f"/leagues/{LEAGUE_A}/seasons/{SEASON}/teams/3"
+    glance = alice.get(f"{base}/pickups/glance").json()
+    assert glance["readiness"]["ready"] is False and glance["readiness"]["note"]
+    page = alice.get(team_page(3, "")).text
+    script = page.split('<script>\n"use strict";')[1]
+    for draw in ("drawMatchup", "drawWire", "drawTonight"):
+        body = script.split(f"function {draw}()")[1].split("\n}\n")[0]
+        assert "NOT_READY" in body and ".hidden = true" in body, draw
+    for draw in ("drawStandings", "drawRecent"):
+        body = script.split(f"function {draw}()")[1].split("\n}\n")[0]
+        assert "NOT_READY" not in body, f"{draw} needs no roster"
+    assert "NOT_READY.note" in script and '$("ready")' in script, "the sentence, once"
+    assert 'leagueUrl(WHERE.league, WHERE.season, "draft")' in script, "the draft, linked"
+    assert 'STREAM.state = "none"' in script, "the week report is not asked for"

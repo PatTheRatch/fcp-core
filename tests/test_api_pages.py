@@ -68,6 +68,7 @@ from tests.pickups_db import (
     winning_bid,
 )
 from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.test_access import endpoints
 
 #: The season the listener ran for, and one already played.
 SEASON = 2026
@@ -873,3 +874,114 @@ def _names(session: Session, player_ids: set[int]) -> set[str]:
             select(Player.name).where(Player.id.in_(sorted(player_ids)))
         ).all()
     }
+
+
+# --------------------------------------------------------------------------
+# The Overview: the team's own address (docs/site.md, "Overview")
+
+OVERVIEW = f"/l/{LEAGUE_ID}/{SEASON}/team/{OURS}"
+
+
+def test_the_overview_is_served_with_its_sections_in_the_owners_order(
+    client: TestClient,
+) -> None:
+    page = client.get(OVERVIEW)
+
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    for asset in ("pages.css", "pages.js", "scenario.js", "shell.js"):
+        assert f"/pages/static/{asset}" in page.text, asset
+    order = [
+        "matchup-section",
+        "attention-section",
+        "wire-section",
+        "standings-section",
+        "tonight-section",
+        "recent-section",
+    ]
+    at = [page.text.index(f'id="{name}"') for name in order]
+    assert at == sorted(at), "MATCHUP, NEEDS ATTENTION, THE WIRE, STANDINGS, TONIGHT, RECENT"
+    visible = re.sub(r"<script.*?</script>", "", page.text, flags=re.S).lower()
+    for word in ("recommend", "you should", "consider "):
+        assert word not in visible, word
+
+
+#: A route the Overview's script asks for, as the file writes it:
+#: `${BASE}/teams/${TEAM}/pickups/glance${Q}` and the like.
+ASKED = re.compile(r"`\$\{BASE\}((?:[^`$?]|\$\{(?!Q\})[^}]*\})*)")
+
+
+def _route_shape(path: str) -> str:
+    return re.sub(r"\{[^}]*\}", "{}", path)
+
+
+def test_the_overview_reads_only_routes_that_exist(client: TestClient) -> None:
+    """No number on the page is new: every fetch in the file is a route the
+    app already serves, with the league and the season in front of it."""
+    page = client.get(OVERVIEW).text
+    script = page.split('<script>\n"use strict";')[1]
+    asked = {
+        _route_shape("/leagues/{league_id}/seasons/{season}" + m.group(1).replace("$", ""))
+        for m in ASKED.finditer(script)
+        if m.group(1)
+    }
+    served = {
+        _route_shape(path)
+        for method, path, _ in endpoints(client.app)  # type: ignore[arg-type]
+        if method == "GET"
+    }
+    assert asked == {
+        _route_shape(path)
+        for path in (
+            "/leagues/{l}/seasons/{s}/pages/context",
+            "/leagues/{l}/seasons/{s}/periods",
+            "/leagues/{l}/seasons/{s}/standings",
+            "/leagues/{l}/seasons/{s}/projected",
+            "/leagues/{l}/seasons/{s}/teams/{t}/pickups/glance",
+            "/leagues/{l}/seasons/{s}/teams/{t}/pickups/stream",
+            "/leagues/{l}/seasons/{s}/teams/{t}/today",
+            "/leagues/{l}/seasons/{s}/teams/{t}/lineups",
+            "/leagues/{l}/seasons/{s}/changes",
+        )
+    }, "the routes the doc lists, and no others"
+    assert asked <= served, asked - served
+    # The slow one is asked for once the glance has answered, never with it.
+    assert script.index("await asked.glance") < script.index("/pickups/stream${Q}")
+
+
+def test_the_overview_answers_before_the_week_report_does(client: TestClient) -> None:
+    """THE WIRE and NEEDS ATTENTION wait for the stream with a line each;
+    nothing else waits on it, and the facts line comes from the glance."""
+    page = client.get(OVERVIEW).text
+
+    assert page.count("Working out the wire…") == 2, "a line in each panel that waits"
+    assert "spinner" not in page.lower()
+    assert "ready(GOT.stream) || ready(GOT.glance)" in page, "the nine from the glance first"
+    assert "bandsHtml(report, true)" in page, "the Matchup page's bands, the same code"
+    assert "moveBlockHtml(move, r)" in page and "inspectMove(" in page, "/design's move block"
+    assert "changedHtml(items)" in page, "This week's What changed, the same code"
+    assert "calibration_short" in page, "the short record under the projected figures"
+    assert "touches ESPN" in page, "the read-only foot"
+
+
+def test_the_overview_ranks_by_the_category_record(client: TestClient) -> None:
+    """The league's unit is categories: the standings cut and the place in
+    the facts line are in the category record's order -- the share won, a
+    tie counting half, then categories won, then fewest lost -- whatever
+    order `/standings` sends, and the cut leads with categories."""
+    page = client.get(OVERVIEW).text
+    script = page.split('<script>\n"use strict";')[1]
+
+    share = script.split("function catShare(row)")[1].split("\n}\n")[0]
+    assert "(row.categories_won + row.categories_tied / 2) / decided" in share
+    order = script.split("function byCategories(rows)")[1].split("\n}\n")[0]
+    assert (
+        order.index("key(b.row) - key(a.row)")
+        < order.index("b.row.categories_won - a.row.categories_won")
+        < order.index("a.row.categories_lost - b.row.categories_lost")
+    )
+    assert "const rows = byCategories(GOT.standings)" in script, "the cut"
+    assert "byCategories(GOT.standings) : null" in script, "the place in the facts line"
+    cut = script.split("function drawStandings()")[1].split("\n}\n")[0]
+    assert "matchups_won" not in cut, "matchups are not in the cut"
+    assert cut.index(">Categories<") < cut.index(">Cat. share<") < cut.index(">Proj.<")

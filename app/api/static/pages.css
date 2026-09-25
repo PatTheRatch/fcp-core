@@ -1387,6 +1387,93 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .seeds-bar .seed.in i{background:var(--accent)}
 .seeds-bar .seed em{font-family:var(--font-data);font-size:var(--t-2xs);font-style:normal;color:var(--fg-2)}
 
+/* ---- the Overview: the morning's briefing ---------------------------------
+   The first page designed in the workstation rather than migrated into it
+   (docs/design_system.md). Its facts line is the furniture pass's, each
+   figure a button that opens the drawer on its route and field; its
+   sections are a label over one panel, and on a wide desk MATCHUP sits
+   beside NEEDS ATTENTION and STANDINGS beside TONIGHT, read across in the
+   owner's order. A figure is grey or ink; green and red only on a move's
+   net; orange only on the viewer's own row. */
+.ov-facts > div{max-width:none}
+.ov-facts dd{color:var(--fg-2)}
+.ov-facts dd b{color:var(--fg);font-weight:600}
+.ov-fig{padding:0;font:inherit;color:inherit;text-align:left;background:none;border:0;border-radius:0;
+  cursor:pointer;text-decoration:underline dotted var(--line-strong);text-underline-offset:4px}
+.ov-fig:hover{text-decoration-color:var(--fg)}
+.ov-fig[aria-expanded="true"]{text-decoration:underline solid var(--accent)}
+.ov-fig:focus-visible{outline-offset:2px}
+.ov-facts dd small{margin-left:2px}
+.ov-ready{margin:0 0 var(--sp-5);color:var(--fg)}
+.ov-calib{margin:calc(-1 * var(--sp-3)) 0 var(--sp-5)}
+@media (min-width:1180px){
+  .ov-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--sp-5);
+    align-items:start}
+  .ov-grid > .ws-sect{grid-column:1/-1}
+  .ov-grid > .ws-sect.pair:not(.solo){grid-column:auto}
+}
+/* NEEDS ATTENTION: a line a fact -- its figure, what it is, where it is
+   acted on. The figure column is the order the list is read in. */
+.ov-list{list-style:none;margin:0;padding:0}
+.ov-list li{display:grid;grid-template-columns:4.6em minmax(0,1fr) auto;align-items:baseline;
+  gap:2px var(--sp-3);min-height:var(--row);padding:5px var(--sp-2) 5px var(--sp-3);
+  border-top:1px solid var(--line)}
+.ov-list li:first-child{border-top:0}
+.ov-list .fig{font-family:var(--font-data);font-size:var(--t-base);font-weight:600;
+  font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ov-list .fig small{margin-left:0;font-size:var(--t-2xs);font-weight:400;color:var(--fg-3)}
+.ov-list .fig .ws-tag{font-weight:600}
+.ov-list .what{min-width:0;font-size:var(--t-base);overflow-wrap:break-word}
+.ov-list .what b{font-weight:600}
+.ov-list .what .ws-bb{margin-left:6px;white-space:normal}
+.ov-list li.wait .what{color:var(--fg-3)}
+@media (max-width:700px){
+  .ov-list li{grid-template-columns:4em minmax(0,1fr)}
+  .ov-list .go{grid-column:2;justify-self:start;margin-left:-9px}
+}
+.ov-wait{margin:0;padding:8px var(--sp-3);color:var(--fg-3);font-size:var(--t-md)}
+/* THE WIRE: the day's first three moves side by side on one panel, a
+   hairline between them; stacked on a narrower screen. */
+.ov-wire{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.ov-wire .ws-move{border:0;border-radius:0;border-left:1px solid var(--line)}
+.ov-wire .ws-move:first-child{border-left:0}
+.ov-wire > .ov-wait{grid-column:1/-1}
+@media (max-width:1180px){
+  .ov-wire{grid-template-columns:minmax(0,1fr)}
+  .ov-wire .ws-move{border-left:0;border-top:1px solid var(--line)}
+  .ov-wire .ws-move:first-child{border-top:0}
+}
+.ov-more{margin:var(--sp-2) 0 0}
+.ov-more .ws-btn{margin-left:-9px}
+/* STANDINGS: five rows of the table; the reader's own with the orange
+   edge and its wash. */
+.ov .scroll .ws-grid.ov-cut{min-width:0}
+.ov-cut tr.ours > :first-child{box-shadow:inset 2px 0 0 var(--accent)}
+.ov-cut td.name span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (min-width:1180px){ .ov-grid > .pair:not(.solo) .ov-cut td.name span{max-width:8rem} }
+.ov-cut th,.ov-cut td{padding:0 6px;white-space:nowrap}
+@media (max-width:700px){ .ov .scroll .ws-grid.ov-cut{min-width:460px} }
+/* TONIGHT: a place a row, the lineup table's metrics; the man's line, once
+   stored, under his name. A status is grey. */
+.ov .scroll .ws-grid.ov-tonight{min-width:440px}
+.ov-tonight td{text-align:left}
+.ov-tonight td.slot{width:3.2em;font-family:var(--font-data);font-size:var(--t-xs);font-weight:600;
+  letter-spacing:.06em;color:var(--fg-2)}
+.ov-tonight td.name .pname{font:inherit;font-weight:500}
+.ov-tonight td.name .ws-bb{margin-left:6px}
+.ov-tonight tr.has-line > *{border-bottom:0}
+.ov-tonight tr.line td{height:auto;padding-bottom:6px;font-family:var(--font-data);font-size:var(--t-xs);
+  color:var(--fg);white-space:normal}
+.ov-tonight tbody tr.line:hover > *{background:none}
+.ov-tonight td.game{font-size:var(--t-sm);color:var(--fg-2);white-space:nowrap}
+.ov-tonight td.st{font-size:var(--t-2xs);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);
+  white-space:nowrap}
+.ov-tonight td.st.on{color:var(--fg)}
+.ov-tonight td.st.out{font-weight:600}
+.ov-tonight tr.off td.name,.ov-tonight tr.gone td.slot{color:var(--fg-2)}
+.ov-tonight tr.off td.name .pname{font-weight:400}
+#their-tonight .tonight{margin:0}
+
 /* Nothing on these pages animates to say anything -- the drawer and the
    rail slide in, and that is all -- and a reader who has asked for
    stillness gets it outright rather than nearly. */

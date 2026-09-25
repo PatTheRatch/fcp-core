@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("fcp-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<title>Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Oswald:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="ws-page ov">
+
+<!-- The header line: what this is and when. The team is the rail's. -->
+<header class="ws-head">
+  <h1 class="ws-title"><span id="title">Overview</span><span class="ws-when" id="sub"></span></h1>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<!-- The facts line: the matchup, the place, the adds, the pot. Every figure
+     opens the drawer on where it came from. Before the draft the season's
+     one sentence stands here instead. -->
+<dl class="ws-factline ov-facts" id="facts" hidden></dl>
+<p class="ws-p ov-ready" id="ready" hidden></p>
+<p class="ws-calib ov-calib" id="calib" hidden></p>
+
+<main class="ov-grid" id="body">
+
+  <!-- 1. MATCHUP: the nine in the Matchup page's three bands. -->
+  <section class="ws-sect pair" id="matchup-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Matchup</h2><span class="ws-k" id="matchup-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="matchup-account" aria-haspopup="dialog">How this is worked out</button>
+      <a class="ws-btn sm quiet" id="matchup-go" href="#">Matchup →</a></div>
+    <div class="ws-panel"><div id="bands"></div></div>
+    <div class="ws-account" id="matchup-account" data-title="Matchup">
+      <p data-k="The chances">Each category's chance this week, head to head against this period's
+        opponent, from the week report: first the glance (<span class="mono">pickups/glance</span>),
+        which carries the chances and is answered from the morning's stored report, then the report
+        itself (<span class="mono">pickups/stream</span>), which adds the score as it stands under
+        each one. The other side is our estimate of their side, on the roster they hold.</p>
+      <p data-k="The bands">The three bands are where the page splits the nine for the eye, at 65%
+        and 35%: a choice about ink, not a claim the model makes. The Matchup page draws the same
+        bands out of the same code, and opens each category's totals.</p>
+    </div>
+  </section>
+
+  <!-- 2. NEEDS ATTENTION: facts that ask for a decision today; absent when
+       none does. -->
+  <section class="ws-sect pair" id="attention-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Needs attention</h2><span class="ws-k" id="attention-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="attention-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-panel flush"><ul class="ov-list" id="attention"></ul></div>
+    <div class="ws-account" id="attention-account" data-title="Needs attention">
+      <p data-k="What is here">A line is a fact that asks for a decision today, and it is drawn only
+        when a route already read here says so: a place in tonight's lineup the bench could fill
+        (<span class="mono">today</span>'s <span class="mono">fix</span> and
+        <span class="mono">benched</span>), a starter ESPN has out or in doubt tonight
+        (<span class="mono">today</span>'s lineup), a day left in the period with a place going
+        empty that the wire could fill (<span class="mono">pickups/stream</span>'s
+        <span class="mono">empty_days</span>), and the first move over the bar
+        (<span class="mono">pickups/stream</span>'s <span class="mono">moves</span>; the rest are
+        The wire). Before the draft it is the draft. Nothing else, and when nothing asks, there is
+        no section.</p>
+      <p data-k="The order">Largest figure first. The figure is the number of starting places the
+        line is about -- the places the bench could fill tonight, one for a starter out or in
+        doubt, the places going empty that day -- or, for a move, its net in categories. A tie
+        keeps the order the kinds are listed in above.</p>
+      <p data-k="The words">Facts with their figures, and a link to where each is acted on. No
+        line says what to do: the manager decides.</p>
+    </div>
+  </section>
+
+  <!-- 3. THE WIRE: the day's first three moves, in the owner's format. -->
+  <section class="ws-sect" id="wire-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">The wire</h2><span class="ws-k" id="wire-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="wire-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-panel flush"><div class="ov-wire" id="wire"></div></div>
+    <p class="ov-more"><a class="ws-btn sm quiet" id="wire-all" href="#">Every move considered →</a></p>
+    <div class="ws-account" id="wire-account" data-title="The wire">
+      <p data-k="The moves">The first three moves the day's week report considered
+        (<span class="mono">pickups/stream</span>'s <span class="mono">moves</span>), in its own
+        order: best first by the net over both horizons, this week plus the change in an ordinary
+        week over the weeks left, in categories.</p>
+      <p data-k="The bar" id="wire-bar"></p>
+      <p data-k="Inspect">Inspect opens each move's working in the drawer, the bid and its ladder
+        among it. Every move the report considered is on the Matchup page, under More. Nothing here
+        touches ESPN.</p>
+    </div>
+  </section>
+
+  <!-- 4. STANDINGS: five rows of the standings page's table. -->
+  <section class="ws-sect pair" id="standings-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Standings</h2><span class="ws-k" id="standings-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="standings-account" aria-haspopup="dialog">How this is worked out</button>
+      <a class="ws-btn sm quiet" id="standings-go" href="#">Standings →</a></div>
+    <div class="ws-panel flush"><div class="scroll"><table class="ws-grid ov-cut" id="cut">
+      <thead><tr id="cut-head"></tr></thead><tbody id="cut-body"></tbody>
+    </table></div></div>
+    <div class="ws-account" id="standings-account" data-title="Standings">
+      <p data-k="The order">The league's unit is categories, and its standings' order is the
+        category record, as ESPN's is: the share of categories won (a tie counts half), then
+        categories won, then fewest lost. The rows are put in that order here, from the records
+        <span class="mono">standings</span> carries; five of them: yours, the two above it and the
+        two below (the top five when you are in them).</p>
+      <p data-k="The columns">The category record and its share as they stand, from
+        <span class="mono">standings</span>, as the ingest last stored them: a past day asked for
+        with <span class="mono">?today=</span> still shows the latest. The projected finish (the
+        projection's mean simulated record) and the playoff odds are from
+        <span class="mono">projected</span>, the answer the Standings page's Projected view
+        draws; that projection still seeds by matchups, so its places are its own order until it
+        moves to the category record.</p>
+    </div>
+  </section>
+
+  <!-- 5. TONIGHT: the day's lineup, a place a row; theirs closed under it. -->
+  <section class="ws-sect pair" id="tonight-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Tonight</h2><span class="ws-k" id="tonight-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="tonight-account" aria-haspopup="dialog">How this is worked out</button>
+      <a class="ws-btn sm quiet" id="tonight-go" href="#">Matchup →</a></div>
+    <div class="ws-panel flush"><p class="ov-wait" id="tonight-none" hidden></p>
+      <div class="scroll" id="tonight-table"><table class="ws-grid ov-tonight">
+      <thead><tr><th scope="col" class="l">Slot</th><th scope="col" class="l">Player</th>
+        <th scope="col" class="l">Tonight</th><th scope="col" class="l">Status</th></tr></thead>
+      <tbody id="tonight-body"></tbody>
+    </table></div></div>
+    <details class="ws-disc ws-panel" id="their-tonight" hidden>
+      <summary><span id="their-name">Their side</span> <span class="n" id="their-n"></span></summary>
+      <div class="ws-disc-body"><ul class="tonight" id="tonight-theirs"></ul></div>
+    </details>
+    <div class="ws-account" id="tonight-account" data-title="Tonight">
+      <p data-k="Yours">The lineup as the day's own report seats it
+        (<span class="mono">today</span>), a place a row: the man, his NBA team and position, his
+        game and its tip-off in your own time, what ESPN says about him, and his line once the
+        ingest has stored the night. The Matchup page's Tonight draws him out of the same code.</p>
+      <p data-k="Theirs">Their side is who they have set in a starting place tonight, as the
+        ingest stored it (<span class="mono">lineups</span>): a fact about what they set, not a
+        projection.</p>
+    </div>
+  </section>
+
+  <!-- 6. RECENT: the league's last five, as This week's What changed. -->
+  <section class="ws-sect" id="recent-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Recent</h2><span class="ws-k" id="recent-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="recent-account" aria-haspopup="dialog">How this is worked out</button>
+      <a class="ws-btn sm quiet" id="recent-go" href="#">Moves →</a></div>
+    <div class="ws-panel" id="recent"></div>
+    <div class="ws-account" id="recent-account" data-title="Recent">
+      <p data-k="The lines">The league's last five adds, claims, drops, trades and status changes
+        over the seven days to the day on the page, newest first, from
+        <span class="mono">changes</span>. Each sentence is the API's, the one the morning email
+        sends; a line about your team carries the orange edge, one about your opponent a grey one.
+        Times are UTC. Your own moves, graded, are on Moves.</p>
+    </div>
+  </section>
+
+</main>
+
+<p class="ws-foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/scenario.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* The Overview: the team's morning briefing, encoded as analytics
+   (docs/site.md, "Overview"). No number on it is new: every figure is a
+   field of a route the site already reads, drawn by the code the other
+   pages draw it with, and each figure in the facts line opens the drawer on
+   the route and the field it came from.
+
+   What it reads, and when:
+
+     at once       pages/context, periods, standings, projected (the
+                   league's), today, and pickups/glance -- the glance is the
+                   week report's head, answered from the morning's stored
+                   report
+     after glance  pickups/stream, the whole week report: the slow one when
+                   nothing is stored (a cold morning is half a minute). It is
+                   asked for once the glance has answered, because with
+                   nothing stored both would build the same report at once
+     after both    the opponent's stored lineups for the period, for their
+                   side of Tonight
+     after context changes, for RECENT
+
+   THE WIRE and NEEDS ATTENTION wait for the stream, each with a one-line
+   placeholder; nothing else does. Before the draft every route answers
+   with `readiness` and empty numbers, and the page prints the sentence once
+   and draws only what needs no roster. */
+
+const WHERE = place();
+const BASE = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
+const TEAM = Number(WHERE.team);
+const Q = params(WHERE);
+
+/** What each route answered, as it lands. */
+const GOT = {
+  context: null,
+  periods: null,
+  standings: null,
+  projected: null,
+  glance: null,
+  today: null,
+  stream: null,
+  theirs: null,
+};
+
+/** Where the week report is: "waiting" until it answers, then "done", or
+ *  "failed" with what the route said. */
+const STREAM = { state: "waiting", detail: "" };
+
+/** Before the draft: the route's readiness, else null. */
+let NOT_READY = null;
+
+/** An answer's body when it is ready, else null: a season that is not
+ *  ready answers with `readiness` and no numbers (docs/site.md). */
+const ready = (body) => (body && !body.readiness ? body : null);
+
+/** Where each kind of decision is acted on. */
+const weekUrl = (anchor) => teamUrl(WHERE.league, WHERE.season, TEAM, "week") + Q + (anchor || "");
+
+const teamName = (id) => {
+  const found = ((GOT.context && GOT.context.teams) || []).find((t) => t.espn_team_id === id);
+  return found ? found.name : id === null || id === undefined ? dash : `Team ${id}`;
+};
+
+/* ---- the header line ----------------------------------------------------- */
+
+function drawHeader() {
+  const c = GOT.context;
+  if (!c) return;
+  const parts = [];
+  if (NOT_READY) {
+    parts.push(String(WHERE.season));
+  } else {
+    if (c.today_date) parts.push(dayName(c.today_date));
+    parts.push(`day ${c.today}`);
+    if (c.period) {
+      parts.push(
+        `period ${c.period.period}` + (GOT.periods ? ` of ${GOT.periods.length}` : ""),
+      );
+    }
+  }
+  $("sub").textContent = parts.join(" · ");
+}
+
+/* ---- the facts line ------------------------------------------------------
+   The old strip's pattern (the furniture pass): a label over each figure,
+   hairlines between them, grey. Each figure is a button that opens the
+   drawer on where it came from -- the route, the field and the day -- as
+   /design's scenario bar does for its three numbers. */
+
+/** Days of the period still to play, today included: the context's own
+ *  days, as the header counts them. */
+function daysLeft() {
+  const period = GOT.context && GOT.context.period;
+  return period ? period.days.filter((d) => !d.played).length : null;
+}
+
+/** Each fact: its label, its figure (html), and its provenance rows. */
+function facts() {
+  const out = [];
+  const g = GOT.glance;
+  const day = GOT.context ? GOT.context.today : WHERE.today;
+  if (g && !NOT_READY) {
+    const bye = g.opponent_espn_team_id === null;
+    const left = daysLeft();
+    const figure = bye
+      ? `on a bye <small>${left === null ? "" : ` · ${count(left, "day")} left`}</small>`
+      : `<b>${fixed(g.expected_wins, 2)}</b> – ${fixed(isNum(g.expected_wins) ? 9 - g.expected_wins : null, 2)}` +
+        ` <small>vs ${escape(teamName(g.opponent_espn_team_id))}` +
+        `${left === null ? "" : ` · ${count(left, "day")} left`}</small>`;
+    out.push({
+      key: "matchup",
+      label: "Matchup",
+      figure,
+      rows: [
+        ["Figure", bye ? "On a bye this period" : `${fixed(g.expected_wins, 2)} of 9 categories expected, and 9 less that for them`],
+        ["Route", `<span class="ws-data">GET ${escape(BASE)}/teams/${TEAM}/pickups/glance${escape(Q)}</span>`],
+        ["Fields", "expected_wins, opponent_espn_team_id (named from pages/context's teams); theirs is 9 − expected_wins, as the Matchup page writes it"],
+        ["Days left", `the days of period ${GOT.context && GOT.context.period ? GOT.context.period.period : dash} not yet played, today included, from pages/context's period`],
+        ["Read from", g.stored ? "the morning's stored week report" : "the week report, built now"],
+        ["Day", `day ${day}`],
+      ],
+    });
+  }
+  const st = GOT.standings ? byCategories(GOT.standings) : null;
+  const p = ready(GOT.projected);
+  if (st && !NOT_READY) {
+    const at = st.findIndex((row) => row.espn_team_id === TEAM);
+    const own = at >= 0 ? st[at] : null;
+    const mine = p ? p.teams.find((t) => t.espn_team_id === TEAM) : null;
+    let likeliest = null;
+    if (mine && mine.finishes.length) {
+      likeliest = mine.finishes.reduce(
+        (best, share, i) => (share > best.share ? { place: i + 1, share } : best),
+        { place: 1, share: mine.finishes[0] },
+      );
+    }
+    const soon = mine
+      ? ` → ${escape(ordinal(likeliest.place))} <small>most often · playoffs ${pct(mine.playoff_odds)}</small>`
+      : GOT.projected
+        ? ""
+        : ` <small>projecting…</small>`;
+    out.push({
+      key: "place",
+      label: "Place",
+      figure: `<b>${at >= 0 ? escape(ordinal(at + 1)) : dash}</b>${soon}`,
+      rows: [
+        ["Now", `${at >= 0 ? ordinal(at + 1) : dash} of ${st.length} by the category record (${own ? `${wlt(own.categories_won, own.categories_lost, own.categories_tied)}, a share of ${shareText(own)}` : dash}): the league's unit is categories, and its order is the share of categories won (a tie counts half), then categories won, then fewest lost, as ESPN's standing is. The records are <span class="ws-data">categories_won</span>, <span class="ws-data">categories_lost</span> and <span class="ws-data">categories_tied</span> from <span class="ws-data">GET ${escape(BASE)}/standings</span>, put in that order here`],
+        ["Most often", mine ? `${ordinal(likeliest.place)}, in ${pct(likeliest.share)} of the simulated seasons: the largest of your <span class="ws-data">finishes</span> in <span class="ws-data">GET ${escape(BASE)}/projected${escape(Q)}</span>. That is the projection's own order, which still seeds by matchups; it moves to the category record when the projection does` : "no projection"],
+        ["Playoffs", mine ? `${pct(mine.playoff_odds)}: <span class="ws-data">playoff_odds</span>, the same field the Standings page's Projected view prints` : "no projection"],
+        ["Built", p ? `on day ${p.as_of}, over ${count(p.n_sims, "simulated season")}` : dash],
+        ["Its record", p ? escape(p.calibration_note || "") : dash],
+      ],
+    });
+  }
+  const s = ready(GOT.stream);
+  if (!NOT_READY) {
+    const working = STREAM.state === "failed"
+      ? ` <small>the week report could not be read</small>`
+      : ` <small>working out the wire…</small>`;
+    out.push({
+      key: "adds",
+      label: "Adds",
+      figure: s ? `<b>${s.adds_left}</b> of ${s.adds_budget} <small>left</small>` : `${dash}${working}`,
+      rows: s
+        ? [
+            ["Figure", `${s.adds_left} of ${s.adds_budget} left this period, ${s.adds_used} used`],
+            ["Route", `<span class="ws-data">GET ${escape(BASE)}/teams/${TEAM}/pickups/stream${escape(Q)}</span>`],
+            ["Fields", "adds_left, adds_budget, adds_used"],
+            ["Day", `day ${day}`],
+          ]
+        : [["Figure", "the week report has not answered yet"]],
+    });
+    const money = s ? faab(s) : null;
+    out.push({
+      key: "faab",
+      label: "FAAB",
+      figure: s ? `<b>${escape(money.value)}</b> <small>left</small>` : `${dash}${working}`,
+      rows: s
+        ? [
+            ["Figure", `${escape(money.value)} ${escape(money.note)}`],
+            ["Route", `<span class="ws-data">GET ${escape(BASE)}/teams/${TEAM}/pickups/stream${escape(Q)}</span>`],
+            ["Fields", `faab_remaining${s.faab_overspent ? ", faab_overspent" : ""}`],
+            ["The pot", "the season's budget itself is on no route the site reads, so the figure is what is left"],
+            ["Day", `day ${day}`],
+          ]
+        : [["Figure", "the week report has not answered yet"]],
+    });
+  }
+  return out;
+}
+
+function drawFacts() {
+  if (NOT_READY) {
+    $("facts").hidden = true;
+    return;
+  }
+  const list = facts();
+  $("facts").hidden = !list.length;
+  $("facts").innerHTML = list
+    .map(
+      (f) =>
+        `<div><dt>${escape(f.label)}</dt><dd><button type="button" class="ov-fig" ` +
+        `data-fact="${f.key}" aria-haspopup="dialog" aria-expanded="false">${f.figure}</button></dd></div>`,
+    )
+    .join("");
+  $("facts")
+    .querySelectorAll("[data-fact]")
+    .forEach((button) => {
+      button.onclick = () => {
+        const fact = facts().find((f) => f.key === button.dataset.fact);
+        if (!fact) return;
+        if (DRAWER.isOpen() && DRAWER.keyOf() === `fact-${fact.key}`) {
+          DRAWER.close(false);
+          return;
+        }
+        DRAWER.open({
+          key: `fact-${fact.key}`,
+          trigger: button,
+          kicker: "Where this came from",
+          title: fact.label,
+          body:
+            `<dl class="ws-facts">` +
+            fact.rows.map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
+            `</dl><p class="ws-note">Read-only: nothing here works a number out or touches ESPN.</p>`,
+        });
+      };
+    });
+  const p = ready(GOT.projected);
+  $("calib").hidden = !(p && p.calibration_short);
+  $("calib").textContent = p ? p.calibration_short : "";
+}
+
+/* ---- MATCHUP ------------------------------------------------------------- */
+
+function drawMatchup() {
+  // SCENARIO: when scenarios are global state (docs/design_system.md, "The
+  // seam for global scenario state"), this is the one place the Overview
+  // would subscribe -- SCENARIO.subscribe(...) redrawing MATCHUP from the
+  // scenario's answer. Today nothing on this page reads a scenario; the bar
+  // over the page is the shell's and still draws when one is active.
+  const report = ready(GOT.stream) || ready(GOT.glance);
+  if (!report || NOT_READY) {
+    $("matchup-section").hidden = true;
+    return;
+  }
+  $("matchup-section").hidden = false;
+  $("matchup-go").href = weekUrl("#pulse-section");
+  if (onBye(report)) {
+    $("matchup-tag").textContent = "on a bye";
+    $("bands").innerHTML =
+      `<p class="empty">On a bye this period: there is no head-to-head to win a category in.</p>`;
+    return;
+  }
+  const bands = bandsHtml(report, true);
+  $("matchup-tag").textContent = `${bands.swing} in the balance`;
+  $("bands").innerHTML = bands.html;
+}
+
+/* ---- NEEDS ATTENTION ------------------------------------------------------
+   Each candidate is a fact a route already carries; a line is drawn only
+   when the route says so. Each carries one figure, which orders the list
+   (largest first; a tie keeps the order of KINDS). The doc has the rule
+   (docs/site.md, "Overview"). */
+
+const KINDS = ["draft", "lineup", "status", "empty", "move"];
+
+function attentionItems() {
+  const items = [];
+  if (NOT_READY) {
+    // Before the draft the draft is the one thing to decide about: the
+    // route's own dated sentence, its first clause.
+    const said = String(NOT_READY.note || "").split(";")[0].trim();
+    items.push({
+      kind: "draft",
+      key: 0,
+      fig: `<span class="ws-tag">Draft</span>`,
+      what: escape(said || NOT_READY.note || "The season has not been drafted."),
+      go: [leagueUrl(WHERE.league, WHERE.season, "draft") + Q, "Draft →"],
+    });
+    return items;
+  }
+  const t = ready(GOT.today);
+  if (t && t.teams_playing !== 0) {
+    const open = (t.starts || 0) - (t.actual_starts || 0);
+    (t.fix || []).forEach((one) => {
+      const seat = one.seat;
+      const where =
+        seat.player === null || seat.player === undefined
+          ? `<b>${escape(seat.slot)}</b> is empty tonight`
+          : `<b>${escape(seat.player.name)}</b> has no game at ${escape(seat.slot)} tonight`;
+      const who = (one.instead || []).map((m) => escape(m.name)).join(" or ");
+      items.push({
+        kind: "lineup",
+        key: open,
+        fig: `${open} <small>${open === 1 ? "place" : "places"}</small>`,
+        what: `${where}${who ? ` · ${who} could take it` : ""}` +
+          ` <span class="ws-bb">set ${t.actual_starts} of ${t.lineup.length} · ${t.starts} possible</span>`,
+        go: [weekUrl("#tonight-section"), "Tonight →"],
+      });
+    });
+    const benched = (t.benched || []).filter((one) => one.player && one.player.plays);
+    if (benched.length && open > 0) {
+      items.push({
+        kind: "lineup",
+        key: open,
+        fig: `${open} <small>${open === 1 ? "place" : "places"}</small>`,
+        what: `On the bench with a game: ${benched.map((one) => `<b>${escape(one.player.name)}</b>`).join(", ")}` +
+          ` <span class="ws-bb">set ${t.actual_starts} of ${t.lineup.length} · ${t.starts} possible</span>`,
+        go: [weekUrl("#tonight-section"), "Tonight →"],
+      });
+    }
+    (t.lineup || []).forEach((seat) => {
+      const player = seat.player;
+      if (!player) return;
+      const [word, tone] = standing(player);
+      if (tone !== "doubt" && tone !== "out") return;
+      const game = player.game
+        ? [player.game.describe, tipOff(player.game.at)].filter(Boolean).join(" · ")
+        : "no game";
+      items.push({
+        kind: "status",
+        key: 1,
+        fig: `<span class="ws-tag" title="${escape(word)}">${escape(statusMark(player.injury_status) || word)}</span>`,
+        what: `<b>${escape(player.name)}</b> is ${escape(word)} tonight` +
+          ` <span class="ws-bb">${escape(seat.slot)} · ${escape(game)}</span>`,
+        go: [weekUrl("#tonight-section"), "Tonight →"],
+      });
+    });
+  }
+  const s = ready(GOT.stream);
+  if (s) {
+    const days = new Map(
+      ((GOT.context && GOT.context.period && GOT.context.period.days) || []).map((d) => [d.scoring_period, d]),
+    );
+    (s.empty_days || []).forEach((gap) => {
+      const fillers = gap.fillers || [];
+      if (!fillers.length) return;
+      const places = (gap.empty_slots || []).length;
+      const d = days.get(gap.scoring_period);
+      const when = d && d.calendar_date ? dayName(d.calendar_date) : `day ${gap.scoring_period}`;
+      items.push({
+        kind: "empty",
+        key: places,
+        fig: `${places} <small>empty</small>`,
+        what: `${count(places, "place")} going empty on ${escape(when)}` +
+          ` <span class="ws-bb">day ${gap.scoring_period} · ${escape((gap.empty_slots || []).join(" "))} · ` +
+          `${count(fillers.length, "man", "men")} on the wire could fill one</span>`,
+        go: [weekUrl("#sched-section"), "Schedule →"],
+      });
+    });
+    const move = s.adds_left === 0 ? null : (s.moves || []).find((m) => m.clears_hurdle);
+    if (move) {
+      const tone = move.net >= 0.005 ? "ws-pos" : move.net <= -0.005 ? "ws-neg" : "";
+      const out = move.drop
+        ? ` for ${escape(move.drop.name)}`
+        : move.to_ir
+          ? `, ${escape(move.to_ir.name)} to IR`
+          : ", into the open place";
+      items.push({
+        kind: "move",
+        key: move.net,
+        fig: `<span class="${tone}">${minus(signed(move.net, 2))}</span> <small>cat</small>`,
+        what: `<b>${escape(move.add.name)}</b>${out}` +
+          ` <span class="ws-bb">${escape(bbMark(move.add))} · over the ${fixed(s.hurdle, 2)} bar: worth a look</span>`,
+        go: [weekUrl("#read-section"), "The read →"],
+      });
+    }
+  }
+  return items.sort((a, b) => b.key - a.key || KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind));
+}
+
+function drawAttention() {
+  const items = attentionItems();
+  const waiting = !NOT_READY && GOT.glance !== null && STREAM.state === "waiting";
+  const section = $("attention-section");
+  if (!items.length && !waiting) {
+    // Absent, not empty: nothing asks for a decision today.
+    section.hidden = true;
+    pairUp();
+    return;
+  }
+  section.hidden = false;
+  $("attention-tag").textContent = waiting
+    ? "reading the day"
+    : count(items.length, "line");
+  $("attention").innerHTML =
+    items
+      .map(
+        (item) =>
+          `<li><span class="fig">${item.fig}</span><span class="what">${item.what}</span>` +
+          `<a class="ws-btn sm quiet go" href="${escape(item.go[0])}">${escape(item.go[1])}</a></li>`,
+      )
+      .join("") +
+    (waiting ? `<li class="wait"><span class="fig"></span><span class="what">Working out the wire…</span></li>` : "");
+  pairUp();
+}
+
+/* ---- THE WIRE ------------------------------------------------------------ */
+
+/** How many of the day's moves the section shows; the rest are the Matchup
+ *  page's, under More. */
+const WIRE_SHOWN = 3;
+
+function drawWire() {
+  const section = $("wire-section");
+  if (NOT_READY) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  $("wire-all").href = weekUrl("#more-moves");
+  if (STREAM.state === "waiting") {
+    $("wire-tag").textContent = "reading the wire";
+    $("wire").innerHTML = `<p class="ov-wait">Working out the wire…</p>`;
+    return;
+  }
+  const r = ready(GOT.stream);
+  if (!r) {
+    $("wire-tag").textContent = "not read";
+    $("wire").innerHTML =
+      `<p class="ov-wait">The wire could not be worked out: ${escape(STREAM.detail || "no answer")}.</p>`;
+    return;
+  }
+  const moves = r.moves || [];
+  $("wire-tag").textContent =
+    `bar ${fixed(r.hurdle, 2)} categories` + (r.adds_left === 0 ? " · no adds left" : "");
+  $("wire-bar").innerHTML =
+    `The bar is <b>${fixed(r.hurdle, 2)}</b> categories, or an empty day filled, from ` +
+    `${escape(r.hurdle_source)}: ${escape(r.hurdle_note)}. A move over it is labelled worth a ` +
+    `look and one under it is labelled so; both are shown in full.`;
+  $("wire-all").textContent = `Every move considered (${moves.length}) →`;
+  if (onBye(r)) {
+    $("wire").innerHTML = `<p class="ov-wait">Nothing is ranked on a bye: there is no matchup to move.</p>`;
+    return;
+  }
+  if (!moves.length) {
+    $("wire").innerHTML =
+      `<p class="ov-wait">No legal move: nobody on the wire can be added within the roster's rules.</p>`;
+    return;
+  }
+  const shown = moves.slice(0, WIRE_SHOWN);
+  $("wire").innerHTML = shown.map((move) => moveBlockHtml(move, r)).join("");
+  $("wire")
+    .querySelectorAll("[data-inspect]")
+    .forEach((button, i) => {
+      button.onclick = () => inspectMove(shown[i], r, GOT.context, button);
+    });
+  wireCards($("wire"));
+}
+
+/* ---- STANDINGS ----------------------------------------------------------- */
+
+/** How many rows the cut shows, and how many on each side of yours. */
+const CUT_ROWS = 5;
+const CUT_SIDE = 2;
+
+/* The league's unit is categories, and its standings' order is the category
+   record, as ESPN's own `standing` is: the share of categories won, a tie
+   counting half, then categories won, then fewest lost (docs/site.md,
+   "Overview"). `/standings` still sorts by matchups won, so the page puts
+   its rows in this order itself; a record with nothing decided yet (before
+   the draft, 0–0) keeps the route's order. */
+
+/** A team's share of the categories decided, a tie counting half; null
+ *  with none decided. */
+function catShare(row) {
+  const decided = row.categories_won + row.categories_lost + row.categories_tied;
+  return decided ? (row.categories_won + row.categories_tied / 2) / decided : null;
+}
+
+/** ".631", as the Standings page writes a share. */
+const shareText = (row) => {
+  const share = catShare(row);
+  return isNum(share) ? share.toFixed(3).replace(/^0/, "") : dash;
+};
+
+/** The standings rows in the category record's order. */
+function byCategories(rows) {
+  const key = (row) => (isNum(catShare(row)) ? catShare(row) : -1);
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort(
+      (a, b) =>
+        key(b.row) - key(a.row) ||
+        b.row.categories_won - a.row.categories_won ||
+        a.row.categories_lost - b.row.categories_lost ||
+        a.i - b.i,
+    )
+    .map((each) => each.row);
+}
+
+function drawStandings() {
+  if (!GOT.standings) return;
+  const rows = byCategories(GOT.standings);
+  $("standings-section").hidden = false;
+  $("standings-go").href = leagueUrl(WHERE.league, WHERE.season, "standings") + Q;
+  const at = rows.findIndex((row) => row.espn_team_id === TEAM);
+  const start = Math.max(0, Math.min((at < 0 ? 0 : at) - CUT_SIDE, rows.length - CUT_ROWS));
+  const cut = rows.slice(start, start + CUT_ROWS);
+  const p = ready(GOT.projected);
+  const soon = new Map((p ? p.teams : []).map((t) => [t.espn_team_id, t]));
+  $("standings-tag").textContent = at >= 0 ? `${ordinal(at + 1)} of ${rows.length}` : count(rows.length, "team");
+  $("cut-head").innerHTML =
+    `<th scope="col"><span class="sr">Place</span></th><th scope="col" class="l">Team</th>` +
+    `<th scope="col">Categories</th><th scope="col" title="Share of categories won, a tie counting half">Cat. share</th>` +
+    (p ? `<th scope="col" title="Projected finish: the category record the projection ends on">Proj.</th>` +
+      `<th scope="col">Playoffs</th>` : "");
+  $("cut-body").innerHTML = cut
+    .map((row, i) => {
+      const t = soon.get(row.espn_team_id);
+      const ours = row.espn_team_id === TEAM;
+      return (
+        `<tr class="${ours ? "ours" : ""}"><td class="rank">${start + i + 1}</td>` +
+        `<td class="name"><span title="${escape(row.name)}">${escape(row.name)}</span></td>` +
+        `<td>${wlt(row.categories_won, row.categories_lost, row.categories_tied)}</td>` +
+        `<td>${shareText(row)}</td>` +
+        (p
+          ? `<td>${t ? record(t.projected_record) : dash}</td>` +
+            `<td>${t ? pct(t.playoff_odds) : dash}</td>`
+          : "") +
+        `</tr>`
+      );
+    })
+    .join("");
+  pairUp();
+}
+
+/* ---- TONIGHT --------------------------------------------------------------
+   The day's lineup a place a row, drawn from the Matchup page's Tonight
+   pieces (pages.js: `standing`, `tipOff`, `boxRow`, `playerName`,
+   `theirRow`): the place, the man and his mark, his game and tip-off, what
+   ESPN says, and his line once it is stored. */
+
+function tonightSeat(slot, player) {
+  if (!player) {
+    return (
+      `<tr class="gone"><td class="slot">${escape(slot)}</td>` +
+      `<td class="name"><span class="faint">nobody can fill it</span></td><td></td><td></td></tr>`
+    );
+  }
+  const [word, tone] = standing(player);
+  const game = player.game
+    ? [player.game.describe, tipOff(player.game.at)].filter(Boolean).join(" · ")
+    : "no game";
+  // His line, once stored, is a row of its own under his, across the
+  // columns after the place, so it reads as one line rather than a stack.
+  const line = boxRow(player.line);
+  return (
+    `<tr class="${tone === "on" ? "" : "off"}${line ? " has-line" : ""}"><td class="slot">${escape(slot)}</td>` +
+    `<td class="name">${playerName(player)} <span class="ws-bb">${escape(bbMark(player))}</span></td>` +
+    `<td class="game">${escape(game)}</td>` +
+    `<td class="st ${tone}">${escape(word)}</td></tr>` +
+    (line ? `<tr class="line"><td></td><td colspan="3">${line}</td></tr>` : "")
+  );
+}
+
+function drawTonight() {
+  const r = ready(GOT.today);
+  const section = $("tonight-section");
+  if (NOT_READY || !r) {
+    section.hidden = true;
+    pairUp();
+    return;
+  }
+  section.hidden = false;
+  $("tonight-go").href = weekUrl("#tonight-section");
+  const idle = r.teams_playing === 0;
+  $("tonight-none").hidden = !idle;
+  $("tonight-table").hidden = idle;
+  if (idle) {
+    // The All-Star break. Ten rows of "nobody" would be ten rows of noise.
+    $("tonight-tag").textContent = r.calendar_date ? dayName(r.calendar_date) : `day ${r.today}`;
+    $("tonight-none").textContent = "No NBA team plays, so there is no lineup to set.";
+    pairUp();
+    return;
+  }
+  $("tonight-tag").textContent = `${r.starts} of ${r.lineup.length} places filled`;
+  const benched = (r.benched || []).map((one) => tonightSeat("bench", one.player));
+  $("tonight-body").innerHTML =
+    (r.lineup || []).map((seat) => tonightSeat(seat.slot, seat.player)).join("") + benched.join("");
+  wireCards($("tonight-body"));
+  drawTheirTonight();
+  pairUp();
+}
+
+/** Their side, closed under ours: who they have set tonight, as stored. */
+function drawTheirTonight() {
+  const g = GOT.glance;
+  const box = $("their-tonight");
+  if (!g || NOT_READY || g.opponent_espn_team_id === null || GOT.theirs === null) {
+    box.hidden = true;
+    return;
+  }
+  const r = ready(GOT.today);
+  const day = r ? r.today : GOT.context ? GOT.context.today : null;
+  const rows = GOT.theirs.get(day) || [];
+  box.hidden = false;
+  $("their-name").textContent = `Their side · ${teamName(g.opponent_espn_team_id)}`;
+  $("their-n").textContent = `${count(rows.length, "place")} set`;
+  $("tonight-theirs").innerHTML = rows.length
+    ? rows.map(theirRow).join("")
+    : `<li class="off"><span class="who">Their lineup for tonight has not been read from ESPN yet.</span></li>`;
+  wireCards($("tonight-theirs"));
+}
+
+/** The opponent's stored lineups for the period, by day: the league's own
+ *  route, as the Matchup page reads it. */
+async function readTheirs() {
+  const g = GOT.glance;
+  const period = GOT.context && GOT.context.period ? GOT.context.period.period : null;
+  if (!g || g.opponent_espn_team_id === null || period === null) return;
+  const query = new URLSearchParams({ period: String(period), started: "true", limit: "300" });
+  const got = await get(
+    `${BASE}/teams/${g.opponent_espn_team_id}/lineups?${query.toString()}`,
+    { quiet: true },
+  );
+  const byDay = new Map();
+  if (got.ok) {
+    (got.body.items || []).forEach((slot) => {
+      if (!byDay.has(slot.scoring_period)) byDay.set(slot.scoring_period, []);
+      byDay.get(slot.scoring_period).push(slot);
+    });
+  }
+  GOT.theirs = byDay;
+  drawTheirTonight();
+}
+
+/* ---- RECENT ---------------------------------------------------------------
+   The league's last five, over the seven days to the day on the page (and
+   never past now: a window cannot hold what has not happened), as This
+   week's What changed draws them. */
+
+const RECENT_DAYS = 7;
+const RECENT_SHOWN = 5;
+const RECENT_KINDS = ["add", "claim", "drop", "trade", "status"];
+
+async function drawRecent() {
+  const c = GOT.context;
+  $("recent-section").hidden = false;
+  $("recent-go").href = teamUrl(WHERE.league, WHERE.season, TEAM, "moves") + Q;
+  $("recent").innerHTML = `<p class="ov-wait">Reading the league's news…</p>`;
+  let until = new Date();
+  if (c && c.today_date) {
+    const end = new Date(`${c.today_date}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    if (end < until) until = end;
+  }
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - RECENT_DAYS);
+  const query = new URLSearchParams({
+    since: since.toISOString(),
+    until: until.toISOString(),
+    team_id: String(TEAM),
+    limit: String(RECENT_SHOWN),
+  });
+  RECENT_KINDS.forEach((kind) => query.append("kinds", kind));
+  const got = await get(`${BASE}/changes?${query.toString()}`, { quiet: true });
+  if (!got.ok) {
+    $("recent-tag").textContent = "not read";
+    $("recent").innerHTML = `<p class="ov-wait">The league's news could not be read: ${escape(got.detail)}.</p>`;
+    return;
+  }
+  const items = got.body.items || [];
+  $("recent-tag").textContent = `${items.length} of ${got.body.total} · ${RECENT_DAYS} days`;
+  $("recent").innerHTML = items.length
+    ? changedHtml(items)
+    : `<p class="ov-wait">Nothing changed in this league over the ${RECENT_DAYS} days to ` +
+      `${escape(dayName(until.toISOString().slice(0, 10)))}.</p>`;
+  wireCards($("recent"));
+}
+
+/* ---- the layout ------------------------------------------------------------
+   On a wide desk MATCHUP sits beside NEEDS ATTENTION and STANDINGS beside
+   TONIGHT, in the owner's order read across; a pair whose partner is
+   absent takes the whole width. */
+
+function pairUp() {
+  const pairs = [
+    ["matchup-section", "attention-section"],
+    ["standings-section", "tonight-section"],
+  ];
+  pairs.forEach(([a, b]) => {
+    const left = $(a);
+    const right = $(b);
+    left.classList.toggle("solo", right.hidden);
+    right.classList.toggle("solo", left.hidden);
+  });
+}
+
+function drawFoot() {
+  $("foot").innerHTML =
+    `Refreshed at <b>${clock()}</b>. This page generates ideas; the manager decides. ` +
+    `Read-only: nothing here writes to the league or the database, and nothing on it ` +
+    `touches ESPN.`;
+}
+
+/* ---- the order things are drawn in ----------------------------------------- */
+
+async function start() {
+  startTheme();
+  $("sub").textContent = "Loading…";
+  drawFoot();
+  const asked = {
+    context: get(`${BASE}/pages/context${Q}`),
+    periods: get(`${BASE}/periods`, { quiet: true }),
+    standings: get(`${BASE}/standings`, { quiet: true }),
+    projected: get(`${BASE}/projected${Q}`, { quiet: true }),
+    glance: get(`${BASE}/teams/${TEAM}/pickups/glance${Q}`, { quiet: true }),
+    today: get(`${BASE}/teams/${TEAM}/today${Q}`, { quiet: true }),
+  };
+
+  const [context, periods] = await Promise.all([asked.context, asked.periods]);
+  if (!context.ok) {
+    $("sub").textContent = "";
+    fail(`This team's overview cannot be drawn: ${context.detail}`);
+    return;
+  }
+  GOT.context = context.body;
+  GOT.periods = periods.ok ? periods.body : null;
+  document.title = `Overview · ${teamName(TEAM)}`;
+  drawHeader();
+  const recent = drawRecent();
+
+  asked.standings.then((got) => {
+    GOT.standings = got.ok ? got.body : null;
+    drawStandings();
+    drawFacts();
+  });
+  asked.projected.then((got) => {
+    GOT.projected = got.ok ? got.body : { readiness: { ready: false } };
+    drawStandings();
+    drawFacts();
+  });
+
+  const glance = await asked.glance;
+  if (!glance.ok) {
+    STREAM.state = "failed";
+    STREAM.detail = glance.detail;
+    fail(`This week cannot be worked out: ${glance.detail}`);
+  } else {
+    GOT.glance = glance.body;
+    if (glance.body.readiness && !glance.body.readiness.ready) {
+      // Before the draft (docs/site.md, "Readiness"): the sentence once, in
+      // the facts line's place, and nothing built on a roster.
+      NOT_READY = glance.body.readiness;
+      STREAM.state = "none";
+      $("ready").hidden = false;
+      $("ready").textContent = NOT_READY.note || "";
+    }
+  }
+  drawHeader();
+  drawFacts();
+  drawMatchup();
+  drawWire();
+  drawTonight();
+  drawAttention();
+
+  const tonight = asked.today.then((got) => {
+    GOT.today = got.ok ? got.body : null;
+    drawTonight();
+    drawAttention();
+    if (!NOT_READY) return readTheirs();
+    return null;
+  });
+
+  if (STREAM.state === "waiting") {
+    const stream = await get(`${BASE}/teams/${TEAM}/pickups/stream${Q}`, { quiet: true });
+    GOT.stream = stream.ok ? stream.body : null;
+    STREAM.state = stream.ok ? "done" : "failed";
+    STREAM.detail = stream.ok ? "" : stream.detail;
+    drawFacts();
+    drawMatchup();
+    drawWire();
+    drawAttention();
+  }
+  await Promise.all([tonight, recent]);
+}
+
+start();
+</script>
+</body>
+</html>

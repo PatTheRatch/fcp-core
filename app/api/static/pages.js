@@ -29,7 +29,8 @@ const $ = (id) => document.getElementById(id);
  *  (docs/site.md has the map):
  *
  *    /l/{league}/{season}/{week|standings|draft|history}
- *    /l/{league}/{season}/team/{team}/{week|season|moves}
+ *    /l/{league}/{season}/team/{team}                    the Overview
+ *    /l/{league}/{season}/team/{team}/{week|season|moves|trades}
  *    /account/{connections|projections|alerts}
  *    /pages/claim/{league}/{season}
  *    /design
@@ -57,7 +58,8 @@ function place() {
     where.season = number(parts[2]);
     if (parts[3] === "team") {
       where.team = number(parts[4]);
-      where.section = `team-${parts[5]}`;
+      // The team's own address with nothing after it is its Overview.
+      where.section = parts[5] ? `team-${parts[5]}` : "team-overview";
     } else {
       where.section = parts[3] || null;
     }
@@ -73,9 +75,11 @@ function place() {
   return where;
 }
 
-/** The address of a page on the map, from its parts. */
+/** The address of a page on the map, from its parts. A team page with no
+ *  `which` (or "overview") is the team's own address, its Overview. */
 const leagueUrl = (league, season, section) => `/l/${league}/${season}/${section}`;
-const teamUrl = (league, season, team, which) => `/l/${league}/${season}/team/${team}/${which}`;
+const teamUrl = (league, season, team, which) =>
+  `/l/${league}/${season}/team/${team}` + (which && which !== "overview" ? `/${which}` : "");
 
 /** A query string from the parts that are set, and nothing when none are. */
 function params(where, extra) {

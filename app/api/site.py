@@ -1,11 +1,13 @@
 """The site: one URL map, one shell over every page (step 3 of docs/product.md).
 
     /                                         the landing page signed out; signed in,
-                                              the viewer's default league's This week
+                                              his team's Overview in his default
+                                              league, else that league's This week
     /l/{league_id}/{season}/week              This week: every matchup, the score so far
     /l/{league_id}/{season}/standings         records, category records, streaks
     /l/{league_id}/{season}/draft             the board in pick order, and its value
     /l/{league_id}/{season}/history           the narratives, this season and all of them
+    /l/{league_id}/{season}/team/{team_id}          the Overview: the morning's briefing
     /l/{league_id}/{season}/team/{team_id}/week     the week plan
     /l/{league_id}/{season}/team/{team_id}/season   the season plan
     /l/{league_id}/{season}/team/{team_id}/moves    the scorecard of this team's own moves
@@ -85,7 +87,8 @@ def _moved(to: str, request: Request) -> RedirectResponse:
 def home(request: Request, session: SessionDep, settings: SettingsDep) -> HTMLResponse:
     """Signed out, what the product is and a way in. Signed in, a page whose
     shell finds the viewer's default league (the one this browser last looked
-    at, else his first) and goes to its This week, or says he has none yet.
+    at, else his first) and goes to his team's Overview there -- or, with no
+    team claimed in it, to its This week -- or says he has none yet.
 
     Open, so it declares no check; it asks who is there and serves one of two
     files, neither of which carries any data.
@@ -159,6 +162,22 @@ def league_history_page() -> HTMLResponse:
 # ---------------------------------------------------------------------------
 # the team pages: the paid team layer, this team's manager
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/l/{league_id}/{season}/team/{team_id}",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[TEAM_PLAN_PAGE],
+)
+def team_overview_page() -> HTMLResponse:
+    """The team's home: the morning's briefing, drawn from routes that exist.
+
+    The matchup, what asks for a decision today, the wire, a cut of the
+    standings, tonight's lineup and the league's latest, each read from the
+    route the team's other pages already read (docs/site.md, "Overview").
+    """
+    return _page("overview.html")
 
 
 @router.get(
