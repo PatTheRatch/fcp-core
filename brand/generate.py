@@ -9,7 +9,7 @@ from pathlib import Path
 INK = "#2B2D31"
 ORANGE = "#F26A1B"
 PAPER = "#F7F6F3"
-DARK = "#1B1C1F"
+DARK = "#0D0F12"   # matches --canvas (dark) in docs/design_system.md
 
 OUT = Path(__file__).parent
 
@@ -27,7 +27,7 @@ def symbol(ink, orange, cx, cy, s, square=False):
     <circle cx="810" cy="530" r="230"/>
   </g>
   {sq}
-  <circle cx="810" cy="530" r="160" fill="{orange}"/>
+  <circle cx="810" cy="530" r="165" fill="{orange}"/>
   <g clip-path="url(#ball)" fill="none" stroke="{ink}" stroke-width="16">
     <path d="M810 360 V700"/><path d="M640 530 H980"/>
     <path d="M690 400 Q760 530 690 660"/><path d="M930 400 Q860 530 930 660"/>
@@ -77,7 +77,7 @@ def tagline(ink, orange, cx, cy, s):
 
 # ---------------------------------------------------------------- layouts
 DEFS = '''<defs>
-    <clipPath id="ball"><circle cx="810" cy="530" r="160"/></clipPath>
+    <clipPath id="ball"><circle cx="810" cy="530" r="165"/></clipPath>
     <clipPath id="lb"><rect x="0" y="0" width="100" height="140"/></clipPath>
   </defs>'''
 
@@ -152,7 +152,7 @@ FILES = {
     "box-out-primary-horizontal-dark.svg": horizontal(DARK, PAPER, ORANGE),
     "box-out-secondary.svg":          stacked(PAPER, INK, ORANGE, True),
     "box-out-secondary-dark.svg":     stacked(DARK, PAPER, ORANGE, True),
-    "box-out-icon.svg":               icon(INK, PAPER, ORANGE),
+    "box-out-icon.svg":               icon(DARK, PAPER, ORANGE),
     "box-out-mark.svg":               mark(INK, ORANGE),
     "box-out-mark-light.svg":         mark(PAPER, ORANGE),
 }

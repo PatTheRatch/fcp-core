@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 620" width="1040" height="620">
   <title>Box Out Fantasy mark</title>
   <defs>
-    <clipPath id="ball"><circle cx="810" cy="530" r="160"/></clipPath>
+    <clipPath id="ball"><circle cx="810" cy="530" r="165"/></clipPath>
     <clipPath id="lb"><rect x="0" y="0" width="100" height="140"/></clipPath>
   </defs>
   
@@ -13,7 +13,7 @@
     <circle cx="810" cy="530" r="230"/>
   </g>
   
-  <circle cx="810" cy="530" r="160" fill="#F26A1B"/>
+  <circle cx="810" cy="530" r="165" fill="#F26A1B"/>
   <g clip-path="url(#ball)" fill="none" stroke="#F7F6F3" stroke-width="16">
     <path d="M810 360 V700"/><path d="M640 530 H980"/>
     <path d="M690 400 Q760 530 690 660"/><path d="M930 400 Q860 530 930 660"/>

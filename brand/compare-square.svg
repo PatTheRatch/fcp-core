@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1200" width="2400" height="1200">
+  <title>Compare</title>
+  <defs>
+    <clipPath id="ball"><circle cx="810" cy="530" r="165"/></clipPath>
+    <clipPath id="lb"><rect x="0" y="0" width="100" height="140"/></clipPath>
+  </defs>
+  
+  <g>
+  <rect width="1200" height="1200" rx="0" fill="#F7F6F3"/>
+  <g transform="translate(600,501.126582278481) scale(0.88) translate(-600,-530)">
+  <g fill="none" stroke="#2B2D31" stroke-width="80" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M160 300 V760"/>
+    <path d="M160 300 H350 Q420 300 420 370 V460 Q420 530 350 530 H160"/>
+    <path d="M160 530 H380 Q460 530 460 610 V680 Q460 760 380 760 H160"/>
+    <circle cx="810" cy="530" r="230"/>
+  </g>
+  <rect x="240" y="595" width="100" height="100" fill="#F26A1B"/>
+  <circle cx="810" cy="530" r="165" fill="#F26A1B"/>
+  <g clip-path="url(#ball)" fill="none" stroke="#2B2D31" stroke-width="16">
+    <path d="M810 360 V700"/><path d="M640 530 H980"/>
+    <path d="M690 400 Q760 530 690 660"/><path d="M930 400 Q860 530 930 660"/>
+  </g>
+</g><g transform="translate(177.50000000000006,786.7265822784809) scale(1.0696202531645569)" fill="none" stroke="#2B2D31" stroke-width="28" stroke-linecap="square" stroke-linejoin="miter"><g transform="translate(0,0)"><path d="M14 14 V126"/><path d="M14 14 H66 Q84 14 84 32 V52 Q84 70 66 70 H14"/><path d="M14 70 H70 Q86 70 86 86 V110 Q86 126 70 126 H14"/></g><g transform="translate(130,0)"><rect x="14" y="14" width="72" height="112" rx="26"/></g><g transform="translate(260,0)"><g clip-path="url(#lb)" stroke-linecap="butt"><path d="M0 0 L100 140"/><path d="M100 0 L0 140"/></g></g><g transform="translate(430,0)"><rect x="14" y="14" width="72" height="112" rx="26"/></g><g transform="translate(560,0)"><path d="M14 14 V98 Q14 126 42 126 H58 Q86 126 86 98 V14"/></g><g transform="translate(690,0)"><path d="M14 14 H86"/><path d="M50 14 V126"/></g></g>
+</g><g transform="translate(1200,0)">
+  <rect width="1200" height="1200" rx="0" fill="#F7F6F3"/>
+  <g transform="translate(600,501.126582278481) scale(0.88) translate(-600,-530)">
+  <g fill="none" stroke="#2B2D31" stroke-width="80" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M160 300 V760"/>
+    <path d="M160 300 H350 Q420 300 420 370 V460 Q420 530 350 530 H160"/>
+    <path d="M160 530 H380 Q460 530 460 610 V680 Q460 760 380 760 H160"/>
+    <circle cx="810" cy="530" r="230"/>
+  </g>
+  
+  <circle cx="810" cy="530" r="165" fill="#F26A1B"/>
+  <g clip-path="url(#ball)" fill="none" stroke="#2B2D31" stroke-width="16">
+    <path d="M810 360 V700"/><path d="M640 530 H980"/>
+    <path d="M690 400 Q760 530 690 660"/><path d="M930 400 Q860 530 930 660"/>
+  </g>
+</g><g transform="translate(177.50000000000006,786.7265822784809) scale(1.0696202531645569)" fill="none" stroke="#2B2D31" stroke-width="28" stroke-linecap="square" stroke-linejoin="miter"><g transform="translate(0,0)"><path d="M14 14 V126"/><path d="M14 14 H66 Q84 14 84 32 V52 Q84 70 66 70 H14"/><path d="M14 70 H70 Q86 70 86 86 V110 Q86 126 70 126 H14"/></g><g transform="translate(130,0)"><rect x="14" y="14" width="72" height="112" rx="26"/></g><g transform="translate(260,0)"><g clip-path="url(#lb)" stroke-linecap="butt"><path d="M0 0 L100 140"/><path d="M100 0 L0 140"/></g></g><g transform="translate(430,0)"><rect x="14" y="14" width="72" height="112" rx="26"/></g><g transform="translate(560,0)"><path d="M14 14 V98 Q14 126 42 126 H58 Q86 126 86 98 V14"/></g><g transform="translate(690,0)"><path d="M14 14 H86"/><path d="M50 14 V126"/></g></g>
+</g><path d="M1200 0 V1200" stroke="#2B2D31" stroke-width="2" stroke-opacity="0.2"/><g font-family="sans-serif" font-size="36" fill="#2B2D31" fill-opacity="0.55"><text x="600" y="80" text-anchor="middle">A: with orange square</text><text x="1800" y="80" text-anchor="middle">B: without</text></g>
+</svg>
