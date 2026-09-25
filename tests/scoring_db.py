@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import zlib
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -33,6 +33,18 @@ from app.scoring.lines import COUNTS
 LEAGUE_ID = 3853870
 NINE = ("PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%")
 
+#: `league_season`'s draft date when a test names none: the October before
+#: the season, which is when this league drafts. Every season a test builds
+#: is therefore one that has been drafted (`app.inseason.drafted`), as every
+#: season the tests stand for was; a test about a season before its draft
+#: says so with `drafted_at=` a date ahead, or None.
+DRAFTED = object()
+
+
+def drafted_before(season: int) -> datetime:
+    """The draft of `season`: 2025-10-18 at 17:00 UTC for 2026, as it was."""
+    return datetime(season - 1, 10, 18, 17, tzinfo=UTC)
+
 
 def league_season(
     session: Session,
@@ -42,8 +54,10 @@ def league_season(
     periods: int = 2,
     regular_season_periods: int | None = None,
     days_per_period: int = 7,
+    drafted_at: datetime | None | object = DRAFTED,
 ) -> tuple[LeagueSeason, list[Team], list[MatchupPeriod]]:
-    """A season with teams, the nine categories and `periods` matchup periods."""
+    """A season with teams, the nine categories and `periods` matchup periods,
+    drafted the October before unless `drafted_at` says otherwise."""
     league = session.scalar(select(League).where(League.espn_league_id == LEAGUE_ID))
     if league is None:
         league = League(espn_league_id=LEAGUE_ID)
@@ -66,6 +80,7 @@ def league_season(
         auction_budget=200,
         median_scoring=False,
         raw_settings={},
+        drafted_at=drafted_before(season) if drafted_at is DRAFTED else drafted_at,
     )
     session.add(ls)
     session.flush()
