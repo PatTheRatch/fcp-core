@@ -30,6 +30,7 @@ from app.api import trades as trades_api
 from app.api import what_if as what_if_api
 from app.config import Settings, get_settings
 from app.db.models import LeagueSeason, MatchupPeriod, Player, Team
+from app.inseason import drafted
 from app.mcp import trim
 from app.mcp.server import HOUSE_RULES, NOTES, build_server
 from app.pickups.bids import clear_cache
@@ -46,7 +47,16 @@ from tests.pickups_db import (
     projected,
     snapshot,
 )
-from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.scoring_db import (
+    AUCTION_NOTE,
+    BEFORE_THE_AUCTION,
+    LEAGUE_ID,
+    held,
+    league_season,
+    matchup,
+    player,
+    undrafted_season,
+)
 
 HOME, AWAY = 1, 2
 PERIODS = 4
@@ -768,3 +778,111 @@ def test_a_stash_reads_the_same_through_the_tool_as_through_the_route(
     assert answer["playoffs"] == trim.playoffs(route["playoffs"])
     assert "bracket is not known" in answer["language"]
     assert "bracket is not known" in route["playoff_language"]
+
+
+# ---------------------------------------------------------------------------
+# 2027 before its auction
+# ---------------------------------------------------------------------------
+
+UNDRAFTED = 2027
+
+#: The keys a not-ready answer may carry: the sentence, what is missing, the
+#: facts that need no roster, and the provenance. Nothing else, so no number.
+NOT_READY_KEYS = {
+    "ready",
+    "why_not",
+    "missing",
+    "language",
+    "provenance",
+    "team",
+    "for_team",
+    "matchup_period",
+    "opponent_espn_team_id",
+    "opponent",
+    "today",
+    "date",
+    "league_id",
+    "season",
+    "projection_record",
+    "trade_record",
+}
+
+
+@pytest.fixture
+def before_the_auction(
+    session: Session, league: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    """The small league's 2026, and its 2027 as the ingest of 2026-09-23 left it:
+    the auction ahead, a schedule, and a roster on every day of the first week."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: BEFORE_THE_AUCTION)
+    ls, teams, periods = undrafted_season(session, days_per_period=7)
+    games(session, 10, SEASON_DAYS, season=UNDRAFTED)
+    session.flush()
+    return {"ls": ls, "teams": teams, "periods": periods, **league}
+
+
+def _in_2027(**more: Any) -> dict[str, Any]:
+    return {"league_id": LEAGUE_ID, "season": UNDRAFTED, **more}
+
+
+def test_every_tool_that_needs_a_roster_says_the_draft_and_no_number(
+    server: MCPServer, before_the_auction: dict[str, Any]
+) -> None:
+    ghost = before_the_auction["who"]["HomeWeak"]
+    gated = {
+        "week_report": _in_2027(team_id=HOME, today=1),
+        "season_report": _in_2027(team_id=HOME, today=1),
+        "todays_lineup": _in_2027(team_id=HOME, today=1),
+        "standings": _in_2027(),
+        "projected_standings": _in_2027(today=1),
+        "matchup": _in_2027(team_id=HOME),
+        "free_agents": _in_2027(team_id=HOME, today=1),
+        "what_if": _in_2027(team_id=HOME, add=[int(ghost.espn_player_id)], today=1),
+        "judge_trade": _in_2027(team_id=HOME, with_team=AWAY, give=[1], today=1),
+    }
+    for name, arguments in gated.items():
+        answer = call(server, name, arguments)
+        assert answer["ready"] is False, name
+        assert answer["why_not"] == AUCTION_NOTE, name
+        assert pickups_api.NOT_DRAFTED in answer["missing"], name
+        assert set(answer) <= NOT_READY_KEYS, f"{name}: {set(answer) - NOT_READY_KEYS}"
+        draft = answer["provenance"]["draft"]
+        assert draft["drafted"] is False and draft["note"] == AUCTION_NOTE, name
+        assert draft["drafted_at"] == "2026-10-10T18:00:00+00:00", name
+
+    week = call(server, "week_report", gated["week_report"])
+    assert (week["matchup_period"], week["opponent_espn_team_id"]) == (1, AWAY)
+    assert week["opponent"] == "Away", "the schedule's own fact, which needs no roster"
+
+
+def test_the_context_and_the_leagues_say_when_the_draft_is(
+    server: MCPServer, before_the_auction: dict[str, Any]
+) -> None:
+    context = call(server, "league_context", _in_2027())
+    assert context["draft"] == {
+        "type": "AUCTION",
+        "drafted_at": "2026-10-10T18:00:00+00:00",
+        "drafted": False,
+        "note": AUCTION_NOTE,
+    }
+    listed_leagues = call(server, "my_leagues", {})["leagues"]
+    assert listed_leagues[0]["newest_season"] == UNDRAFTED
+    assert listed_leagues[0]["newest_season_draft"]["note"] == AUCTION_NOTE
+
+    played = call(server, "league_context", {"league_id": LEAGUE_ID, "season": SEASON})
+    assert played["draft"]["drafted"] is True
+    assert "draft" not in played["provenance"], "a season in play answers as it always did"
+
+
+def test_the_tools_that_need_no_roster_answer_and_carry_the_draft_line(
+    server: MCPServer, before_the_auction: dict[str, Any]
+) -> None:
+    for name, arguments in (
+        ("what_changed", _in_2027()),
+        ("recent_moves", _in_2027(days=7)),
+    ):
+        answer = call(server, name, arguments)
+        assert "ready" not in answer, name
+        assert answer["provenance"]["draft"]["note"] == AUCTION_NOTE, name
+    for name, arguments in ALL_CALLS.items():
+        assert "draft" not in call(server, name, arguments)["provenance"], name

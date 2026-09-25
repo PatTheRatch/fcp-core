@@ -4,9 +4,9 @@ The fixture is `tests/test_access.py`'s, deliberately: the claim being made
 is that the co-manager's tools answer the very questions the routes answer,
 so they are held to the very leagues and claims those routes are held to.
 Alice manages team 3 in league A, Bob team 5, Carol is in league B, and none
-of the three leagues has a schedule or a lineup day -- so a tool that gets
-through the door says "this season has nothing to build a report from",
-which is exactly the signal `tests/test_access.py` reads a 409 as.
+of the three leagues has a draft, a schedule or a lineup day -- so a tool
+that gets through the door answers `ready: false` with the draft's own
+sentence, which is exactly the signal `tests/test_access.py` reads a 200 as.
 
 The last test starts the real server as a subprocess and talks to it over
 stdin and stdout with the SDK's own client, because everything above runs
@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import accounts, api_tokens
 from app.config import Settings, get_settings
+from app.inseason.drafted import UNSCHEDULED
 from app.mcp.scope import NO_SUCH_TOKEN, NO_TOKEN, NOT_A_MEMBER, TEAM_REFUSED
 from app.mcp.server import TOKEN_ENV, build_server
 from tests.test_access import (
@@ -43,8 +44,8 @@ from tests.test_access import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: What every tool answers on these leagues once the scope check has passed:
-#: they have no schedule and no lineup days, so there is nothing to report on.
-THROUGH = "has nothing to build a pickup report from"
+#: nothing says their draft was held, so there is nothing to report on.
+THROUGH = UNSCHEDULED
 
 
 @pytest.fixture
@@ -123,7 +124,8 @@ def test_alices_token_cannot_read_bobs_plan(
 
     # Her own team: through the door, and told the season has nothing in it.
     hers = called(server, "week_report", plan(3))
-    assert hers.is_error and THROUGH in text_of(hers)
+    assert not hers.is_error and THROUGH in text_of(hers)
+    assert json.loads(text_of(hers))["ready"] is False
 
 
 def test_a_member_of_one_league_is_refused_another(

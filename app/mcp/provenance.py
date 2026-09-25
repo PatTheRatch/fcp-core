@@ -14,6 +14,10 @@ payload instead, in one block on every tool result:
                      league printed that no player row could be placed on
       as_of:         the scoring period, its date, and whether the report
                      was the morning's stored one or was built for this call
+      draft:         only on a season not drafted yet: that it is not, when the
+                     draft is, and the sentence to say (`app.inseason.drafted`).
+                     Every number that needs a roster is left out of such an
+                     answer, and this line is why
 
 `source` is the accessor's own: `owner` (this league's manager chose it),
 `measured` (its own history), `pooled` (leagues shaped like it) or `default`
@@ -34,6 +38,7 @@ from app import calibration
 from app.db.models import InjuryReport, LeagueSeason
 from app.injuries import morning_of
 from app.injury_reports import NBA_OFFICIAL
+from app.inseason.drafted import season_is_drafted
 from app.pickups import status_source
 from app.pickups.state import SeasonCalendar, season_calendar, status_on
 from app.projections.sources import ESPN, describe
@@ -185,6 +190,29 @@ def block(
         "injuries": injuries_as_of(session, int(league_season.season), day, on),
         "read_only": "nothing here can add, drop, bid or accept anything on ESPN",
     }
+    draft = undrafted(session, league_season)
+    if draft is not None:
+        out["draft"] = draft
     if extra:
         out |= extra
     return out
+
+
+def undrafted(session: Session, league_season: LeagueSeason) -> dict[str, Any] | None:
+    """The draft line for a season not drafted yet; None for one that has been.
+
+    None rather than a "drafted: true" line, so an answer about a season in
+    play is exactly what it was before the line existed.
+    """
+    found = season_is_drafted(session, league_season)
+    if found.drafted:
+        return None
+    return {
+        "drafted": False,
+        "drafted_at": found.drafted_at.isoformat() if found.drafted_at is not None else None,
+        "note": found.reason,
+        "means": (
+            "nobody has a roster yet, whatever ESPN's feed shows before a draft, so every "
+            "number that needs one -- a projection, a plan, a lineup, a record -- is left out"
+        ),
+    }

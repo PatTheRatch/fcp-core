@@ -366,7 +366,8 @@ def build_server(
             "Every league and team this token may read, with the role in each. "
             "Call it when you do not know the league id, the season or which "
             "team is the manager's. Returns nothing about any league he is not "
-            "a member of."
+            "a member of. `newest_season_draft` says when that season's draft "
+            "is or was."
         )
     )
     def my_leagues(ctx: Context) -> dict[str, Any]:
@@ -378,7 +379,9 @@ def build_server(
             "number its recommendations lean on with where each came from: the "
             "manager's own choice, a measurement of this league, the pool of "
             "leagues like it, or a default measured elsewhere. Call this first "
-            "in a conversation. It carries no player and no plan."
+            "in a conversation. It carries no player and no plan. `draft` says "
+            "when the season's draft is or was: before it nobody has a roster, "
+            "and every tool that needs one answers `ready: false`."
         )
     )
     def league_context(league_id: int, season: int, ctx: Context) -> dict[str, Any]:
@@ -394,6 +397,8 @@ def build_server(
             "roster place produces nothing, and the season's projected record "
             "with no move made. The team's manager only. `today` replays an "
             "earlier scoring period; left out it is today's."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def week_report(
@@ -407,6 +412,8 @@ def build_server(
             "dropping and what that costs, who is worth stashing hurt, the best "
             "move of each kind with what it is worth a week, and what to bid. "
             "The team's manager only."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def season_report(
@@ -421,6 +428,8 @@ def build_server(
             "places that will produce nothing tonight while a bench man would. "
             "The cheapest question in fantasy and usually the first one to ask. "
             "The team's manager only."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def todays_lineup(
@@ -460,6 +469,8 @@ def build_server(
         description=(
             "Every team's record: matchups won, lost and tied, and categories "
             "won, lost and tied. Byes left out. League scope."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def standings(league_id: int, season: int, ctx: Context) -> dict[str, Any]:
@@ -473,6 +484,8 @@ def build_server(
             "carries its own record of how well the method scored when the "
             "season was replayed against it; quote that whenever you quote an "
             "odd. League scope."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def projected_standings(
@@ -485,6 +498,8 @@ def build_server(
             "One team's matchup in a period, with each side's nine categories as "
             "ESPN last stored them. Left without a period it is the one today "
             "falls in. League scope."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def matchup(
@@ -530,6 +545,8 @@ def build_server(
             "`value`, `games` or `name`. The team's manager only, because it is "
             "priced for his roster's calendar. What a man is worth to a roster "
             "AFTER a particular deal is a different question: `judge_trade`."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def free_agents(
@@ -557,6 +574,8 @@ def build_server(
             "finish is a second lens and not a second bar: nothing is "
             "labelled against it, and it carries the simulation's own "
             "sampling band, which you quote with it. The team's manager only."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def what_if(
@@ -588,6 +607,8 @@ def build_server(
             "side with our projections: that is our estimate of his roster's "
             "needs, never his opinion. It does not propose deals and cannot "
             "offer one to anybody."
+            " Before the season's draft there is no roster to read, and it answers "
+            "`ready: false` with `why_not`, the draft's date, and no number."
         )
     )
     def judge_trade(

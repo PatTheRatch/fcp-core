@@ -18,6 +18,24 @@ Every tool returns a mapping with, at least:
 
 and then its own fields. Lists that were cut say how long they were, so a
 model can say "of 412 free agents" and be right.
+
+A SEASON THAT CANNOT BE READ YET
+
+Before its draft a season has no rosters, whatever ESPN's feed shows
+(`app.inseason.drafted`). Every tool whose numbers need a roster -- the
+three reports, the wire, a what-if, a trade, the standings, the projected
+standings, a matchup -- then answers with
+
+    ready        False
+    why_not      the sentence to say: "The auction is Sat, Oct 10 at 2:00 PM
+                 ET; there are no rosters to project until then."
+    provenance   with its `draft` line saying the same
+
+and no number at all. A season with no NBA schedule or no roster yet
+answers the same way, with the route's own sentence. `league_context` and
+`my_leagues` say when the draft is; `player_card`, `what_changed` and
+`recent_moves` answer as ever, since a player's own line, the news and the
+moves need no roster, and carry the `draft` line in their provenance.
 """
 
 from __future__ import annotations
@@ -42,6 +60,7 @@ from app.api import what_if as what_if_api
 from app.api.access import Viewer
 from app.db.models import League, LeagueSeason, Player, Team
 from app.draft.targets import category_distributions
+from app.inseason.drafted import season_is_drafted
 from app.inseason.projected_calibration import SHORT_NOTE
 from app.mcp import trim
 from app.mcp.provenance import block
@@ -125,6 +144,54 @@ def _passed_through(error: HTTPException) -> RefusedError:
     return RefusedError(detail if isinstance(detail, str) else "that cannot be read")
 
 
+def _not_ready(
+    session: Session,
+    found: LeagueSeason,
+    readiness: dict[str, Any],
+    *,
+    keys: tuple[str, ...] = (),
+    day: int | None = None,
+    also: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The answer for a season with nothing to read yet: the route's own
+    readiness sentence, what is missing, and no number.
+
+    `also` carries the facts that need no roster -- which team, which day --
+    so a model can still say what the question was about.
+    """
+    return {
+        "ready": False,
+        "why_not": readiness.get("note"),
+        "missing": list(readiness.get("missing") or []),
+        **(also or {}),
+        "language": (
+            "say `why_not` as it is: a fact and a date. There is nothing to project, and "
+            "no number here to quote"
+        ),
+        "provenance": block(session, found, keys=keys, day=day),
+    }
+
+
+def _undrafted(session: Session, found: LeagueSeason) -> dict[str, Any] | None:
+    """The readiness of a season not drafted yet, as a route would answer it,
+    for the tools that read no route with a readiness gate of their own."""
+    drafted = season_is_drafted(session, found)
+    if drafted.drafted:
+        return None
+    return {"ready": False, "missing": [pickups_api.NOT_DRAFTED], "note": drafted.reason}
+
+
+def _draft(session: Session, found: LeagueSeason) -> dict[str, Any]:
+    """When the season's draft is or was, as `league_context` and `my_leagues` say it."""
+    drafted = season_is_drafted(session, found)
+    return {
+        "type": found.draft_type,
+        "drafted_at": drafted.drafted_at.isoformat() if drafted.drafted_at else None,
+        "drafted": drafted.drafted,
+        "note": drafted.reason,
+    }
+
+
 # ---------------------------------------------------------------------------
 # what this token may see
 # ---------------------------------------------------------------------------
@@ -162,6 +229,7 @@ def my_leagues(session: Session, viewer: Viewer) -> dict[str, Any]:
                 "name": str(newest.name),
                 "seasons": sorted(int(row.season) for row in rows),
                 "newest_season": int(newest.season),
+                "newest_season_draft": _draft(session, newest),
                 "teams": teams,
             }
         )
@@ -220,6 +288,8 @@ def league_context(session: Session, viewer: Viewer, league_id: int, season: int
             "scoring_type": settings["scoring_type"],
         },
         "categories": [row["abbreviation"] for row in settings["categories"]],
+        # The fact every other tool gates on: before it, nobody has a roster.
+        "draft": _draft(session, found),
         "roster": {
             "lineup_slots": dict(found.lineup_slots or {}),
             "starting_places": places,
@@ -324,6 +394,20 @@ def week_report(
     found, team, body, stored = _plan(
         session, viewer, league_id, season, team_id, reports.STREAM, today
     )
+    if body.get("readiness") is not None:
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            keys=WEEK_KEYS,
+            day=today,
+            also={
+                "team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)},
+                "matchup_period": body["matchup_period"],
+                "opponent_espn_team_id": body["opponent_espn_team_id"],
+                "opponent": _team_name(session, found, body["opponent_espn_team_id"]),
+            },
+        )
     moves, of_moves = trim.cut(body["moves"], MOVES)
     return {
         "team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)},
@@ -398,6 +482,15 @@ def season_report(
     found, team, body, stored = _plan(
         session, viewer, league_id, season, team_id, reports.SEASON, today
     )
+    if body.get("readiness") is not None:
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            keys=SEASON_KEYS,
+            day=body.get("today"),
+            also={"team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)}},
+        )
     drops, of_drops = trim.cut(body["drops"], DROPS)
     return {
         "team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)},
@@ -466,6 +559,18 @@ def todays_lineup(
     found, team, body, stored = _plan(
         session, viewer, league_id, season, team_id, reports.TODAY, today
     )
+    if body.get("readiness") is not None:
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            day=body.get("today"),
+            also={
+                "team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)},
+                "today": body.get("today"),
+                "date": body.get("calendar_date"),
+            },
+        )
     return {
         "team": {"espn_team_id": body["espn_team_id"], "name": str(team.name)},
         "today": body["today"],
@@ -522,8 +627,15 @@ def _day_of(
 
 
 def standings(session: Session, viewer: Viewer, league_id: int, season: int) -> dict[str, Any]:
-    """Every team's record, in matchups and in categories."""
+    """Every team's record, in matchups and in categories. Before the draft
+    there is no record to read, and the answer says so rather than a table of
+    noughts."""
     found = league_member(session, viewer, league_id, season)
+    undrafted = _undrafted(session, found)
+    if undrafted is not None:
+        return _not_ready(
+            session, found, undrafted, also={"league_id": league_id, "season": season}
+        )
     rows = leagues_api.get_standings(found, session, include_playoffs=False)
     return {
         "league_id": league_id,
@@ -561,6 +673,18 @@ def projected_standings(
     except HTTPException as error:
         raise _passed_through(error) from None
     body = answer.model_dump(mode="json")
+    if body.get("readiness") is not None:
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            day=body.get("as_of"),
+            also={
+                "league_id": body["league_id"],
+                "season": body["season"],
+                "projection_record": body["calibration_note"],
+            },
+        )
     return {
         "league_id": body["league_id"],
         "season": body["season"],
@@ -621,6 +745,11 @@ def matchup(
     """
     found = league_member(session, viewer, league_id, season)
     team_of_league(session, found, team_id)
+    undrafted = _undrafted(session, found)
+    if undrafted is not None:
+        return _not_ready(
+            session, found, undrafted, also={"league_id": league_id, "season": season}
+        )
     day = None
     if period is None:
         # One period, never the whole season: a year of matchups is not an
@@ -895,8 +1024,13 @@ def free_agents(
     team = team_plan(session, viewer, found, league_id, team_id)
     calendar, missing = pickups_api.readiness(session, found)
     if missing or calendar is None:
-        raise RefusedError(
-            pickups_api.NOT_LISTENED.format(season=season, missing=" and ".join(missing))
+        return _not_ready(
+            session,
+            found,
+            pickups_api.readiness_out(session, found, missing).model_dump(mode="json"),
+            keys=WIRE_KEYS,
+            day=today,
+            also={"for_team": {"espn_team_id": int(team.espn_team_id), "name": str(team.name)}},
         )
     if sort not in ("value", "games", "name"):
         raise RefusedError("sort by `value`, `games` or `name`")
@@ -1042,12 +1176,14 @@ def judge_trade(
     body = answer.model_dump(mode="json")
     deal = body["trade"]
     if deal is None:
-        return {
-            "ready": False,
-            "why_not": body["readiness"]["note"],
-            "trade_record": body["calibration_note"],
-            "provenance": block(session, found, keys=TRADE_KEYS, day=today),
-        }
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            keys=TRADE_KEYS,
+            day=today,
+            also={"trade_record": body["calibration_note"]},
+        )
     return {
         "season": deal["season"],
         "judged_on_day": deal["today"],  # nothing after this day is read
@@ -1112,6 +1248,15 @@ def what_if(
     except HTTPException as error:
         raise _passed_through(error) from None
     body = answer.model_dump(mode="json")
+    if body.get("readiness") is not None:
+        return _not_ready(
+            session,
+            found,
+            body["readiness"],
+            keys=WEEK_KEYS,
+            day=body.get("today"),
+            also={"team": {"espn_team_id": body["espn_team_id"], "name": body["team_name"]}},
+        )
     week = body["week"]
     return {
         "team": {"espn_team_id": body["espn_team_id"], "name": body["team_name"]},

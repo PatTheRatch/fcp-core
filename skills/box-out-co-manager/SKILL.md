@@ -45,6 +45,15 @@ the league's own numbers. Then:
 says the method is overconfident. Quote it whenever you quote an odd, the
 way you quote `trade_record` with a trade.
 
+**Before the draft there is nothing to project.** `league_context`'s `draft`
+says when the season's draft is. Until it is held nobody has a roster, and
+every tool that needs one answers `ready: false` with `why_not` -- "The
+auction is Sat, Oct 10 at 2:00 PM ET; there are no rosters to project until
+then." Say that sentence, as it is, and stop: there is no week, no lineup,
+no standing and no odd to quote, and you do not estimate one. `player_card`,
+`what_changed` and `recent_moves` still answer, because a player's own line
+and the news need no roster.
+
 ## "What should I do this week?"
 
 Four parts, in this order.
@@ -170,3 +179,6 @@ think the numbers suggest" — say what the tool returned and why it follows.
 The sentence a tool returns is the site's own. Pass it on as it is. "This
 team's plan is its manager's" means exactly that: his token reads his team.
 Do not try another tool to get round it.
+
+`ready: false` is not a refusal but it is read the same way: `why_not` is the
+answer, a fact and a date. Do not look for the numbers somewhere else.

@@ -450,6 +450,36 @@ empty and says nothing at all — the first thing the tool traffic showed.
 Given `today`, the window is that day and the one before it, which is what
 the This week page shows.
 
+**Before the draft, nothing that needs a roster is answered** (2026-09-25).
+A season not drafted yet has no rosters, whatever ESPN's pre-draft feed
+stored (`app.inseason.drafted`). The nine tools whose numbers need one --
+`week_report`, `season_report`, `todays_lineup`, `standings`,
+`projected_standings`, `matchup`, `free_agents`, `what_if`, `judge_trade` --
+then return, instead of an error or a number:
+
+```json
+{
+  "ready": false,
+  "why_not": "The auction is Sat, Oct 10 at 2:00 PM ET; there are no rosters to project until then.",
+  "missing": ["the season has not been drafted, so no roster is a roster yet"],
+  "team": {"espn_team_id": 3, "name": "Through The Wire"},
+  "language": "say `why_not` as it is: a fact and a date. There is nothing to project, and no number here to quote",
+  "provenance": {"...": "...", "draft": {"drafted": false, "drafted_at": "2026-10-10T18:00:00+00:00", "note": "The auction is ...", "means": "..."}}
+}
+```
+
+with only the facts that need no roster beside it: the team, the day, the
+week's matchup period and scheduled opponent (`week_report`), the league and
+season (`standings`, `matchup`, `projected_standings`, which also keeps
+`projection_record`), `trade_record` (`judge_trade`). A season with no NBA
+schedule or no roster yet answers the same shape with the route's own
+sentence. `league_context` carries `draft` -- type, `drafted_at`, whether it
+is held, and the sentence -- and `my_leagues` carries `newest_season_draft`.
+`player_card`, `what_changed` and `recent_moves` answer as they always did (a
+player's own line, the news and the moves need no roster) with the `draft`
+line in their provenance. A drafted season's answers carry no `draft` line
+and are exactly what they were.
+
 A turn that answers "what should I do this week" costs about 9,000 tokens of
 tool results (`league_context`, `todays_lineup`, `week_report`,
 `what_changed`); a trade answer about 8,300 (`league_context` and
@@ -569,6 +599,10 @@ into the payload because a model has no page to print under.
 }
 ```
 
+On a season not drafted yet the block gains `draft` -- `drafted: false`,
+`drafted_at`, the dated sentence and what it means -- and on a drafted one
+it is absent, so an answer about a season in play is unchanged.
+
 `source` is the accessor's (`app.calibration`): `owner` beats `measured`
 beats `pooled` beats `default`, and a `default` is a number measured on
 somebody else's league. `stored_report` says whether the answer came from
@@ -651,8 +685,10 @@ on ESPN.
 A refusal is one sentence, and it is the site's own. "This team's plan is
 its manager's." for a team that is not yours; "not a member of this league";
 the route's own 422 for a deal that cannot be read ("Through The Wire does
-not have Bam Adebayo on its roster on day 52."); the 409 for a season with
-nothing to report on. Never a stack trace, and never a hint about whether
+not have Bam Adebayo on its roster on day 52."). A season with nothing to
+report on -- not drafted, no schedule, no roster -- is not a refusal since
+2026-09-25: the tool answers `ready: false` with the route's own sentence
+(**The tools**, above). Never a stack trace, and never a hint about whether
 the league or the team exists.
 
 The SDK prefixes a tool error with "Error executing tool `<name>`:", so the
