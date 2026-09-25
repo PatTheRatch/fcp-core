@@ -418,6 +418,27 @@ def test_the_drawer_is_one_panel_the_page_stays_live_beside() -> None:
     assert "top:auto" in phone and "bottom:0" in phone, "a sheet from the bottom on a phone"
 
 
+def test_the_scenario_is_a_seam_with_one_writer() -> None:
+    """scenario.js holds the state and the hook; only the week page's What
+    if sets it today, from its own answer; nothing is persisted."""
+    scenario = (STATIC / "scenario.js").read_text()
+    week = (STATIC / "week.html").read_text()
+    for part in ("get:", "set(next)", "view(which)", "reset()", "subscribe(listener)"):
+        assert part in scenario, part
+    for field in ("changes", "effect", "view", "source", "provenance", "saved"):
+        assert f"{field}:" in scenario, field
+    assert "localStorage" not in scenario, "global, persisted state is not this module's yet"
+    assert "answer.week ? answer.week.delta" in scenario
+    assert "answer.judgement ? answer.judgement.delta_season_per_week" in scenario
+    assert "playoffs.measurable ? playoffs.delta_per_week" in scenario
+    assert "SCENARIO.set(\n    SCENARIO.fromWhatIf(a," in week
+    assert "SCENARIO.subscribe(" in week and "whatIfBaselineHtml" in week
+    setters = [
+        name for name in sorted(STATIC.glob("*.html")) if "SCENARIO.set(" in name.read_text()
+    ]
+    assert [p.name for p in setters] == ["week.html"]
+
+
 def test_the_week_page_leaves_its_navigation_to_the_shell() -> None:
     """The rail carries Trades, Season and Moves, so the week page's own
     "Elsewhere" and the product's name in its eyebrow are gone."""

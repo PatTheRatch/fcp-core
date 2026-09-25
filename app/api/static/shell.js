@@ -16,7 +16,8 @@
    from two routes: /auth/me (who this is, his role in each league and his
    claims on teams) and /leagues (his leagues, each with its name and the
    seasons held). Loaded after pages.js, whose `get`, `place`, `escape` and
-   URL helpers it uses.
+   URL helpers it uses, and after scenario.js, whose state the scenario bar
+   draws.
 
    * The league is the one in the URL; on a page without one (the account
      pages, the home page) it is the one this browser last looked at, kept
@@ -35,7 +36,10 @@
      puts the focus back on its button, and it closes when the focus or a
      click goes elsewhere.
    * The inspection drawer is here, and every name's player card opens into
-     it (`cardName`, `wireCards`, `openCard`).
+     it (`cardName`, `wireCards`, `openCard`); so does a scenario's account
+     of its own numbers.
+   * The scenario bar is here, drawn from `SCENARIO` whenever a page has set
+     one; today only the week page's What if does.
 
    `SHELL` is a promise of what the shell found ({me, league, season,
    myTeam, ...}), for a page that wants to know whose team is whose. */
@@ -748,6 +752,114 @@ function wireCards(root) {
   });
 }
 
+/* ---- the scenario bar ---------------------------------------------------
+   Drawn from `SCENARIO` whenever a page has set one (scenario.js): the
+   name, the changes in the order they were named, the three numbers the
+   change moves -- this week, an ordinary week from here on, a playoff week
+   -- the BASELINE | SCENARIO toggle, and Inspect, Reset and Save. A number
+   is green when it helps the viewer's own roster and red when it costs it;
+   the signs on the changes are what they are (in, out) and carry no colour.
+   Save is there and says it cannot yet: there is nowhere to keep one until
+   scenarios are global (docs/design_system.md). */
+
+const CHANGE_SIGN = { add: ["+", "Add"], drop: ["−", "Drop"], ir: ["→", "To IR"], trade: ["⇄", "Trade"] };
+
+function effectHtml(label, f) {
+  const has = f && isNum(f.value);
+  const tone = !has || Math.abs(f.value) < 0.005 ? "" : f.value > 0 ? "ws-pos" : "ws-neg";
+  return (
+    `<div><dt>${escape(label)}</dt><dd class="${tone}"` +
+    `${f && f.note ? ` title="${escape(f.note)}"` : ""}>` +
+    `${has ? minus(signed(f.value, 2)) : dash}<small>${escape(f ? f.unit : "")}</small></dd></div>`
+  );
+}
+
+function scenarioBarHtml(state) {
+  const changes = (state.changes || [])
+    .map((c) => {
+      const [sign, word] = CHANGE_SIGN[c.kind] || ["·", c.kind];
+      return (
+        `<li><span class="ws-sign" aria-hidden="true">${sign}</span>` +
+        `<span class="sr">${escape(word)} </span>${escape(c.name)}` +
+        `${bbMark(c) ? ` <span class="ws-bb">${escape(bbMark(c))}</span>` : ""}</li>`
+      );
+    })
+    .join("");
+  const view = state.view === "baseline" ? "baseline" : "scenario";
+  const judged = state.source && state.source.day ? `judged on day ${state.source.day}` : "";
+  return (
+    `<div class="ws-scn-id"><span class="ws-k">◈ Scenario${judged ? ` · ${escape(judged)}` : ""}</span>` +
+    `<span class="ws-scn-name">${escape(state.name)}</span></div>` +
+    `<ul class="ws-chg" aria-label="Changes">${changes}</ul>` +
+    `<dl class="ws-eff">` +
+    effectHtml("Week", state.effect.week) +
+    effectHtml("Season", state.effect.season) +
+    effectHtml("Playoffs", state.effect.playoffs) +
+    `</dl>` +
+    `<div class="ws-scn-act">` +
+    `<div class="ws-seg scn" role="group" aria-label="Which roster the page draws">` +
+    `<button type="button" data-view="baseline" aria-pressed="${view === "baseline"}">Baseline</button>` +
+    `<button type="button" data-view="scenario" aria-pressed="${view === "scenario"}">Scenario</button>` +
+    `</div>` +
+    `<button type="button" class="ws-btn sm quiet" data-act="inspect" aria-haspopup="dialog">Inspect</button>` +
+    `<button type="button" class="ws-btn sm" data-act="reset">Reset</button>` +
+    `<button type="button" class="ws-btn sm" data-act="save" disabled ` +
+    `title="Saving waits for scenarios that last beyond this page">Save scenario</button>` +
+    `</div>`
+  );
+}
+
+/** The drawer's account of a scenario's numbers: each one with where it
+ *  came from, in words, one click from the bar. */
+function scenarioInspect(state, trigger) {
+  const rows = (state.provenance || [])
+    .map(([label, text]) => `<dt>${escape(label)}</dt><dd>${escape(text)}</dd>`)
+    .join("");
+  DRAWER.open({
+    key: "scenario",
+    trigger,
+    kicker: "Scenario · how this is worked out",
+    title: state.name,
+    meta: escape(
+      (state.changes || []).map((c) => `${(CHANGE_SIGN[c.kind] || ["·"])[0]} ${c.name}`).join("  "),
+    ),
+    body:
+      `<section class="ws-dsec"><span class="ws-k">Each number</span>` +
+      `<dl class="ws-facts">${rows}</dl></section>` +
+      `<p class="ws-note">Nothing here is stored, and nothing here touches ESPN: the scenario lasts ` +
+      `as long as this page, and the manager decides.</p>`,
+  });
+}
+
+function drawScenario(state) {
+  const bar = $("ws-scn-bar");
+  const rail = $("ws-scn");
+  const said = $("ws-scn-state");
+  const on = Boolean(state && state.active);
+  if (rail) rail.classList.toggle("on", on && state.view === "scenario");
+  if (said) {
+    const n = on ? state.changes.length : 0;
+    said.textContent = on
+      ? `${state.name} · ${count(n, "change")}${state.view === "baseline" ? " · baseline shown" : ""}`
+      : "Baseline · no changes";
+  }
+  if (!bar) return;
+  bar.hidden = !on;
+  if (!on) {
+    bar.innerHTML = "";
+    if (DRAWER.keyOf() === "scenario") DRAWER.close(false);
+    return;
+  }
+  bar.innerHTML = scenarioBarHtml(state);
+  bar.querySelectorAll("[data-view]").forEach((button) => {
+    button.onclick = () => SCENARIO.view(button.dataset.view);
+  });
+  const inspect = bar.querySelector('[data-act="inspect"]');
+  inspect.onclick = () => scenarioInspect(SCENARIO.get(), inspect);
+  bar.querySelector('[data-act="reset"]').onclick = () => SCENARIO.reset();
+  if (DRAWER.keyOf() === "scenario") scenarioInspect(state, inspect);
+}
+
 async function startShell() {
   const where = place();
   shellFrame();
@@ -755,6 +867,7 @@ async function startShell() {
   const account = $("shell-account");
   const whereText = $("ws-where");
   if (whereText) whereText.textContent = whereWords(null, where);
+  if (typeof SCENARIO !== "undefined") SCENARIO.subscribe(drawScenario);
   const ctx = await shellContext(where);
   if (!ctx || !main || !account) return ctx;
   if (ctx.league && where.league !== null) rememberLeague(ctx.league.id);
@@ -763,6 +876,7 @@ async function startShell() {
   if (whereText) whereText.textContent = whereWords(ctx, where);
   wireMenus(main);
   wireMenus(account);
+  if (typeof SCENARIO !== "undefined") drawScenario(SCENARIO.get());
   return ctx;
 }
 

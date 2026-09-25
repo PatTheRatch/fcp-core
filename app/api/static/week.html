@@ -227,6 +227,7 @@
 
 </div>
 <script src="/pages/static/pages.js"></script>
+<script src="/pages/static/scenario.js"></script>
 <script src="/pages/static/shell.js"></script>
 <script>
 "use strict";
@@ -1540,14 +1541,54 @@ function lockLine(lock) {
   );
 }
 
-function drawWhatIfAnswer(a) {
-  $("whatif-tag").textContent = `judged on day ${a.today}`;
-  // The route's own sentence about what the finish is, in the section's
-  // lede, where a reader meets it before the figure it is about.
-  const said = a.finish.language;
-  $("whatif-lede").innerHTML =
-    `${escape(said.charAt(0).toUpperCase() + said.slice(1))} ` +
-    `Change either chooser and tap Run again.`;
+/* ---- the answer as the page's scenario ----------------------------------
+   An answer is the scenario the shell's bar draws (scenario.js, shell.js):
+   the changes it names and its three numbers -- this week, an ordinary week
+   from here on, a playoff week -- all fields of the answer itself. The
+   bar's toggle switches this section between the answer (SCENARIO) and the
+   roster as it stands (BASELINE), both drawn from the same answer, and
+   Reset clears it. Nothing is kept once the page is left: a scenario that
+   lasts is the global state's job, not this page's (docs/design_system.md). */
+
+/** The answer on screen, and the lede the section had before it. */
+let WHATIF_ANSWER = null;
+let WHATIF_LEDE = "";
+
+/** The roster as it stands, from the same answer: the nine by the chance
+ *  each has before any change, and the finish before it. */
+function whatIfBaselineHtml(a) {
+  const week = a.week;
+  const base = { ...week, after: week.before };
+  const grouped = { yours: [], swing: [], theirs: [] };
+  CATS.forEach((cat) => grouped[bandOf(week.before ? week.before[cat] : undefined)].push(cat));
+  const against =
+    week.opponent_name === null || week.opponent_name === undefined
+      ? "on a bye"
+      : `vs ${escape(week.opponent_name)}`;
+  const f = a.finish;
+  const points = f.odds_band * 100;
+  return (
+    `<p class="whose">baseline · the roster as it stands</p>` +
+    `<p class="hint">Period ${week.matchup_period}, ${against}, ` +
+    `${count(week.days_remaining, "day")} left. Expected categories ` +
+    `<b>${fixed(week.expected_before, 2)}</b>, before any change.</p>` +
+    whatIfBandHtml("swing", grouped.swing, base, {}) +
+    whatIfBandHtml("yours", grouped.yours, base, {}) +
+    whatIfBandHtml("theirs", grouped.theirs, base, {}) +
+    `<p class="whose" style="margin-top:20px">finish</p>` +
+    `<p class="hint"><span class="mono">Projected ${escape(record(f.record_before))} · ` +
+    `${escape(ordinal(f.place_before))} · playoffs ${escape(oddsPoint(f.playoff_odds_before))}</span> ` +
+    `<span class="faint">(±${fixed(points, points < 0.1 ? 2 : 1)} points)</span></p>` +
+    `<p class="hint faint">${escape(f.calibration_note)}</p>`
+  );
+}
+
+/** The answer, in whichever of the two views the bar has chosen. */
+function drawWhatIfView(a, view) {
+  if (view === "baseline") {
+    $("whatif-answer").innerHTML = whatIfBaselineHtml(a);
+    return;
+  }
   // A finish the simulation cannot resolve is said in the route's words
   // rather than left as two percentages a tenth of a point apart.
   const quiet = (a.notes || []).filter((note) => note.indexOf("sampling band") >= 0);
@@ -1557,6 +1598,39 @@ function drawWhatIfAnswer(a) {
     finishHtml(a.finish) +
     quiet.map((note) => `<p class="hint faint">${escape(note)}.</p>`).join("");
   wireCards($("whatif-answer"));
+}
+
+SCENARIO.subscribe((state) => {
+  if (WHATIF_ANSWER === null) return;
+  if (!state.active) {
+    // Reset: the section goes back to the form it was before Run.
+    WHATIF_ANSWER = null;
+    $("whatif-answer").innerHTML = "";
+    $("whatif-tag").textContent = "your own move";
+    if (WHATIF_LEDE) $("whatif-lede").innerHTML = WHATIF_LEDE;
+    return;
+  }
+  drawWhatIfView(WHATIF_ANSWER, state.view);
+});
+
+function drawWhatIfAnswer(a) {
+  if (WHATIF_ANSWER === null) WHATIF_LEDE = $("whatif-lede").innerHTML;
+  WHATIF_ANSWER = a;
+  $("whatif-tag").textContent = `judged on day ${a.today}`;
+  // The route's own sentence about what the finish is, in the section's
+  // lede, where a reader meets it before the figure it is about.
+  const said = a.finish.language;
+  $("whatif-lede").innerHTML =
+    `${escape(said.charAt(0).toUpperCase() + said.slice(1))} ` +
+    `Change either chooser and tap Run again.`;
+  SCENARIO.set(
+    SCENARIO.fromWhatIf(a, {
+      league: WHERE.league,
+      season: WHERE.season,
+      team: WHERE.team,
+      today: a.today,
+    }),
+  );
 }
 
 async function runWhatIf() {
@@ -1582,6 +1656,9 @@ async function runWhatIf() {
   if (!got.ok) {
     // Every way a change cannot be made comes back as one sentence a manager
     // can act on. It is printed as it is sent: the page has nothing to add.
+    // The last answer's scenario goes with it, so the bar never names a
+    // change the section no longer shows.
+    SCENARIO.reset();
     $("whatif-answer").innerHTML = "";
     $("whatif-tag").textContent = "not a move that can be made";
     $("whatif-failed").hidden = false;

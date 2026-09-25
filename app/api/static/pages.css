@@ -270,6 +270,43 @@ body.ws{padding-left:var(--rail-w)}
 }
 @media (min-width:960px){ .ws-btn.ws-rail-close{display:none} }
 
+/* ---- the scenario bar ---------------------------------------------------
+   Over the page while a scenario is in view: its name, the changes, the
+   three numbers it moves, the toggle, and Reset / Save. A panel with an
+   orange edge -- the selected scenario is one of orange's four jobs. */
+.ws-scn-bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;
+  gap:var(--sp-2) var(--sp-5);padding:var(--sp-2) var(--sp-5);background:var(--panel);
+  border-bottom:1px solid var(--line);box-shadow:inset 3px 0 0 var(--accent);font-size:var(--t-md)}
+.ws-scn-bar.specimen{position:static;border:1px solid var(--line);border-radius:var(--r-panel)}
+.ws-scn-id{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ws-scn-id .ws-scn-name{font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ws-chg{display:flex;flex-wrap:wrap;gap:2px var(--sp-3);list-style:none;margin:0;padding:0;min-width:0}
+.ws-chg li{white-space:nowrap}
+.ws-chg .ws-sign{display:inline-block;width:1.1em;font-family:var(--font-data);font-weight:600;
+  color:var(--fg-2)}
+.ws-eff{display:flex;flex-wrap:wrap;gap:4px var(--sp-4);margin:0;min-width:0}
+.ws-eff div{display:flex;flex-direction:column;gap:1px}
+.ws-eff dt{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3)}
+.ws-eff dd{margin:0;font-family:var(--font-data);font-weight:600;font-size:var(--t-base);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ws-eff dd small{font-weight:400;font-size:var(--t-2xs);color:var(--fg-3);margin-left:3px}
+.ws-scn-act{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);margin-left:auto}
+@media (max-width:959px){
+  .ws-scn-bar{top:var(--top-h);padding:var(--sp-2) var(--sp-4);gap:var(--sp-2) var(--sp-4)}
+  .ws-scn-act{margin-left:0}
+}
+/* On a phone the bar is the same bar, narrowed: the three numbers side by
+   side, and it scrolls away with the page rather than holding a third of
+   a small screen. The rail's scenario line still says it is there. */
+@media (max-width:700px){
+  .ws-scn-bar{position:static}
+  .ws-eff{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
+  .ws-eff dd{font-size:var(--t-md)}
+  .ws-eff dd small{display:block;margin:0}
+}
+
 /* ---- the inspection drawer ----------------------------------------------
    A panel along the right that a player -- or a number's provenance --
    opens into, so a thing is inspected without leaving the page. It sits

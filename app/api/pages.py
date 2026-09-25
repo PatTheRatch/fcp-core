@@ -27,7 +27,8 @@ derives them from the stored matchups; they are not repeated here.
 WHO MAY OPEN THEM
 
 Who may open each page is in `app/api/site.py`. Here: the stylesheet and the
-two scripts are open (no data), and the context route is the league's. The
+three scripts (the pages' helpers, the scenario seam, the shell) are open (no
+data), and the context route is the league's. The
 pages' script sends a signed-out reader to /sign-in and back on a 401 from a
 fetch, and says one plain line on a 403 (docs/accounts.md).
 
@@ -93,6 +94,7 @@ ASSETS = {
     "pages.css": "text/css; charset=utf-8",
     "pages.js": "text/javascript; charset=utf-8",
     "shell.js": "text/javascript; charset=utf-8",
+    "scenario.js": "text/javascript; charset=utf-8",
 }
 
 TodayQuery = Annotated[
