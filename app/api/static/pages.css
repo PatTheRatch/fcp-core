@@ -1,61 +1,144 @@
 /* ---------------------------------------------------------------------------
-   Every page of the site: the shell over them, the league's pages, a team's
-   pages, the account pages and the landing page (docs/site.md).
+   Every page of the site: the workstation shell over them (the rail, the
+   scenario bar, the inspection drawer), the language its components speak,
+   and -- further down, marked -- each page's own furniture, which moves into
+   the new language one page at a time (docs/design_system.md).
 
-   The palette is the draft screen's token block (app/draft/static/draft.html)
-   with the two halves swapped round -- light is the default here, because
-   these pages are the season report's house style and that is the skin they
-   were approved in, and dark is the draft room's own palette behind the
-   switch. The names are the draft screen's exactly, so the two products
-   share one vocabulary and a value can be moved between them without
-   translation. No colour is written outside this block.
+   Box Out is a roster-planning workstation: serious analytical software for
+   people who manage fantasy basketball competitively. Hierarchy comes from
+   borders and two or three tonal surfaces, never from shadows; a shadow is
+   for something that genuinely sits above the page (the drawer, a menu).
+   Sharp: 4px on controls, 6px on containers, nothing on a table. Dense.
 
-   The rules of the house: rules, not boxes. No rounded corners, no chips, no
-   shadows, one burnt-orange accent, tabular numerals everywhere a number is.
+   THE TOKENS. Light is `:root`. Dark is designed on its own -- the same
+   hierarchy and the same contrast steps, not an inversion -- and is written
+   twice, because it has two ways in: the system preference (unless the
+   viewer chose light) and the viewer's own choice. `.t-light` and `.t-dark`
+   carry a theme into one subtree, which is how /design shows both at once.
+   No colour is written outside these blocks.
 
-   The three greys carry nearly all the small type on the site, and on cream
-   paper the lightest of them read at 2.6:1 -- elegant at a glance and not
-   actually readable, which is what "too thin in places" turned out to mean.
-   They are a shade darker here: on the two grounds a page is actually made
-   of, `ground` and `surface`, every one of them now clears WCAG AA for
-   small text. The hues are the same and the hierarchy is the same; only the
-   floor moved.
+   THE FOUR COLOURS THAT MEAN SOMETHING. Orange is Box Out's and is scarce.
+   Green and red are a change relative to the viewer's own roster, never a
+   judgement of a player. Everything else is neutral grey. Each is defined
+   below with its rule beside it.
 
-   `accent-deep` is the one addition: the same burnt orange taken down far
-   enough for a nine-point word to be read on cream, for the places the
-   accent is a label rather than a figure, a fill or a rule. The accent
-   itself is untouched, because it is the identity and it is used at sizes
-   where it is legible.
+   THE LEGACY NAMES. The pages were written against the report house style's
+   token names (--ground, --ink, --muted, --good, --stop...). Those names are
+   kept, pointed at the new tokens, so every page sits inside the new shell in
+   the new palette with its own layout untouched. They are retired page by
+   page as each is migrated; no new component uses them.
    --------------------------------------------------------------------------- */
-:root{
-  --ground:#E8E6DF; --surface:#F7F6F2; --sunk:#DEDBD2; --rule:#C6C2B6; --rule-strong:#16181A;
-  --ink:#16181A; --muted:#4F5258; --faint:#63666D;
-  --accent:#C4551F; --accent-deep:#A84A1A; --accent-ink:#FFFFFF; --accent-soft:#F1DCCF;
-  --good:#2F6F4E; --warn:#7F5800; --stop:#B23A30;
-  --good-soft:#DFEBE3; --warn-soft:#F3E7CA; --stop-soft:#F4DDDA;
-  --shade-0:transparent; --shade-1:#E2E0D8; --shade-2:#D2CFC4; --shade-3:#C0BCAE;
+:root,.t-light{
+  /* surfaces: three levels, lowest first */
+  --canvas:#F2F3F5;      /* the ground: the rail and the page behind everything */
+  --panel:#FFFFFF;       /* what sits on it: a table, the bar, the drawer */
+  --inset:#E8EAEE;       /* inside a panel: a header row, a hover, a well */
+  /* lines */
+  --line:#DDE0E5;        /* a hairline between rows and panels */
+  --line-strong:#8C939E; /* a control's edge, a header's rule: 3:1 on panel */
+  /* text, strongest first; every one clears 4.5:1 on every surface */
+  --fg:#15181D;
+  --fg-2:#474E59;
+  --fg-3:#59616D;
+  /* ORANGE -- Box Out's, and scarce: the active navigation, the selected
+     scenario, the comparison in focus, at most one series in a chart.
+     Never a button's fill, never a status, never decoration. */
+  --accent:#D35A1C;      /* a mark, a rule, a fill: not for small text */
+  --accent-text:#B4460F; /* orange that has to be read at 11px */
+  --accent-wash:#FBE7DA; /* the selected row, the scenario in view */
+  --accent-ink:#FFFFFF;  /* text on a solid --accent */
+  /* GREEN -- a change that is genuinely favourable to the viewer's own
+     roster (REB +13% after a move). Never "a good player". */
+  --pos:#17703F;
+  --pos-wash:#E1F1E7;
+  /* RED -- a change that is unfavourable to the viewer's own roster
+     (PTS -4% after the same move). Never "a bad player", never a status. */
+  --neg:#B8322A;
+  --neg-wash:#F8E1DE;
+  /* GREY -- everything else: a status (Q, OUT), a count, a label, a change
+     too small to call. */
+  --neutral:#59616D;
+  /* interaction */
+  --focus:#15181D;
+  --scrim:rgba(13,15,18,.32);
+  --shadow-float:0 14px 36px rgba(13,15,18,.16),0 2px 6px rgba(13,15,18,.08);
+  --warn:#865700; --warn-soft:#F3E7CA; /* legacy only: the pages' injury flag */
+  --shade-0:transparent; --shade-1:#ECEEF1; --shade-2:#DDE1E6; --shade-3:#CBD0D8;
   --shadow:none; --glow:none;
-  --display:"Oswald","Arial Narrow",system-ui,sans-serif;
-  --body:"Source Serif 4",Georgia,serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
 }
-:root[data-theme="dark"]{
-  --ground:#121316; --surface:#191A1E; --sunk:#24262B; --rule:#33363D; --rule-strong:#E9E6DD;
-  --ink:#ECE9E1; --muted:#A4A7AE; --faint:#8D9199;
-  --accent:#F08A4B; --accent-deep:#F08A4B; --accent-ink:#121316; --accent-soft:#3B2A20;
-  --good:#63B58E; --warn:#D9A43B; --stop:#E56B60;
-  --good-soft:#1C3128; --warn-soft:#332714; --stop-soft:#37201E;
-  --shade-0:transparent; --shade-1:#23262B; --shade-2:#2F343B; --shade-3:#3E454E;
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --canvas:#0D0F12; --panel:#15181D; --inset:#1E2228;
+    --line:#2A2F37; --line-strong:#6B7480;
+    --fg:#E7E9EC; --fg-2:#AAB1BB; --fg-3:#8E96A2;
+    --accent:#F47D38; --accent-text:#F47D38; --accent-wash:#3A2416; --accent-ink:#0D0F12;
+    --pos:#45BE78; --pos-wash:#15301F;
+    --neg:#F2685F; --neg-wash:#3A1C1A;
+    --neutral:#8E96A2;
+    --focus:#E7E9EC; --scrim:rgba(0,0,0,.5);
+    --shadow-float:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
+    --warn:#D9A43B; --warn-soft:#332714;
+    --shade-1:#1F242B; --shade-2:#2A3038; --shade-3:#37404A;
+    color-scheme:dark;
+  }
 }
-:root[data-theme="light"]{ color-scheme:light }
-:root[data-theme="dark"]{ color-scheme:dark }
+:root[data-theme="dark"],.t-dark{
+  --canvas:#0D0F12; --panel:#15181D; --inset:#1E2228;
+  --line:#2A2F37; --line-strong:#6B7480;
+  --fg:#E7E9EC; --fg-2:#AAB1BB; --fg-3:#8E96A2;
+  --accent:#F47D38; --accent-text:#F47D38; --accent-wash:#3A2416; --accent-ink:#0D0F12;
+  --pos:#45BE78; --pos-wash:#15301F;
+  --neg:#F2685F; --neg-wash:#3A1C1A;
+  --neutral:#8E96A2;
+  --focus:#E7E9EC; --scrim:rgba(0,0,0,.5);
+  --shadow-float:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
+  --warn:#D9A43B; --warn-soft:#332714;
+  --shade-1:#1F242B; --shade-2:#2A3038; --shade-3:#37404A;
+  color-scheme:dark;
+}
+/* The legacy names, pointed at the tokens. In a rule of their own and on
+   every theme root, because a custom property that reads another is worked
+   out where it is declared: declared on :root alone, a .t-dark subtree would
+   inherit the light answer. */
+:root,.t-light,.t-dark{
+  --ground:var(--canvas); --surface:var(--panel); --sunk:var(--inset);
+  --rule:var(--line); --rule-strong:var(--line-strong);
+  --ink:var(--fg); --muted:var(--fg-2); --faint:var(--fg-3);
+  --accent-deep:var(--accent-text); --accent-soft:var(--accent-wash);
+  --good:var(--pos); --stop:var(--neg); --good-soft:var(--pos-wash); --stop-soft:var(--neg-wash);
+}
+:root{
+  /* THE THREE VOICES, one job each (docs/design_system.md, "Voices").
+     The interface: IBM Plex Sans. The accent, for a major section's label
+     and nothing smaller: Oswald. The data: IBM Plex Mono, tabular. */
+  --font-ui:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,
+    "Helvetica Neue",Arial,sans-serif;
+  --font-accent:"Oswald","Arial Narrow","Roboto Condensed",sans-serif-condensed,system-ui,sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* the type scale, in px because the rows are sized in px */
+  --t-2xs:10.5px; --t-xs:11px; --t-sm:12px; --t-md:13px; --t-base:14px; --t-lg:16px;
+  --t-xl:20px; --t-2xl:26px;
+  /* space, on a 4px step */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  /* geometry */
+  --r-control:4px; --r-panel:6px;
+  --row:30px;            /* a screener row */
+  --rail-w:224px; --drawer-w:400px; --top-h:48px;
+  /* legacy face names */
+  --display:var(--font-accent); --body:var(--font-ui); --mono:var(--font-data);
+}
 
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
-  font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
-button{font:inherit;color:inherit}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--canvas);color:var(--fg);font-family:var(--font-ui);
+  font-size:var(--t-base);line-height:1.45;-webkit-font-smoothing:antialiased;
+  font-feature-settings:"tnum" 1}
+button,input,select,textarea{font:inherit;color:inherit}
 a{color:var(--accent-deep);text-underline-offset:3px}
-.page{max-width:1080px;margin:0 auto;padding:0 24px 96px}
+/* A page's own column: the legacy pages' reading measure, inside the main
+   column the rail leaves. Its base size is the one the pages were set in. */
+.page{max-width:1080px;margin:0 auto;padding:0 24px 96px;font-size:16px;line-height:1.55}
 .num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance;
   letter-spacing:.01em}
@@ -66,6 +149,38 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
    a grid whose column headings already say what the row of it is. */
 .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
   clip-path:inset(50%);white-space:nowrap;border:0}
+
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* ===========================================================================
+   THE WORKSTATION: the shell and the components every page will be built
+   from (docs/design_system.md). Every class here starts `ws-`, so nothing
+   below it -- the pages' own furniture -- can reach in by accident, and a
+   page being migrated can be searched for what it still uses of the old.
+   =========================================================================== */
+
+/* ---- the voices, as classes ---------------------------------------------
+   `ws-label` is the accent: a major section's name, in capitals, and
+   nothing smaller than that -- never every heading. `ws-data` is a figure. */
+.ws-label{font-family:var(--font-accent);font-weight:600;font-size:13px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--fg);margin:0;line-height:1.2}
+.ws-data{font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.ws-k{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3);font-weight:500}
+.ws-pos{color:var(--pos)} .ws-neg{color:var(--neg)} .ws-neu{color:var(--neutral)}
+/* A basketball fact as a micro-element: PHI · SG, vs BOS · 7:30, 3 games
+   left, Tue / Thu / Fri. The NBA abbreviation is the mark; there are no
+   pictures of anybody anywhere on the site. */
+.ws-bb{font-family:var(--font-data);font-size:var(--t-xs);letter-spacing:.03em;color:var(--fg-2);
+  white-space:nowrap}
+.ws-bb b{font-weight:600;color:var(--fg)}
+
+/* ===========================================================================
+   EACH PAGE'S OWN FURNITURE -- the report house style, kept as it was while
+   the pages move into the workstation language one at a time (the order is
+   in docs/design_system.md). It reads the legacy token names, which point
+   at the new palette, so it sits in the new shell without a seam.
+   =========================================================================== */
 
 /* ---- the shell: one bar over every page, a rule under it (shell.js) ------
    Links and menu buttons in the display face, the current one in the accent
@@ -979,7 +1094,6 @@ details.disc .inside > .lede{margin-top:0}
   .tape td.bar{display:none}
   .grid td.links a{display:block;margin:2px 0 0}
 }
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Nothing on these pages animates to say anything -- the one transition is
    the player card fading in -- but a reader who has asked for stillness gets

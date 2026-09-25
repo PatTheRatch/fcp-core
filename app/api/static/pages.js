@@ -411,39 +411,63 @@ function finishHtml(f) {
 }
 
 /* ---- the theme ---------------------------------------------------------
-   Light is the default and the skin these pages were approved in; the switch
-   flips to the draft room's palette. Kept in localStorage, wrapped, so a
-   private window merely forgets it. */
+   Light and dark are both first-class (docs/design_system.md). Until the
+   viewer chooses, the page follows the system's own preference; the switch
+   in the rail makes a choice, which is kept per viewer in localStorage,
+   wrapped, so a private window merely forgets it. Each page's <head>
+   applies a kept choice before anything is drawn, so a dark reader is never
+   flashed with the light page first. */
+
+const THEME_KEY = "fcp-theme";
 
 function readTheme() {
   try {
-    return window.localStorage.getItem("fcp-theme");
+    const kept = window.localStorage.getItem(THEME_KEY);
+    return kept === "light" || kept === "dark" ? kept : null;
   } catch (error) {
     return null;
   }
 }
 
+const systemDark = () =>
+  Boolean(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+/** The theme on the screen now: the viewer's choice, else the system's. */
+const shownTheme = () => document.documentElement.dataset.theme || (systemDark() ? "dark" : "light");
+
+/** Say on the switch which theme is showing. The rail's switch names it;
+ *  the signed-out pages' older switch says what a press would do. */
+function labelTheme() {
+  const button = $("theme");
+  if (!button) return;
+  const theme = shownTheme();
+  button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+  const state = button.querySelector(".ws-theme-state");
+  if (state) state.textContent = theme === "dark" ? "Dark" : "Light";
+  else button.textContent = theme === "light" ? "Lights down" : "Lights up";
+}
+
 function setTheme(value) {
   const theme = value === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
-  const button = $("theme");
-  if (button) {
-    button.textContent = theme === "light" ? "Lights down" : "Lights up";
-    button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
-  }
+  labelTheme();
   try {
-    window.localStorage.setItem("fcp-theme", theme);
+    window.localStorage.setItem(THEME_KEY, theme);
   } catch (error) {
     /* private window */
   }
 }
 
 function startTheme() {
-  setTheme(readTheme() || "light");
+  const kept = readTheme();
+  if (kept) document.documentElement.dataset.theme = kept;
+  else delete document.documentElement.dataset.theme;
+  labelTheme();
   const button = $("theme");
-  if (button) {
-    button.onclick = () =>
-      setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  if (button) button.onclick = () => setTheme(shownTheme() === "dark" ? "light" : "dark");
+  if (window.matchMedia) {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    if (query.addEventListener) query.addEventListener("change", labelTheme);
   }
 }
 
