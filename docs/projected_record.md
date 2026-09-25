@@ -117,9 +117,10 @@ PYTHONPATH=. python scripts/stash_locks.py > docs/runs/2026-09-25-stash-locks-be
 
 The runs are in `docs/runs/2026-09-25-projected-calibration-{before,after}[-espn].{txt,json}`
 and `docs/runs/2026-09-25-stash-locks-{before,after}.txt`; the before runs are
-the code at the declaration's commit, `ee14b37`. Each projected calibration
-took 35-40 seconds, 38 checkpoints at 2,000 simulated seasons; the lock study
-1,055s before and 1,317s after. All full runs; none was subset.
+the code at the declaration's commit (`52de0cd` on main, whose engine and
+scripts are byte for byte what ran). Each projected calibration took 35-40
+seconds, 38 checkpoints at 2,000 simulated seasons; the lock study 1,055s
+before and 1,317s after. All full runs; none was subset.
 
 **(A) reproduces the published table exactly**, every line, so the before
 column is the published one.

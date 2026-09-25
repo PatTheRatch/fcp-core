@@ -648,7 +648,7 @@ a lock by the league's own order. Nothing else moved: `LOCK_ODDS` 0.95,
 as they were, and nothing was tuned on what came back.
 
 **Reproduce:** the same command. Before (the code as published, at commit
-`ee14b37`) reproduces every figure above to the digit; the full outputs are
+`52de0cd` on main) reproduces every figure above to the digit; the full outputs are
 `docs/runs/2026-09-25-stash-locks-before.txt` and `-after.txt`. Wall time
 **1,055s before, 1,317s after** -- 871 then 923 engine runs over the same 865
 decision mornings, 0.99s then 1.21s a run; the after run shared the machine
