@@ -2198,6 +2198,16 @@ async function start() {
     return;
   }
   REPORT = report.body;
+  if (REPORT.readiness && !REPORT.readiness.ready) {
+    // A season before its draft (docs/site.md, "Readiness"): the route says
+    // when the draft is and sends no numbers, so the page prints that one
+    // sentence and draws nothing that would need a roster.
+    $("when").textContent = "";
+    fail(`${REPORT.readiness.note} Nothing here is worked out until the season has rosters.`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    await news;
+    return;
+  }
   drawMatchup(REPORT);
   drawBands(REPORT);
   drawRead(REPORT);

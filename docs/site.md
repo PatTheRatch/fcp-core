@@ -567,7 +567,11 @@ and every number on the answer empty -- null, `[]` or `{}` -- never a guess.
 `note` is the sentence the page prints; before the draft it is the draft's
 own, dated in Eastern time, because the other gaps follow from it. The
 facts that need no roster stay: the glance and the week report still say
-the matchup period and the scheduled opponent. A season that **is** ready
+the matchup period and the scheduled opponent. The pages print that
+sentence and nothing built on a roster: the team week and season pages
+show it as their one statement (the body stays hidden), the league week's
+"Your week" block is the sentence, and the standings keep the table as it
+stands with the sentence in the foot and no projected view. A season that **is** ready
 carries no `readiness` field at all (the trade routes', which always did,
 excepted), so its answers are byte for byte what they were
 (`app.api.schemas.Readied`). The gate exists because ESPN's roster feed for

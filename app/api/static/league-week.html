@@ -310,6 +310,12 @@ async function drawYours(ctx, context, report) {
     return;
   }
   const r = got.body;
+  if (r.readiness && !r.readiness.ready) {
+    // Before the draft the glance says when the draft is and sends no
+    // numbers; that sentence is the whole of your week for now.
+    $("yours-body").innerHTML = `<p>${escape(r.readiness.note)}</p>`;
+    return;
+  }
   const them = (context.teams || []).find((t) => t.espn_team_id === r.opponent_espn_team_id);
   const against =
     r.opponent_espn_team_id === null

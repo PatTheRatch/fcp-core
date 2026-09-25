@@ -336,6 +336,14 @@ async function start() {
     return;
   }
   const body = report.body;
+  if (body.readiness && !body.readiness.ready) {
+    // A season before its draft: the route's own sentence, and no outlook
+    // built on a roster nobody has (docs/site.md, "Readiness").
+    $("title").textContent = "The rest of the season";
+    fail(`${body.readiness.note} Nothing here is worked out until the season has rosters.`);
+    $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+    return;
+  }
   drawMasthead(body);
   drawReadout(body);
   drawOutlook(body);

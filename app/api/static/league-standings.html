@@ -379,6 +379,12 @@ async function start() {
 
   const projection = await asked;
   if (!projection.ok) return;
+  if (projection.body.readiness && !projection.body.readiness.ready) {
+    // Before the draft there is no projection to offer a view of; the foot
+    // says why in the route's own words and the table stays as it stands.
+    $("foot").innerHTML = `${FOOT}<br>${escape(projection.body.readiness.note)}`;
+    return;
+  }
   STATE.projection = projection.body;
   STATE.rows = prepare(ctx, rows, streaks.ok ? streaks.body : [], STATE.projection);
   $("views").hidden = false;
