@@ -12,17 +12,18 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow" id="eyebrow">{{brand}} &middot; trades</p>
-  <h1 id="title">&nbsp;</h1>
-  <p class="sub" id="sub"></p>
+<header class="ws-head">
+  <h1 class="ws-title" id="title">Trades</h1>
+  <div class="ws-head-tools"><button type="button" class="ws-btn sm quiet" data-account="head-account"
+    aria-haspopup="dialog">How this is worked out</button></div>
+  <div class="ws-account" id="head-account" data-title="Trades" data-k="The day"><p id="sub"></p></div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
 
-<dl class="line" id="readout" hidden></dl>
+<dl class="ws-factline" id="readout" hidden></dl>
 
 <main id="body" hidden>
 
@@ -779,8 +780,7 @@ function restsRows(report) {
 function drawMasthead() {
   const us = nameOf(WHERE.team);
   document.title = `${us} — trades`;
-  $("title").textContent = us;
-  $("eyebrow").textContent = `{{brand}} · ${WHERE.season} · trades`;
+  $("title").textContent = `Trades · ${WHERE.season}`;
   const source = `Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}.`;
   if (ROSTERS && !ROSTERS.readiness.ready) {
     // No schedule and no rosters: there is no day to judge on, so the
@@ -789,6 +789,9 @@ function drawMasthead() {
     return;
   }
   const day = ROSTERS ? ROSTERS.today : WHERE.today;
+  $("title").textContent =
+    `Trades · ${WHERE.season} · judged on day ${day === null || day === undefined ? "–" : day}` +
+    `${ROSTERS && ROSTERS.today_date ? ` (${dayName(ROSTERS.today_date)})` : ""}`;
   $("sub").innerHTML =
     `Judged on day <b>${day === null || day === undefined ? "–" : day}</b>` +
     `${ROSTERS && ROSTERS.today_date ? ` (${dayName(ROSTERS.today_date)})` : ""}. ` +
@@ -932,7 +935,7 @@ async function judge() {
 
 async function start() {
   startTheme();
-  $("title").textContent = "Loading…";
+  $("title").textContent = `Trades · ${WHERE.season} · Loading…`;
   $("record-tag").textContent = "the published run";
   $("judge").disabled = true;
   const query = params(WHERE);

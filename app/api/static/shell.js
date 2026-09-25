@@ -482,7 +482,8 @@ async function shellContext(where) {
 }
 
 /** The seasons held for this league, as a row of links to the same page in
- *  each, for a league page's masthead. Empty with fewer than two. */
+ *  each -- a segmented control on a league page's header line. Empty with
+ *  fewer than two. */
 function seasonLinks(ctx, where) {
   if (!ctx || !ctx.league || ctx.league.seasons.length < 2) return "";
   return ctx.league.seasons
@@ -490,8 +491,8 @@ function seasonLinks(ctx, where) {
     .reverse()
     .map(
       (year) =>
-        `<li><a href="${leagueUrl(ctx.league.id, year, where.section)}"` +
-        `${current(year === where.season)}>${year}</a></li>`,
+        `<a href="${leagueUrl(ctx.league.id, year, where.section)}"` +
+        `${current(year === where.season)}>${year}</a>`,
     )
     .join("");
 }
@@ -601,6 +602,47 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (DRAWER.isOpen()) DRAWER.close(true);
+});
+
+/* ---- a section's account, in the drawer ---------------------------------
+   The paragraphs that said how a section's numbers are worked out used to
+   sit in the flow under the section. They are kept in the page exactly
+   where they were, in an element of class `ws-account` (hidden), and a
+   button in the section's label row -- `data-account="that element's id"`
+   -- opens them in the drawer as a list of facts: each paragraph under its
+   label (`data-k` on the paragraph, else on the account), word for word.
+   Nothing is rewritten and nothing is lost; it is one click away instead
+   of in the way. Delegated from the document, so a section that redraws
+   itself keeps its button. */
+function accountSpec(source, trigger) {
+  const parts = Array.from(source.children).filter((part) => part.textContent.trim());
+  const body = parts
+    .map((part) => {
+      const label = part.dataset.k || source.dataset.k || "";
+      const inner = part.tagName === "P" ? `<p>${part.innerHTML}</p>` : part.innerHTML;
+      return `<dt>${escape(label)}</dt><dd>${inner}</dd>`;
+    })
+    .join("");
+  return {
+    key: `account-${source.id}`,
+    trigger,
+    kicker: source.dataset.kicker || "How this is worked out",
+    title: source.dataset.title || "",
+    body: `<dl class="ws-facts stack">${body}</dl>`,
+  };
+}
+
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-account]");
+  if (!trigger) return;
+  const source = $(trigger.dataset.account);
+  if (!source || !source.textContent.trim()) return;
+  event.preventDefault();
+  if (DRAWER.isOpen() && DRAWER.keyOf() === `account-${source.id}`) {
+    DRAWER.close(false);
+    return;
+  }
+  DRAWER.open(accountSpec(source, trigger));
 });
 
 /* ---- the player card, in the drawer --------------------------------------

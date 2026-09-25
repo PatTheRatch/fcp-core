@@ -42,14 +42,16 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow">Your account</p>
-  <h1>Alerts</h1>
-  <p class="sub">Where the morning digest and its alerts go, and what is in them: the league's
+<header class="ws-head">
+  <h1 class="ws-title">Alerts</h1>
+  <div class="ws-head-tools"><button type="button" class="ws-btn sm quiet" data-account="head-account"
+    aria-haspopup="dialog">What this page is</button></div>
+  <div class="ws-account" id="head-account" data-title="Alerts" data-kicker="Your account"
+    data-k="This page"><p>Where the morning digest and its alerts go, and what is in them: the league's
     week, and for a team you manage, today's lineup, the moves worth a look, what changed on
-    your roster and what the league did.</p>
+    your roster and what the league did.</p></div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>

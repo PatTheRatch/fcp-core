@@ -12,17 +12,18 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow" id="eyebrow">{{brand}} &middot; moves</p>
-  <h1 id="title">&nbsp;</h1>
-  <p class="sub" id="sub"></p>
+<header class="ws-head">
+  <h1 class="ws-title" id="title">Moves</h1>
+  <div class="ws-head-tools"><button type="button" class="ws-btn sm quiet" data-account="head-account"
+    aria-haspopup="dialog">How this is worked out</button></div>
+  <div class="ws-account" id="head-account" data-title="Moves" data-k="The grades"><p id="sub"></p></div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
 
-<dl class="line" id="readout"></dl>
+<dl class="ws-factline" id="readout"></dl>
 
 <main id="body" hidden>
   <section>
@@ -139,21 +140,20 @@ function draftRows(draft) {
 async function start() {
   startTheme();
   const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
-  $("title").textContent = "Loading…";
+  $("title").textContent = `Moves · ${WHERE.season} · Loading…`;
   const [card, ctx] = await Promise.all([
     get(`${base}/teams/${WHERE.team}/scorecard`),
     SHELL,
   ]);
   if (!card.ok) {
-    $("title").textContent = "No scorecard";
+    $("title").textContent = `Moves · ${WHERE.season} · no scorecard`;
     fail(`This team's moves cannot be graded: ${card.detail}`);
     $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
     return;
   }
   const c = card.body;
   document.title = `${c.team_name} — moves`;
-  $("title").textContent = c.team_name;
-  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season} · moves`;
+  $("title").textContent = `Moves · ${WHERE.season}`;
   $("sub").innerHTML =
     `The season's moves, graded in categories a week. The league's median pickup was worth ` +
     `<b>${fixed(c.replacement, 3)}</b> categories a week: what the wire gave anyone for ` +

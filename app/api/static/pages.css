@@ -530,6 +530,168 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 .ws-list li{margin:0 0 6px}
 .ws-list b{color:var(--fg)}
 
+/* ---- a page inside the rail ---------------------------------------------
+   Every page inside the rail is built of the same few things
+   (docs/design_system.md, "Migration"): a header line, a facts line, its
+   sections, tables at the screener's metrics, and a foot. The rail already
+   says whose team and which league, so the header says only what the page is
+   and when, in the interface voice at the size of a row.
+
+   THE PANEL RULE. One panel per section: the section's label sits on the
+   canvas above it, on a single rule, and everything the section holds -- a
+   table, the nine, a lineup, the schedule, a move -- sits on one panel under
+   it. A section that is only a table is the table's frame. A disclosure that
+   belongs to a section is a panel too, and shares the edge of the panel
+   above it rather than floating a gap below it. Canvas shows between
+   sections and nowhere else. */
+.ws-page{max-width:1240px;padding:var(--sp-4) var(--sp-5) 96px;font-size:var(--t-base);line-height:1.45}
+@media (max-width:959px){ .ws-page{padding:var(--sp-3) var(--sp-4) 72px} }
+.ws-page a{color:var(--fg);text-decoration-color:var(--line-strong)}
+.ws-page a:hover{text-decoration-color:var(--fg)}
+/* The header line: what the page is and when, then its own controls (the
+   season, the period) on the right. */
+.ws-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-4);min-height:30px;
+  margin:0 0 var(--sp-3);padding-bottom:var(--sp-3);border-bottom:1px solid var(--line)}
+.ws-title{flex:1 1 20rem;min-width:0;margin:0;font-family:var(--font-ui);font-size:var(--t-base);
+  font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:var(--fg);
+  overflow-wrap:anywhere}
+.ws-title .ws-when{color:var(--fg-2);font-weight:400}
+.ws-title .ws-when:not(:empty)::before{content:" \00B7  "}
+.ws-title .ws-when b{color:var(--fg);font-weight:500}
+.ws-title #when::before{content:none}
+.ws-pager{display:flex;flex-wrap:wrap;gap:2px}
+.ws-pager:empty{display:none}
+.ws-head-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);margin-left:auto;
+  min-width:0;max-width:100%}
+/* A row of seasons is a segmented control of links; a long row scrolls in
+   its own frame rather than widen the page. */
+.ws-seg a{display:inline-flex;align-items:center;height:26px;padding:0 7px;font-family:var(--font-data);
+  font-size:var(--t-2xs);font-weight:600;letter-spacing:.06em;color:var(--fg-2);text-decoration:none}
+.ws-seg a + a{border-left:1px solid var(--line-strong)}
+.ws-seg a:hover{background:var(--inset);color:var(--fg)}
+.ws-seg a[aria-current="page"]{background:var(--inset);color:var(--fg)}
+.ws-seg a:focus-visible{outline-offset:-2px}
+.ws-seg.years{max-width:100%;overflow-x:auto;scrollbar-width:thin}
+.ws-seg.years:empty{display:none}
+/* The facts line: the page's standing figures in one row, a label over each,
+   hairlines between them. Figures, not display type: no numeral here is
+   larger than a row's, and none is orange -- a count is grey. */
+.ws-factline{display:flex;flex-wrap:wrap;margin:0 0 var(--sp-5);padding:0}
+.ws-factline:empty{display:none}
+.ws-factline > div{display:flex;flex-direction:column;gap:1px;min-width:0;padding:2px var(--sp-4);
+  border-left:1px solid var(--line)}
+.ws-factline > div:first-child{padding-left:0;border-left:0}
+.ws-factline dt{font-family:var(--font-data);font-size:var(--t-xs);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3);white-space:nowrap}
+.ws-factline dd{margin:0;font-family:var(--font-data);font-size:var(--t-base);font-weight:500;
+  font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
+.ws-factline dd small{margin-left:3px;font-family:var(--font-data);font-size:var(--t-xs);font-weight:400;
+  color:var(--fg-3);white-space:normal}
+/* The matchup's own facts: the days left and the projected score are the
+   figures the rest of the page is read against, so they are a step up --
+   still figures in the data face, never display type, and grey. */
+.ws-factline.lead dd{font-size:var(--t-xl);font-weight:600;line-height:1.2}
+.ws-factline.lead dd small{font-size:var(--t-xs);font-weight:400}
+.ws-factline.lead #versus{font-family:var(--font-ui);font-size:var(--t-base);font-weight:400;
+  color:var(--fg-2);white-space:normal;padding-top:4px}
+.ws-factline.lead #versus b{color:var(--fg);font-weight:600}
+.ws-factline.lead .score{flex:1 1 16rem;max-width:26rem}
+.ws-factline .pair{display:flex;align-items:baseline;gap:8px}
+.ws-factline .pair .them{color:var(--fg-2)}
+.ws-factline .pair .v{color:var(--fg-3);font-weight:400}
+.ws-factline .split{display:block;height:6px;margin:6px 0 0;background:var(--inset);position:relative}
+.ws-factline .split i{position:absolute;inset:0 auto 0 0;display:block;background:var(--accent)}
+.ws-factline .split u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--fg);
+  opacity:.45;text-decoration:none}
+.ws-factline .ends{display:flex;justify-content:space-between;gap:10px;margin:4px 0 0;
+  font-family:var(--font-ui);font-size:var(--t-xs);font-weight:400;color:var(--fg-3);white-space:nowrap}
+.ws-factline .ends span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ws-factline .ends .r{text-align:right}
+@media (max-width:700px){
+  .ws-factline.lead .score{grid-column:1/-1;max-width:none;padding-left:0;border-left:0}
+  .ws-factline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2) 0}
+  .ws-factline > div,.ws-factline > div:first-child{padding:2px var(--sp-3) 2px 0;border-left:0}
+  .ws-factline > div:nth-child(2n){padding-left:var(--sp-3);border-left:1px solid var(--line)}
+  .ws-factline dd{white-space:normal}
+}
+/* A section: the label row on the canvas, then one panel. The label row's
+   own control (How this is worked out, Inspect) sits at its right end. */
+.ws-page .ws-sect{margin:0 0 var(--sp-6)}
+.ws-sect-head .ws-btn{align-self:center;margin:-4px 0}
+.ws-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-panel);
+  padding:var(--sp-3) var(--sp-4);min-width:0}
+.ws-panel.flush{padding:0;overflow:hidden}
+.ws-panel + .ws-panel{margin-top:-1px;border-top-left-radius:0;border-top-right-radius:0}
+.ws-panel:has(+ .ws-panel:not([hidden])){border-bottom-left-radius:0;border-bottom-right-radius:0}
+details.ws-disc.ws-panel > summary{padding:0 var(--sp-4)}
+details.ws-disc.ws-panel .ws-disc-body{padding:var(--sp-3) var(--sp-4)}
+details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
+.ws-panel > :first-child{margin-top:0}
+.ws-panel > :last-child{margin-bottom:0}
+/* Inside a panel, a sub-label: the side of a comparison, a band. */
+.ws-sub{display:flex;align-items:baseline;gap:var(--sp-2);margin:0 0 6px;font-family:var(--font-data);
+  font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:500}
+.ws-sub .n{margin-left:auto;letter-spacing:.04em}
+/* Prose that stays in view -- a status, an empty answer -- is a row's size. */
+.ws-page .ws-p{font-size:var(--t-base);color:var(--fg-2);max-width:78ch}
+.ws-empty{margin:0;padding:var(--sp-2) 0;color:var(--fg-3);font-size:var(--t-base)}
+/* The calibration sentences and the refreshed line stay in view, small. */
+.ws-calib{margin:var(--sp-2) 0 0;font-size:var(--t-sm);line-height:1.5;color:var(--fg-3);max-width:90ch}
+.ws-calib b{color:var(--fg-2);font-weight:500}
+.ws-foot{margin:var(--sp-6) 0 0;padding-top:var(--sp-3);border-top:1px solid var(--line);
+  font-size:var(--t-sm);line-height:1.6;color:var(--fg-3);max-width:100ch}
+.ws-foot b{color:var(--fg-2);font-weight:500}
+/* A section's account of how its numbers are worked out: kept in the page,
+   where the paragraph used to be, and opened in the drawer from the label
+   row. Hidden in the page; the drawer draws it as a list of facts. */
+.ws-account{display:none}
+.ws-facts.stack{grid-template-columns:minmax(0,1fr);gap:2px 0}
+.ws-facts.stack dt{padding-top:var(--sp-3)}
+.ws-facts.stack dt:first-child{padding-top:0}
+.ws-facts.stack dd{font-size:var(--t-md);line-height:1.55;color:var(--fg)}
+.ws-facts.stack dd p{margin:0 0 var(--sp-2)}
+.ws-facts.stack dd p:last-child{margin-bottom:0}
+.ws-facts.stack dd .ws-data,.ws-facts.stack dd .mono{font-weight:400}
+/* A table at the screener's metrics, for a table that does not sort or put
+   columns away: 30 px rows, the data face right-aligned, a caps header on
+   the inset surface, hairlines, the name in the interface face. */
+.ws-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--t-md);line-height:1.3}
+.ws-grid th{height:28px;padding:0 var(--sp-2);background:var(--inset);border-bottom:1px solid var(--line-strong);
+  font-family:var(--font-data);font-size:var(--t-xs);font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2);text-align:right;white-space:nowrap}
+.ws-grid td{height:var(--row);padding:0 var(--sp-2);border-bottom:1px solid var(--line);text-align:right;
+  font-family:var(--font-data);font-size:var(--t-md);font-variant-numeric:tabular-nums}
+.ws-grid tr > :first-child{padding-left:var(--sp-3);text-align:left}
+.ws-grid tr > :last-child{padding-right:var(--sp-3)}
+.ws-grid tbody tr:last-child > *{border-bottom:0}
+.ws-grid .l{text-align:left}
+.ws-grid td.name{font-family:var(--font-ui);font-size:var(--t-base);font-weight:500;text-align:left}
+.ws-grid td.name .faint,.ws-grid td .faint{font-weight:400}
+.ws-grid td.small,.ws-grid th.small{font-size:var(--t-sm)}
+.ws-grid td.name.small{font-size:var(--t-md);font-weight:400;color:var(--fg-2)}
+.ws-grid td.rank{color:var(--fg-3);width:2.5em}
+.ws-grid tbody tr:hover > *{background:var(--inset)}
+.ws-grid tr.ours > *{background:var(--accent-wash)}
+.ws-grid tr.ours td.name{font-weight:600}
+.ws-grid tr.sub > *{border-bottom-style:dotted}
+.ws-grid td.empty{font-family:var(--font-ui);color:var(--fg-3);text-align:left}
+.ws-grid th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
+  background:none;border:0;padding:0;cursor:pointer}
+.ws-grid th button:hover{color:var(--fg)}
+.ws-grid th button:focus-visible{outline-offset:1px}
+/* A wide table scrolls in its own frame, never the page; positioned, so a
+   screen reader's label far to the right stays inside it. */
+.scroll{position:relative;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.scroll .ws-grid{min-width:560px}
+/* A form of the account pages: a label over each field, the button beside
+   the last. */
+.ws-form{display:flex;flex-wrap:wrap;align-items:end;gap:var(--sp-2) var(--sp-3);margin:0}
+.ws-form .ws-fld{display:flex;flex-direction:column;gap:4px;flex:1 1 14rem;max-width:26rem;min-width:0}
+.ws-form .ws-fld > label{font-family:var(--font-data);font-size:var(--t-xs);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3)}
+.ws-input.plain{padding-left:10px;width:100%}
+.ws-page .ws-select{max-width:100%}
+
 /* ---- the design page's own specimens (/design) --------------------------- */
 .ws-doc-head{margin:0 0 var(--sp-6)}
 .ws-doc-title{margin:4px 0 8px;font-family:var(--font-ui);font-size:var(--t-2xl);font-weight:600;
@@ -812,13 +974,6 @@ section{margin-top:56px}
 .grid tr.seedrow .note{margin:0 0 6px;font-family:var(--body);font-size:13px;color:var(--muted);
   text-align:left}
 
-/* ---- the seasons row under a league page's masthead --------------------- */
-.years{display:flex;flex-wrap:wrap;gap:4px 14px;margin:14px 0 0;padding:0;list-style:none;
-  font-family:var(--mono);font-size:12px}
-.years a{color:var(--muted);text-decoration:none;border-bottom:1px solid transparent}
-.years a:hover{color:var(--ink)}
-.years a[aria-current="page"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
-
 /* ---- a matchup: two sides and their nine, a rule above it -------------- */
 .matchup{border-top:1px solid var(--rule);padding:18px 0 10px}
 .matchup:first-of-type{border-top:1px solid var(--rule-strong)}
@@ -837,9 +992,6 @@ section{margin-top:56px}
 .matchup .strip{margin-top:4px}
 .matchup .expect{margin:6px 0 0;font-family:var(--body);font-size:14px;color:var(--muted)}
 .matchup .expect b{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
-.pager{display:flex;gap:18px;margin:14px 0 0;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.07em;font-size:12px;flex-wrap:wrap}
-.pager a{text-decoration:none}
 
 /* ---- what changed: a day at a time, a rule over every line -------------
    The house has no boxes, so a line is a rule and three columns: when, what
@@ -1055,52 +1207,6 @@ details.disc .inside > .lede{margin-top:0}
 .disclist{border-bottom:1px solid var(--rule)}
 .disclist > details.disc:first-child{border-top:1px solid var(--rule-strong)}
 
-/* The matchup, at the top: who, when, how many days are left, and the two
-   projected numbers over one proportion bar. The days left is the largest
-   thing on the page because it is the fact every other answer is measured
-   against. */
-.mast .versus{margin:10px 0 0;font-family:var(--display);font-weight:600;
-  font-size:clamp(17px,4vw,26px);text-transform:uppercase;letter-spacing:.02em;color:var(--muted)}
-.mast .versus b{color:var(--ink);font-weight:600}
-.mast .when{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--muted)}
-.tale{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 24px;align-items:end;
-  margin:16px 0 0;padding:16px 0 18px;border-top:1px solid var(--rule)}
-.tale .k{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--muted)}
-.tale .left{border-right:1px solid var(--rule);padding-right:24px}
-.tale .big{display:block;margin-top:2px;font-family:var(--display);font-weight:600;
-  font-size:clamp(52px,13vw,84px);line-height:.88;color:var(--accent);
-  font-variant-numeric:tabular-nums}
-.tale .big .unit{display:block;margin-top:4px;font-family:var(--mono);font-size:11px;
-  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.tale .pair{display:flex;align-items:baseline;gap:10px;margin:4px 0 0;font-family:var(--display);
-  font-weight:600;font-size:clamp(32px,8vw,48px);line-height:1;font-variant-numeric:tabular-nums}
-.tale .pair .them{color:var(--muted)}
-.tale .pair .v{color:var(--faint);font-size:.55em}
-.split{display:block;height:12px;background:var(--shade-2);margin:12px 0 0;position:relative}
-.split i{position:absolute;inset:0 auto 0 0;display:block;background:var(--accent)}
-.split u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--ink);
-  opacity:.45;text-decoration:none}
-.tale .ends{display:flex;justify-content:space-between;gap:10px;margin:6px 0 0;
-  font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted)}
-.tale .ends span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tale .ends .r{text-align:right}
-@media (max-width:560px){
-  .tale{grid-template-columns:1fr;gap:16px 0}
-  .tale .left{border-right:0;border-bottom:1px solid var(--rule);padding:0 0 14px}
-}
-/* On a desk the sheet's head is one band: who and when on the left, the two
-   numbers that matter on the right, rather than a column a reader scrolls
-   past. On a phone it stacks, which is the order it was designed in. */
-@media (min-width:861px){
-  #mast{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,27rem);gap:0 36px;
-    align-items:end;padding:30px 0 18px}
-  #mast > .head{min-width:0}
-  #mast .tale{margin:0;padding:0 0 0 36px;border-top:0;border-left:1px solid var(--rule)}
-  #mast h1{font-size:clamp(34px,4.6vw,56px)}
-}
 /* This page carries eight sections where the others carry four, so its own
    rhythm is a little tighter than the house's. */
 #body section{margin-top:40px}

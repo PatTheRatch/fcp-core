@@ -12,19 +12,20 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow" id="eyebrow">{{brand}} &middot; this week</p>
-  <h1 id="title">This week</h1>
-  <p class="sub" id="sub"></p>
-  <ul class="years" id="years"></ul>
-  <nav class="pager" id="pager" aria-label="Matchup periods"></nav>
+<header class="ws-head">
+  <h1 class="ws-title"><span id="title">This week</span><span id="eyebrow"></span><span
+    class="ws-when" id="sub"></span></h1>
+  <div class="ws-head-tools">
+    <nav class="ws-pager" id="pager" aria-label="Matchup periods"></nav>
+    <nav class="ws-seg years" id="years" aria-label="Seasons"></nav>
+  </div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
 
-<dl class="line" id="readout"></dl>
+<dl class="ws-factline" id="readout"></dl>
 
 <section class="yours" id="yours" hidden>
   <h2 id="yours-title">Your week</h2>
@@ -251,13 +252,14 @@ function matchupHtml(matchup, ours) {
 function drawPager(period, periods) {
   const at = periods.findIndex((p) => p.period === period.period);
   const link = (p, text) =>
-    `<a href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE, { period: p.period })}">` +
+    `<a class="ws-btn sm quiet" ` +
+    `href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE, { period: p.period })}">` +
     `${text}</a>`;
   const parts = [];
   if (at > 0) parts.push(link(periods[at - 1], `‹ Period ${periods[at - 1].period}`));
   if (WHERE.period !== null) {
     parts.push(
-      `<a href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE)}">` +
+      `<a class="ws-btn sm quiet" href="${leagueUrl(WHERE.league, WHERE.season, "week")}${params(WHERE)}">` +
         `The period in play</a>`,
     );
   }
@@ -441,7 +443,7 @@ async function start() {
   ]);
   const ctx = await SHELL;
   document.title = `This week · ${leagueName(ctx, WHERE.league)}`;
-  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("eyebrow").textContent = ` · ${WHERE.season}`;
   $("years").innerHTML = seasonLinks(ctx, WHERE);
   if (!context.ok || !periods.ok) {
     fail(`This week cannot be shown: ${(context.ok ? periods : context).detail}`);

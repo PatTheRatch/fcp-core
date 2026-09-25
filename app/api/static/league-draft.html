@@ -12,18 +12,17 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow" id="eyebrow">{{brand}} &middot; the draft</p>
-  <h1 id="title">The draft</h1>
-  <p class="sub" id="sub"></p>
-  <ul class="years" id="years"></ul>
+<header class="ws-head">
+  <h1 class="ws-title"><span id="title">The draft</span><span id="eyebrow"></span><span
+    class="ws-when" id="sub"></span></h1>
+  <div class="ws-head-tools"><nav class="ws-seg years" id="years" aria-label="Seasons"></nav></div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
 
-<dl class="line" id="readout"></dl>
+<dl class="ws-factline" id="readout"></dl>
 
 <main id="body" hidden>
   <section id="value-section">
@@ -97,7 +96,7 @@ async function start() {
     SHELL,
   ]);
   document.title = `Draft · ${leagueName(ctx, WHERE.league)}`;
-  $("eyebrow").textContent = `${leagueName(ctx, WHERE.league)} · ${WHERE.season}`;
+  $("eyebrow").textContent = ` · ${WHERE.season}`;
   $("years").innerHTML = seasonLinks(ctx, WHERE);
   if (!board.ok) {
     fail(`The draft cannot be read: ${board.detail}`);

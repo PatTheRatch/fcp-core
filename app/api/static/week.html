@@ -12,32 +12,26 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<!-- 1. The matchup. Who, when, how many days are left, and the two projected
-     numbers over one bar. Nothing else: everything that used to sit in the
-     masthead and the readout is under More, one tap away. -->
-<header class="mast" id="mast">
-  <div class="head">
-    <p class="eyebrow" id="eyebrow">the week</p>
-    <h1 id="title">&nbsp;</h1>
-    <p class="versus" id="versus"></p>
-    <p class="when" id="when"></p>
-  </div>
-  <div class="tale" id="tale" hidden>
-    <div class="left">
-      <span class="k">Days left</span>
-      <span class="big" id="days-left">&nbsp;<span class="unit" id="days-unit"></span></span>
-    </div>
-    <div class="right">
-      <span class="k">Projected categories</span>
-      <p class="pair"><b id="score-us">&ndash;</b><span class="v">&ndash;</span>
-        <b class="them" id="score-them">&ndash;</b></p>
-      <span class="split"><i id="split-bar" style="width:50%"></i><u></u></span>
-      <p class="ends"><span id="ends-us"></span><span class="r" id="ends-them"></span></p>
-    </div>
-  </div>
+<!-- 1. The matchup. The header line says what this is and when (the rail
+     already says whose team); the facts line under it is who against, the
+     days left and the two projected numbers over one bar. Everything that
+     used to sit in the masthead and the readout is under More. -->
+<header class="ws-head" id="mast">
+  <h1 class="ws-title" id="title"><span id="eyebrow">Matchup</span><span class="ws-when"
+    id="when"></span></h1>
 </header>
+
+<dl class="ws-factline lead" id="tale" hidden>
+  <div><dt>Against</dt><dd id="versus"></dd></div>
+  <div><dt>Days left</dt><dd id="days-left">&nbsp;</dd></div>
+  <div class="score"><dt>Projected categories</dt>
+    <dd><span class="pair"><b id="score-us">&ndash;</b><span class="v">&ndash;</span><b
+      class="them" id="score-them">&ndash;</b></span>
+      <span class="split"><i id="split-bar" style="width:50%"></i><u></u></span>
+      <span class="ends"><span id="ends-us"></span><span class="r" id="ends-them"></span></span></dd></div>
+</dl>
 
 <p class="warnline" id="failed" hidden></p>
 
@@ -212,7 +206,7 @@
       </details>
       <details class="disc">
         <summary>The week's standing figures</summary>
-        <div class="inside"><dl class="line" id="readout"></dl></div>
+        <div class="inside"><dl class="ws-factline" id="readout"></dl></div>
       </details>
       <details class="disc" id="more-how">
         <summary>How this is worked out</summary>
@@ -348,17 +342,19 @@ function drawMatchup(report) {
   const first = days.length ? days[0] : report.matchup_period;
   const last = days.length ? days[days.length - 1] : first;
   document.title = `${us} — the week`;
-  $("title").textContent = us;
-  $("eyebrow").textContent = `${WHERE.season} · matchup period ${report.matchup_period}`;
+  // The header line: what and when. The team is the rail's, the league the
+  // switcher's, the season the switcher's too.
+  $("eyebrow").textContent = `Matchup · period ${report.matchup_period}`;
   $("versus").innerHTML =
     them === null ? "On a <b>bye</b> this period" : `vs <b>${escape(them)}</b>`;
   $("when").textContent =
+    " · " +
     (CONTEXT && CONTEXT.today_date ? `${dayName(CONTEXT.today_date)} · ` : "") +
     `day ${first} of ${first}–${last}`;
 
   $("tale").hidden = false;
   $("days-left").innerHTML =
-    `${days.length}<span class="unit">${days.length === 1 ? "day to play" : "days to play"}</span>`;
+    `${days.length}<small>${days.length === 1 ? "day to play" : "days to play"}</small>`;
   if (onBye(report)) {
     $("score-us").textContent = dash;
     $("score-them").textContent = dash;
@@ -2148,7 +2144,7 @@ async function start() {
   startTheme();
   const base = `/leagues/${WHERE.league}/seasons/${WHERE.season}`;
   const query = params(WHERE);
-  $("title").textContent = "Loading…";
+  $("when").textContent = " · Loading…";
 
   const asked = {
     context: get(`${base}/pages/context${query}`),
@@ -2158,7 +2154,9 @@ async function start() {
   };
   const [context, today] = await Promise.all([asked.context, asked.today]);
   if (context.ok) CONTEXT = context.body;
-  if (CONTEXT) $("title").textContent = nameOf(Number(WHERE.team));
+  if (CONTEXT && CONTEXT.period) {
+    $("eyebrow").textContent = `Matchup · period ${CONTEXT.period.period}`;
+  }
   const period = CONTEXT && CONTEXT.period ? CONTEXT.period.period : null;
   const news = drawChanged(WHERE.team === null ? null : Number(WHERE.team));
   TODAY = today.ok ? today.body : null;
@@ -2166,7 +2164,7 @@ async function start() {
 
   const report = await asked.report;
   if (!report.ok) {
-    $("title").textContent = "No report";
+    $("when").textContent = " · no report";
     fail(`This week cannot be reported on: ${report.detail}`);
     $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
     await news;

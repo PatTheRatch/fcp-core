@@ -12,13 +12,15 @@
 </head>
 <body>
 <div id="shell"></div>
-<div class="page">
+<div class="ws-page">
 
-<header class="mast">
-  <p class="eyebrow">Your account</p>
-  <h1>Projections</h1>
-  <p class="sub">Your own projections, uploaded from wherever you pay for them, for the draft
-    room and the plans to work from. A set is yours: nobody else in any league reads it.</p>
+<header class="ws-head">
+  <h1 class="ws-title">Projections</h1>
+  <div class="ws-head-tools"><button type="button" class="ws-btn sm quiet" data-account="head-account"
+    aria-haspopup="dialog">What this page is</button></div>
+  <div class="ws-account" id="head-account" data-title="Projections" data-kicker="Your account"
+    data-k="This page"><p>Your own projections, uploaded from wherever you pay for them, for the draft
+    room and the plans to work from. A set is yours: nobody else in any league reads it.</p></div>
 </header>
 
 <p class="warnline" id="failed" hidden></p>
