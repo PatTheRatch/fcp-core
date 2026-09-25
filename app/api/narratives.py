@@ -187,7 +187,11 @@ def get_owner_records(
     session: SessionDep,
     include_playoffs: bool = Query(default=False, description="Include playoff matchups"),
 ) -> list[OwnerRecordOut]:
-    """All-time records. Owners persist across seasons; teams do not."""
+    """All-time records. Owners persist across seasons; teams do not.
+
+    Ordered by the record the league is ranked on: all-time category win
+    share in a head-to-head each-category league (`app.scoring.ranking`),
+    the matchup record staying beside it as a figure."""
     _require_league(session, league_id)
     return [
         OwnerRecordOut(
@@ -197,6 +201,10 @@ def get_owner_records(
             matchups_lost=r.matchups_lost,
             matchups_tied=r.matchups_tied,
             titles=r.titles,
+            categories_won=r.categories_won,
+            categories_lost=r.categories_lost,
+            categories_tied=r.categories_tied,
+            share=r.share,
             seasons=[
                 OwnerSeasonOut(
                     season=s.season,
@@ -205,6 +213,9 @@ def get_owner_records(
                     matchups_lost=s.matchups_lost,
                     matchups_tied=s.matchups_tied,
                     final_standing=s.final_standing,
+                    categories_won=s.categories_won,
+                    categories_lost=s.categories_lost,
+                    categories_tied=s.categories_tied,
                 )
                 for s in r.seasons
             ],
@@ -236,6 +247,9 @@ def get_head_to_head(
             ties=h.ties,
             meetings=h.meetings,
             seasons=h.seasons,
+            a_categories=h.a_categories,
+            b_categories=h.b_categories,
+            categories_tied=h.categories_tied,
         )
         for h in narratives.head_to_head(
             session, league_id, include_playoffs=include_playoffs, min_meetings=min_meetings

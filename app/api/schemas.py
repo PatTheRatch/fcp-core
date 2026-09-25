@@ -294,6 +294,9 @@ class OwnerSeasonOut(BaseModel):
     matchups_lost: int
     matchups_tied: int
     final_standing: int | None
+    categories_won: int = 0
+    categories_lost: int = 0
+    categories_tied: int = 0
 
 
 class OwnerRecordOut(BaseModel):
@@ -310,6 +313,16 @@ class OwnerRecordOut(BaseModel):
     matchups_tied: int
     titles: int = Field(description="Seasons finished in first place")
     seasons: list[OwnerSeasonOut]
+    categories_won: int = 0
+    categories_lost: int = 0
+    categories_tied: int = 0
+    share: float | None = Field(
+        default=None,
+        description=(
+            "All-time category win share, (W + T/2) / (W + L + T): what the list is "
+            "ordered by in a head-to-head each-category league"
+        ),
+    )
 
 
 class HeadToHeadOut(BaseModel):
@@ -323,6 +336,9 @@ class HeadToHeadOut(BaseModel):
     b_wins: int
     ties: int
     meetings: int
+    a_categories: int = Field(default=0, description="Categories owner a took in the meetings")
+    b_categories: int = 0
+    categories_tied: int = 0
     seasons: list[int]
 
 

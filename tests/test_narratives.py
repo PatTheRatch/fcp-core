@@ -331,3 +331,32 @@ def test_owner_identifiers_never_carry_the_espn_guid(session: Session) -> None:
     # The GUID is still stored, because identity across seasons depends on it.
     stored = session.scalars(select(Owner.espn_owner_id)).all()
     assert any("DEADBEEF" in guid for guid in stored)
+
+
+def test_owner_records_are_ordered_on_categories_with_matchups_beside_them(
+    session: Session,
+) -> None:
+    """A category league's all-time table is its category record: Pat wins two
+    matchups five to four and loses one nought to nine; Sam wins one nine to
+    nothing. Pat has the matchups, Sam the categories, and Sam is first."""
+    b = Builder(session, regular_periods=3)
+    b.team(1, "Pat", owners=["guid-pat"])
+    b.team(2, "Sam", owners=["guid-sam"])
+    b.matchup(1, 1, 2, "HOME", home_won=5, home_lost=4)
+    b.matchup(2, 1, 2, "HOME", home_won=5, home_lost=4)
+    b.matchup(3, 1, 2, "AWAY", home_won=0, home_lost=9)
+    session.flush()
+
+    records = narratives.owner_records(session, LEAGUE_ID)
+    assert [r.display_name for r in records] == ["guid-sam", "guid-pat"]
+    sam, pat = records
+    assert (pat.matchups_won, pat.matchups_lost) == (2, 1)
+    assert (pat.categories_won, pat.categories_lost) == (10, 17)
+    assert (sam.categories_won, sam.categories_lost) == (17, 10)
+    assert sam.share == 17 / 27
+    assert [s.categories_won for s in sam.seasons] == [17]
+
+    pair = narratives.head_to_head(session, LEAGUE_ID)[0]
+    by_owner = {pair.owner_a_name: pair.a_categories, pair.owner_b_name: pair.b_categories}
+    assert by_owner == {"guid-pat": 10, "guid-sam": 17}
+    assert pair.meetings == 3

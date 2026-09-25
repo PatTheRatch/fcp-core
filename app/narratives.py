@@ -10,6 +10,7 @@ it. `matchup_sides` produces those, and the rest builds on it.
 """
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import case, func, select
@@ -27,6 +28,7 @@ from app.db.models import (
     PlayerGameStat,
     Team,
 )
+from app.scoring.ranking import MATCHUP_WORDS, MATCHUPS, RankingRule, Record, ranking_rule
 
 #: A matchup a team did not lose, for streak purposes. A tie breaks a run
 #: rather than extending either, which is the reading that keeps "won five
@@ -382,6 +384,11 @@ class OwnerSeason:
     matchups_lost: int
     matchups_tied: int
     final_standing: int | None
+    #: Categories won, lost and tied in the same matchups: the record a
+    #: head-to-head each-category league is ranked on.
+    categories_won: int = 0
+    categories_lost: int = 0
+    categories_tied: int = 0
 
 
 @dataclass(frozen=True)
@@ -408,6 +415,35 @@ class OwnerRecord:
     @property
     def matchups_tied(self) -> int:
         return sum(s.matchups_tied for s in self.seasons)
+
+    @property
+    def categories_won(self) -> int:
+        return sum(s.categories_won for s in self.seasons)
+
+    @property
+    def categories_lost(self) -> int:
+        return sum(s.categories_lost for s in self.seasons)
+
+    @property
+    def categories_tied(self) -> int:
+        return sum(s.categories_tied for s in self.seasons)
+
+    @property
+    def share(self) -> float | None:
+        """All-time category win share, (W + T/2) / (W + L + T)."""
+        return self.record().share
+
+    def record(self) -> Record:
+        """Both records, as the ranking rule reads them."""
+        return Record(
+            self.owner_id,
+            self.categories_won,
+            self.categories_lost,
+            self.categories_tied,
+            self.matchups_won,
+            self.matchups_lost,
+            self.matchups_tied,
+        )
 
     @property
     def titles(self) -> int:
@@ -444,7 +480,10 @@ def owner_records(
         .order_by(LeagueSeason.season)
     ).all()
 
-    tally: dict[int, dict[int, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
+    # Per owner per season: matchups won, lost, tied; categories won, lost, tied.
+    tally: dict[int, dict[int, list[int]]] = defaultdict(
+        lambda: defaultdict(lambda: [0, 0, 0, 0, 0, 0])
+    )
     names: dict[int, str | None] = {}
     team_names: dict[tuple[int, int], str] = {}
     standings: dict[tuple[int, int], int | None] = {}
@@ -471,6 +510,9 @@ def owner_records(
                     bucket[1] += 1
                 elif side.result == TIE:
                     bucket[2] += 1
+                bucket[3] += side.categories_won
+                bucket[4] += side.categories_lost
+                bucket[5] += side.categories_tied
 
     records = [
         OwnerRecord(
@@ -484,14 +526,34 @@ def owner_records(
                     matchups_lost=bucket[1],
                     matchups_tied=bucket[2],
                     final_standing=standings.get((owner_id, season)),
+                    categories_won=bucket[3],
+                    categories_lost=bucket[4],
+                    categories_tied=bucket[5],
                 )
                 for season, bucket in sorted(by_season.items())
             ],
         )
         for owner_id, by_season in tally.items()
     ]
-    records.sort(key=lambda r: (-r.matchups_won, r.matchups_lost))
-    return records
+    # Ordered by the record the league is ranked on, as its newest season is
+    # scored (`app.scoring.ranking`): category win share in a head-to-head
+    # each-category league. No head-to-head term: across seasons there is
+    # no one set of meetings to read.
+    rule = _rule(seasons)
+    by_owner = {r.owner_id: r for r in records}
+    return [by_owner[one.team] for one in rule.order(r.record() for r in records)]
+
+
+def _rule(seasons: Sequence[LeagueSeason]) -> RankingRule:
+    """The newest season's ranking rule; the matchup order where it has none."""
+    for league_season in reversed(seasons):
+        try:
+            return ranking_rule(league_season)
+        except ValueError:
+            break
+    return RankingRule(
+        scoring_type="", unit=MATCHUPS, seeding_rule="", head_to_head=False, words=MATCHUP_WORDS
+    )
 
 
 @dataclass(frozen=True)
@@ -507,6 +569,10 @@ class HeadToHead:
     ties: int
     meetings: int
     seasons: list[int]
+    #: Categories each owner took in those meetings, and those tied.
+    a_categories: int = 0
+    b_categories: int = 0
+    categories_tied: int = 0
 
 
 def head_to_head(
@@ -524,7 +590,8 @@ def head_to_head(
         .order_by(LeagueSeason.season)
     ).all()
 
-    pairs: dict[tuple[int, int], list[int]] = defaultdict(lambda: [0, 0, 0])
+    # a's wins, b's wins, ties; a's categories, b's categories, categories tied.
+    pairs: dict[tuple[int, int], list[int]] = defaultdict(lambda: [0, 0, 0, 0, 0, 0])
     met_in: dict[tuple[int, int], set[int]] = defaultdict(set)
     names: dict[int, str | None] = {}
 
@@ -556,6 +623,10 @@ def head_to_head(
                         bucket[0] += 1
                     else:
                         bucket[1] += 1
+                    mine, theirs = (3, 4) if key[0] == a_id else (4, 3)
+                    bucket[mine] += side.categories_won
+                    bucket[theirs] += side.categories_lost
+                    bucket[5] += side.categories_tied
 
     out = [
         HeadToHead(
@@ -566,8 +637,11 @@ def head_to_head(
             a_wins=bucket[0],
             b_wins=bucket[1],
             ties=bucket[2],
-            meetings=sum(bucket),
+            meetings=sum(bucket[:3]),
             seasons=sorted(met_in[(a, b)]),
+            a_categories=bucket[3],
+            b_categories=bucket[4],
+            categories_tied=bucket[5],
         )
         for (a, b), bucket in pairs.items()
     ]
