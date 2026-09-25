@@ -154,6 +154,15 @@ for someone inside. They are in the new palette and voices like the rest.
 
 ## The pages, in words
 
+Every page inside the rail is built of the same furniture since the
+furniture pass of 2026-09-25 (docs/design_system.md, "Migration"): a header
+line saying what the page is and when, with its own controls at the right;
+a facts line of the page's standing figures; sections, each its label over
+one panel; tables at the screener's metrics; each section's account of how
+its numbers are worked out one click away in the drawer ("How this is
+worked out" in its label row); and the calibration and the refreshed line
+in view at the foot. The descriptions below say what each page holds.
+
 **The landing page** (`/`, signed out) is the one page a stranger sees, and
 it was rewritten on 2026-09-22 with the rename. The bar with the name, "Sign
 in" and the light/dark switch. The eyebrow "Head-to-head, nine categories, on
@@ -182,21 +191,21 @@ are none worth showing yet, and a page of empty frames saying "screenshot"
 is the sort of thing this product does not do. The file carries a marked
 slot where they go.
 
-**This week.** Eyebrow: the league's name and season. Headline "This week"
-("The playoffs" in a playoff period). A line: "Matchup period 15, days
-98–104 (Mon, Jan 26 – Sun, Feb 1). Day 100 (Wed, Jan 28): 5 days left, today
-included." The seasons as a row of small links, then "‹ Period 14 · Period
-16 ›". A readout of four: the period (of 22), its days, days left in the
-accent, the number of matchups (and byes). Then, for the reader's own team
-only, a block with an accent rule down its left, "Your week: Through The
-Wire": expected to take 5.26 of 9 categories against Masters of their
-Domains, projected to end the season 106.8–64.2 in categories with no move
-made, the nine as a shaded strip, and "See the moves worth a look". Then
-"The matchups", each under a rule: the two names with the categories-won
-count between them, a line ("Final: Masters of their Domains won 5–4", or
-"… leads 5–3", or "Level at 4–4"), and each side's nine as the strip, a cell
-shaded where that side is winning the category. The reader's matchup is
-first with the accent rule. A bye says so.
+**This week.** The header line: "This week · 2027" ("The playoffs" in a
+playoff period), then "Matchup period 15, days 98–104 (Mon, Jan 26 – Sun,
+Feb 1). Day 100 (Wed, Jan 28): 5 days left, today included."; at its right
+"‹ Period 14 · Period 16 ›" as quiet buttons and the seasons as a segmented
+control. A facts line of four: the period (of 22), its days, days left, the
+number of matchups (and byes). Then, for the reader's own team only, "Your
+week" with the team's name as its tag and an orange edge down its panel:
+expected to take 5.26 of 9 categories against Masters of their Domains,
+projected to end the season 106.8–64.2 in categories with no move made, the
+nine as a shaded strip, and "See the moves worth a look". Then "The
+matchups", one panel, each matchup a row of it: the two names with the
+categories-won count between them, a line ("Final: Masters of their Domains
+won 5–4", or "… leads 5–3", or "Level at 4–4"), and each side's nine as the
+strip, a cell shaded where that side is winning the category. The reader's
+matchup is first with the orange edge. A bye says so.
 
 Under each matchup, once the projection can be built, **the chances**: the
 nine as a shaded strip from the first side's point of view, and the
@@ -229,15 +238,15 @@ line says so ("The scores stored are the period's final ones, played out
 since."): no route keeps a matchup's score day by day. A season whose
 matchups have no score yet says "The period has not begun".
 
-**Standings.** Headline "Standings", "14 teams. The regular season's
-matchups, byes left out.", the seasons row. One table (scrolling in its own
+**Standings.** The header line "Standings · 2027 · 14 teams. The regular
+season's matchups, byes left out.", the seasons at its right. One table (scrolling in its own
 frame on a phone): rank, team, matchups W–L–T, categories W–L–T, the share
 of categories won, the longest winning and losing runs, the run the season
 ended on (W2, L1), the final finish (#1). The reader's team is shaded, and
 its name opens his week; in single mode every team's does. Reads
 `/standings` and `/streaks`.
 
-Two views of that one table, chosen by a toggle under the lede (added
+Two views of that one table, chosen by a segmented control over it (added
 2026-09-22, docs/projected_record.md). **As it stands** is the above.
 **Projected** is where the season is heading: the record so far *as it stood
 on the day the projection was made*, then the projected matchup record, the
@@ -253,17 +262,18 @@ toggle. The footnote prints the forecast's own record, which since the spread
 was widened (2026-09-23, docs/spread_revision.md) says plainly that it now
 lands about where it says it will except at the two ends of the scale.
 
-**Draft.** Headline "The draft", "182 picks, $2796 spent. The dearest:
-Victor Wembanyama at $100, to Fantastic 5." A readout: picks, spent,
-dearest, keepers, and the reader's own ("$200 on 13 players"). "Value for
-money": the ten best and ten worst picks by points per dollar (player, team,
-paid, points, games, per $), with a paragraph saying plainly it is a blunt
-measure in NBA points, not categories. "The board": every pick in order with
+**Draft.** The header line "The draft · 2026 · 182 picks, $2796 spent. The
+dearest: Victor Wembanyama at $100, to Fantastic 5." A facts line: picks,
+spent, dearest, keepers, and the reader's own ("$200 on 13 players"). "Value
+for money": the ten best and ten worst picks by points per dollar (player,
+team, paid, points, games, per $), with the paragraph saying plainly it is a
+blunt measure in NBA points, not categories, in its account. "The board": every pick in order with
 who bought him, the price and who nominated him; the reader's picks shaded.
 A season not yet drafted says so. Reads `/draft` and `/draft-value` twice
 (best, worst).
 
-**History.** Headline "History", "46 owners over 8 seasons". "Where each
+**History.** The header line "History · 2026 · The league as the stored
+seasons tell it: 46 owners over 8 seasons. …". "Where each
 team was strong": each team's name beside its nine as the strip, its share
 of matchups won in each category, strongest first, the reader's in the
 accent. "The results people remember": sweeps and nail-biters of the season.
@@ -279,14 +289,17 @@ met, with the seasons. Reads `/category-profiles`, `/notable-matchups`,
 away, and it was designed at phone width. Nothing was removed from it; what
 changed is how much is open when it loads.
 
-Eight things, in order: **the matchup** (who, when, days left as the largest
-figure, and the two projected totals over one bar); **the nine** as three
-bands — likely yours, swing, likely theirs — with the swing band in the
-accent and each category opening both sides' totals; **Tonight**, a man a
+Eight things, in order: **the matchup** (the header line "Matchup · period
+8 · Thu, Dec 11 · day 52 of 52–55", and a facts line of who against, the
+days left and the two projected totals over one bar — figures, not display
+type, and grey); **the nine** as three bands — likely yours, swing, likely
+theirs — with the swing band marked by the orange edge, every chance in ink,
+and each category opening both sides' totals; **Tonight**, a man a
 row on both sides with his mark, his game, its tip-off and what ESPN says
 about him, and the lineup warn line only when the day's report says there is
-a decision; **The read**, at most three moves with their numbers and what
-they move, each with *See why*; **Schedule**, the period's days across and
+a decision; **The read**, at most three moves, each the workstation's move
+block (the man and the net, DROP, GAIN, COST, the facts, the bar's label)
+whose *Inspect* opens its working in the drawer; **Schedule**, the period's days across and
 both sides down as a real table; **What changed**, only when the window
 holds something worth the eye; **Season**, the projected finish on one line
 with the forecast's own record under it; and **More**, which holds every
@@ -310,14 +323,20 @@ routes, `teams/{team_id}/lineups` for the other side of Tonight and the
 schedule, and `/changes` for What changed. A day no NBA team plays says so
 in one line and draws no grid.
 
-**My team: Season.** The rest-of-season report, in the house style the Week
-page was in before the rewrite: the same masthead, readout, plan and moves.
-The shell is over them, and their old "Rest of season" and "Every team"
-buttons are gone, because My team and the sections are those links now.
+**My team: Season.** The rest-of-season report in the workstation's
+furniture: the header line "The rest of the season · from day 52 (Thu, Dec
+11) through day 150", with the old masthead's sentence (the weeks left and
+where the numbers come from) as the page's account; the facts line (an
+ordinary week, weeks left, adds left, FAAB, open places, the wire); then
+the outlook, the move worth a look, the best of each kind, drop candidates,
+stashes and the churn guard, each a label over one panel with its lede in
+its account. Its old "Rest of season" and "Every team" buttons are gone,
+because My team and the sections are those links now.
 
-**My team: Moves.** The team's name; "The season's moves, graded in
-categories a week. The league's median pickup was worth 0.072 categories a
-week." A readout: wire moves, trades, draft picks, the median pickup. "The
+**My team: Moves.** The header line "Moves · 2026", with "The season's
+moves, graded in categories a week. The league's median pickup was worth
+0.072 categories a week." as its account. A facts line: wire moves, trades,
+draft picks, the median pickup. "The
 categories": the season's share of matchups won in each, as the strip, with
 the punts the scorecard sees. "The wire": every add and drop by day, what
 it was expected to be worth and what it delivered, per week, and the
@@ -330,8 +349,9 @@ league's); the page is the team's slice of it, in the paid layer beside the
 plans.
 
 **My team: Trades.** The forward trade evaluator as a screen
-(docs/trades.md). The masthead says which day the deal is judged on and that
-the rosters are that morning's. Then **the builder**: a team to trade with,
+(docs/trades.md). The header line says which day the deal is judged on
+("Trades · 2026 · judged on day 52 (Thu, Dec 11)"), and its account that the
+rosters are that morning's. Then **the builder**: a team to trade with,
 the two rosters as lists a tap moves a man in and out of, a "who is dropped"
 choice for whichever side has no room (left alone, the cheapest place, chosen
 for you), and one button, **Judge this trade**. The deal is written into the
@@ -389,7 +409,8 @@ so in a sentence and draws no broken pickers. An evaluation is a couple of
 seconds, and so is the pool, so the button disables itself and the chooser
 says it is reading the wire while the builder stays usable.
 
-**Connections.** Step 2's page, restyled into the shell with section rules:
+**Connections.** Step 2's page, in the workstation's furniture (a label
+over one panel a section, a label over each field):
 connect a league, your connections, leagues you own (invites, claims to
 decide), your league's numbers, **tools that read for you** and your ESPN
 SWID. Nothing typed there is ever shown back.
@@ -522,8 +543,8 @@ there too.
   not a plan. A trade page has a builder to draw and a record to print before
   any deal exists, so its routes answer with `readiness` and let the page say
   what is missing.
-- **The season is chosen in the switcher and in each league page's
-  masthead**, not as a new item in the bar, which is drawn exactly as the
+- **The season is chosen in the switcher and on each league page's header
+  line**, not as a new item in the bar, which is drawn exactly as the
   product document has it.
 - **Sign out is hidden in single mode**, where there is no session.
 - **The claim and join pages** keep their step 2 addresses and gain the

@@ -3,12 +3,16 @@
 **Written:** 2026-09-25. **Status:** the foundation and the shell are built —
 tokens, the three voices, both themes, the colour rule, the geometry, the
 rail, the scenario bar, the inspection drawer, the screener table, the
-controls and `/design`. Every existing page now renders inside the new shell
-with its own content and layout untouched. The pages themselves are migrated
-one at a time next (the order is below).
+controls and `/design`. Since the furniture pass (2026-09-25, "Migration"
+below) every page inside the rail is built of the workstation's page
+furniture too — a header line, a facts line, sections as a label over one
+panel, tables at the screener's metrics, accounts in the drawer — and only
+the plain pages (landing, sign-in, consent, join, claim) keep the report
+house style. What each page's layout is still its own is listed there.
 
 Code: `app/api/static/pages.css` (the tokens at the top, then every `ws-`
-component, then each page's own furniture, marked), `pages.js` (the theme,
+component including a page's furniture, then the plain pages' house style,
+then each rail page's own furniture, marked), `pages.js` (the theme,
 the glyph scale, the FIT cell, the screener, the move block), `shell.js`
 (the rail, the top bar, the drawer, the card in the drawer, the scenario
 bar), `scenario.js` (the scenario state: the seam), `design.html` (the
@@ -66,15 +70,15 @@ Not colours: `--font-ui`, `--font-accent`, `--font-data`; the type scale
 30 px; `--rail-w` 224 px, `--drawer-w` 400 px, `--top-h` 48 px.
 
 **The legacy names.** The pages were written against the report house
-style's names (`--ground`, `--surface`, `--sunk`, `--rule`, `--rule-strong`,
-`--ink`, `--muted`, `--faint`, `--accent-deep`, `--accent-soft`, `--good`,
-`--stop`, the `-soft`s, `--shade-*`, `--display`, `--body`, `--mono`). They
-are kept, pointed at the tokens above, in a rule of their own on every theme
-root, so each page sits in the new palette with its layout untouched. Two
-have no new counterpart and are marked legacy-only: `--warn` (the pages'
-amber injury flag) and `--shade-1..3` (the old strip's probability shading).
-No `ws-` component reads a legacy name; each is retired when the last page
-using it is migrated.
+style's names. Since the furniture pass no page inside the rail and no `ws-`
+component reads one. Retired: `--sunk`, `--accent-soft`, `--good`, `--stop`,
+`--good-soft`, `--stop-soft`, `--body`, `--warn` and `--warn-soft` (the old
+amber injury flag: a status is grey, and its words and tag carry it), and
+`--shade-1..3` (the old strip's shading, now three steps of the surfaces:
+`--inset`, `--line`, and `--line-strong` mixed 40 % into `--panel`). Kept,
+pointed at the tokens in a rule of their own on every theme root, for the
+plain pages alone: `--ground`, `--surface`, `--rule`, `--rule-strong`,
+`--ink`, `--muted`, `--faint`, `--accent-deep`, `--display`, `--mono`.
 
 ### Contrast
 
@@ -102,8 +106,7 @@ stylesheet, so it cannot drift from this one.
 The lowest is 4.56 (light orange text on the inset surface). Green on its
 own wash is 5.24 light and 6.03 dark, red on its own 4.77 and 5.09. `--accent`
 itself is 4.0:1 on a light panel, which is why it is never small text:
-`--accent-text` is. The primary button's text is 16.0 and 15.8. The legacy
-`--warn` is 6.2 (light, panel) and 7.9 (dark, panel).
+`--accent-text` is. The primary button's text is 16.0 and 15.8.
 
 ## Three voices
 
@@ -130,9 +133,11 @@ One face per job, loaded from Google Fonts with a real fallback stack.
   figure. Every column of numbers is tabular so it reads down. Negative
   numbers in the new components carry a true minus sign (`minus()`).
 
-Source Serif 4, the report house style's body face, is no longer loaded: the
-legacy `--body` points at Plex Sans, so the pages read in the interface voice.
-Their headings keep Oswald until each is migrated (see Migration).
+Source Serif 4, the report house style's body face, is no longer loaded, and
+since the furniture pass Oswald appears on a page inside the rail only as a
+section's `.ws-label` and the name in the rail: not in a heading line, a
+figure, a name, a score or a table. The plain pages keep it in their
+mastheads.
 
 ## Colour: four that mean something
 
@@ -397,15 +402,96 @@ Every page renders in the new shell now, with its content untouched:
   product's name at the head of its eyebrow — and gained the scenario bar;
 - the trade page's Who fills it is drawn by the screener.
 
-Otherwise every page keeps its own furniture — the mastheads, the Oswald
-headings, the rules, the strips, the `.cta` in orange, the landing page's bar
-— until it is migrated, in this order: **Overview** (a new page, the rail's
-first item) → **Matchup / the week** → **Players / the wire** (a new
-screener page, the rail's second pending item) → **Trades** → **Standings**
-→ the rest (Season, Moves, This week, Draft, History, the account pages,
-the landing and sign-in pages). The email (`app/mail/style.py`) keeps the
-report house style's literal colours until the site's migration is done; it
-is the one other place the palette is written.
+That step changed the frame and left every page's furniture as it was —
+the mastheads, the Oswald headings, the strips, the orange `.cta` — so the
+owner's first look at it was "better, but still a little off": the shell was
+a workstation and the pages inside it were still the newspaper, only
+recoloured. The furniture pass fixed the shared furniture on every page at
+once, because every one of the five things wrong was one class or one
+pattern repeated on every page.
+
+### The furniture pass (2026-09-25)
+
+Front end only: no route, payload, number, fetch or behaviour changed (the
+report of the pass checked every page's routes against the build before it
+and the figures on every page against the page before it). What a page
+inside the rail is built of now:
+
+- **The header line** (`.ws-head`, `.ws-title`). What the page is and when,
+  in the interface face at `--t-base`/500 — `Matchup · period 8 · Thu, Dec
+  11 · day 52 of 52–55`, `The rest of the season · from day 52 (Thu, Dec 11)
+  through day 150`, `Standings · 2026 · 14 teams. …` — and the page's own
+  controls at its right: the seasons as a `ws-seg` of links, the period
+  arrows as quiet buttons, and "How this is worked out" where the old
+  masthead's sentence is now the page's account. The team's name is the
+  rail's, the league's the switcher's, the product's gone; so is the
+  eyebrow.
+- **The facts line** (`.ws-factline`). The old big-number strip, the same
+  figures in the same order, in the data face at `--t-base` with a
+  `--t-xs` label over each and a hairline between them, grey: no 26 px
+  numerals, and no orange (a count is grey). The matchup's own facts —
+  against whom, the days left, the projected categories over one bar — are
+  a step up (`--t-xl`), still figures and still grey.
+- **Sections: the panel rule.** *One panel per section; the section's label
+  sits on the canvas above it, on a single rule; everything the section
+  holds sits on one `--panel` with a `--line` border and `--r-panel`; a
+  section that is only a table is the table's frame; a disclosure that
+  belongs to a section is a panel too and shares the edge of the one above
+  it; canvas shows between sections and nowhere else.* The label is
+  `.ws-label` (Oswald, the only place on a page it is used) with its tag in
+  `--fg-3` mono at the right, the way `/design` draws its sections.
+- **Tables** (`.ws-grid`) take the screener's metrics without its
+  behaviour: `--row` 30 px, cells at `--t-md` in the data face with tabular,
+  right-aligned figures, the name at `--t-base`/500 in the interface face,
+  a `--t-xs` caps header on `--inset` under `--line-strong`, hairlines. The
+  lineup, the by-man score, the trade page's nine and the standings' seed
+  odds are variants. A table sorts only where it sorted before.
+- **Prose into the drawer.** Every lede and every explanatory paragraph
+  under a table is still on the page, word for word, where it was — in a
+  hidden `.ws-account` — and the section's label row has "How this is
+  worked out" (`data-account`), which opens it in the drawer as a stacked
+  fact list (`ws-facts stack`), each paragraph under its own label
+  (`shell.js`, `accountSpec`). The read's Inspect opens a move's account the
+  same way. What stays in view is a status that is the section's answer (a
+  bye, no adds left, nothing clearing the bar), the route's caveat over a
+  What if answer, the one line a form cannot be filled without, and the
+  calibration — the forecast's record, the trade's record and the foot —
+  at `--t-sm` in `--fg-3` (`.ws-calib`, `.ws-foot`). A list rather than an
+  account (the projections page's how-to) is a closed `details.ws-disc`.
+- **Controls.** `.cta` became `ws-btn primary` (ink); the underlined orange
+  links became `ws-btn quiet`; a player's name is a name button in the
+  interface face at 500 with no dotted underline, underlined in orange only
+  while his card is open; every select is `ws-select`; the standings'
+  toggle is a `ws-seg`; the What if's ADD / OFF THE WIRE / DROP rows are a
+  `ws-facts` grid; the account pages' forms are `.ws-form` with a label
+  over each field.
+- **The read** draws each move with `moveBlockHtml` (the `/design` format),
+  so the answer → evidence → model order of the Matchup page is intact and
+  its move block is the workstation's.
+- **Colour, by the tokens' rule.** A chance is a figure and is ink: the
+  nine's bands, the probability strips, the week-by-week table and the
+  standings' odds lost their green, red and orange. A status (active,
+  questionable, out, on IR, a man ruled out in the feed) is grey. Green
+  and red remain for a change to the viewer's roster: a move's shift, a
+  net, a FIT, a What if's moved category. Orange remains for the page you
+  are on, the scenario in view, a selected row or cell, the reader's own
+  row, today's column, one chart series, and the bar's "worth a look" /
+  "clears" label.
+
+What each page still owns — its layout, drawn in the workstation's terms:
+the Matchup page's pulse (three bands), Tonight's two columns, the schedule
+sheet, the What if form and answer and the season line; the trade page's
+builder, its two sides and the wire over the screener; This week's matchup
+blocks and the reader's own week; History's strips by team; the alerts
+page's topic list. Not in the pass: the plain pages, which keep their bar
+and their masthead, and the email (`app/mail/style.py`), which keeps the
+report house style's literal colours until the site's migration is done.
+
+The page-by-page migration order still stands for what the pages *say* —
+**Overview** (a new page) → **Matchup / the week** → **Players / the wire**
+(a new screener page) → **Trades** → **Standings** → the rest — and each of
+those is now a change of content inside furniture that is already the
+workstation's.
 
 ## Decisions
 
@@ -441,3 +527,16 @@ is the one other place the palette is written.
   marked "soon" and opening the nearest existing thing (the week page's wire
   and Tonight), because the rail is the information architecture and should
   not change shape when the pages arrive.
+- **One panel per section, not a card per thing.** A section is the unit a
+  manager reads, so it is the unit that sits on a surface; stacking its
+  pieces as separate cards would be the fourteen floating rounded cards the
+  owner ruled out.
+- **An account stays in the page, hidden, and the drawer copies it.**
+  Moving the paragraphs into scripts would have taken them out of the file
+  and out of a search of the page; keeping them where they were means no
+  sentence was rewritten, a figure in one is still on the page, and each
+  section's script keeps writing to the element it always wrote to.
+- **A chance is ink.** The token comments say green and red are changes to
+  the viewer's roster, and a 36 % chance of winning a category is neither;
+  the band's words ("Likely yours", "Swing") and the strip's shading say
+  what the colour used to.
