@@ -19,14 +19,14 @@ from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 from app.db.models import InjuryReport, LeagueSeason, MatchupPeriod, Player, Team
 from app.injuries import morning_of
 from app.injury_reports import ET, NBA_OFFICIAL, STATUSES
 from app.pickups import status_source
-from app.pickups.state import build_players, load_team_week, status_on
+from app.pickups.state import build_players, load_team_week, season_calendar, status_on
 from tests.pickups_db import (
     ANY,
     GUARD,
@@ -360,3 +360,44 @@ def test_a_mornings_read_is_held_and_keyed_on_the_season_and_the_day(
         (SEASON, day_date(3)),
         (SEASON, day_date(4)),
     }
+
+
+def test_the_calendar_is_read_once_a_session_on_the_status_path_only(
+    session: Session,
+) -> None:
+    """`status_on` holds the season's calendar; `season_calendar` does not.
+
+    `build_players` asks for the calendar once per call, and every roster,
+    wire, trade side and standings checkpoint goes through `build_players`,
+    so the status path memoizes it. The bare function stays a query, because
+    the listener rewrites the schedule inside a session that reads it back.
+    """
+    ls: LeagueSeason
+    ls, (home, _), (first, _) = league_season(session, days_per_period=7)
+    configure(ls)
+    a_guard(session, home, first)
+    schedule_reads: list[str] = []
+
+    def saw(_conn: object, _cursor: object, statement: str, *_: object) -> None:
+        if "pro_team_games" in statement:
+            schedule_reads.append(statement)
+
+    status_on(session, SEASON, 3)
+    status_on(session, SEASON + 1, 3)
+    event.listen(session.get_bind(), "before_cursor_execute", saw)
+    try:
+        status_on(session, SEASON, 4)
+        status_on(session, SEASON + 1, 4)
+        assert schedule_reads == [], "a second morning does not read the schedule again"
+        assert session.info["pickups_season_calendar"] == {
+            SEASON: season_calendar(session, SEASON),
+            SEASON + 1: None,
+        }
+        assert len(schedule_reads) == 1, "the bare function still reads it"
+    finally:
+        event.remove(session.get_bind(), "before_cursor_execute", saw)
+
+    games(session, 10, [8], season=SEASON + 1)
+
+    assert season_calendar(session, SEASON + 1) is not None, "the bare read sees a later write"
+    assert status_on(session, SEASON + 1, 4).read_as_of is None, "and the status path holds"

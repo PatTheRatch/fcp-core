@@ -539,6 +539,12 @@ def expected_games(
     )
 
 
+#: Where `status_on` holds the season's calendar, beside the statuses memo of
+#: `app.pickups.status_source`. Keyed on the session, which is what a test's
+#: rollback throws away.
+_CALENDAR_MEMO = "pickups_season_calendar"
+
+
 def status_on(session: Session, season: int, day: int) -> StatusRead:
     """The morning's statuses for `day`, from the declared source order.
 
@@ -553,8 +559,22 @@ def status_on(session: Session, season: int, day: int) -> StatusRead:
     schedule, which is the same anchor every other date on a report uses. A
     season with no schedule has no date, and then only ESPN's snapshots can
     answer -- which is right, because such a season cannot be replayed either.
+
+    The calendar is memoized here and not in `season_calendar` itself, on
+    purpose. The listener rewrites `pro_team_games` on every pass
+    (`app.listener.status.rewrite_pro_schedule`) inside a session that goes
+    on to read the schedule, so a memo on `season_calendar` would need
+    invalidating there and a None read before the first write of a new
+    season would stick. Nothing reads statuses in that session -- every job
+    opens its own -- so holding the calendar on this path alone is safe, and
+    it is this path that `build_players` hits for every roster, wire, trade
+    side and standings checkpoint.
     """
-    calendar = season_calendar(session, season)
+    memo: dict[int, SeasonCalendar | None] = session.info.setdefault(_CALENDAR_MEMO, {})
+    key = int(season)
+    if key not in memo:
+        memo[key] = season_calendar(session, key)
+    calendar = memo[key]
     on = calendar.date_of(day) if calendar is not None else None
     return status_source.read_statuses(session, season, on)
 

@@ -133,11 +133,17 @@ replayed morning is asked about by fourteen teams and a wire, and holds of the
 order of fifty status lines, so the whole day is read once and held rather
 than filtered per roster.
 
-`season_calendar` is *not* memoized and runs once per `build_players` call: it
-is a single min/max aggregate over `pro_team_games`, which is the same read
-every other date on a report already does. Holding it on the session too is a
-tidy-up and is named in "Not done" rather than made, because it would change
-the script that produced the numbers below without changing a number.
+`season_calendar` itself is *not* memoized: the listener rewrites
+`pro_team_games` on every pass (`rewrite_pro_schedule`) inside a session that
+then reads the schedule back, so a memo on the bare function would need
+invalidating there, and a None read before a new season's first write would
+stick. `status_on` holds the calendar instead, keyed on the season beside the
+statuses memo (`pickups_season_calendar` on `session.info`), because every
+job opens its own session and no session that rewrites the schedule reads a
+status. That is the path `build_players` hits, so the min/max aggregate runs
+once a session rather than once per roster, wire, trade side and standings
+checkpoint. Done on 2026-09-24, after the numbers below were produced; it
+changes the query count and nothing else.
 
 **`app.inseason.startable` is deliberately not rewired.** It reads the
 snapshots directly, and its own docstring says a backtest "cannot use it as it
@@ -609,9 +615,11 @@ the case `injuries.md` opens with, Brandon Miller in November. The reports can
 now *describe* a man on the wire but cannot *put* him on it. That is
 `in_season_pages.md`'s "the wire is empty" and it is its own job.
 
-**`season_calendar` is read once per `build_players` call.** One min/max
-aggregate, and the memo beside it already holds the expensive part; §1 says
-why it was left alone in this change.
+**`season_calendar` was read once per `build_players` call.** Done, on
+2026-09-24: `status_on` now holds the calendar on the session, keyed on the
+season, beside the statuses memo. §1 says why the memo lives there and not in
+`season_calendar` itself. The calibrations were not re-run for it, and need
+not be: it changes one query's count and no number, by construction.
 
 **The minutes tilt still reads listener events only.** A played season holds
 none, so tilt on and tilt off remain the same run in the backtest
