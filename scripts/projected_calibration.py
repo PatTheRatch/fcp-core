@@ -4,6 +4,7 @@
 Usage:
     python scripts/projected_calibration.py --season 2026
     python scripts/projected_calibration.py --season 2026 --sims 2000 --json out.json
+    python scripts/projected_calibration.py --season 2026 --field espn   # scored on ESPN's field
 
 Read-only: it prints, it writes nothing. For each regular-season matchup
 period it rebuilds the projection twice -- on the morning the period began,
@@ -97,6 +98,11 @@ MARKS = {"quarter": 0.25, "half": 0.5, "three-quarter": 0.75}
 #: A day past the end of any season, for "the record as it finally stood".
 AFTER_THE_SEASON = 10_000
 
+#: Who the playoff odds are scored against (`--field`): the settled table in
+#: the engine's own order, or ESPN's stored `teams.standing`.
+TABLE = "table"
+ESPN = "espn"
+
 
 @dataclass
 class Bucket:
@@ -163,7 +169,16 @@ class Truth:
     playoff_field: frozenset[int]
 
 
-def _truth(session: Session, league_season: LeagueSeason) -> Truth:
+def _truth(session: Session, league_season: LeagueSeason, field: str = TABLE) -> Truth:
+    """What really happened. `field` names who counts as having made the playoffs.
+
+    `TABLE`, the default, is `final_table`: the settled record ordered by the
+    engine's own ranking rule, so the forecast is scored against the order it
+    simulates. `ESPN` is ESPN's own stored `teams.standing`, which is who
+    really made the playoffs; declared on 2026-09-25 (docs/projected_record.md,
+    revision R6) as the control that separates a change in the forecast from a
+    change in what it is scored against.
+    """
     espn = {
         int(team.id): int(team.espn_team_id)
         for team in session.scalars(
@@ -218,13 +233,21 @@ def _truth(session: Session, league_season: LeagueSeason) -> Truth:
         espn_id: banked_record(session, league_season, espn_id, AFTER_THE_SEASON)[0]
         for espn_id in espn.values()
     }
-    table = final_table(session, league_season, AFTER_THE_SEASON)
-    field = int(league_season.playoff_team_count or 0)
+    if field == ESPN:
+        standing = session.execute(
+            select(Team.standing, Team.espn_team_id).where(
+                Team.league_season_id == league_season.id, Team.standing.is_not(None)
+            )
+        ).all()
+        table = tuple(int(espn_id) for _place, espn_id in sorted(standing))
+    else:
+        table = final_table(session, league_season, AFTER_THE_SEASON)
+    size = int(league_season.playoff_team_count or 0)
     return Truth(
         sides=sides,
         categories=categories,
         final_categories=final_categories,
-        playoff_field=frozenset(table[:field]),
+        playoff_field=frozenset(table[:size]),
     )
 
 
@@ -258,7 +281,9 @@ def _ruled_out(
     return out
 
 
-def run(session: Session, season: int, sims: int, sigma_scale: float = 1.0) -> dict[str, Any]:
+def run(
+    session: Session, season: int, sims: int, sigma_scale: float = 1.0, field: str = TABLE
+) -> dict[str, Any]:
     """One replay. `sigma_scale` widens every weekly spread by a factor.
 
     It exists to price a **proposed** change without making it, and it
@@ -284,7 +309,7 @@ def run(session: Session, season: int, sims: int, sigma_scale: float = 1.0) -> d
     )
     if sigma_scale != 1.0:
         distributions = [replace(one, spread=one.spread * sigma_scale) for one in distributions]
-    truth = _truth(session, league_season)
+    truth = _truth(session, league_season, field)
     everyone = _roster_ids(session, league_season)
 
     category_buckets: dict[int, Bucket] = defaultdict(Bucket)
@@ -334,6 +359,7 @@ def run(session: Session, season: int, sims: int, sigma_scale: float = 1.0) -> d
         "sigma_scale": sigma_scale,
         "shipped_scale": SPREAD_SCALE,
         "effective_scale": sigma_scale * SPREAD_SCALE,
+        "field": field,
         "checkpoints": checkpoints,
         "basis": "weekly spreads from seasons before this one, era adjustment off; "
         "availability from the NBA's own injury reports as of 10am Eastern that day",
@@ -459,7 +485,8 @@ def _print(result: dict[str, Any]) -> None:
             f"mean {row['mean_error']:.2f}   worst {row['worst']:.2f}   n {row['n']}"
         )
     print()
-    print("PLAYOFF ODDS: teams given X% made it Y%")
+    made = "ESPN's stored standing" if result.get("field") == ESPN else "the settled table"
+    print(f"PLAYOFF ODDS: teams given X% made it Y% (who made it: {made})")
     print("  bucket          n    predicted   happened")
     for row in result["playoff_odds"]:
         print(
@@ -480,13 +507,20 @@ def main() -> None:
         "app.pickups.stream.SPREAD_SCALE. 1.0 is the product as it ships. A "
         "diagnostic; the shipped factor is not set from here.",
     )
+    parser.add_argument(
+        "--field",
+        choices=(TABLE, ESPN),
+        default=TABLE,
+        help="Who counts as having made the playoffs when the odds are scored: the "
+        "settled table in the engine's own order (the default), or ESPN's stored standing.",
+    )
     parser.add_argument("--json", type=Path, default=None)
     args = parser.parse_args()
 
     settings = get_settings()
     factory = make_session_factory(make_engine(settings.database_url))
     with factory() as session:
-        result = run(session, args.season, args.sims, args.sigma_scale)
+        result = run(session, args.season, args.sims, args.sigma_scale, args.field)
     _print(result)
     if args.json is not None:
         args.json.write_text(json.dumps(result, indent=1))

@@ -16,6 +16,102 @@ forecast's own record is published), [`site.md`](site.md),
 
 ## 0. The answer, up front: it is about as sure as it ought to be, except at the ends
 
+### Ranking revision (R6), declared 2026-09-25 before the engine was changed
+
+**The fault.** This league is ESPN's **Head-to-Head Each Category**
+(`league_seasons.scoring_type` = `raw_settings.scoring.scoringType` =
+`H2H_CATEGORY`, every season 2019-2027). ESPN ranks that format on the
+**category record**; there is no matchup record in it at all, which is why
+ESPN reports none. Everything here ordered the table by **matchups won, then
+fewest lost, then categories won** -- the simulated table, and so the seeding,
+the projected place, `finishes`, the playoff and bye odds, and `final_table`,
+which is who the calibration below counts as having made the playoffs. The
+owner, 2026-09-25: "this is a categories league. we don't care about matchups."
+
+**What ESPN's order is, measured before this was written** (read-only, the
+dev database, every stored season against ESPN's own `teams.standing`):
+
+* Ordered by **category win share**, `(W + T/2) / (W + L + T)`, the table is
+  ESPN's in every season 2019-2026 except at exact ties of share and at
+  2023's places 2 and 3. Matchups won do not predict it (2025, regular season:
+  Thibs Dust's nine matchup wins sit fourth, ahead of Foxes' ten; Fantastic
+  5's six sit eighth, ahead of The Infirmary's eight and FEAR THE BEARD's
+  seven).
+* **Exact ties of share: nine, in six seasons, and all nine go to the team
+  with the better category record against the other tied team in their
+  regular-season meetings** (2020: 10-8 and 10-8; 2021: 13-4 and 11-7; 2022:
+  6-3; 2024: 6-3 and 5-4; 2025: 9-7; 2026: 10-8). That is the league's own
+  setting read literally: `raw_settings.schedule.playoffSeedingRule` is
+  `H2H_RECORD`, ESPN's "head-to-head record" seeding tiebreaker (2025's
+  `INTRA_DIVISION_RECORD` is the same record in a one-division league, and
+  its one tie still went head to head). **Categories won alone, the tiebreak
+  first proposed for this revision, gets two of the nine right, three wrong,
+  and cannot separate the other four** -- so it stays in the rule only
+  behind the head-to-head term.
+* **2023's places 2 and 3 are not a tie** (Team Stylios .6142, Allen Iverson
+  Team .6080). 2023 had two divisions, and Allen Iverson Team led USA: ESPN
+  seeds the division leaders first. It is the only season of the four with
+  two divisions where a division's leader was not already in the top two by
+  share (2019, 2022 and 2024 agree). Not modelled: 2026 and 2027 are one
+  division, and one season is too little to build a rule on. The standings
+  route reports ESPN's own order for a played season and flags the two places.
+
+**The rule, from here on** (`app/scoring/ranking.py`, gated on the scoring
+type): for `H2H_CATEGORY`, **category win share, then the tied teams'
+category record against each other, then categories won, then fewest lost**;
+the simulation breaks anything left with a draw per team per simulated
+season, as before. `H2H_MOST_CATEGORIES` and points leagues keep the matchup
+order. Roto is out of scope.
+
+**What changes.** The order of the simulated table, and so the seeding:
+`finishes`, `playoff_odds`, `bye_odds`, the projection's team order and every
+place printed from it (the Standings page, the Week page, the digest, the
+what-if's Finish block, the MCP tools), and `final_table`.
+
+**What is expected to move.** The playoff-odds reliability table, for two
+reasons at once: the forecast orders its simulated table differently, and the
+field it is scored against -- `final_table` at the end of the season -- is
+reordered too. So the playoff odds are run three ways: (A) the engine as it
+stands, scored against its own settled table, which reproduces the published
+figures; (B) the engine as it stands, scored against **ESPN's stored
+standing** (`--field espn`), which is who really made the playoffs; (C) the
+new engine against its own settled table, and again against ESPN's. A minus B
+is how much of the published table was scored against the wrong field; B
+minus C is what the new order itself does. The lock study's classification
+(lock / race / out) reads the playoff odds, so every figure in
+[`stash_locks.md`](stash_locks.md) may move: the lock count and share, the
+seeding stake, the lock cost against 0.38, the agreement on the sign, and the
+counterfactual's odds and seed moves.
+
+**What is expected not to move, and will be checked byte for byte.** The
+per-category probabilities and the projected category record are computed
+before the simulation and do not read the order: the Brier score (0.2184)
+overall and by weeks ahead, the category reliability table, the
+matchup-winner hit rate (0.583), and the record error at the quarter, half
+and three-quarter marks (8.1, 6.3, 5.2). The simulation draws its random
+numbers in the same sequence, so the mean simulated matchup record
+(`projected_matchups`) is unchanged too.
+
+**Nothing is tuned.** `SPREAD_SCALE` (2.0), `N_SIMS`, `SEED`, the lock's
+0.95 and the race's 0.25 stay as they are, whatever the runs say, and both
+columns are published whichever way they fall.
+
+**The commands**, on the local dev database, read-only, full runs (the
+projected calibration took about forty seconds on 2026-09-24; the lock study
+1,114 seconds, both well inside an hour):
+
+```
+# (A) and (B), on the code as it stands
+PYTHONPATH=. python scripts/projected_calibration.py --season 2026 \
+    --json docs/runs/2026-09-25-projected-calibration-before.json \
+    > docs/runs/2026-09-25-projected-calibration-before.txt
+PYTHONPATH=. python scripts/projected_calibration.py --season 2026 --field espn \
+    --json docs/runs/2026-09-25-projected-calibration-before-espn.json \
+    > docs/runs/2026-09-25-projected-calibration-before-espn.txt
+PYTHONPATH=. python scripts/stash_locks.py > docs/runs/2026-09-25-stash-locks-before.txt
+# then the engine change, then (C): the same three with -after in the names
+```
+
 ### Revision R5, applied 2026-09-24: a replayed morning reads the NBA's own injury report
 
 **What changed.** R4 below came back byte-identical, and the reason was the
