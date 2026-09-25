@@ -26,39 +26,39 @@
 <dl class="ws-factline" id="readout"></dl>
 
 <main id="body" hidden>
-  <section>
-    <div class="shead"><h2>The categories</h2><span class="tag">share of matchups won</span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The categories</h2><span class="ws-k">share of matchups won</span></div>
     <p class="lede" id="cats-lede"></p>
-    <div class="strip" id="cats"></div>
+    <div class="ws-panel"><div class="strip" id="cats"></div></div>
   </section>
 
-  <section>
-    <div class="shead"><h2>The wire</h2><span class="tag" id="wire-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The wire</h2><span class="ws-k" id="wire-tag"></span></div>
     <p class="lede">Every add and drop, graded twice in categories a week: <b>expected</b> is
       what the move was worth on what was known the day it was made, <b>delivered</b> is what
       it gave. The label reads the two together, so a good call that went wrong is told apart
       from a poor one that came off.</p>
-    <div class="scroll"><table class="grid">
+    <div class="ws-panel flush"><div class="scroll"><table class="grid">
       <thead><tr><th>Day</th><th class="l">Added</th><th class="l">Dropped</th><th>Expected</th><th>Delivered</th>
         <th class="l">Reading</th></tr></thead>
       <tbody id="wire"></tbody>
-    </table></div>
+    </table></div></div>
   </section>
 
-  <section>
-    <div class="shead"><h2>Trades</h2><span class="tag" id="trades-tag"></span></div>
-    <div id="trades"></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">Trades</h2><span class="ws-k" id="trades-tag"></span></div>
+    <div class="ws-panel" id="trades"></div>
   </section>
 
-  <section>
-    <div class="shead"><h2>The draft</h2><span class="tag" id="draft-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The draft</h2><span class="ws-k" id="draft-tag"></span></div>
     <p class="lede">Each pick's price against the market's price for him and what he
       delivered, with the same two lenses.</p>
-    <div class="scroll"><table class="grid">
+    <div class="ws-panel flush"><div class="scroll"><table class="grid">
       <thead><tr><th>Player</th><th>Paid</th><th>Market</th><th class="l">Outcome</th><th>Expected</th>
         <th>Delivered</th><th class="l">Reading</th></tr></thead>
       <tbody id="draft"></tbody>
-    </table></div>
+    </table></div></div>
   </section>
 </main>
 

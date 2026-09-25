@@ -27,66 +27,68 @@
 
 <main id="body" hidden>
 
-  <section id="builder">
-    <div class="shead"><h2>Build a trade</h2><span class="tag" id="builder-tag"></span></div>
+  <section class="ws-sect" id="builder">
+    <div class="ws-sect-head"><h2 class="ws-label">Build a trade</h2><span class="ws-k" id="builder-tag"></span></div>
     <p class="lede" id="builder-lede">Pick the other team, then tap the men on each roster to
       move them into the deal. Tap a man again to take him back out.</p>
-    <p class="room"><label for="other">Trade with</label>
-      <select id="other"><option value="">choose a team</option></select></p>
-    <div class="two">
-      <div class="side">
-        <h3 id="ours-name">Our roster</h3>
-        <p class="whose">what we would give</p>
-        <ul class="roster" id="ours"></ul>
+    <div class="ws-panel">
+      <p class="room"><label for="other">Trade with</label>
+        <select id="other"><option value="">choose a team</option></select></p>
+      <div class="two">
+        <div class="side">
+          <h3 id="ours-name">Our roster</h3>
+          <p class="whose">what we would give</p>
+          <ul class="roster" id="ours"></ul>
+        </div>
+        <div class="side">
+          <h3 id="theirs-name">Their roster</h3>
+          <p class="whose">what we would get</p>
+          <ul class="roster" id="theirs"></ul>
+        </div>
       </div>
-      <div class="side">
-        <h3 id="theirs-name">Their roster</h3>
-        <p class="whose">what we would get</p>
-        <ul class="roster" id="theirs"></ul>
-      </div>
+      <div class="deal" id="deal"></div>
+      <div id="rooms"></div>
+      <p class="doing">
+        <button class="cta" id="judge" type="button">Judge this trade</button>
+        <span class="working" id="working"></span>
+        <a class="more" id="clear" href="#">Start again</a>
+      </p>
     </div>
-    <div class="deal" id="deal"></div>
-    <div id="rooms"></div>
-    <p class="doing">
-      <button class="cta" id="judge" type="button">Judge this trade</button>
-      <span class="working" id="working"></span>
-      <a class="more" id="clear" href="#">Start again</a>
-    </p>
   </section>
 
-  <section id="fills" hidden>
-    <div class="shead"><h2>Who fills it</h2><span class="tag" id="fills-tag"></span></div>
+  <section class="ws-sect" id="fills" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Who fills it</h2><span class="ws-k" id="fills-tag"></span></div>
     <p class="lede" id="fills-lede"></p>
-    <div id="fills-sides"></div>
+    <div class="ws-panel" id="fills-sides"></div>
   </section>
 
-  <section id="fit" hidden>
-    <div class="shead"><h2>What it does to the nine</h2><span class="tag" id="fit-tag"></span></div>
+  <section class="ws-sect" id="fit" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">What it does to the nine</h2><span class="ws-k" id="fit-tag"></span></div>
     <p class="lede" id="fit-lede"></p>
-    <div class="two" id="sides"></div>
+    <div class="ws-panel"><div class="two" id="sides"></div></div>
   </section>
 
-  <section id="number" hidden>
-    <div class="shead"><h2>The number</h2><span class="tag" id="number-tag"></span></div>
+  <section class="ws-sect" id="number" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">The number</h2><span class="ws-k" id="number-tag"></span></div>
     <p class="lede" id="number-lede"></p>
-    <div class="two" id="judgements"></div>
+    <div class="ws-panel"><div class="two" id="judgements"></div></div>
   </section>
 
-  <section id="rests" hidden>
-    <div class="shead"><h2>What it rests on</h2><span class="tag" id="rests-tag"></span></div>
+  <section class="ws-sect" id="rests" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">What it rests on</h2><span class="ws-k" id="rests-tag"></span></div>
     <p class="lede">Every line is the one knowable on the morning of the deal. A man with few
       games of his own is marked <b>thin</b>: the rate under him could be anything.</p>
-    <div class="scroll"><table class="grid">
+    <div class="ws-panel flush"><div class="scroll"><table class="grid">
       <thead><tr><th class="l">Player</th><th class="l">To</th><th>A week</th><th>Games so far</th>
         <th>Games left</th><th>Playoff games</th><th class="l">Rests on</th></tr></thead>
       <tbody id="rests-rows"></tbody>
-    </table></div>
+    </table></div></div>
   </section>
 
-  <section id="record">
-    <div class="shead"><h2>How much to trust the number</h2>
-      <span class="tag" id="record-tag"></span></div>
-    <p class="lede" id="note"></p>
+  <section class="ws-sect" id="record">
+    <div class="ws-sect-head"><h2 class="ws-label">How much to trust the number</h2>
+      <span class="ws-k" id="record-tag"></span></div>
+    <div class="ws-panel"><p class="lede" id="note"></p></div>
   </section>
 
 </main>
@@ -505,7 +507,7 @@ function drawFills() {
     "has. The figure beside a man is what he is worth to <b>this</b> roster after the deal; " +
     "the one under his name is what he is worth to an average team, which is the lens the " +
     "report falls back on when nobody is named.";
-  $("fills-sides").className = sides.length > 1 ? "two" : "";
+  $("fills-sides").classList.toggle("two", sides.length > 1);
   $("fills-sides").innerHTML = sides.map((side) => fillsSideHtml(side, POOLS[side])).join("");
   $("fills").hidden = false;
   $("fills-sides").querySelectorAll(".fill-table").forEach((host) => {

@@ -25,35 +25,39 @@
 <dl class="ws-factline" id="readout"></dl>
 
 <main id="body" hidden>
-  <section id="value-section">
-    <div class="shead"><h2>Value for money</h2><span class="tag">points per dollar</span></div>
+  <section class="ws-sect" id="value-section">
+    <div class="ws-sect-head"><h2 class="ws-label">Value for money</h2><span class="ws-k">points per dollar</span></div>
     <p class="lede">What each pick went on to score this season against what it cost. A blunt
       measure, and deliberately so: it says nothing about which categories a team needed, and
       a player who missed the year scores little for reasons no draft could see. It answers who
       was expensive and quiet.</p>
-    <h3 class="eyebrow">The best</h3>
-    <div class="scroll"><table class="grid">
-      <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
-        <th>Per $</th></tr></thead>
-      <tbody id="best"></tbody>
-    </table></div>
-    <h3 class="eyebrow" style="margin-top:28px">The worst</h3>
-    <div class="scroll"><table class="grid">
-      <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
-        <th>Per $</th></tr></thead>
-      <tbody id="worst"></tbody>
-    </table></div>
+    <div class="ws-panel flush">
+      <h3 class="ws-sub ws-cap">The best</h3>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
+          <th>Per $</th></tr></thead>
+        <tbody id="best"></tbody>
+      </table></div>
+    </div>
+    <div class="ws-panel flush">
+      <h3 class="ws-sub ws-cap">The worst</h3>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>Player</th><th class="l">Team</th><th>Paid</th><th>Points</th><th>Games</th>
+          <th>Per $</th></tr></thead>
+        <tbody id="worst"></tbody>
+      </table></div>
+    </div>
   </section>
 
-  <section>
-    <div class="shead"><h2>The board</h2><span class="tag" id="board-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The board</h2><span class="ws-k" id="board-tag"></span></div>
     <p class="lede">Every pick in the order it was made. An auction, so each carries its price
       and who put the player up, which is often not who bought him.</p>
-    <div class="scroll"><table class="grid">
+    <div class="ws-panel flush"><div class="scroll"><table class="grid">
       <thead><tr><th>Pick</th><th class="l">Player</th><th class="l">Bought by</th><th>Paid</th>
         <th class="l">Nominated by</th></tr></thead>
       <tbody id="board"></tbody>
-    </table></div>
+    </table></div></div>
   </section>
 </main>
 

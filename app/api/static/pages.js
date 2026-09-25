@@ -244,7 +244,10 @@ function stripHtml(cells) {
   }).join("");
 }
 
-/** The strip for a set of win probabilities: shaded by how settled each is. */
+/** The strip for a set of win probabilities: shaded by how settled each is.
+ *  A chance is a figure, not a change to the viewer's roster, so it carries
+ *  no tone: green and red are kept for a move's shift (docs/design_system.md,
+ *  "Colour"). The shade still says how far from a coin toss it is. */
 const probabilityStrip = (probabilities) =>
   stripHtml(
     Object.fromEntries(
@@ -255,7 +258,6 @@ const probabilityStrip = (probabilities) =>
           {
             text: pct(p),
             shade: isNum(p) ? shadeOf(Math.max(p, 1 - p)) : "",
-            tone: !isNum(p) ? "" : p >= 0.6 ? "up" : p <= 0.4 ? "down" : "",
           },
         ];
       }),

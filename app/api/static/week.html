@@ -37,19 +37,20 @@
 
 <main id="body" hidden>
 
-  <!-- 2. The nine as a pulse: three bands, named in words, the swing band in
-       the accent because that is the band tonight can move. -->
-  <section id="pulse-section">
-    <div class="shead"><h2>The nine</h2><span class="tag" id="pulse-tag"></span></div>
-    <div id="bands"></div>
-    <div id="cat-detail"></div>
-    <details class="disc" id="by-man" hidden>
+  <!-- 2. The nine as a pulse: three bands, named in words, the swing band
+       marked because that is the band tonight can move. Each section from
+       here down is its label on the canvas and one panel under it
+       (docs/design_system.md, "The panel rule"). -->
+  <section class="ws-sect" id="pulse-section">
+    <div class="ws-sect-head"><h2 class="ws-label">The nine</h2><span class="ws-k" id="pulse-tag"></span></div>
+    <div class="ws-panel"><div id="bands"></div><div id="cat-detail"></div></div>
+    <details class="ws-disc ws-panel" id="by-man" hidden>
       <summary>This week, by man <span class="n" id="by-man-n"></span></summary>
-      <div class="inside"><div id="by-man-body"></div></div>
+      <div class="ws-disc-body"><div id="by-man-body"></div></div>
     </details>
-    <details class="disc" id="pulse-how">
+    <details class="ws-disc ws-panel" id="pulse-how">
       <summary>How this is worked out</summary>
-      <div class="inside"><p class="lede" id="pulse-how-text"></p></div>
+      <div class="ws-disc-body"><p class="lede" id="pulse-how-text"></p></div>
     </details>
   </section>
 
@@ -60,56 +61,58 @@
        The two sides share the block by a rule, not by halves: see
        `layOutTonight` below for what decides whether this is two columns or
        one marked list. -->
-  <section id="tonight-section" hidden>
-    <div class="shead"><h2>Tonight</h2><span class="tag" id="tonight-tag"></span></div>
-    <p class="warnline" id="today-fix" hidden></p>
-    <p class="lede" id="tonight-lede"></p>
-    <div class="two" id="tonight-grids">
-      <div class="side">
-        <p class="sideline" id="ours-line">Yours <span class="n"></span></p>
-        <ul class="tonight" id="tonight-ours"></ul>
-      </div>
-      <div class="side">
-        <p class="sideline" id="theirs-line">Theirs <span class="n"></span></p>
-        <ul class="tonight" id="tonight-theirs"></ul>
-      </div>
-    </div>
-    <div class="disclist">
-      <details class="disc" id="tonight-rest">
-        <summary>Not playing <span class="n" id="tonight-rest-n"></span></summary>
-        <div class="inside"><ul class="tonight" id="tonight-idle"></ul></div>
-      </details>
-      <details class="disc">
-        <summary>As I would set it, against as it is set</summary>
-        <div class="inside">
-          <div class="two">
-            <div class="side">
-              <h3>As we would set it</h3>
-              <p class="whose" id="today-ours"></p>
-              <div id="today-lineup"></div>
-            </div>
-            <div class="side">
-              <h3>As it is set</h3>
-              <p class="whose" id="today-theirs"></p>
-              <div id="today-actual"></div>
-            </div>
-          </div>
-          <div id="today-bench"></div>
+  <section class="ws-sect" id="tonight-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Tonight</h2><span class="ws-k" id="tonight-tag"></span></div>
+    <div class="ws-panel">
+      <p class="warnline" id="today-fix" hidden></p>
+      <p class="lede" id="tonight-lede"></p>
+      <div class="two" id="tonight-grids">
+        <div class="side">
+          <p class="sideline" id="ours-line">Yours <span class="n"></span></p>
+          <ul class="tonight" id="tonight-ours"></ul>
         </div>
-      </details>
+        <div class="side">
+          <p class="sideline" id="theirs-line">Theirs <span class="n"></span></p>
+          <ul class="tonight" id="tonight-theirs"></ul>
+        </div>
+      </div>
     </div>
+    <details class="ws-disc ws-panel" id="tonight-rest">
+      <summary>Not playing <span class="n" id="tonight-rest-n"></span></summary>
+      <div class="ws-disc-body"><ul class="tonight" id="tonight-idle"></ul></div>
+    </details>
+    <details class="ws-disc ws-panel">
+      <summary>As I would set it, against as it is set</summary>
+      <div class="ws-disc-body">
+        <div class="two">
+          <div class="side">
+            <h3>As we would set it</h3>
+            <p class="whose" id="today-ours"></p>
+            <div id="today-lineup"></div>
+          </div>
+          <div class="side">
+            <h3>As it is set</h3>
+            <p class="whose" id="today-theirs"></p>
+            <div id="today-actual"></div>
+          </div>
+        </div>
+        <div id="today-bench"></div>
+      </div>
+    </details>
   </section>
 
-  <!-- 4. The read: at most three moves, each with its number, what it moves
-       and what it costs. Everything under the bar is under More, labelled,
-       never hidden. -->
-  <section id="read-section">
-    <div class="shead"><h2>The read</h2><span class="tag" id="read-tag"></span></div>
+  <!-- 4. The read: at most three moves, each drawn as the workstation's move
+       block (pages.js, `moveBlockHtml`): the man and the number, DROP, GAIN
+       and COST, the facts, the bar's label and Inspect, which opens the
+       move's working in the drawer. Everything under the bar is under More,
+       labelled, never hidden. -->
+  <section class="ws-sect" id="read-section">
+    <div class="ws-sect-head"><h2 class="ws-label">The read</h2><span class="ws-k" id="read-tag"></span></div>
     <p class="lede" id="read-lede"></p>
-    <div id="read"></div>
-    <details class="disc" id="read-how">
+    <div class="ws-stack" id="read"></div>
+    <details class="ws-disc ws-panel" id="read-how">
       <summary>How this is worked out</summary>
-      <div class="inside"><p class="lede" id="read-how-text"></p></div>
+      <div class="ws-disc-body"><p class="lede" id="read-how-text"></p></div>
     </details>
   </section>
 
@@ -117,63 +120,67 @@
        the route answers it in the same three layers -- the nine this week,
        the judgement against the same bar, and where the season finishes.
        Until Run it is a heading and a form, and nothing has been fetched. -->
-  <section id="whatif-section">
-    <div class="shead"><h2>What if</h2><span class="tag" id="whatif-tag"></span></div>
+  <section class="ws-sect" id="whatif-section">
+    <div class="ws-sect-head"><h2 class="ws-label">What if</h2><span class="ws-k" id="whatif-tag"></span></div>
     <p class="lede" id="whatif-lede"></p>
-    <form class="whatif" id="whatif-form" autocomplete="off">
-      <div class="room" id="whatif-add-room">
-        <span class="k">Add</span>
-        <span class="chosen" id="whatif-add-name"></span>
-        <details class="disc" id="whatif-wire">
-          <summary>Off the wire <span class="n" id="whatif-wire-n"></span></summary>
-          <div class="inside"><ul class="wire" id="whatif-pool"></ul></div>
-        </details>
-      </div>
-      <p class="room"><label for="whatif-drop">Drop</label>
-        <select id="whatif-drop"></select></p>
-      <p class="room" id="whatif-ir-room" hidden><label for="whatif-ir">To IR</label>
-        <select id="whatif-ir"></select></p>
-      <p class="doing">
-        <button class="cta" id="whatif-run" type="submit">Run</button>
-        <span class="working" id="whatif-working"></span>
-      </p>
-    </form>
-    <p class="warnline" id="whatif-failed" hidden></p>
-    <div id="whatif-answer"></div>
+    <div class="ws-panel">
+      <form class="whatif" id="whatif-form" autocomplete="off">
+        <div class="room" id="whatif-add-room">
+          <span class="k">Add</span>
+          <span class="chosen" id="whatif-add-name"></span>
+          <details class="disc" id="whatif-wire">
+            <summary>Off the wire <span class="n" id="whatif-wire-n"></span></summary>
+            <div class="inside"><ul class="wire" id="whatif-pool"></ul></div>
+          </details>
+        </div>
+        <p class="room"><label for="whatif-drop">Drop</label>
+          <select id="whatif-drop"></select></p>
+        <p class="room" id="whatif-ir-room" hidden><label for="whatif-ir">To IR</label>
+          <select id="whatif-ir"></select></p>
+        <p class="doing">
+          <button class="cta" id="whatif-run" type="submit">Run</button>
+          <span class="working" id="whatif-working"></span>
+        </p>
+      </form>
+      <p class="warnline" id="whatif-failed" hidden></p>
+    </div>
+    <div class="ws-panel" id="whatif-answer"></div>
   </section>
 
   <!-- 5. The schedule: the period across, both sides down, a real table. -->
-  <section id="sched-section">
-    <div class="shead"><h2>Schedule</h2><span class="tag" id="sched-tag"></span></div>
-    <div class="scroll"><table class="sched" id="sched">
+  <section class="ws-sect" id="sched-section">
+    <div class="ws-sect-head"><h2 class="ws-label">Schedule</h2><span class="ws-k" id="sched-tag"></span></div>
+    <div class="ws-panel flush"><div class="scroll"><table class="sched" id="sched">
       <thead><tr id="sched-head"></tr></thead>
       <tbody id="sched-body"></tbody>
-    </table></div>
-    <div id="day-detail"></div>
-    <details class="disc" id="sched-how">
+    </table></div></div>
+    <div class="ws-panel" id="day-detail"></div>
+    <details class="ws-disc ws-panel" id="sched-how">
       <summary>How this is worked out</summary>
-      <div class="inside"><p class="lede" id="sched-how-text"></p></div>
+      <div class="ws-disc-body"><p class="lede" id="sched-how-text"></p></div>
     </details>
   </section>
 
   <!-- 6. What changed: only when the window holds something worth the eye. -->
-  <section id="changed-section" hidden>
-    <div class="shead"><h2>What changed</h2><span class="tag" id="changed-tag"></span></div>
-    <div id="changed-body"></div>
-    <details class="disc" id="changed-rest" hidden>
+  <section class="ws-sect" id="changed-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">What changed</h2><span class="ws-k" id="changed-tag"></span></div>
+    <div class="ws-panel" id="changed-body"></div>
+    <details class="ws-disc ws-panel" id="changed-rest" hidden>
       <summary>Everything else in the window <span class="n" id="changed-rest-n"></span></summary>
-      <div class="inside"><div id="changed-quiet"></div></div>
+      <div class="ws-disc-body"><div id="changed-quiet"></div></div>
     </details>
   </section>
 
   <!-- 7. The season, in one line, with the forecast's own record under it. -->
-  <section id="season-section" hidden>
-    <div class="shead"><h2>Season</h2><span class="tag" id="season-tag"></span></div>
-    <p class="standing" id="standing"></p>
-    <p class="smallnote" id="season-note"></p>
-    <details class="disc" id="season-weeks">
+  <section class="ws-sect" id="season-section" hidden>
+    <div class="ws-sect-head"><h2 class="ws-label">Season</h2><span class="ws-k" id="season-tag"></span></div>
+    <div class="ws-panel">
+      <p class="standing" id="standing"></p>
+      <p class="smallnote" id="season-note"></p>
+    </div>
+    <details class="ws-disc ws-panel" id="season-weeks">
       <summary>Week by week <span class="n" id="season-weeks-n"></span></summary>
-      <div class="inside">
+      <div class="ws-disc-body">
         <p class="lede" id="rest-lede"></p>
         <div class="scroll">
           <table class="grid" id="rest-grid">
@@ -186,33 +193,31 @@
   </section>
 
   <!-- 8. More: everything the page used to show at once, a tap away. -->
-  <section id="more-section">
-    <div class="shead"><h2>More</h2><span class="tag">nothing is gone</span></div>
-    <div class="disclist">
-      <details class="disc" id="more-moves">
-        <summary>Every move considered <span class="n" id="more-moves-n"></span></summary>
-        <div class="inside">
-          <p class="lede" id="moves-lede"></p>
-          <div id="moves"></div>
-        </div>
-      </details>
-      <details class="disc" id="more-finish" hidden>
-        <summary>Where the season finishes</summary>
-        <div class="inside"><div id="rest-finish"></div></div>
-      </details>
-      <details class="disc">
-        <summary>With a move and without</summary>
-        <div class="inside"><div id="outlook"></div></div>
-      </details>
-      <details class="disc">
-        <summary>The week's standing figures</summary>
-        <div class="inside"><dl class="ws-factline" id="readout"></dl></div>
-      </details>
-      <details class="disc" id="more-how">
-        <summary>How this is worked out</summary>
-        <div class="inside"><div id="provenance"></div></div>
-      </details>
-    </div>
+  <section class="ws-sect" id="more-section">
+    <div class="ws-sect-head"><h2 class="ws-label">More</h2><span class="ws-k">nothing is gone</span></div>
+    <details class="ws-disc ws-panel" id="more-moves">
+      <summary>Every move considered <span class="n" id="more-moves-n"></span></summary>
+      <div class="ws-disc-body">
+        <p class="lede" id="moves-lede"></p>
+        <div id="moves"></div>
+      </div>
+    </details>
+    <details class="ws-disc ws-panel" id="more-finish" hidden>
+      <summary>Where the season finishes</summary>
+      <div class="ws-disc-body"><div id="rest-finish"></div></div>
+    </details>
+    <details class="ws-disc ws-panel">
+      <summary>With a move and without</summary>
+      <div class="ws-disc-body"><div id="outlook"></div></div>
+    </details>
+    <details class="ws-disc ws-panel">
+      <summary>The week's standing figures</summary>
+      <div class="ws-disc-body"><dl class="ws-factline" id="readout"></dl></div>
+    </details>
+    <details class="ws-disc ws-panel" id="more-how">
+      <summary>How this is worked out</summary>
+      <div class="ws-disc-body"><div id="provenance"></div></div>
+    </details>
   </section>
 
 </main>
@@ -822,8 +827,8 @@ function benchHtml(report) {
   });
   if (!rows.length) return `<p class="empty">Nobody is held who is not in the lineup.</p>`;
   return (
-    `<div class="shead"><h3>Not in the lineup</h3>` +
-    `<span class="tag">a man with a game is flagged</span></div>` +
+    `<p class="ws-sub">Not in the lineup ` +
+    `<span class="n">a man with a game is flagged</span></p>` +
     `<table class="grid lineup"><tbody>${rows.join("")}</tbody></table>`
   );
 }
@@ -1011,15 +1016,16 @@ function movedWords(moved) {
   return parts.length ? parts.join(" &nbsp; ") : `<span class="w">moves nothing by a point</span>`;
 }
 
-/** One of the three: the number, the deal, what it moves, what it costs.
+/** One of the three, in the workstation's move block (`moveBlockHtml` in
+ *  pages.js, the /design page's format): the man and the number, DROP,
+ *  GAIN and COST, the facts, the bar's label and Inspect.
  *
- *  The number comes first because it is the answer -- what the move is
- *  worth, in categories, over both horizons -- and the two names are what
- *  the answer is about. It is set apart rather than set large: its own
- *  column on a desk with a rule down the side of it, the way the masthead
- *  holds the days left, and its own line above the names on a phone. Add
- *  and Drop are untouched. */
-function readHtml(move, today, index) {
+ *  What the block has no row for -- the facts line as it always read here
+ *  (the bid ladder, the waiver), the judgement's two lines, the categories
+ *  it moves as the strip, and the bid's working, which is what "See why"
+ *  used to open -- is the move's account, kept in the page beside the block
+ *  and opened in the drawer by its Inspect. */
+function readHtml(move, today, index, report) {
   const bid = move.bid && move.bid.sample ? move.bid : null;
   const meta = [
     `${move.add_starts} of ${move.add.games_remaining} games left`,
@@ -1033,30 +1039,30 @@ function readHtml(move, today, index) {
     move.fills_empty_day ? "fills an empty day" : "",
     waiverNote(move.add, today).replace(/^, /, ""),
   ].filter(Boolean);
-  const drop = move.drop
-    ? `<span class="verb">Drop</span> ${cardName(move.drop.espn_player_id, `<b>${escape(move.drop.name)}</b>`)}`
-    : move.kind === "ir_move" && move.to_ir
-      ? `<span class="verb">To IR</span> ${cardName(move.to_ir.espn_player_id, `<b>${escape(move.to_ir.name)}</b>`)}`
-      : `<span class="verb">Into</span> the open place`;
+  const id = `read-account-${index}`;
   return (
-    `<article class="read${index === 0 ? " top" : ""}">` +
-    `<p class="gain ${move.net >= 0 ? "up" : "down"}"><b>${signed(move.net, 2)}</b>` +
-    `<span class="unit">categories</span></p>` +
-    `<div class="case">` +
-    `<p class="deal"><span class="verb">Add</span> ` +
-    `${cardName(move.add.espn_player_id, `<b>${escape(move.add.name)}</b>`)}` +
-    `<span class="faint">·</span>${drop}</p>` +
-    `<p class="moves">${movedWords(move.moved)}</p>` +
-    `<p class="meta">${meta.join(" &middot; ")}</p>` +
-    `<details class="disc"><summary>See why</summary><div class="inside">` +
-    judged(move.judgement) +
+    moveBlockHtml(move, report) +
+    `<div class="ws-account" id="${id}" data-kicker="A move · how this is worked out" ` +
+    `data-title="${escape(move.add.name)}${move.drop ? ` for ${escape(move.drop.name)}` : ""}">` +
+    `<p data-k="The facts">${meta.join(" &middot; ")}</p>` +
+    `<p data-k="What it moves">${movedWords(move.moved)}</p>` +
+    `<div data-k="The number">${judged(move.judgement)}</div>` +
     (move.moved && move.moved.length
-      ? `<div class="strip">${shiftStrip(move.moved)}</div>`
+      ? `<div data-k="The chance of each, in points"><div class="strip">${shiftStrip(move.moved)}</div></div>`
       : "") +
-    (move.bid ? `<p class="note">${bidNote(move.bid)}</p>` : "") +
-    `</div></details>` +
-    `</div></article>`
+    (move.bid ? `<p data-k="The bid">${bidNote(move.bid)}</p>` : "") +
+    `</div>`
   );
+}
+
+/** Each block's Inspect opens its own account in the drawer. */
+function wireInspect(host, prefix) {
+  host.querySelectorAll(".ws-move").forEach((block, i) => {
+    const button = block.querySelector("[data-inspect]");
+    if (!button) return;
+    button.dataset.account = `${prefix}-${i}`;
+    button.setAttribute("aria-haspopup", "dialog");
+  });
 }
 
 /** How many of the plan are shown before More takes over. */
@@ -1103,13 +1109,14 @@ function drawRead(report) {
     instructions — the manager decides.`;
   $("read").innerHTML = plan
     .slice(0, READ_SHOWN)
-    .map((move, i) => readHtml(move, today, i))
+    .map((move, i) => readHtml(move, today, i, report))
     .join("");
   if (plan.length > READ_SHOWN) {
     $("read").innerHTML +=
       `<p class="meta mono faint">${count(plan.length - READ_SHOWN, "more move")} in the plan,` +
       ` under More.</p>`;
   }
+  wireInspect($("read"), "read-account");
   wireCards($("read"));
 }
 

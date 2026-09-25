@@ -25,17 +25,20 @@
 
 <p class="warnline" id="failed" hidden></p>
 
-<section>
-  <div class="shead"><h2>Your sets</h2><span class="tag" id="tag"></span></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Your sets</h2><span class="ws-k" id="tag"></span></div>
+  <div class="ws-panel flush">
   <div class="scroll"><table class="grid">
     <thead><tr><th>Name</th><th>Season</th><th>Players</th><th>Uploaded</th>
       <th class="l">Where from</th></tr></thead>
     <tbody id="sets"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
   </table></div>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>How to upload one</h2></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">How to upload one</h2><span class="ws-k"></span></div>
+  <div class="ws-panel">
   <p class="lede">A CSV, .xlsx or .xls with one row per player and a column for each of the
     nine (with the made and attempted behind the two percentages), per game or season totals:
     the importer measures which. Preview first: it reports how it read each column and which
@@ -50,6 +53,7 @@
     previews it, and the same with <span class="mono">--commit</span> keeps it.
     <span class="mono">docs/projection_sources.md</span> has the
     columns it understands and how to force one it guesses wrong.</p>
+  </div>
 </section>
 
 <p class="foot" id="foot"></p>

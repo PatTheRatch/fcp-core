@@ -140,8 +140,10 @@ a{color:var(--accent-deep);text-underline-offset:3px}
    column the rail leaves. Its base size is the one the pages were set in. */
 .page{max-width:1080px;margin:0 auto;padding:0 24px 96px;font-size:16px;line-height:1.55}
 .num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance;
-  letter-spacing:.01em}
+h1,h2,h3{font-weight:600;margin:0;text-wrap:balance}
+/* The plain pages' headings are in the accent face; a page inside the
+   rail sets its own (the header line, `.ws-label`) and nothing else. */
+.page :is(h1,h2,h3){font-family:var(--display);letter-spacing:.01em}
 .muted{color:var(--muted)} .faint{color:var(--faint)}
 [hidden]{display:none !important}
 .accent{color:var(--accent)}
@@ -576,15 +578,19 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 /* The facts line: the page's standing figures in one row, a label over each,
    hairlines between them. Figures, not display type: no numeral here is
    larger than a row's, and none is orange -- a count is grey. */
-.ws-factline{display:flex;flex-wrap:wrap;margin:0 0 var(--sp-5);padding:0}
+/* Every item carries its hairline on the left and sits a pixel over the
+   one before, and the line itself starts one gutter early and clips: so a
+   row that wraps never starts with a stray rule, and the first figure of
+   every row lines up with the header. */
+.ws-factline{display:flex;flex-wrap:wrap;row-gap:var(--sp-2);margin:0 0 var(--sp-5) calc(-1 * var(--sp-4));
+  padding:0;overflow:hidden}
 .ws-factline:empty{display:none}
-.ws-factline > div{display:flex;flex-direction:column;gap:1px;min-width:0;padding:2px var(--sp-4);
-  border-left:1px solid var(--line)}
-.ws-factline > div:first-child{padding-left:0;border-left:0}
+.ws-factline > div{display:flex;flex:0 1 auto;flex-direction:column;gap:1px;min-width:0;max-width:24rem;
+  margin-left:-1px;padding:2px var(--sp-4);border-left:1px solid var(--line)}
 .ws-factline dt{font-family:var(--font-data);font-size:var(--t-xs);letter-spacing:.08em;
   text-transform:uppercase;color:var(--fg-3);white-space:nowrap}
 .ws-factline dd{margin:0;font-family:var(--font-data);font-size:var(--t-base);font-weight:500;
-  font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
+  font-variant-numeric:tabular-nums;color:var(--fg)}
 .ws-factline dd small{margin-left:3px;font-family:var(--font-data);font-size:var(--t-xs);font-weight:400;
   color:var(--fg-3);white-space:normal}
 /* The matchup's own facts: the days left and the projected score are the
@@ -595,7 +601,7 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 .ws-factline.lead #versus{font-family:var(--font-ui);font-size:var(--t-base);font-weight:400;
   color:var(--fg-2);white-space:normal;padding-top:4px}
 .ws-factline.lead #versus b{color:var(--fg);font-weight:600}
-.ws-factline.lead .score{flex:1 1 16rem;max-width:26rem}
+.ws-factline.lead .score{flex:1 1 16rem;max-width:28rem}
 .ws-factline .pair{display:flex;align-items:baseline;gap:8px}
 .ws-factline .pair .them{color:var(--fg-2)}
 .ws-factline .pair .v{color:var(--fg-3);font-weight:400}
@@ -609,10 +615,9 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 .ws-factline .ends .r{text-align:right}
 @media (max-width:700px){
   .ws-factline.lead .score{grid-column:1/-1;max-width:none;padding-left:0;border-left:0}
-  .ws-factline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2) 0}
-  .ws-factline > div,.ws-factline > div:first-child{padding:2px var(--sp-3) 2px 0;border-left:0}
+  .ws-factline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2) 0;margin-left:0}
+  .ws-factline > div{max-width:none;margin-left:0;padding:2px var(--sp-3) 2px 0;border-left:0}
   .ws-factline > div:nth-child(2n){padding-left:var(--sp-3);border-left:1px solid var(--line)}
-  .ws-factline dd{white-space:normal}
 }
 /* A section: the label row on the canvas, then one panel. The label row's
    own control (How this is worked out, Inspect) sits at its right end. */
@@ -623,6 +628,7 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
 .ws-panel.flush{padding:0;overflow:hidden}
 .ws-panel + .ws-panel{margin-top:-1px;border-top-left-radius:0;border-top-right-radius:0}
 .ws-panel:has(+ .ws-panel:not([hidden])){border-bottom-left-radius:0;border-bottom-right-radius:0}
+details.ws-disc.ws-panel{padding:0}
 details.ws-disc.ws-panel > summary{padding:0 var(--sp-4)}
 details.ws-disc.ws-panel .ws-disc-body{padding:var(--sp-3) var(--sp-4)}
 details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
@@ -731,10 +737,10 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 @media (max-width:700px){ .ws-pair-side + .ws-pair-side{border-left:0;border-top:1px solid var(--line)} }
 
 /* ===========================================================================
-   EACH PAGE'S OWN FURNITURE -- the report house style, kept as it was while
-   the pages move into the workstation language one at a time (the order is
-   in docs/design_system.md). It reads the legacy token names, which point
-   at the new palette, so it sits in the new shell without a seam.
+   THE PLAIN PAGES' FURNITURE -- the landing page, sign-in, consent, join,
+   claim and home: the report house style, kept as it was. They keep their
+   plain bar and their masthead (docs/design_system.md, "Migration"), and
+   read the legacy token names, which point at the new palette.
    =========================================================================== */
 
 /* ---- the signed-out bar: the landing page, sign-in and consent ----------
@@ -788,24 +794,8 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
   padding:6px 0;border-radius:0}
 .signin input:focus{outline:none;border-bottom-color:var(--accent)}
 
-/* ---- the readout strip under the masthead ------------------------------- */
-.line{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
-  border-bottom:1px solid var(--rule)}
-.line div{padding:16px 16px 14px;border-right:1px solid var(--rule)}
-.line div:last-child{border-right:0}
-.line dt{font-family:var(--mono);font-size:11px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--muted);margin:0}
-.line dd{font-family:var(--display);font-weight:600;font-size:27px;line-height:1.12;
-  margin:4px 0 0;font-variant-numeric:tabular-nums;white-space:nowrap}
-.line dd small{font-size:13px;color:var(--muted);font-weight:400;white-space:normal}
-.line .hi dd{color:var(--accent)}
-/* A hard stop -- no adds left, a pot our arithmetic ran past -- against a
-   caveat worth the eye but not alarm, such as a wire rebuilt from box scores. */
-.line .warn dd{color:var(--stop)}
-.line .caution dd{color:var(--warn)}
-
 /* ---- sections ----------------------------------------------------------- */
-section{margin-top:56px}
+.page section{margin-top:56px}
 .shead{display:flex;align-items:baseline;gap:14px;border-bottom:2px solid var(--rule-strong);
   padding-bottom:8px;margin-bottom:20px}
 .shead h2{font-size:24px;text-transform:uppercase;letter-spacing:.02em}
@@ -813,334 +803,6 @@ section{margin-top:56px}
   text-transform:uppercase;color:var(--muted);white-space:nowrap}
 .lede{margin:-8px 0 20px;color:var(--muted);font-size:15px;max-width:74ch}
 .empty{color:var(--faint);padding:10px 0;font-style:italic}
-
-/* ---- the tale of the tape: nine rows, both sides, the odds shaded ------- */
-.tape{width:100%;border-collapse:collapse}
-.tape th,.tape td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
-.tape th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
-.tape th:first-child,.tape td:first-child{text-align:left}
-.tape td{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
-.tape td.cat{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.04em}
-.tape tr.ahead td.odds{color:var(--good)}
-.tape tr.behind td.odds{color:var(--stop)}
-.tape td.bar{width:38%;padding:0 10px}
-.bar span{display:block;height:9px;background:var(--shade-2);position:relative}
-.bar span i{position:absolute;inset:0 auto 0 0;background:var(--accent);display:block}
-.bar span u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--ink);
-  opacity:.45;text-decoration:none}
-.tape tfoot td{font-family:var(--display);font-weight:600;border-bottom:0;padding-top:14px}
-
-/* ---- the nine-category strip: the draft screen's component, unchanged --- */
-.strip{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));
-  border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:10px 0 0}
-.strip div{border-right:1px solid var(--rule);padding:6px 8px;text-align:right}
-.strip .lab{display:block;text-align:right;margin-bottom:2px;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.08em;font-size:10.5px;color:var(--muted)}
-.strip b{font-family:var(--mono);font-weight:500;font-size:15px;font-variant-numeric:tabular-nums}
-.strip .s1{background:var(--shade-1)} .strip .s2{background:var(--shade-2)}
-.strip .s3{background:var(--shade-3)}
-.strip .up b{color:var(--good)} .strip .down b{color:var(--stop)}
-
-/* ---- the day's lineup: a place a line, on the plain listing table -------
-   The house's `.grid` with four columns sized for a lineup rather than for
-   numbers: the place in the display face and narrow, the name in the body
-   face, the game and the flag small and left. A place nobody can fill is
-   faint rather than blank -- a blank row reads as a rendering fault -- and a
-   man on the bench who has a game carries a rule in the accent, because he
-   is the whole point of the section. */
-.grid.lineup td{text-align:left;font-family:var(--body);font-size:15px}
-.grid.lineup td.slot{font-family:var(--display);font-weight:600;font-size:13px;
-  letter-spacing:.08em;color:var(--muted);width:3.5em}
-.grid.lineup td.name{font-size:16px;overflow-wrap:anywhere}
-.grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
-.grid.lineup td.small{font-family:var(--mono);font-size:12px;width:7em;white-space:nowrap}
-.grid.lineup td.flags,.grid.lineup td.why{font-size:13.5px;color:var(--muted)}
-/* The reason takes the slack, so the game a man has stays beside his name
-   rather than drifting to the far edge of an otherwise empty row. */
-.grid.lineup td.why{width:45%}
-.grid.lineup tr.gone td.slot{color:var(--faint)}
-.grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
-.grid.lineup tr.has-game td.name{font-weight:600}
-.flag{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--warn)}
-#tonight-section .side h3{font-size:15px}
-#tonight-section .shead{margin-top:28px}
-
-/* ---- the schedule strip: the matchup period's days ---------------------- */
-.days{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
-  border:1px solid var(--rule);border-width:1px 0 1px 1px;margin:0 0 6px}
-.days div{border-right:1px solid var(--rule);padding:7px 8px}
-.days .d{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--muted);display:block}
-.days .n{font-family:var(--display);font-weight:600;font-size:16px}
-.days .past{color:var(--faint)} .days .past .n{font-weight:400}
-.days .now{background:var(--accent-soft)} .days .now .n{color:var(--accent-deep)}
-.days .gap .n{color:var(--stop)}
-
-/* ---- a move: a rule above it, never a box ------------------------------- */
-.move{border-top:1px solid var(--rule);padding:16px 0 6px}
-.move:first-of-type{border-top:1px solid var(--rule-strong)}
-.move .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.move .rank{font-family:var(--display);font-weight:600;font-size:26px;color:var(--faint);
-  min-width:1.2em}
-.move .what{font-size:18px;font-weight:600;flex:1 1 20ch}
-.move .what b{font-weight:600}
-.move .net{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
-.move .net.up{color:var(--good)} .move .net.down{color:var(--stop)}
-.move .why{margin:6px 0 0;color:var(--muted);font-size:15px}
-.move .why b{color:var(--ink);font-weight:600}
-.move .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted);
-  letter-spacing:.02em}
-.move.over{border-left:2px solid var(--accent);padding-left:14px}
-.mark{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:11px;
-  padding:2px 8px;border:1px solid var(--rule);color:var(--muted)}
-.mark.clears{color:var(--accent-deep);border-color:var(--accent)}
-
-/* ---- plain listing tables ----------------------------------------------- */
-.grid{width:100%;border-collapse:collapse}
-.grid th,.grid td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
-.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
-.grid th:first-child,.grid td:first-child{text-align:left}
-.grid td{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
-.grid td.name{font-family:var(--body);font-size:16px}
-.grid tr.ours td{background:var(--accent-soft)}
-.grid tr.ours td.name{font-weight:600}
-.grid td.links a{margin-left:14px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.06em;font-size:11px}
-
-/* A wide table scrolls in its own frame, never the page. */
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
-.scroll .grid{min-width:560px}
-.scroll .grid td.name,.scroll .grid th.l{text-align:left}
-.grid td.name a{color:var(--ink);text-decoration-color:var(--rule)}
-.grid td.name a:hover{color:var(--accent)}
-.grid td.rank{color:var(--faint);width:2.5em}
-.grid td.small,.grid th.small{font-size:12.5px}
-.grid tr.sub td{border-bottom-style:dotted}
-
-.lede select{font:inherit;color:var(--ink);background:transparent;border:0;
-  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
-
-/* ---- where a season ends up: one bar a place ---------------------------
-   The Week page's own picture of a finish distribution. A row a place, the
-   bar as wide as the chance, the place and the figure either side of it, so
-   it reads down the page the way a list does rather than across it the way
-   the Standings page's little bars do. */
-.places{list-style:none;margin:8px 0 12px;padding:0;display:grid;gap:3px}
-.places li{display:grid;grid-template-columns:2.2em 1fr 3.4em;align-items:center;gap:10px}
-.places .p{font-family:var(--display);font-weight:600;font-size:15px;color:var(--muted);
-  text-align:right}
-.places .b{display:block;height:11px;background:var(--sunk)}
-.places .b i{display:block;height:100%;background:var(--accent)}
-.places .v{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;
-  color:var(--muted)}
-#rest-grid td.small.up{color:var(--good)} #rest-grid td.small.down{color:var(--stop)}
-#rest-grid td.name .faint{font-family:var(--body)}
-#rest-finish .who{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:11px;color:var(--muted);margin:18px 0 0}
-#rest-finish .why{margin:6px 0 0;color:var(--muted);font-size:15px}
-#rest-finish .why b{color:var(--ink);font-weight:600}
-#rest-finish .note{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted)}
-
-/* ---- two views of one table, and the odds of each place -----------------
-   The toggle is the house's small display face, the chosen one in the accent
-   with a rule under it -- the same language the section links in the shell
-   use, so "which view am I in" reads the same way everywhere. A sortable
-   heading is a button that looks exactly like the heading it replaces.
-
-   The seed odds are a row of little bars under the team's own row rather
-   than fourteen more columns: fourteen columns is not a table anybody reads
-   on a phone, and the shape of a distribution is the thing worth seeing. */
-.views{display:flex;gap:0;margin:0 0 16px;border-bottom:1px solid var(--rule)}
-.views button{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:11px;padding:7px 14px;background:none;border:0;border-bottom:2px solid transparent;
-  color:var(--muted);cursor:pointer}
-.views button:hover{color:var(--ink)}
-.views button[aria-pressed="true"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
-.grid th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
-  background:none;border:0;padding:0;cursor:pointer}
-.grid th button:hover{color:var(--ink)}
-.grid td.odds button.seeds{font:inherit;color:inherit;background:none;border:0;padding:0;
-  cursor:pointer;border-bottom:1px dotted var(--rule-strong)}
-.grid td.odds button.seeds:hover{color:var(--accent)}
-.seeds-bar{display:flex;align-items:flex-end;gap:3px;padding:8px 0 2px;min-height:46px}
-.seeds-bar .seed{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1 1 0;
-  min-width:0}
-.seeds-bar .seed i{display:block;width:100%;background:var(--shade-2)}
-.seeds-bar .seed.in i{background:var(--accent)}
-.seeds-bar .seed em{font-family:var(--mono);font-style:normal;font-size:10.5px;color:var(--muted)}
-.grid tr.seedrow td{border-bottom:1px solid var(--rule);padding-top:0}
-.grid tr.seedrow .note{margin:0 0 6px;font-family:var(--body);font-size:13px;color:var(--muted);
-  text-align:left}
-
-/* ---- a matchup: two sides and their nine, a rule above it -------------- */
-.matchup{border-top:1px solid var(--rule);padding:18px 0 10px}
-.matchup:first-of-type{border-top:1px solid var(--rule-strong)}
-.matchup.ours{border-left:2px solid var(--accent);padding-left:14px}
-.matchup .score{display:flex;align-items:baseline;gap:10px 14px;flex-wrap:wrap}
-.matchup .side{font-size:18px;font-weight:600;flex:1 1 14ch;min-width:0;overflow-wrap:anywhere}
-.matchup .side.right{text-align:right}
-.matchup .side.lead{color:var(--ink)} .matchup .side.trail{color:var(--muted);font-weight:400}
-.matchup .tally{font-family:var(--display);font-weight:600;font-size:26px;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.matchup .state{margin:4px 0 0;font-family:var(--mono);font-size:12.5px;color:var(--muted);
-  letter-spacing:.02em}
-.matchup .who{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:11px;color:var(--muted);margin:12px 0 0}
-.matchup .who .faint{text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12px}
-.matchup .strip{margin-top:4px}
-.matchup .expect{margin:6px 0 0;font-family:var(--body);font-size:14px;color:var(--muted)}
-.matchup .expect b{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
-
-/* ---- what changed: a day at a time, a rule over every line -------------
-   The house has no boxes, so a line is a rule and three columns: when, what
-   happened in words, and the one word that says which kind it is. A line
-   about the reader's own team takes the accent rule the matchup does; his
-   opponent's takes a plain one, so the two are told apart by where the rule
-   is and not only by its colour. */
-.dayhead{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:11.5px;color:var(--muted);margin:26px 0 6px}
-.feed{list-style:none;margin:0;padding:0}
-.feed li{border-top:1px solid var(--rule);padding:9px 0;display:flex;gap:4px 14px;
-  align-items:baseline;flex-wrap:wrap}
-.feed li:first-child{border-top:1px solid var(--rule-strong)}
-.feed .when{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;
-  font-variant-numeric:tabular-nums}
-/* `break-word` and not `anywhere`: a name in a sentence is a button, and
-   `anywhere` let a line break between the button and the comma after it, so
-   a clause began with a comma of its own. This breaks a word only when the
-   word itself will not fit. */
-.feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:break-word;font-size:16px}
-.feed .kind{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:11px;color:var(--muted);white-space:nowrap;margin-left:auto}
-.feed li.ours{border-left:2px solid var(--accent);padding-left:12px}
-.feed li.theirs{border-left:2px solid var(--rule-strong);padding-left:12px}
-.feed li.urgent .kind{color:var(--stop)}
-/* A name inside a sentence: the card's trigger, set in the body face so it
-   reads as part of the line rather than as a control in it. */
-.feed .pname.inline{font-weight:600;display:inline}
-.filter{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:-8px 0 18px;
-  font-size:15px}
-.filter label{cursor:pointer;margin-right:8px}
-.filter input{accent-color:var(--accent);cursor:pointer}
-
-/* ---- a team's strip with its name, one per line ------------------------ */
-.profile{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);gap:0 18px;
-  align-items:end;border-bottom:1px solid var(--rule);padding:10px 0}
-.profile .who{font-weight:600;overflow-wrap:anywhere;padding-bottom:6px}
-.profile.ours .who{color:var(--accent-deep)}
-.profile .strip{margin:0}
-
-/* ---- the free pages' look at the reader's own team --------------------- */
-.yours{border-left:2px solid var(--accent);padding:4px 0 4px 14px;margin-top:28px}
-.yours h2{font-size:18px;text-transform:uppercase;letter-spacing:.04em}
-.yours p{margin:6px 0 0;color:var(--muted);max-width:74ch}
-.yours p b{color:var(--ink)}
-.yours .strip{margin-top:12px}
-.more{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;font-size:12px}
-
-/* ---- the trade page: two sides, and the builder that names the deal -----
-   Two columns on a wide screen, stacked on a phone, ours always first. Rules
-   between them and nothing else: the house has no boxes. A gain and a loss
-   are told apart by a sign and an arrow before they are told apart by
-   colour, because a colour alone is no answer to a reader who cannot see it
-   (docs/trades.md, "The page"). */
-.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px}
-.two > .side{border-top:1px solid var(--rule-strong);padding-top:12px;min-width:0}
-.side h3{font-family:var(--display);font-size:17px;text-transform:uppercase;
-  letter-spacing:.04em;overflow-wrap:anywhere}
-/* The small label over a half of a comparison, and the line under it. Not
-   scoped to `.side`: the week page's What if answer draws the same finish
-   block the trade page does, out of the same function, and a shared
-   component cannot depend on the container one page happens to put it in. */
-.whose{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--muted);margin:2px 0 0}
-.hint{color:var(--muted);font-size:14.5px;margin:6px 0 0}
-.roster{list-style:none;margin:10px 0 0;padding:0}
-.roster li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
-.pick{display:flex;flex:1 1 auto;min-width:0;align-items:baseline;gap:8px;text-align:left;
-  background:none;border:0;border-radius:0;padding:7px 4px;cursor:pointer;font-size:15px}
-.pick:hover{background:var(--sunk)}
-.pick[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-deep)}
-.pick[aria-pressed="true"] .who::before{content:"\2713\00a0"}
-.pick .who{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;font-weight:600}
-.pick .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
-.pick .meta.out{color:var(--stop)}
-.deal{border-top:1px solid var(--rule-strong);margin-top:24px;padding-top:12px}
-.deal p{margin:4px 0 0;font-size:16px}
-.deal .none{color:var(--faint);font-style:italic}
-.room{margin:12px 0 0;font-size:15px;color:var(--muted)}
-.room select{font:inherit;color:var(--ink);background:transparent;border:0;
-  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
-.doing{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:22px 0 0}
-.doing button[disabled]{opacity:.45;cursor:progress}
-.doing .working{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;color:var(--muted)}
-/* Nine rows of six narrow columns, twice over, inside half a page: the one
-   table in the house that sets its own size rather than taking the grid's. */
-.nine td,.nine th{padding:7px 4px;font-size:12.5px}
-.nine td.cat{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.04em}
-.nine td.d.up{color:var(--good)} .nine td.d.down{color:var(--stop)}
-.nine td.d.flat{color:var(--faint)}
-.grid td.flag{font-family:var(--mono);font-size:11.5px;color:var(--warn)}
-@media (max-width:860px){
-  .two{grid-template-columns:1fr;gap:0}
-  .two > .side{margin-top:28px}
-}
-
-/* ---- who fills the place a deal opens -----------------------------------
-   The wire as a list of choices, best for this roster first, with "leave it
-   open" at the top because that is what the report does when nobody is
-   named. One row is a man: his name and his status, what he is worth to us
-   in the accent's own ink, what he is, and his week in the nine. The list
-   scrolls in its own frame, never the page. */
-.wire{list-style:none;margin:12px 0 0;padding:0;max-height:440px;overflow-y:auto;
-  border-top:1px solid var(--rule-strong)}
-.wire li{border-bottom:1px solid var(--rule);display:flex;align-items:stretch}
-.fill{flex:1 1 auto;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;
-  gap:2px 12px;align-items:baseline;text-align:left;background:none;border:0;border-radius:0;
-  padding:9px 4px;cursor:pointer;font-size:15px}
-.fill:hover{background:var(--sunk)}
-.fill[aria-pressed="true"]{background:var(--accent-soft)}
-.fill[aria-pressed="true"] .who::before{content:"\2713\00a0"}
-.fill .who{font-weight:600;overflow-wrap:anywhere}
-.fill .worth{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;
-  white-space:nowrap}
-.fill .worth.up{color:var(--good)} .fill .worth.down{color:var(--stop)}
-/* The "leave it open" row's figure is in the league's lens and not in this
-   roster's, so it is drawn as a different kind of number and its own row
-   says which (docs/trades.md, "Filling the opened place"). */
-.fill .worth.faint{color:var(--faint)}
-.fill .meta{grid-column:1/-1;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-/* The strip stays nine across in a row of this list at every width: it is
-   there to be glanced at beside the name, and three rows of three would make
-   a list of forty men unreadable on a phone. */
-.fill .strip{grid-column:1/-1;margin:6px 0 2px;grid-template-columns:repeat(9,minmax(0,1fr));
-  border-width:1px 0 1px 1px}
-.fill .strip div{padding:3px 5px;border-bottom:0}
-.fill .strip .lab{font-size:8.5px} .fill .strip b{font-size:11.5px}
-.badge{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:10.5px;margin-left:8px;color:var(--muted);white-space:nowrap}
-.badge.hurt{color:var(--stop)} .badge.waivers{color:var(--warn)}
-/* The card's own control on a row that is already a button: a word in the
-   mono face at the end of the row, never an icon in a circle. */
-.info{align-self:stretch;background:none;border:0;border-left:1px solid var(--rule);
-  border-radius:0;padding:0 10px;cursor:pointer;font-family:var(--mono);font-size:10.5px;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.info:hover{color:var(--accent)}
-
-/* ---- a player's name, and his card -------------------------------------
-   Any name a page prints (`.pname`, or an `.info` beside one) opens the
-   player's card in the inspection drawer (shell.js): a panel along the
-   right on a desk, a sheet from the bottom on a phone. The card's own body
-   is `.pcard`; the drawer's frame is in the workstation block above. */
-.pname{background:none;border:0;border-radius:0;padding:0;font:inherit;text-align:left;
-  cursor:pointer;border-bottom:1px dotted var(--rule-strong);color:inherit}
-.pname:hover{color:var(--accent-deep);border-bottom-color:var(--accent)}
-.pname[aria-expanded="true"]{border-bottom-style:solid;border-bottom-color:var(--accent)}
-.pcard .flag{margin:var(--sp-3) 0 0;padding-top:8px;border-top:1px solid var(--line);
-  font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
-.pcard .ws-loading{color:var(--fg-3);font-family:var(--font-data);font-size:var(--t-sm)}
 
 /* ---- the landing page ----------------------------------------------------
    The one page a stranger sees, in the same house style as everything behind
@@ -1176,16 +838,126 @@ section{margin-top:56px}
   color:var(--accent-ink);text-decoration:none;border:0}
 .cta:hover{background:var(--ink);color:var(--ground)}
 
-/* ---- the game sheet -----------------------------------------------------
-   The Week page's own furniture (docs/in_season_pages.md, "The game sheet"):
-   the same house -- cream paper, black ink, one orange, rules and never
-   boxes, tabular numerals -- pushed from a newspaper column towards a
-   front-office sheet. The page answers first, shows the evidence under a
-   disclosure and keeps the model under More, so everything below is either a
-   thing to read at a glance or the control that opens what is behind it.
+/* ---- the footnote ------------------------------------------------------- */
+.foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.9}
+.foot b{color:var(--ink);font-weight:500}
 
-   Mobile first: every measure here is written for 390 and widens with the
-   viewport, and nothing in it scrolls the page sideways. */
+@media (max-width:860px){
+  .page{padding:0 16px 72px}
+  .nav{padding:8px 16px 6px;gap:4px 16px}
+  .mast{padding-top:26px}
+  .grid td.links a{display:block;margin:2px 0 0}
+}
+
+/* ===========================================================================
+   KEPT UNTIL THEIR PASS: the plain listing table, the lineup, the by-man
+   table, the standings' toggle, a name, the old disclosure and the What
+   if's form. The next passes move each into the workstation's terms.
+   =========================================================================== */
+
+/* ---- plain listing tables ----------------------------------------------- */
+.grid{width:100%;border-collapse:collapse}
+.grid th,.grid td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
+.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
+.grid th:first-child,.grid td:first-child{text-align:left}
+.grid td{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.grid td.name{font-family:var(--body);font-size:16px}
+.grid tr.ours td{background:var(--accent-soft)}
+.grid tr.ours td.name{font-weight:600}
+.grid td.links a{margin-left:14px;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.06em;font-size:11px}
+
+/* A wide table scrolls in its own frame, never the page. */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.scroll .grid{min-width:560px}
+.scroll .grid td.name,.scroll .grid th.l{text-align:left}
+.grid td.name a{color:var(--ink);text-decoration-color:var(--rule)}
+.grid td.name a:hover{color:var(--accent)}
+.grid td.rank{color:var(--faint);width:2.5em}
+.grid td.small,.grid th.small{font-size:12.5px}
+.grid tr.sub td{border-bottom-style:dotted}
+
+.lede select{font:inherit;color:var(--ink);background:transparent;border:0;
+  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
+
+/* ---- the day's lineup: a place a line, on the plain listing table -------
+   The house's `.grid` with four columns sized for a lineup rather than for
+   numbers: the place in the display face and narrow, the name in the body
+   face, the game and the flag small and left. A place nobody can fill is
+   faint rather than blank -- a blank row reads as a rendering fault -- and a
+   man on the bench who has a game carries a rule in the accent, because he
+   is the whole point of the section. */
+.grid.lineup td{text-align:left;font-family:var(--body);font-size:15px}
+.grid.lineup td.slot{font-family:var(--display);font-weight:600;font-size:13px;
+  letter-spacing:.08em;color:var(--muted);width:3.5em}
+.grid.lineup td.name{font-size:16px;overflow-wrap:anywhere}
+.grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
+.grid.lineup td.small{font-family:var(--mono);font-size:12px;width:7em;white-space:nowrap}
+.grid.lineup td.flags,.grid.lineup td.why{font-size:13.5px;color:var(--muted)}
+/* The reason takes the slack, so the game a man has stays beside his name
+   rather than drifting to the far edge of an otherwise empty row. */
+.grid.lineup td.why{width:45%}
+.grid.lineup tr.gone td.slot{color:var(--faint)}
+.grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
+.grid.lineup tr.has-game td.name{font-weight:600}
+
+/* This week, by man: the score broken out, one row a man, with a Total row
+   that is the score above it. A real table because it is one -- ten columns
+   of numbers with a heading over each. It scrolls sideways on a phone
+   rather than wrapping, which is why the disclosure it sits in starts
+   closed there (`BY_MAN_OPEN` in week.html says why). */
+.byman{font-variant-numeric:tabular-nums}
+.byman thead th{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+  font-size:10.5px;color:var(--muted);font-weight:500}
+.byman td.small,.byman th.small{font-family:var(--mono);font-size:12px;text-align:right}
+.byman td.name{white-space:nowrap}
+.byman tr.sum{border-top:1px solid var(--rule-strong)}
+.byman tr.sum th{text-align:left;font-family:var(--display);text-transform:uppercase;
+  letter-spacing:.08em;font-size:11px}
+.byman tr.sum td{font-weight:600;color:var(--ink)}
+#by-man-body .whose{margin-top:18px}
+#by-man-body .whose:first-child{margin-top:0}
+#by-man-body .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
+
+/* ---- two views of one table, and the odds of each place -----------------
+   The toggle is the house's small display face, the chosen one in the accent
+   with a rule under it -- the same language the section links in the shell
+   use, so "which view am I in" reads the same way everywhere. A sortable
+   heading is a button that looks exactly like the heading it replaces.
+
+   The seed odds are a row of little bars under the team's own row rather
+   than fourteen more columns: fourteen columns is not a table anybody reads
+   on a phone, and the shape of a distribution is the thing worth seeing. */
+.views{display:flex;gap:0;margin:0 0 16px;border-bottom:1px solid var(--rule)}
+.views button{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+  font-size:11px;padding:7px 14px;background:none;border:0;border-bottom:2px solid transparent;
+  color:var(--muted);cursor:pointer}
+.views button:hover{color:var(--ink)}
+.views button[aria-pressed="true"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
+.grid th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
+  background:none;border:0;padding:0;cursor:pointer}
+.grid th button:hover{color:var(--ink)}
+.grid td.odds button.seeds{font:inherit;color:inherit;background:none;border:0;padding:0;
+  cursor:pointer;border-bottom:1px dotted var(--rule-strong)}
+.grid td.odds button.seeds:hover{color:var(--accent)}
+.grid tr.seedrow td{border-bottom:1px solid var(--rule);padding-top:0}
+.grid tr.seedrow .note{margin:0 0 6px;font-family:var(--body);font-size:13px;color:var(--muted);
+  text-align:left}
+
+/* ---- a player's name, and his card -------------------------------------
+   Any name a page prints (`.pname`, or an `.info` beside one) opens the
+   player's card in the inspection drawer (shell.js): a panel along the
+   right on a desk, a sheet from the bottom on a phone. The card's own body
+   is `.pcard`; the drawer's frame is in the workstation block above. */
+.pname{background:none;border:0;border-radius:0;padding:0;font:inherit;text-align:left;
+  cursor:pointer;border-bottom:1px dotted var(--rule-strong);color:inherit}
+.pname:hover{color:var(--accent-deep);border-bottom-color:var(--accent)}
+.pname[aria-expanded="true"]{border-bottom-style:solid;border-bottom-color:var(--accent)}
+.pcard .flag{margin:var(--sp-3) 0 0;padding-top:8px;border-top:1px solid var(--line);
+  font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
+.pcard .ws-loading{color:var(--fg-3);font-family:var(--font-data);font-size:var(--t-sm)}
 
 /* A disclosure, everywhere on the page: a real <details>, the summary in the
    house's small display face with a rule over it, the marker a sign rather
@@ -1207,67 +979,6 @@ details.disc .inside > .lede{margin-top:0}
 .disclist{border-bottom:1px solid var(--rule)}
 .disclist > details.disc:first-child{border-top:1px solid var(--rule-strong)}
 
-/* This page carries eight sections where the others carry four, so its own
-   rhythm is a little tighter than the house's. */
-#body section{margin-top:40px}
-#body .shead{margin-bottom:16px}
-
-/* The nine as a pulse: three bands, each headed in words as well as told
-   apart by ink, so what is safe, what is live and what is gone is read
-   before any number is. The swing band takes the accent rule, because that
-   is the band tonight can move. Each cell is a button that opens the two
-   projected totals and the chance under the strip. */
-.band{margin-top:14px}
-.band:first-child{margin-top:0}
-.band .blab{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;
-  font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;font-size:11.5px;
-  color:var(--muted)}
-.band .blab .n{margin-left:auto;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
-  font-weight:400}
-/* The band tonight can move is where the eye should land in this
-   section, so it carries the heavier rule as well as the accent. */
-.band.swing{border-left:3px solid var(--accent);padding-left:12px}
-.band.swing .blab{color:var(--accent-deep);font-size:12.5px;font-weight:600}
-/* auto-fill, not auto-fit: a band of three keeps the cell width a band of
-   five has, so the three read as three of nine rather than as a row of their
-   own, and a band that wraps on a phone wraps into the same grid. */
-.pulse{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));
-  border:1px solid var(--rule);border-width:1px 0 0 1px}
-.pulse button{display:block;width:100%;text-align:right;font:inherit;color:inherit;
-  background:none;border:0;border-right:1px solid var(--rule);
-  border-bottom:1px solid var(--rule);border-radius:0;padding:7px 9px 6px;cursor:pointer}
-.pulse button:hover{background:var(--sunk)}
-.pulse button[aria-expanded="true"]{background:var(--accent-soft)}
-.pulse .lab{display:block;margin-bottom:1px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:10.5px;color:var(--muted)}
-.pulse b{font-family:var(--mono);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums}
-.band.yours .pulse > button > b{color:var(--good)}
-.band.theirs .pulse > button > b{color:var(--stop)}
-.band.swing .pulse > button > b{color:var(--accent-deep)}
-/* The score as it stands, under the chance: smaller, tabular, and told
-   apart by weight rather than by a second colour -- the band has already
-   spent the page's colour on the chance. The leading side's figure is in
-   ink and the trailing one muted, so the pair reads as a score and not as
-   two numbers; neither is ever reordered, and no word is added. */
-.pulse .now{display:block;margin-top:3px;font-family:var(--mono);font-size:12px;
-  font-variant-numeric:tabular-nums;letter-spacing:.01em;color:var(--faint);white-space:nowrap}
-.pulse .now b{font-size:12px;font-weight:400;color:var(--faint)}
-.pulse .now b.lead{font-weight:600;color:var(--ink)}
-.pulse .now b.trail{color:var(--muted)}
-.pulse .now i{font-style:normal;padding:0 2px;color:var(--faint)}
-.empty.bandempty{padding:4px 0 0;font-size:14px}
-/* The same strip under a What if answer, where a cell is a cell and not a
-   button: there is no second pair of projected totals behind a hypothetical
-   to open. A category the move moved takes the tint a tapped cell takes,
-   and says underneath what it was and how far it went -- a sign and a word
-   before a colour, for a reader who sees no colour. */
-.pulse .cell{display:block;width:100%;text-align:right;border-right:1px solid var(--rule);
-  border-bottom:1px solid var(--rule);padding:7px 9px 6px}
-.pulse .cell.moved{background:var(--accent-soft)}
-.pulse .mv{display:block;margin-top:2px;font-family:var(--mono);font-size:10.5px;
-  letter-spacing:.02em;color:var(--muted);white-space:nowrap}
-.pulse .mv.up{color:var(--good)} .pulse .mv.down{color:var(--stop)}
-
 /* ---- what if: a move the manager names ----------------------------------
    Three choices and a button, so the section adds a heading and a form to
    the first load and nothing else. The wire sits behind a disclosure and is
@@ -1287,248 +998,446 @@ details.disc .inside > .lede{margin-top:0}
 .whatif .wire{max-height:340px;margin-top:0}
 .whatif .doing{margin-top:20px}
 .whatif .doing .working{flex:1 1 16em;line-height:1.7}
-#whatif-answer:not(:empty){margin-top:26px;border-top:1px solid var(--rule);padding-top:16px}
-#whatif-answer .move:first-of-type{border-top:1px solid var(--rule)}
 #whatif-answer .band{margin-top:12px}
 
-/* What one category opens: both sides' projected totals and the chance, the
-   numbers the page already holds, with the bar the tale of the tape drew. */
-.catbox{border-top:1px solid var(--rule-strong);margin-top:20px;padding:12px 0 4px}
-.catbox .cn{font-family:var(--display);font-weight:600;font-size:20px;text-transform:uppercase;
-  letter-spacing:.03em}
+
+/* ===========================================================================
+   THE PAGES INSIDE THE RAIL: each page's own furniture, in the workstation's
+   terms -- the tokens by their own names, the three voices, a row's
+   metrics. Every section is a label on the canvas and one panel under it
+   (the panel rule, above); what follows is what sits on those panels. The
+   accent face is not used below this line: a section's label is
+   `.ws-label`, and nothing else on a page -- no figure, no name, no score --
+   is set in it.
+   =========================================================================== */
+
+/* A line the page could not draw, or a lineup with a decision in it. */
+.warnline{margin:0 0 var(--sp-3);padding:6px 0 6px var(--sp-3);border-left:2px solid var(--neg);
+  color:var(--fg);font-size:var(--t-base)}
+.ws-page > .warnline{margin:0 0 var(--sp-4)}
+.ws-panel:empty,.ws-p:empty{display:none}
+.ws-panel.flush > .ws-cap{margin:0;padding:8px var(--sp-3);border-bottom:1px solid var(--line)}
+.ws-panel.flush > .ws-cap ~ .ws-cap{border-top:1px solid var(--line)}
+.ws-panel.flush > p{margin:0;padding:8px var(--sp-3);border-bottom:1px solid var(--line)}
+.ws-panel.flush > p.empty{border-bottom:0}
+
+/* ---- the nine-category strip ---------------------------------------------
+   The draft screen's component in the workstation's metrics: nine cells
+   that share their edges, the figure in the data face over a small label.
+   A cell is shaded by how settled its figure is (the component takes the
+   shade it is handed, s1 < s2 < s3) in three steps of the surfaces. A
+   chance is a figure and is ink; only a change to the viewer's own roster
+   -- a move's shift -- is green or red. */
+.strip{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));margin:var(--sp-2) 0 0;
+  border:1px solid var(--line);border-radius:var(--r-control);overflow:hidden;background:var(--panel)}
+.strip div{min-width:0;padding:4px 6px;text-align:right;border-right:1px solid var(--line)}
+.strip div:last-child{border-right:0}
+.strip .lab{display:block;margin-bottom:1px;font-family:var(--font-data);font-size:var(--t-2xs);
+  letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.strip b{font-family:var(--font-data);font-weight:500;font-size:var(--t-md);font-variant-numeric:tabular-nums;
+  color:var(--fg)}
+.strip .s1{background:var(--inset)}
+.strip .s2{background:var(--line)}
+.strip .s3{background:color-mix(in srgb,var(--line-strong) 40%,var(--panel))}
+.strip .up b{color:var(--pos)}
+.strip .down b{color:var(--neg)}
+.ws-panel > .strip:first-child{margin-top:0}
+@media (max-width:860px){
+  .strip{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .strip div{border-bottom:1px solid var(--line)}
+  .strip div:nth-child(3n){border-right:0}
+  .strip div:nth-last-child(-n+3){border-bottom:0}
+}
+
+/* ---- the nine as a pulse (the Matchup page) --------------------------------
+   Three bands, each headed in words, so what is safe, what is live and what
+   is gone is read before any number is. The swing band -- the one tonight
+   can move -- carries the orange edge: it is the comparison in focus. Every
+   chance is a figure in ink; the band's words say whose it is likely to be.
+   Each cell is a button that opens both projected totals under the bands. */
+.band{margin-top:var(--sp-3)}
+.band:first-child{margin-top:0}
+.band .blab{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-family:var(--font-data);
+  font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);font-weight:500}
+.band .blab .n{margin-left:auto;font-size:var(--t-2xs);letter-spacing:.04em;color:var(--fg-3);font-weight:400}
+.band.swing{box-shadow:inset 2px 0 0 var(--accent);padding-left:var(--sp-3)}
+.band.swing .blab{color:var(--fg);font-weight:600}
+/* auto-fill, not auto-fit: a band of three keeps the cell width a band of
+   five has, so the three read as three of nine. */
+.pulse{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
+  border:1px solid var(--line);border-width:1px 0 0 1px}
+.pulse button,.pulse .cell{display:block;width:100%;text-align:right;font:inherit;color:inherit;
+  background:var(--panel);border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+  border-radius:0;padding:5px 8px}
+.pulse button{cursor:pointer}
+.pulse button:hover{background:var(--inset)}
+.pulse button:focus-visible{outline-offset:-2px}
+.pulse button[aria-expanded="true"]{background:var(--accent-wash)}
+.pulse .lab{display:block;margin-bottom:1px;font-family:var(--font-data);font-size:var(--t-2xs);
+  letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.pulse b{font-family:var(--font-data);font-weight:600;font-size:var(--t-lg);font-variant-numeric:tabular-nums;
+  color:var(--fg)}
+/* The score as it stands, under the chance: smaller, the leading side's
+   figure in ink and the trailing one muted, so the pair reads as a score. */
+.pulse .now{display:block;margin-top:2px;font-family:var(--font-data);font-size:var(--t-sm);
+  font-variant-numeric:tabular-nums;color:var(--fg-3);white-space:nowrap}
+.pulse .now b{font-size:var(--t-sm);font-weight:400;color:var(--fg-3)}
+.pulse .now b.lead{font-weight:600;color:var(--fg)}
+.pulse .now b.trail{color:var(--fg-2)}
+.pulse .now i{font-style:normal;padding:0 2px;color:var(--fg-3)}
+/* The same strip under a What if answer, where a cell is a cell: a moved
+   category takes the tint a tapped cell takes -- it is the scenario in
+   view -- and says what it was and how far it went, a sign before a colour. */
+.pulse .cell.moved{background:var(--accent-wash)}
+.pulse .mv{display:block;margin-top:2px;font-family:var(--font-data);font-size:var(--t-2xs);
+  color:var(--fg-2);white-space:nowrap}
+.pulse .mv.up{color:var(--pos)}
+.pulse .mv.down{color:var(--neg)}
+.empty.bandempty{padding:2px 0 0;font-size:var(--t-md)}
+/* What one category opens: both sides' projected totals and the chance. */
+.catbox{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--line)}
+.catbox .cn{margin:0;font-family:var(--font-ui);font-size:var(--t-base);font-weight:600}
+.catbox .cn .faint{font-weight:400}
 .catbox .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;margin:8px 0 0}
-.catbox dt{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--muted);padding-top:4px;white-space:nowrap}
-.catbox dd{margin:0;font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
-.catbox dd .v{font-style:normal;padding:0 5px;color:var(--faint)}
-.catbox dd .note{font-family:var(--body);font-size:12.5px;color:var(--muted)}
-.catbox .note{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.catbox dt{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--fg-3);padding-top:3px;white-space:nowrap}
+.catbox dd{margin:0;font-family:var(--font-data);font-size:var(--t-md);font-variant-numeric:tabular-nums}
+.catbox dd .v{font-style:normal;padding:0 5px;color:var(--fg-3)}
+.catbox dd .note{font-family:var(--font-ui);font-size:var(--t-sm);color:var(--fg-2)}
+.catbox .note{margin:8px 0 0;font-size:var(--t-sm);color:var(--fg-2)}
+/* A proportion: one bar, the orange its one series, a tick at half. */
+.split{display:block;height:6px;max-width:26rem;margin:10px 0 0;background:var(--inset);position:relative}
+.split i{position:absolute;inset:0 auto 0 0;display:block;background:var(--accent)}
+.split u{position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--fg);opacity:.45;
+  text-decoration:none}
+.ws-factline .split{max-width:none;margin-top:6px}
 
-/* This week, by man: the score broken out, one row a man, with a Total row
-   that is the score above it. A real table because it is one -- ten columns
-   of numbers with a heading over each. It scrolls sideways on a phone
-   rather than wrapping, which is why the disclosure it sits in starts
-   closed there (`BY_MAN_OPEN` in week.html says why). */
-.byman{font-variant-numeric:tabular-nums}
-.byman thead th{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10.5px;color:var(--muted);font-weight:500}
-.byman td.small,.byman th.small{font-family:var(--mono);font-size:12px;text-align:right}
-.byman td.name{white-space:nowrap}
-.byman tr.sum{border-top:1px solid var(--rule-strong)}
-.byman tr.sum th{text-align:left;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:11px}
-.byman tr.sum td{font-weight:600;color:var(--ink)}
-#by-man-body .whose{margin-top:18px}
-#by-man-body .whose:first-child{margin-top:0}
-#by-man-body .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
+/* ---- two sides of a comparison -------------------------------------------
+   Ours on the left and theirs on the right on a desk, stacked on a phone,
+   a hairline between them. */
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
+.two > .side{min-width:0}
+.two > .side:first-child{padding-right:var(--sp-4)}
+.two > .side + .side{padding-left:var(--sp-4);border-left:1px solid var(--line)}
+.side h3{margin:0;font-family:var(--font-ui);font-size:var(--t-base);font-weight:600;letter-spacing:0;
+  text-transform:none;overflow-wrap:anywhere}
+/* The small label over a half of a comparison. Not scoped to `.side`: the
+   What if answer draws the same finish block the trade page does, out of
+   the same function. */
+.whose{margin:2px 0 0;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3)}
+.hint{margin:6px 0 0;color:var(--fg-2);font-size:var(--t-md)}
+.hint b{color:var(--fg)}
+@media (max-width:860px){
+  .two{grid-template-columns:minmax(0,1fr)}
+  .two > .side:first-child{padding-right:0}
+  .two > .side + .side{padding:var(--sp-3) 0 0;margin-top:var(--sp-3);border-left:0;border-top:1px solid var(--line)}
+}
 
-/* Tonight: a man a row, name first, then his mark and his game, then what
-   ESPN says about him. No headshot: the NBA team's abbreviation in the
-   display face is the mark, which is licensed to nobody and reads at any
-   size. On a phone the row is two lines; the second is the mono line. */
-.tonight{list-style:none;margin:0;padding:0;border-top:2px solid var(--rule-strong)}
-.tonight li{border-bottom:1px solid var(--rule);padding:9px 0 8px;display:grid;
-  grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline}
-.tonight li.one{padding:7px 0 6px}
-.tonight li.off .who{color:var(--muted);font-weight:400}
+/* ---- Tonight ---------------------------------------------------------------
+   A man a row, name first, then his mark and his game, then what ESPN says
+   about him. No headshot: PHI · SG is the mark. What ESPN says is a status
+   -- a fact about a man, not a change to the roster -- and so it is grey. */
+.tonight{list-style:none;margin:0;padding:0}
+.tonight li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline;
+  padding:6px 0;border-bottom:1px solid var(--line)}
+.tonight li:last-child{border-bottom:0}
+.tonight li.one{padding:5px 0}
+.tonight li.off .who{color:var(--fg-2);font-weight:400}
 .tonight li.one .who{display:flex;align-items:baseline;gap:10px}
-.tonight li.one .who .team{flex:0 0 2.4em}
-.tonight .who{min-width:0;font-size:16px;font-weight:600;overflow-wrap:anywhere}
-.tonight .st{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--muted);white-space:nowrap;text-align:right}
-.tonight .st.on{color:var(--good)} .tonight .st.doubt{color:var(--warn)}
-.tonight .st.out{color:var(--stop)}
-.tonight .meta{grid-column:1/-1;font-family:var(--mono);font-size:12px;color:var(--muted);
-  letter-spacing:.02em;overflow-wrap:anywhere}
-.tonight .meta .team{font-family:var(--display);font-weight:600;font-size:12.5px;
-  letter-spacing:.09em;color:var(--ink)}
-/* What he actually did, once the ingest has the day: a line of its own
-   under the game, in the mono face and in ink rather than muted, because
-   by the time it exists it is the most solid thing on the row. Nothing at
-   all before then -- see `boxRow` in week.html. */
-.tonight .box{grid-column:1/-1;margin-top:2px;font-family:var(--mono);font-size:11.5px;
-  font-variant-numeric:tabular-nums;letter-spacing:.01em;color:var(--ink);
+.tonight li.one .who .team{flex:0 0 2.6em}
+.tonight .who{min-width:0;font-size:var(--t-base);font-weight:500;overflow-wrap:anywhere}
+.tonight .who b{font-weight:500}
+.tonight .st{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--fg-2);white-space:nowrap;text-align:right}
+.tonight .st.on{color:var(--fg)}
+.tonight .st.out{font-weight:600}
+.tonight .meta{grid-column:1/-1;font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-2);
   overflow-wrap:anywhere}
-.tonight li.off .box{color:var(--muted)}
-.sideline{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;color:var(--muted)}
-.sideline .n{margin-left:auto;font-family:var(--mono);font-size:10.5px}
-#tonight-grids{gap:0 32px}
-#tonight-grids > .side{border-top:0;padding-top:0}
-@media (max-width:860px){ #tonight-grids > .side{margin-top:24px} }
-
-/* The two ways the block can be laid out (week.html, `layOutTonight`).
-   `together` is one list down the page, both sides in one column with a
-   mark at the head of every row, for the nights one side has almost
-   nobody in it; `apart` is two columns whose widths the script sets from
-   the counts, so the side with more men gets more of the page instead of
-   exactly half of it. Below 861px the block is one column either way, and
-   the marks stay with `together` because that is the rule they belong to. */
-/* One list keeps a column's measure rather than running the width of a
-   desk: a name at one edge and its standing at the other, with a foot of
-   paper between them, is the same accident the two columns made. */
-#tonight-grids.together{grid-template-columns:minmax(0,1fr);gap:0;max-width:46rem}
-#tonight-grids.together > .side{margin-top:0}
-#tonight-grids.together > .side + .side{margin-top:22px}
+.tonight .meta .team,.tonight li.one .who .team{font-family:var(--font-data);font-weight:600;
+  font-size:var(--t-sm);letter-spacing:.04em;color:var(--fg)}
+/* What he did, once the ingest has the day: its own line, in ink, because
+   by then it is the most solid thing on the row. */
+.tonight .box{grid-column:1/-1;margin-top:1px;font-family:var(--font-data);font-size:var(--t-xs);
+  font-variant-numeric:tabular-nums;color:var(--fg);overflow-wrap:anywhere}
+.tonight li.off .box{color:var(--fg-2)}
+.sideline{display:flex;align-items:baseline;gap:10px;margin:0 0 4px;font-family:var(--font-data);
+  font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2);font-weight:500}
+.sideline .n{margin-left:auto;font-size:var(--t-2xs);letter-spacing:.04em;color:var(--fg-3);font-weight:400}
+/* The two ways the block is laid out (week.html, `layOutTonight`): one
+   list with a mark at the head of every row when either side has almost
+   nobody, else two columns whose widths follow the counts. */
+#tonight-grids.together{grid-template-columns:minmax(0,1fr);max-width:46rem}
+#tonight-grids.together > .side:first-child{padding-right:0}
+#tonight-grids.together > .side + .side{padding:var(--sp-3) 0 0;margin-top:var(--sp-3);border-left:0;
+  border-top:1px solid var(--line)}
 #tonight-grids.together .tonight li{grid-template-columns:3.4em minmax(0,1fr) auto}
-#tonight-grids.together .tonight li::before{content:"THEM";font-family:var(--mono);
-  font-size:11px;letter-spacing:.12em;color:var(--muted)}
-#tonight-grids.together #tonight-ours li::before{content:"YOU";color:var(--accent-deep)}
+#tonight-grids.together .tonight li::before{content:"THEM";font-family:var(--font-data);
+  font-size:var(--t-2xs);letter-spacing:.1em;color:var(--fg-3)}
+#tonight-grids.together #tonight-ours li::before{content:"YOU";color:var(--fg);font-weight:600}
 #tonight-grids.together .tonight .meta{grid-column:2/-1}
 @media (min-width:861px){
   #tonight-grids.apart{grid-template-columns:minmax(0,var(--ours,1fr)) minmax(0,var(--theirs,1fr))}
 }
+#today-bench .ws-sub{margin-top:var(--sp-4)}
+/* A flag beside a name: injured, on injured reserve. A status: grey. */
+.flag{font-family:var(--font-data);font-size:var(--t-xs);letter-spacing:.04em;color:var(--fg-2)}
 
-/* A move worth a look: the number, the two names, the categories it moves,
-   and everything behind it one tap away. A rule over it, never a box; the
-   first one carries the accent rule the house gives a reader's own row.
+/* ---- moves -------------------------------------------------------------
+   A stack of the workstation's move blocks shares its edges; a move in a
+   list (every move considered, a season's swap, a trade's number) is a row
+   of its panel with a hairline over it. The bar's label is a tag, never a
+   verdict: "clears" in orange, because what is over the bar is the thing
+   in focus, and "below" in grey. */
+.ws-stack > .ws-move ~ .ws-move{margin-top:-1px;border-top-left-radius:0;border-top-right-radius:0}
+.ws-stack > .ws-move:not(:last-of-type){border-bottom-left-radius:0;border-bottom-right-radius:0}
+.ws-stack > .meta{margin:var(--sp-2) 0 0;font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-3)}
+.move{padding:var(--sp-3) 0;border-top:1px solid var(--line)}
+.move:first-child{padding-top:0;border-top:0}
+.move:last-child{padding-bottom:0}
+.move .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px var(--sp-3)}
+.move .rank{min-width:1.6em;font-family:var(--font-data);font-weight:500;font-size:var(--t-md);color:var(--fg-3)}
+.move .what{flex:1 1 20ch;min-width:0;font-size:var(--t-base);font-weight:500}
+.move .what b{font-weight:600}
+.move .net{font-family:var(--font-data);font-size:var(--t-lg);font-weight:600;font-variant-numeric:tabular-nums}
+.move .net.up{color:var(--pos)}
+.move .net.down{color:var(--neg)}
+.move .why{margin:4px 0 0;color:var(--fg-2);font-size:var(--t-md)}
+.move .why b{color:var(--fg);font-weight:600}
+.move .note{margin:4px 0 0;font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-2)}
+.move.over{padding-left:var(--sp-3);box-shadow:inset 2px 0 0 var(--accent)}
+.mark{display:inline-flex;align-items:center;height:18px;padding:0 5px;border:1px solid var(--line-strong);
+  border-radius:2px;font-family:var(--font-data);font-size:var(--t-2xs);font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2);white-space:nowrap}
+.mark.clears{color:var(--accent-text);border-color:var(--accent)}
+.ws-facts.stack dd .why{margin:0 0 4px;color:var(--fg);font-size:var(--t-md)}
+.ws-facts.stack dd .strip{margin-top:2px}
+.ws-facts.stack dd .up{color:var(--pos)}
+.ws-facts.stack dd .down{color:var(--neg)}
+.ws-facts.stack dd .w{margin-right:5px;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3)}
 
-   The number is the punchline and is read first, so it is placed first
-   rather than printed larger: on a desk it takes a column of its own with
-   a rule down the side of it -- the masthead's own treatment of the days
-   left, which is the other figure on this page everything else is measured
-   against -- and on a phone it takes the line above the names. Its word
-   sits under it in the mono face, because "+0.90" alone is not a quantity
-   of anything. */
-.read{display:grid;grid-template-columns:minmax(0,1fr);border-top:1px solid var(--rule);
-  padding:14px 0 6px}
-.read:first-of-type{border-top:1px solid var(--rule-strong)}
-.read.top{border-left:2px solid var(--accent);padding-left:14px}
-.read .case{min-width:0}
-.read .gain{display:flex;align-items:baseline;gap:9px;margin:0 0 6px;
-  font-variant-numeric:tabular-nums}
-.read .gain b{font-family:var(--mono);font-weight:600;font-size:29px;line-height:1;
-  letter-spacing:-.01em}
-.read .gain.up b{color:var(--good)} .read .gain.down b{color:var(--stop)}
-.read .gain .unit{font-family:var(--mono);font-size:11px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--muted)}
-@media (min-width:641px){
-  .read{grid-template-columns:7em minmax(0,1fr);column-gap:22px}
-  .read .gain{display:block;text-align:right;margin:0;padding:1px 22px 0 0;
-    border-right:1px solid var(--rule)}
-  .read .gain b{font-size:31px}
-  .read .gain .unit{display:block;margin-top:5px}
-}
-/* `deal` is also the trade builder's own block, which carries a rule over
-   it; here it is the line of names and carries none. It used to sit at the
-   top of the article, where that rule fell exactly on the article's own and
-   could not be seen. The number sits there now, so it can. */
-.read .deal{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0;padding:0;
-  border-top:0;font-size:17px}
-.read .verb{font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
-  font-size:11.5px;color:var(--muted)}
-.read .deal b{font-weight:600}
-.read .moves{margin:7px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
-  color:var(--muted)}
-.read .moves .up{color:var(--good)} .read .moves .down{color:var(--stop)}
-.read .moves .w{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10.5px;color:var(--muted);margin-right:5px}
-.read .meta{margin:4px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted)}
-.read details.disc{border-top:0;margin-top:2px}
-.read details.disc > summary{padding:6px 0 5px}
-
-/* The days left as a sheet: the period across, both sides down, a real table
-   because that is what it is. The figure is the games that will count that
-   day; a small raised count beside it is the men a full lineup had no place
-   for; OPEN in the accent is a place going empty that the wire could fill.
-   Nothing else is in a cell. The last column is the week, and is the one
-   thing in this section the eye is meant to land on. Tapping a day names
-   the men behind the figures and the places behind the word. */
+/* ---- the schedule: the period across, both sides down ---------------------
+   A real table at a row's metrics. The figure is the games that will count
+   that day; a small raised count is the men a full lineup had no place for;
+   OPEN is a place going empty that the wire could fill. Today's column is
+   the current one, and takes the current mark. */
 .sched{width:100%;border-collapse:collapse;table-layout:fixed}
-.sched th,.sched td{border:1px solid var(--rule);padding:0;text-align:center}
-.sched thead th{border-width:0 1px 2px 0;border-bottom-color:var(--rule-strong);
-  padding:5px 2px 6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--muted);font-weight:400}
-.sched thead th:first-child{border-left:0}
-.sched thead th .dn{display:block;font-family:var(--display);font-weight:600;font-size:15px;
-  color:var(--ink);letter-spacing:0}
-.sched thead th.past .dn{color:var(--faint);font-weight:400}
-.sched thead th.now{background:var(--accent-soft)}
-.sched thead th.now .dn{color:var(--accent-deep)}
-.sched tbody th{width:4.4em;border-left:0;padding:8px 8px 8px 0;text-align:left;
-  font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;
-  color:var(--muted);font-weight:600}
-.sched tbody tr.us th{color:var(--accent-deep)}
-.sched td button{display:block;width:100%;font:inherit;color:inherit;background:none;border:0;
-  border-radius:0;padding:7px 2px 6px;cursor:pointer;font-family:var(--mono);
+.sched th,.sched td{padding:0;text-align:center;border:1px solid var(--line)}
+.sched tr > :first-child{border-left:0}
+.sched tr > :last-child{border-right:0}
+.sched thead th{padding:4px 2px 5px;border-top:0;border-bottom-color:var(--line-strong);background:var(--inset);
+  font-family:var(--font-data);font-size:var(--t-2xs);font-weight:500;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2)}
+.sched thead th .dn{display:block;font-family:var(--font-data);font-size:var(--t-md);font-weight:600;
+  letter-spacing:0;color:var(--fg)}
+.sched thead th.past .dn{color:var(--fg-3);font-weight:400}
+.sched thead th.now{background:var(--accent-wash)}
+.sched thead th.now .dn{color:var(--accent-text)}
+.sched tbody tr:last-child > *{border-bottom:0}
+.sched tbody th{width:4.6em;padding:0 8px 0 12px;text-align:left;font-family:var(--font-data);
+  font-size:var(--t-2xs);font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2)}
+.sched tbody tr.us th{color:var(--fg)}
+.sched td button{display:block;width:100%;min-height:var(--row);padding:4px 2px;font:inherit;color:inherit;
+  background:none;border:0;border-radius:0;cursor:pointer;font-family:var(--font-data);
   font-variant-numeric:tabular-nums}
-.sched td button:hover{background:var(--sunk)}
-.sched td button[aria-expanded="true"]{background:var(--accent-soft)}
-.sched td .count{display:block;font-family:var(--mono);font-size:15px;
+.sched td button:hover{background:var(--inset)}
+.sched td button:focus-visible{outline-offset:-2px}
+.sched td button[aria-expanded="true"]{background:var(--accent-wash)}
+.sched td .count{display:block;font-family:var(--font-data);font-size:var(--t-base);font-weight:500;
   font-variant-numeric:tabular-nums}
-.sched td .flat{display:block;padding:8px 2px;font-family:var(--mono);font-size:15px;
-  color:var(--muted);font-variant-numeric:tabular-nums}
-/* The men a full lineup could not seat, raised beside the figure that
-   counts rather than printed as a second number beside it: at 34px there is
-   room for one number, and this is not the one a manager acts on. */
-.sched td .over{font-size:9.5px;line-height:0;color:var(--muted);vertical-align:super;
-  margin-left:1px;font-weight:400}
-/* A place going empty that somebody on the wire could fill -- the one thing
-   the bar above is waived for, and the only day-level thing on this grid
-   worth a word. A word and not a count: the count is in the day's detail. */
-.sched td .open{display:block;margin-top:1px;font-family:var(--mono);font-size:10px;
-  font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-deep)}
-.sched th.total,.sched td.total{border-left-color:var(--rule-strong);background:var(--sunk)}
-.sched th.total{padding-top:10px}
-.sched th.total .dn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted)}
-.sched td.total .flat.sum{color:var(--ink);font-family:var(--display);font-weight:600;
-  font-size:19px}
-.sched td.past{color:var(--faint)}
+.sched td .flat{display:block;padding:6px 2px;font-family:var(--font-data);font-size:var(--t-base);
+  color:var(--fg-2);font-variant-numeric:tabular-nums}
+.sched td .over{margin-left:1px;font-size:9.5px;line-height:0;font-weight:400;color:var(--fg-2);
+  vertical-align:super}
+.sched td .open{display:block;margin-top:1px;font-family:var(--font-data);font-size:var(--t-2xs);
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-text)}
+.sched th.total,.sched td.total{border-left-color:var(--line-strong);background:var(--inset)}
+.sched th.total .dn{font-size:var(--t-2xs);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-2)}
+.sched td.total .flat.sum{color:var(--fg);font-weight:600;font-size:var(--t-lg)}
+.sched td.past{color:var(--fg-3)}
 .sched td.now{box-shadow:inset 0 0 0 1px var(--accent)}
-.daybox{border-top:1px solid var(--rule-strong);margin-top:18px;padding:12px 0 4px}
-.daybox .cn{font-family:var(--display);font-weight:600;font-size:18px;text-transform:uppercase;
-  letter-spacing:.03em}
-.daybox .who{margin:10px 0 0;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:11px;color:var(--muted)}
-.daybox .names{margin:3px 0 0;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
-.daybox .names .pname{font-size:15px}
-.daybox .note{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-.daybox .gapline{margin:10px 0 0;border-left:2px solid var(--stop);padding:2px 0 2px 12px;
-  font-size:14px;color:var(--muted)}
-.daybox .gapline b{color:var(--ink)}
+/* A day opened: the men behind the figures and the places behind OPEN. */
+.daybox .cn{margin:0;font-family:var(--font-ui);font-size:var(--t-base);font-weight:600}
+.daybox .who{margin:var(--sp-2) 0 0;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-2)}
+.daybox .names{margin:3px 0 0;font-size:var(--t-base);color:var(--fg);overflow-wrap:anywhere}
+.daybox .names .pname{font-size:inherit}
+.daybox .note{margin:8px 0 0;font-size:var(--t-sm);color:var(--fg-2)}
+.daybox .gapline{margin:var(--sp-2) 0 0;padding:2px 0 2px var(--sp-3);border-left:2px solid var(--line-strong);
+  font-size:var(--t-md);color:var(--fg-2)}
+.daybox .gapline b{color:var(--fg)}
 
-/* The season in one line, with the forecast's own record under it. */
-/* The finish is this section's anchor: the line is a size up and the
-   playoff odds, which is the figure a manager is actually after, are
-   the largest thing in it. */
-.standing{display:flex;align-items:baseline;gap:8px 16px;flex-wrap:wrap;margin:0;
-  font-family:var(--display);font-weight:600;font-size:clamp(22px,4.8vw,31px);
-  font-variant-numeric:tabular-nums}
-.standing .k{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--muted);font-weight:400}
-.standing .sep{color:var(--rule);font-weight:400}
-.standing .odds{color:var(--accent);font-size:1.12em}
-.smallnote{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;line-height:1.7;
-  color:var(--muted);max-width:78ch}
+/* ---- the season in one line, and where it finishes ------------------------
+   The projected finish, the place most often and the playoff odds are
+   figures: the data face, a step up, and grey -- a probability is not a
+   change to anybody's roster. The forecast's own record sits under them. */
+.standing{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px var(--sp-3);margin:0;
+  font-family:var(--font-data);font-size:var(--t-xl);font-weight:600;font-variant-numeric:tabular-nums;
+  color:var(--fg)}
+.standing .k{font-family:var(--font-data);font-size:var(--t-xs);font-weight:400;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3)}
+.standing .sep{color:var(--line-strong);font-weight:400}
+.standing .odds{color:var(--fg)}
 @media (max-width:560px){
-  /* A phone wraps the line, and a separator at the end of a wrapped line
-     reads as a missing word, so the labels carry the break instead. */
-  .standing{gap:4px 14px}
+  .standing{gap:4px var(--sp-3)}
   .standing .sep{display:none}
 }
+.smallnote{margin:var(--sp-2) 0 0;font-size:var(--t-sm);line-height:1.6;color:var(--fg-3);max-width:90ch}
+/* One bar a place: the finish distribution, the orange its one series. */
+.places{display:grid;gap:3px;max-width:34rem;margin:0 0 var(--sp-3);padding:0;list-style:none}
+.places li{display:grid;grid-template-columns:2.2em 1fr 3.4em;align-items:center;gap:10px}
+.places .p{font-family:var(--font-data);font-size:var(--t-md);font-weight:600;color:var(--fg-2);text-align:right}
+.places .b{display:block;height:8px;background:var(--inset)}
+.places .b i{display:block;height:100%;background:var(--accent)}
+.places .v{font-family:var(--font-data);font-size:var(--t-md);font-variant-numeric:tabular-nums;color:var(--fg-2)}
+#rest-finish .why{margin:6px 0 0;color:var(--fg-2);font-size:var(--t-md)}
+#rest-finish .why b{color:var(--fg);font-weight:600}
+#rest-finish .note{margin:4px 0 0;font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-2)}
+#rest-grid td.name .faint{font-family:var(--font-ui)}
 
-/* ---- the footnote ------------------------------------------------------- */
-.foot{margin-top:64px;border-top:1px solid var(--rule);padding-top:14px;
-  font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.9}
-.foot b{color:var(--ink);font-weight:500}
-.warnline{border-left:2px solid var(--stop);padding:8px 0 8px 12px;margin:14px 0;
-  color:var(--stop);font-size:15px}
+/* ---- what changed: a day at a time, a hairline over every line ------------
+   A line about the reader's own team takes the orange edge his own row
+   takes everywhere; his opponent's a grey one, so the two are told apart by
+   the edge and not by its colour alone. A man ruled out is a status: grey,
+   heavier. */
+.dayhead{margin:var(--sp-3) 0 4px;font-family:var(--font-data);font-size:var(--t-xs);font-weight:500;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-2)}
+.dayhead:first-child{margin-top:0}
+.feed{list-style:none;margin:0;padding:0}
+.feed li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px var(--sp-3);padding:6px 0;
+  border-top:1px solid var(--line)}
+.feed li:first-child{border-top:0}
+.feed .when{font-family:var(--font-data);font-size:var(--t-sm);font-variant-numeric:tabular-nums;
+  color:var(--fg-2);white-space:nowrap}
+/* `break-word` and not `anywhere`: a name in a sentence is a button, and
+   `anywhere` let a line break between the button and the comma after it. */
+.feed .what{flex:1 1 26ch;min-width:0;overflow-wrap:break-word;font-size:var(--t-base)}
+.feed .kind{margin-left:auto;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2);white-space:nowrap}
+.feed li.ours{padding-left:var(--sp-3);box-shadow:inset 2px 0 0 var(--accent)}
+.feed li.theirs{padding-left:var(--sp-3);box-shadow:inset 2px 0 0 var(--line-strong)}
+.feed li.urgent .kind{color:var(--fg);font-weight:600}
+/* A name inside a sentence: the card's trigger, read as part of the line. */
+.feed .pname.inline{display:inline;font-weight:600}
+.filter{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 10px;margin:0 0 var(--sp-2);
+  padding-bottom:var(--sp-2);border-bottom:1px solid var(--line);font-size:var(--t-md)}
+.filter label{margin-right:8px;cursor:pointer}
+.filter input{accent-color:var(--fg);cursor:pointer}
 
+/* ---- a matchup: two sides and their nine (This week) ----------------------- */
+.matchup{padding:var(--sp-3) 0;border-top:1px solid var(--line)}
+.matchup:first-child{padding-top:0;border-top:0}
+.matchup:last-child{padding-bottom:0}
+.matchup.ours{padding-left:var(--sp-3);box-shadow:inset 2px 0 0 var(--accent)}
+.matchup.ours:first-child{padding-top:2px}
+.matchup .score{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px var(--sp-3)}
+.matchup .side{flex:1 1 14ch;min-width:0;font-size:var(--t-base);font-weight:600;overflow-wrap:anywhere}
+.matchup .side.right{text-align:right}
+.matchup .side.lead{color:var(--fg)}
+.matchup .side.trail{color:var(--fg-2);font-weight:400}
+.matchup .tally{font-family:var(--font-data);font-size:var(--t-xl);font-weight:600;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.matchup .state{margin:2px 0 0;font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-2)}
+.matchup .who{margin:var(--sp-2) 0 0;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2)}
+.matchup .who .faint{font-family:var(--font-ui);font-size:var(--t-sm);letter-spacing:0;text-transform:none}
+.matchup .strip{margin-top:4px}
+.matchup .expect{margin:6px 0 0;font-size:var(--t-md);color:var(--fg-2)}
+.matchup .expect b{font-family:var(--font-data);font-variant-numeric:tabular-nums;color:var(--fg)}
+/* The reader's own week, on This week: his own, so the orange edge. */
+.yours .ws-panel{box-shadow:inset 3px 0 0 var(--accent)}
+.yours .ws-panel p{margin:0 0 6px;max-width:78ch;color:var(--fg-2)}
+.yours .ws-panel p b{color:var(--fg)}
+.yours .strip{margin:var(--sp-2) 0}
+
+/* ---- a team's strip with its name, one a line (History) -------------------- */
+.profile{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);align-items:center;gap:0 var(--sp-4);
+  padding:var(--sp-2) 0;border-bottom:1px solid var(--line)}
+.profile:first-child{padding-top:0}
+.profile:last-child{padding-bottom:0;border-bottom:0}
+.profile .who{font-weight:500;overflow-wrap:anywhere}
+.profile.ours .who{color:var(--accent-text);font-weight:600}
+.profile .strip{margin:0}
 @media (max-width:860px){
-  .page{padding:0 16px 72px}
-  .nav{padding:8px 16px 6px;gap:4px 16px}
-  .profile{grid-template-columns:1fr}
+  .profile{grid-template-columns:minmax(0,1fr)}
   .profile .who{padding-bottom:4px}
-  .matchup .side{font-size:16px}
-  .mast{padding-top:26px}
-  .strip{grid-template-columns:repeat(3,minmax(0,1fr));border-width:1px 0 0 1px}
-  .strip div{border-bottom:1px solid var(--rule)}
-  .days{grid-auto-flow:row;grid-auto-columns:auto;border-width:1px 0 0 1px}
-  .days div{border-bottom:1px solid var(--rule)}
-  .tape td.bar{display:none}
-  .grid td.links a{display:block;margin:2px 0 0}
 }
+
+/* ---- the trade page: the builder, and the wire for a place a deal opens ----
+   A gain and a loss are told apart by a sign and an arrow before colour.
+   A man in the deal is selected, so his row takes orange's wash; on IR is a
+   status, grey. */
+.roster{list-style:none;margin:var(--sp-2) 0 0;padding:0;border-top:1px solid var(--line)}
+.roster li{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.pick{display:flex;flex:1 1 auto;align-items:center;gap:8px;min-width:0;min-height:var(--row);padding:3px 6px;
+  text-align:left;background:none;border:0;border-radius:0;cursor:pointer;font-size:var(--t-base)}
+.pick:hover{background:var(--inset)}
+.pick:focus-visible{outline-offset:-2px}
+.pick:disabled{cursor:not-allowed;color:var(--fg-3)}
+.pick[aria-pressed="true"]{background:var(--accent-wash);color:var(--fg)}
+.pick[aria-pressed="true"] .who::before{content:"\2713\00a0"}
+.pick .who{flex:1 1 auto;min-width:0;font-weight:500;overflow-wrap:anywhere}
+.pick .meta{font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2);white-space:nowrap}
+.pick .meta.out{color:var(--fg-2)}
+.deal{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--line)}
+.deal p{margin:2px 0 0;font-size:var(--t-base)}
+.deal .none{color:var(--fg-3);font-style:italic}
+.room{margin:var(--sp-2) 0 0;font-size:var(--t-md);color:var(--fg-2)}
+.doing{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin:var(--sp-4) 0 0}
+.doing button[disabled]{opacity:.45;cursor:progress}
+.doing .working{font-family:var(--font-data);font-size:var(--t-sm);color:var(--fg-2)}
+.nine td.cat{font-family:var(--font-data);font-weight:600;letter-spacing:.04em}
+.nine td.d.up{color:var(--pos)}
+.nine td.d.down{color:var(--neg)}
+.nine td.d.flat{color:var(--fg-3)}
+/* The wire as a list of choices (the What if's chooser, and "leave it
+   open" over the trade page's screener). */
+.wire{list-style:none;margin:0;padding:0;max-height:440px;overflow-y:auto;border-top:1px solid var(--line)}
+.wire li{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.fill{display:grid;flex:1 1 auto;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:2px 12px;
+  min-width:0;padding:6px;text-align:left;background:none;border:0;border-radius:0;cursor:pointer;
+  font-size:var(--t-base)}
+.fill:hover{background:var(--inset)}
+.fill:focus-visible{outline-offset:-2px}
+.fill[aria-pressed="true"]{background:var(--accent-wash)}
+.fill[aria-pressed="true"] .who::before{content:"\2713\00a0"}
+.fill .who{font-weight:500;overflow-wrap:anywhere}
+.fill .worth{font-family:var(--font-data);font-size:var(--t-base);font-weight:600;font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+.fill .worth.up{color:var(--pos)}
+.fill .worth.down{color:var(--neg)}
+/* "Leave it open" is priced in the league's lens, not this roster's, so it
+   is drawn as a different kind of number and its own row says which. */
+.fill .worth.faint{color:var(--fg-3)}
+.fill .meta{grid-column:1/-1;font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
+/* The strip stays nine across in a row of this list at every width. */
+.fill .strip{grid-column:1/-1;grid-template-columns:repeat(9,minmax(0,1fr));margin:4px 0 2px}
+.fill .strip div{padding:2px 4px;border-bottom:0;border-right:1px solid var(--line)}
+.fill .strip div:last-child{border-right:0}
+.fill .strip .lab{font-size:8.5px}
+.fill .strip b{font-size:var(--t-xs)}
+/* A status beside a name, as a tag: grey, because a status is a fact about
+   a man and not a change to anybody's roster. */
+.badge{display:inline-flex;align-items:center;height:18px;margin-left:8px;padding:0 5px;
+  border:1px solid var(--line-strong);border-radius:2px;font-family:var(--font-data);font-size:var(--t-2xs);
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-2);white-space:nowrap;
+  vertical-align:middle}
+/* The card's own control on a row that is already a button. */
+.info{align-self:stretch;padding:0 10px;background:none;border:0;border-left:1px solid var(--line);border-radius:0;
+  cursor:pointer;font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--fg-2)}
+.info:hover{background:var(--inset);color:var(--fg)}
+.info:focus-visible{outline-offset:-2px}
+.fill-table{margin-top:var(--sp-3)}
+.fill-table .ws-scr{border-radius:var(--r-control)}
+
+/* ---- the standings' seed odds: a row of bars under a team's own row --------- */
+.seeds-bar{display:flex;align-items:flex-end;gap:3px;min-height:46px;padding:8px 0 2px}
+.seeds-bar .seed{display:flex;flex:1 1 0;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.seeds-bar .seed i{display:block;width:100%;background:var(--line)}
+.seeds-bar .seed.in i{background:var(--accent)}
+.seeds-bar .seed em{font-family:var(--font-data);font-size:var(--t-2xs);font-style:normal;color:var(--fg-2)}
 
 /* Nothing on these pages animates to say anything -- the drawer and the
    rail slide in, and that is all -- and a reader who has asked for

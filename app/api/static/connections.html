@@ -24,10 +24,11 @@
     shown again, here or anywhere.</p></div>
 </header>
 
-<section>
-  <div class="shead"><h2>Connect a league</h2></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Connect a league</h2><span class="ws-k"></span></div>
   <p class="lede">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
     <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
+  <div class="ws-panel">
   <form class="signin" id="connect" autocomplete="off">
     <label class="eyebrow" for="league">League id</label>
     <input id="league" inputmode="numeric" required>
@@ -38,41 +39,50 @@
     <button class="btn" type="submit">Connect</button>
   </form>
   <p class="lede" id="connected" hidden></p>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>Your connections</h2></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Your connections</h2><span class="ws-k"></span></div>
+  <div class="ws-panel">
   <div id="connections"><p class="empty">Loading…</p></div>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>Leagues you own</h2><span class="tag">invites and claims</span></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Leagues you own</h2><span class="ws-k">invites and claims</span></div>
+  <div class="ws-panel">
   <div id="owned"><p class="empty">Loading…</p></div>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>Your league's numbers</h2><span class="tag">measured on your own history</span></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Your league's numbers</h2><span class="ws-k">measured on your own history</span></div>
   <p class="lede">Every number on your pages leans on these. Each one says where it came
     from: measured on your league, the pool of leagues like yours, or the default until
     your league has enough history. A bar labels a move and never hides one, so a move
     under the bar is still shown with its number.</p>
+  <div class="ws-panel">
   <div id="numbers"><p class="empty">Loading…</p></div>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>Your ESPN account</h2><span class="tag">to verify your claims</span></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Your ESPN account</h2><span class="ws-k">to verify your claims</span></div>
   <p class="lede">Optional. Your SWID alone (never espn_s2): when it is an owner of the
     team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
+  <div class="ws-panel">
   <form class="signin" id="identity" autocomplete="off">
     <label class="eyebrow" for="myswid">SWID</label>
     <input id="myswid" type="password" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Keep it</button>
   </form>
   <p class="lede" id="identified" hidden></p>
+  </div>
 </section>
 
-<section>
-  <div class="shead"><h2>Tools that read for you</h2><span class="tag">one token, shown once</span></div>
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Tools that read for you</h2><span class="ws-k">one token, shown once</span></div>
   <p class="lede">A token lets a tool — the co-manager in Claude, say — read the same pages
     you read, and nothing more: your leagues, your teams' plans, the numbers behind them.
     It can add nobody, drop nobody and bid on nobody. Copy it when it appears; it is not
@@ -81,6 +91,7 @@
     <b>via OAuth</b> was asked for by an app you allowed — you signed in, read what it
     wanted and pressed Allow — and it is named after that app. Both are the same kind of
     token, read the same pages, and are ended the same way: here.</p>
+  <div class="ws-panel">
   <form class="signin" id="mint" autocomplete="off">
     <label class="eyebrow" for="tokenname">What it is for</label>
     <input id="tokenname" maxlength="60" placeholder="Claude on my laptop" required>
@@ -88,6 +99,7 @@
   </form>
   <p class="lede mono" id="minted" hidden></p>
   <div id="tokens"><p class="empty">Loading…</p></div>
+  </div>
 </section>
 
 <p class="foot">Nothing on this page is ever shown back: not the cookies, not the SWID.

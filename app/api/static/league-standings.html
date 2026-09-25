@@ -23,8 +23,8 @@
 <p class="warnline" id="failed" hidden></p>
 
 <main id="body" hidden>
-  <section>
-    <div class="shead"><h2>The table</h2><span class="tag" id="tag">regular season</span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The table</h2><span class="ws-k" id="tag">regular season</span></div>
     <p class="lede" id="lede">By matchups won, then fewest lost, then categories won. ESPN reports
       no matchup record, so that one is counted from the stored matchups; the category record is
       ESPN's own, and counts categories rather than matchups. Byes count neither way.</p>
@@ -32,12 +32,12 @@
       <button type="button" id="view-now" aria-pressed="true">As it stands</button>
       <button type="button" id="view-soon" aria-pressed="false">Projected</button>
     </nav>
-    <div class="scroll">
+    <div class="ws-panel flush"><div class="scroll">
       <table class="grid" id="grid">
         <thead><tr id="head"></tr></thead>
         <tbody id="table"></tbody>
       </table>
-    </div>
+    </div></div>
   </section>
 </main>
 

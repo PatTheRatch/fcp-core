@@ -27,27 +27,29 @@
 
 <dl class="ws-factline" id="readout"></dl>
 
-<section class="yours" id="yours" hidden>
-  <h2 id="yours-title">Your week</h2>
-  <div id="yours-body"></div>
+<section class="ws-sect yours" id="yours" hidden>
+  <div class="ws-sect-head"><h2 class="ws-label" id="yours-title">Your week</h2><span class="ws-k"></span></div>
+  <div class="ws-panel" id="yours-body"></div>
 </section>
 
 <main id="body" hidden>
-  <section>
-    <div class="shead"><h2>The matchups</h2><span class="tag" id="tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The matchups</h2><span class="ws-k" id="tag"></span></div>
     <p class="lede" id="lede"></p>
-    <div id="matchups"></div>
+    <div class="ws-panel" id="matchups"></div>
   </section>
 
-  <section id="changed">
-    <div class="shead"><h2>What changed</h2><span class="tag" id="changed-tag"></span></div>
+  <section class="ws-sect" id="changed">
+    <div class="ws-sect-head"><h2 class="ws-label">What changed</h2><span class="ws-k" id="changed-tag"></span></div>
     <p class="lede" id="changed-lede"></p>
-    <p class="filter" id="changed-filter" hidden>
-      <input type="checkbox" id="changed-mine">
-      <label for="changed-mine">My team and my opponent</label>
-      <span class="faint" id="changed-count"></span>
-    </p>
-    <div id="changed-body"></div>
+    <div class="ws-panel">
+      <p class="filter" id="changed-filter" hidden>
+        <input type="checkbox" id="changed-mine">
+        <label for="changed-mine">My team and my opponent</label>
+        <span class="faint" id="changed-count"></span>
+      </p>
+      <div id="changed-body"></div>
+    </div>
   </section>
 </main>
 
@@ -159,8 +161,9 @@ function sideStrip(side, other) {
           cat,
           {
             text: storedCat(cat, stat ? stat.value : undefined),
+            // A category a side is winning is shaded, not coloured: it is a
+            // fact about the matchup, not a change to the reader's roster.
             shade: result === "WIN" ? "s2" : result === "TIE" ? "s1" : "",
-            tone: result === "WIN" ? "up" : "",
           },
         ];
       }),
@@ -281,7 +284,8 @@ async function drawYours(ctx, context, report) {
   const link =
     `<p><a class="more" href="${teamUrl(WHERE.league, WHERE.season, team.espn_team_id, "week")}` +
     `${params(WHERE)}">See the moves worth a look</a></p>`;
-  $("yours-title").textContent = `Your week: ${team.name}`;
+  $("yours-title").textContent = "Your week";
+  $("yours").querySelector(".ws-k").textContent = team.name;
   $("yours").hidden = false;
   $("yours-body").innerHTML =
     "<p>Working out your week. The first report of the day can take a minute.</p>";

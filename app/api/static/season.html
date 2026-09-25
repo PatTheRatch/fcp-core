@@ -28,43 +28,48 @@
 
 <main id="body" hidden>
 
-  <section>
-    <div class="shead"><h2>The outlook</h2><span class="tag" id="outlook-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The outlook</h2><span class="ws-k" id="outlook-tag"></span></div>
     <p class="lede" id="outlook-lede"></p>
-    <div class="strip" id="odds-strip"></div>
-    <div id="outlook"></div>
+    <div class="ws-panel">
+      <div class="strip" id="odds-strip"></div>
+      <div id="outlook"></div>
+    </div>
   </section>
 
-  <section>
-    <div class="shead"><h2>Worth a look</h2><span class="tag" id="pick-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">Worth a look</h2><span class="ws-k" id="pick-tag"></span></div>
     <p class="lede" id="pick-lede"></p>
-    <div id="pick"></div>
+    <div class="ws-panel" id="pick"></div>
   </section>
 
-  <section>
-    <div class="shead"><h2>The best of each kind</h2><span class="tag" id="moves-tag"></span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The best of each kind</h2><span class="ws-k" id="moves-tag"></span></div>
     <p class="lede">The best free add, the best swap and the best two-for-two the search found,
       each marked against its own bar: a claim costs FAAB and has to clear more than a free
       add does.</p>
-    <div id="moves"></div>
+    <div class="ws-panel" id="moves"></div>
   </section>
 
-  <section>
-    <div class="shead"><h2>Drop candidates</h2><span class="tag">who costs least to lose</span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">Drop candidates</h2><span class="ws-k">who costs least to lose</span></div>
     <p class="lede">What each man's place would give back if the wire's best replacement took
       it. A small number is a cheap place to change, not a verdict on the player.</p>
+    <div class="ws-panel flush">
     <table class="grid">
       <thead><tr><th>Player</th><th>Replaced by</th><th>Categories a week</th></tr></thead>
       <tbody id="drops"></tbody>
     </table>
     <p class="empty" id="drops-empty" hidden>Nobody: every place is holding its value.</p>
+    </div>
   </section>
 
-  <section>
-    <div class="shead"><h2>Stashes</h2><span class="tag">out now, back soon</span></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">Stashes</h2><span class="ws-k">out now, back soon</span></div>
     <p class="lede">Injured men whose healthy value would rank on the wire by the time they
       return, and what a place for them would cost today. The odds are the NBA's own return
       record for men who have been out this long, not a diagnosis and not a date.</p>
+    <div class="ws-panel flush">
     <div class="scroll">
     <table class="grid">
       <thead><tr>
@@ -76,11 +81,12 @@
     </table>
     </div>
     <p class="empty" id="stashes-empty" hidden>Nobody worth holding a place for.</p>
+    </div>
   </section>
 
-  <section>
-    <div class="shead"><h2>The churn guard</h2><span class="tag" id="churn-tag"></span></div>
-    <div id="churn"></div>
+  <section class="ws-sect">
+    <div class="ws-sect-head"><h2 class="ws-label">The churn guard</h2><span class="ws-k" id="churn-tag"></span></div>
+    <div class="ws-panel" id="churn"></div>
   </section>
 
 </main>
