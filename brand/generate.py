@@ -158,7 +158,11 @@ FILES = {
 }
 
 if __name__ == "__main__":
+    import sys
     for name, content in FILES.items():
         (OUT / name).write_text(content)
-    (OUT / "compare-square.svg").write_text(compare())
-    print(f"wrote {len(FILES) + 1} files to {OUT}")
+    print(f"wrote {len(FILES)} files to {OUT}")
+    if "--compare" in sys.argv:
+        # scratch sheet for A/B tests; not part of the shipped set
+        (OUT / "compare-square.svg").write_text(compare())
+        print("wrote compare-square.svg")
