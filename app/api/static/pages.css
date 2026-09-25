@@ -621,6 +621,12 @@ details.ws-disc .ws-disc-body{padding:var(--sp-3)}
    own control (How this is worked out, Inspect) sits at its right end. */
 .ws-page .ws-sect{margin:0 0 var(--sp-6)}
 .ws-sect-head .ws-btn{align-self:center;margin:-4px 0}
+/* On a phone the label row wraps: the tag follows the label, and the
+   section's own button keeps to the right edge whichever line it lands on. */
+@media (max-width:700px){
+  .ws-page .ws-sect-head .ws-k{margin-left:0}
+  .ws-page .ws-sect-head .ws-btn{margin-left:auto}
+}
 .ws-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-panel);
   padding:var(--sp-3) var(--sp-4);min-width:0}
 .ws-panel.flush{padding:0;overflow:hidden}
@@ -810,7 +816,8 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .shead .tag{margin-left:auto;font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--muted);white-space:nowrap}
 .lede{margin:-8px 0 20px;color:var(--muted);font-size:15px;max-width:74ch}
-.empty{color:var(--faint);padding:10px 0;font-style:italic}
+/* Shared with the pages inside the rail, so it reads the token itself. */
+.empty{color:var(--fg-3);padding:10px 0;font-style:italic}
 
 /* ---- the landing page ----------------------------------------------------
    The one page a stranger sees, in the same house style as everything behind

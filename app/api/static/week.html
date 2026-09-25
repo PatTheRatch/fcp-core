@@ -2092,7 +2092,7 @@ function drawMore(report) {
 /** Where every number on the page came from, verbatim. */
 function drawProvenance(report, projection) {
   const parts = [
-    `<p class="lede" data-k="Numbers">Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}. ` +
+    `<p data-k="Numbers">Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}. ` +
       `The wire is ${escape(wire(report))}` +
       (report.historical_wire
         ? ", rebuilt from who played and who was held that day, because the listener never ran " +
@@ -2105,23 +2105,23 @@ function drawProvenance(report, projection) {
     // line on the page -- the score, the by-man table, a man's night in
     // Tonight -- is as old as the last ingest, and this is the section a
     // reader comes to when he wants to know how old a number is.
-    `<p class="lede" data-k="Box scores"><b>Box scores:</b>${ingestNote()}</p>`,
+    `<p data-k="Box scores"><b>Box scores:</b>${ingestNote()}</p>`,
     // Which of the two status sources this day read, and as of when. On a
     // live morning it is ESPN's; on a replayed one it is the NBA's own
     // report as of ten o'clock Eastern that morning, which is the only
     // source that can answer about a day already played
     // (docs/replay_status.md).
-    `<p class="lede" data-k="Injury statuses"><b>Injury statuses:</b>${injuryNote()}</p>`,
+    `<p data-k="Injury statuses"><b>Injury statuses:</b>${injuryNote()}</p>`,
   ];
   if (report.faab_overspent) {
     parts.push(
-      `<p class="lede" data-k="FAAB"><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} ` +
+      `<p data-k="FAAB"><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} ` +
         `past the budget, so the pot is shown as spent rather than as a negative. ESPN's own ` +
         `ledger caps at the budget; the feed is a reconstruction (app/pickups/state.py).</p>`,
     );
   }
   if (projection) {
-    parts.push(`<p class="lede" data-k="The forecast's record">${escape(projection.calibration_note)}</p>`);
+    parts.push(`<p data-k="The forecast's record">${escape(projection.calibration_note)}</p>`);
   }
   parts.push(
     `<p class="smallnote" data-k="The scripts">The week: <span class="mono">scripts/stream.py</span>, ` +
