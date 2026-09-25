@@ -627,9 +627,11 @@ def _day_of(
 
 
 def standings(session: Session, viewer: Viewer, league_id: int, season: int) -> dict[str, Any]:
-    """Every team's record, in matchups and in categories. Before the draft
-    there is no record to read, and the answer says so rather than a table of
-    noughts."""
+    """Every team's record, in the league's own order. A head-to-head
+    each-category league is ranked on its categories, so the category record
+    and its win share lead and the matchup record follows as a figure. Before
+    the draft there is no record to read, and the answer says so rather than
+    a table of noughts."""
     found = league_member(session, viewer, league_id, season)
     undrafted = _undrafted(session, found)
     if undrafted is not None:
@@ -637,20 +639,33 @@ def standings(session: Session, viewer: Viewer, league_id: int, season: int) -> 
             session, found, undrafted, also={"league_id": league_id, "season": season}
         )
     rows = leagues_api.get_standings(found, session, include_playoffs=False)
+    unit = rows[0].unit if rows else "categories"
     return {
         "league_id": league_id,
         "season": season,
+        "ranked_on": unit,
+        "order": rows[0].order_note if rows else None,
         "teams": [
             {
+                "place": row.place,
                 "espn_team_id": row.espn_team_id,
                 "name": row.name,
-                "matchups": [row.matchups_won, row.matchups_lost, row.matchups_tied],
                 "categories": [row.categories_won, row.categories_lost, row.categories_tied],
+                "category_share": trim.n(row.share),
+                "matchups": [row.matchups_won, row.matchups_lost, row.matchups_tied],
+                "espn_standing": row.standing,
+                "place_note": row.place_note,
                 "final_standing": row.final_standing,
             }
             for row in rows
         ],
-        "note": "byes are left out: an unopposed matchup is not a win",
+        "note": (
+            "the table is in the league's own order, `order` says how; a category "
+            "league is ranked on categories and win share, and the matchup record, "
+            "which ESPN does not report, is counted from the stored results and is a "
+            "figure beside the order, never the order. Byes are left out: an "
+            "unopposed matchup is not a win."
+        ),
         "provenance": block(session, found),
     }
 
@@ -697,18 +712,19 @@ def projected_standings(
             {
                 "espn_team_id": team["espn_team_id"],
                 "name": team["name"],
-                "banked_matchups": team["banked_matchups"],
                 "banked_categories": [
                     trim.n(team["banked_won"]),
                     trim.n(team["banked_lost"]),
                 ],
-                "projected_matchups": [trim.n(value) for value in team["projected_matchups"]],
                 "projected_categories": [trim.n(value) for value in team["projected_record"]],
                 "playoff_odds": trim.n(team["playoff_odds"]),
                 "bye_odds": trim.n(team["bye_odds"]),
+                "banked_matchups": team["banked_matchups"],
+                "projected_matchups": [trim.n(value) for value in team["projected_matchups"]],
             }
             for team in body["teams"]
         ],
+        "ranked_by": body["tiebreak"],
         "how_it_was_made": {
             "simulations": body["n_sims"],
             "tiebreak": body["tiebreak"],

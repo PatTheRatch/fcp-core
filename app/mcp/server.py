@@ -467,8 +467,13 @@ def build_server(
 
     @mcp.tool(
         description=(
-            "Every team's record: matchups won, lost and tied, and categories "
-            "won, lost and tied. Byes left out. League scope."
+            "Every team's record in the league's own order: in a head-to-head "
+            "each-category league, category win share, then the tied teams' record "
+            "against each other, then categories won, then fewest lost (`order` "
+            "says it). Categories won, lost and tied and the share lead; the "
+            "matchup record is a figure beside them, never the order. A finished "
+            "season is ESPN's own published table, with `place_note` where the "
+            "rule would differ. Byes left out. League scope."
             " Before the season's draft there is no roster to read, and it answers "
             "`ready: false` with `why_not`, the draft's date, and no number."
         )
@@ -478,9 +483,12 @@ def build_server(
 
     @mcp.tool(
         description=(
-            "Where every team in the league is heading: the matchup and category "
-            "record each is projected to end on, and the odds of each finishing "
-            "place, from playing out every remaining matchup head to head. It "
+            "Where every team in the league is heading: the category record "
+            "each is projected to end on, the odds of each finishing place and "
+            "of the playoffs -- places ranked the way the league is, `ranked_by` "
+            "says how (category win share in a category league) -- and the "
+            "projected matchup record as a figure beside them, from playing out "
+            "every remaining matchup head to head. It "
             "carries its own record of how well the method scored when the "
             "season was replayed against it; quote that whenever you quote an "
             "odd. League scope."

@@ -213,6 +213,7 @@ def finish_out(finish: Finish) -> FinishOut:
         matchups_after=list(finish.matchups_after),
         place_before=finish.place_before,
         place_after=finish.place_after,
+        ranked_by=finish.ranked_by,
         playoff_odds_before=finish.playoff_odds_before,
         playoff_odds_after=finish.playoff_odds_after,
         bye_odds_before=finish.bye_odds_before,

@@ -707,6 +707,10 @@ class FinishOut(BaseModel):
     matchups_after: list[float]
     place_before: int = Field(description="Row in the projected table, 1 for first")
     place_after: int
+    ranked_by: str = Field(
+        default="",
+        description="How the projected table is ordered, in words: the league's ranking rule",
+    )
     playoff_odds_before: float
     playoff_odds_after: float
     bye_odds_before: float | None = Field(description="Null where the format gives no bye")

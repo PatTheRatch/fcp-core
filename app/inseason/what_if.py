@@ -358,6 +358,9 @@ class Finish:
     seed: int
     #: The published record of this forecast, for printing under the numbers.
     calibration_note: str = SHORT_NOTE
+    #: How the projected table -- and so `place_before`, `place_after` and the
+    #: odds -- is ordered, in words: the league's ranking rule.
+    ranked_by: str = ""
 
     @property
     def record_delta(self) -> float:
@@ -1159,6 +1162,7 @@ def _finish(before: Projection, after: Projection, team_id: int) -> Finish:
         weeks=_weeks(was, now),
         n_sims=after.n_sims,
         seed=after.seed,
+        ranked_by=after.tiebreak,
     )
 
 

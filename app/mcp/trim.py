@@ -314,6 +314,7 @@ def finish(row: Mapping[str, Any] | None, *, weeks: bool = False) -> dict[str, A
         "projected_categories_after": [n(value) for value in row["record_after"]],
         "place_before": row["place_before"],
         "place_after": row["place_after"],
+        "place_ranked_by": row.get("ranked_by") or None,
         "playoff_odds_before": n(row["playoff_odds_before"]),
         "playoff_odds_after": n(row["playoff_odds_after"]),
         "bye_odds_before": n(row["bye_odds_before"]),
