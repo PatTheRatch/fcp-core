@@ -26,11 +26,14 @@
 
 <main id="body" hidden>
   <section class="ws-sect" id="value-section">
-    <div class="ws-sect-head"><h2 class="ws-label">Value for money</h2><span class="ws-k">points per dollar</span></div>
-    <p class="lede">What each pick went on to score this season against what it cost. A blunt
+    <div class="ws-sect-head"><h2 class="ws-label">Value for money</h2><span class="ws-k">points per dollar</span>
+      <button type="button" class="ws-btn sm quiet" data-account="value-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="value-account" data-title="Value for money">
+      <p data-k="Points per dollar">What each pick went on to score this season against what it cost. A blunt
       measure, and deliberately so: it says nothing about which categories a team needed, and
       a player who missed the year scores little for reasons no draft could see. It answers who
       was expensive and quiet.</p>
+    </div>
     <div class="ws-panel flush">
       <h3 class="ws-sub ws-cap">The best</h3>
       <div class="scroll"><table class="ws-grid">
@@ -50,9 +53,12 @@
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">The board</h2><span class="ws-k" id="board-tag"></span></div>
-    <p class="lede">Every pick in the order it was made. An auction, so each carries its price
+    <div class="ws-sect-head"><h2 class="ws-label">The board</h2><span class="ws-k" id="board-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="board-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="board-account" data-title="The board">
+      <p data-k="Each pick">Every pick in the order it was made. An auction, so each carries its price
       and who put the player up, which is often not who bought him.</p>
+    </div>
     <div class="ws-panel flush"><div class="scroll"><table class="ws-grid">
       <thead><tr><th>Pick</th><th class="l">Player</th><th class="l">Bought by</th><th>Paid</th>
         <th class="l">Nominated by</th></tr></thead>
@@ -61,7 +67,7 @@
   </section>
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>

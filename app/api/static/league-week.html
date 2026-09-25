@@ -34,14 +34,20 @@
 
 <main id="body" hidden>
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">The matchups</h2><span class="ws-k" id="tag"></span></div>
-    <p class="lede" id="lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">The matchups</h2><span class="ws-k" id="tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="matchups-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="matchups-account" data-title="The matchups">
+      <p id="lede" data-k="A matchup"></p>
+    </div>
     <div class="ws-panel" id="matchups"></div>
   </section>
 
   <section class="ws-sect" id="changed">
-    <div class="ws-sect-head"><h2 class="ws-label">What changed</h2><span class="ws-k" id="changed-tag"></span></div>
-    <p class="lede" id="changed-lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">What changed</h2><span class="ws-k" id="changed-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="changed-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="changed-account" data-title="What changed">
+      <p id="changed-lede" data-k="The window"></p>
+    </div>
     <div class="ws-panel">
       <p class="filter" id="changed-filter" hidden>
         <input type="checkbox" id="changed-mine">
@@ -53,7 +59,7 @@
   </section>
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>

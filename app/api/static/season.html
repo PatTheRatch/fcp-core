@@ -29,8 +29,11 @@
 <main id="body" hidden>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">The outlook</h2><span class="ws-k" id="outlook-tag"></span></div>
-    <p class="lede" id="outlook-lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">The outlook</h2><span class="ws-k" id="outlook-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="outlook-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="outlook-account" data-title="The outlook">
+      <p id="outlook-lede" data-k="An ordinary week"></p>
+    </div>
     <div class="ws-panel">
       <div class="strip" id="odds-strip"></div>
       <div id="outlook"></div>
@@ -38,23 +41,33 @@
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">Worth a look</h2><span class="ws-k" id="pick-tag"></span></div>
-    <p class="lede" id="pick-lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">Worth a look</h2><span class="ws-k" id="pick-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="pick-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="pick-account" data-title="Worth a look">
+      <p id="pick-plan" data-k="The bars"></p>
+    </div>
+    <p class="ws-p" id="pick-lede"></p>
     <div class="ws-panel" id="pick"></div>
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">The best of each kind</h2><span class="ws-k" id="moves-tag"></span></div>
-    <p class="lede">The best free add, the best swap and the best two-for-two the search found,
+    <div class="ws-sect-head"><h2 class="ws-label">The best of each kind</h2><span class="ws-k" id="moves-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="moves-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="moves-account" data-title="The best of each kind">
+      <p data-k="Each kind">The best free add, the best swap and the best two-for-two the search found,
       each marked against its own bar: a claim costs FAAB and has to clear more than a free
       add does.</p>
+    </div>
     <div class="ws-panel" id="moves"></div>
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">Drop candidates</h2><span class="ws-k">who costs least to lose</span></div>
-    <p class="lede">What each man's place would give back if the wire's best replacement took
+    <div class="ws-sect-head"><h2 class="ws-label">Drop candidates</h2><span class="ws-k">who costs least to lose</span>
+      <button type="button" class="ws-btn sm quiet" data-account="drops-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="drops-account" data-title="Drop candidates">
+      <p data-k="Categories a week">What each man's place would give back if the wire's best replacement took
       it. A small number is a cheap place to change, not a verdict on the player.</p>
+    </div>
     <div class="ws-panel flush">
     <table class="ws-grid">
       <thead><tr><th>Player</th><th>Replaced by</th><th>Categories a week</th></tr></thead>
@@ -65,10 +78,13 @@
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">Stashes</h2><span class="ws-k">out now, back soon</span></div>
-    <p class="lede">Injured men whose healthy value would rank on the wire by the time they
+    <div class="ws-sect-head"><h2 class="ws-label">Stashes</h2><span class="ws-k">out now, back soon</span>
+      <button type="button" class="ws-btn sm quiet" data-account="stashes-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="stashes-account" data-title="Stashes">
+      <p data-k="Who is here, and the odds">Injured men whose healthy value would rank on the wire by the time they
       return, and what a place for them would cost today. The odds are the NBA's own return
       record for men who have been out this long, not a diagnosis and not a date.</p>
+    </div>
     <div class="ws-panel flush">
     <div class="scroll">
     <table class="ws-grid">
@@ -91,7 +107,7 @@
 
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>
@@ -227,7 +243,9 @@ function drawPick(report) {
   } else {
     const scarce = report.adds_left <= 2
       ? ` ${count(report.adds_left, "add")} left this period.` : "";
-    $("pick-lede").innerHTML =
+    // The section's label already says it; the lede, word for word, is the
+    // section's account. The two statuses above stay in view.
+    $("pick-plan").innerHTML =
       `<b>${WORTH_A_LOOK}</b>.${scarce} An idea, not an instruction — the bars are ${bars}.`;
   }
   $("pick").innerHTML = swapHtml(chosen, report, { over: true });

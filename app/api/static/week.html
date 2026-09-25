@@ -42,16 +42,17 @@
        here down is its label on the canvas and one panel under it
        (docs/design_system.md, "The panel rule"). -->
   <section class="ws-sect" id="pulse-section">
-    <div class="ws-sect-head"><h2 class="ws-label">The nine</h2><span class="ws-k" id="pulse-tag"></span></div>
+    <div class="ws-sect-head"><h2 class="ws-label">The nine</h2><span class="ws-k" id="pulse-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="pulse-account" aria-haspopup="dialog">How this is worked out</button></div>
     <div class="ws-panel"><div id="bands"></div><div id="cat-detail"></div></div>
     <details class="ws-disc ws-panel" id="by-man" hidden>
       <summary>This week, by man <span class="n" id="by-man-n"></span></summary>
       <div class="ws-disc-body"><div id="by-man-body"></div></div>
     </details>
-    <details class="ws-disc ws-panel" id="pulse-how">
-      <summary>How this is worked out</summary>
-      <div class="ws-disc-body"><p class="lede" id="pulse-how-text"></p></div>
-    </details>
+    <div class="ws-account" id="pulse-account" data-title="The nine">
+      <p id="pulse-how-text" data-k="The chances and the score"></p>
+      <p id="by-man-note" data-k="This week, by man"></p>
+    </div>
   </section>
 
   <!-- 3. Tonight. Who plays, ours and theirs, and the one thing in the set
@@ -65,7 +66,7 @@
     <div class="ws-sect-head"><h2 class="ws-label">Tonight</h2><span class="ws-k" id="tonight-tag"></span></div>
     <div class="ws-panel">
       <p class="warnline" id="today-fix" hidden></p>
-      <p class="lede" id="tonight-lede"></p>
+      <p class="ws-p" id="tonight-lede"></p>
       <div class="two" id="tonight-grids">
         <div class="side">
           <p class="sideline" id="ours-line">Yours <span class="n"></span></p>
@@ -107,13 +108,14 @@
        move's working in the drawer. Everything under the bar is under More,
        labelled, never hidden. -->
   <section class="ws-sect" id="read-section">
-    <div class="ws-sect-head"><h2 class="ws-label">The read</h2><span class="ws-k" id="read-tag"></span></div>
-    <p class="lede" id="read-lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">The read</h2><span class="ws-k" id="read-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="read-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="read-account" data-title="The read">
+      <p id="read-plan" data-k="The plan"></p>
+      <p id="read-how-text" data-k="The number and the bar"></p>
+    </div>
+    <p class="ws-p" id="read-lede"></p>
     <div class="ws-stack" id="read"></div>
-    <details class="ws-disc ws-panel" id="read-how">
-      <summary>How this is worked out</summary>
-      <div class="ws-disc-body"><p class="lede" id="read-how-text"></p></div>
-    </details>
   </section>
 
   <!-- 4b. What if: the manager's own read, under ours. He names the move and
@@ -121,8 +123,12 @@
        the judgement against the same bar, and where the season finishes.
        Until Run it is a heading and a form, and nothing has been fetched. -->
   <section class="ws-sect" id="whatif-section">
-    <div class="ws-sect-head"><h2 class="ws-label">What if</h2><span class="ws-k" id="whatif-tag"></span></div>
-    <p class="lede" id="whatif-lede"></p>
+    <div class="ws-sect-head"><h2 class="ws-label">What if</h2><span class="ws-k" id="whatif-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="whatif-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="whatif-account" data-title="What if">
+      <p id="whatif-lede" data-k="Your own move"></p>
+    </div>
+    <p class="ws-p" id="whatif-said"></p>
     <div class="ws-panel">
       <form class="whatif" id="whatif-form" autocomplete="off">
         <div class="room" id="whatif-add-room">
@@ -149,16 +155,16 @@
 
   <!-- 5. The schedule: the period across, both sides down, a real table. -->
   <section class="ws-sect" id="sched-section">
-    <div class="ws-sect-head"><h2 class="ws-label">Schedule</h2><span class="ws-k" id="sched-tag"></span></div>
+    <div class="ws-sect-head"><h2 class="ws-label">Schedule</h2><span class="ws-k" id="sched-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="sched-account" aria-haspopup="dialog">How this is worked out</button></div>
     <div class="ws-panel flush"><div class="scroll"><table class="sched" id="sched">
       <thead><tr id="sched-head"></tr></thead>
       <tbody id="sched-body"></tbody>
     </table></div></div>
     <div class="ws-panel" id="day-detail"></div>
-    <details class="ws-disc ws-panel" id="sched-how">
-      <summary>How this is worked out</summary>
-      <div class="ws-disc-body"><p class="lede" id="sched-how-text"></p></div>
-    </details>
+    <div class="ws-account" id="sched-account" data-title="Schedule">
+      <p id="sched-how-text" data-k="A cell"></p>
+    </div>
   </section>
 
   <!-- 6. What changed: only when the window holds something worth the eye. -->
@@ -176,12 +182,12 @@
     <div class="ws-sect-head"><h2 class="ws-label">Season</h2><span class="ws-k" id="season-tag"></span></div>
     <div class="ws-panel">
       <p class="standing" id="standing"></p>
-      <p class="smallnote" id="season-note"></p>
+      <p class="ws-calib" id="season-note"></p>
     </div>
     <details class="ws-disc ws-panel" id="season-weeks">
       <summary>Week by week <span class="n" id="season-weeks-n"></span></summary>
       <div class="ws-disc-body">
-        <p class="lede" id="rest-lede"></p>
+        <p class="ws-p" id="rest-lede"></p>
         <div class="scroll">
           <table class="ws-grid" id="rest-grid">
             <thead><tr id="rest-head"></tr></thead>
@@ -194,11 +200,12 @@
 
   <!-- 8. More: everything the page used to show at once, a tap away. -->
   <section class="ws-sect" id="more-section">
-    <div class="ws-sect-head"><h2 class="ws-label">More</h2><span class="ws-k">nothing is gone</span></div>
+    <div class="ws-sect-head"><h2 class="ws-label">More</h2><span class="ws-k">nothing is gone</span>
+      <button type="button" class="ws-btn sm quiet" data-account="provenance" aria-haspopup="dialog">How this is worked out</button></div>
     <details class="ws-disc ws-panel" id="more-moves">
       <summary>Every move considered <span class="n" id="more-moves-n"></span></summary>
       <div class="ws-disc-body">
-        <p class="lede" id="moves-lede"></p>
+        <p class="ws-p" id="moves-lede"></p>
         <div id="moves"></div>
       </div>
     </details>
@@ -214,15 +221,13 @@
       <summary>The week's standing figures</summary>
       <div class="ws-disc-body"><dl class="ws-factline" id="readout"></dl></div>
     </details>
-    <details class="ws-disc ws-panel" id="more-how">
-      <summary>How this is worked out</summary>
-      <div class="ws-disc-body"><div id="provenance"></div></div>
-    </details>
+    <div class="ws-account" id="provenance" data-title="Where every number came from"
+      data-k="The page"></div>
   </section>
 
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>
@@ -566,10 +571,13 @@ function drawByMan(report) {
   $("by-man-n").textContent = count(ours.length + theirs.length, "man", "men");
   $("by-man-body").innerHTML =
     byManTable(nameOf(report.espn_team_id), ours) +
-    byManTable(nameOf(report.opponent_espn_team_id), theirs) +
-    `<p class="note">Every started line in this period's days before today, which is the ` +
+    byManTable(nameOf(report.opponent_espn_team_id), theirs);
+  // Under the table it was a paragraph; it is the nine's account now, one
+  // click away in the drawer with the rest of how the score is worked out.
+  $("by-man-note").innerHTML =
+    `Every started line in this period's days before today, which is the ` +
     `same arithmetic as the score above: each Total row is that side's score, category by ` +
-    `category. A man the team has since dropped is here, because his games are in the score.</p>`;
+    `category. A man the team has since dropped is here, because his games are in the score.`;
   wireCards($("by-man-body"));
   try {
     box.open = window.matchMedia(`(min-width: ${BY_MAN_OPEN}px)`).matches;
@@ -1105,7 +1113,13 @@ function drawRead(report) {
   }
   const scarce =
     report.adds_left <= 2 ? ` ${count(report.adds_left, "add")} left this period.` : "";
-  $("read-lede").innerHTML = `<b>${WORTH_A_LOOK}</b>, in this order.${scarce} Ideas, not
+  // The lede's lead is the tag now; the lede itself, word for word, is the
+  // first line of the section's account. A status (a bye, no adds, nothing
+  // clearing the bar) stays in view, because it is the section's answer.
+  $("read-tag").textContent =
+    `${WORTH_A_LOOK.toLowerCase()}, in this order · bar: ${fixed(report.hurdle, 2)} categories`;
+  $("read-lede").textContent = "";
+  $("read-plan").innerHTML = `<b>${WORTH_A_LOOK}</b>, in this order.${scarce} Ideas, not
     instructions — the manager decides.`;
   $("read").innerHTML = plan
     .slice(0, READ_SHOWN)
@@ -1611,6 +1625,7 @@ SCENARIO.subscribe((state) => {
     $("whatif-answer").innerHTML = "";
     $("whatif-tag").textContent = "your own move";
     if (WHATIF_LEDE) $("whatif-lede").innerHTML = WHATIF_LEDE;
+    $("whatif-said").innerHTML = "";
     return;
   }
   drawWhatIfView(WHATIF_ANSWER, state.view);
@@ -1623,7 +1638,9 @@ function drawWhatIfAnswer(a) {
   // The route's own sentence about what the finish is, in the section's
   // lede, where a reader meets it before the figure it is about.
   const said = a.finish.language;
-  $("whatif-lede").innerHTML =
+  // The route's own sentence about the finish is a caveat on the answer,
+  // and stays in view over it.
+  $("whatif-said").innerHTML =
     `${escape(said.charAt(0).toUpperCase() + said.slice(1))} ` +
     `Change either chooser and tap Run again.`;
   SCENARIO.set(
@@ -2072,7 +2089,7 @@ function drawMore(report) {
 /** Where every number on the page came from, verbatim. */
 function drawProvenance(report, projection) {
   const parts = [
-    `<p class="lede">Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}. ` +
+    `<p class="lede" data-k="Numbers">Numbers from ${escape(CONTEXT ? CONTEXT.source_note : "the stored season")}. ` +
       `The wire is ${escape(wire(report))}` +
       (report.historical_wire
         ? ", rebuilt from who played and who was held that day, because the listener never ran " +
@@ -2085,26 +2102,26 @@ function drawProvenance(report, projection) {
     // line on the page -- the score, the by-man table, a man's night in
     // Tonight -- is as old as the last ingest, and this is the section a
     // reader comes to when he wants to know how old a number is.
-    `<p class="lede"><b>Box scores:</b>${ingestNote()}</p>`,
+    `<p class="lede" data-k="Box scores"><b>Box scores:</b>${ingestNote()}</p>`,
     // Which of the two status sources this day read, and as of when. On a
     // live morning it is ESPN's; on a replayed one it is the NBA's own
     // report as of ten o'clock Eastern that morning, which is the only
     // source that can answer about a day already played
     // (docs/replay_status.md).
-    `<p class="lede"><b>Injury statuses:</b>${injuryNote()}</p>`,
+    `<p class="lede" data-k="Injury statuses"><b>Injury statuses:</b>${injuryNote()}</p>`,
   ];
   if (report.faab_overspent) {
     parts.push(
-      `<p class="lede"><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} ` +
+      `<p class="lede" data-k="FAAB"><b>FAAB:</b> our sum of ESPN's bid feed runs $${report.faab_overspent} ` +
         `past the budget, so the pot is shown as spent rather than as a negative. ESPN's own ` +
         `ledger caps at the budget; the feed is a reconstruction (app/pickups/state.py).</p>`,
     );
   }
   if (projection) {
-    parts.push(`<p class="lede">${escape(projection.calibration_note)}</p>`);
+    parts.push(`<p class="lede" data-k="The forecast's record">${escape(projection.calibration_note)}</p>`);
   }
   parts.push(
-    `<p class="smallnote">The week: <span class="mono">scripts/stream.py</span>, ` +
+    `<p class="smallnote" data-k="The scripts">The week: <span class="mono">scripts/stream.py</span>, ` +
       `<span class="mono">docs/pickups.md</span> section 4.3. Tonight: ` +
       `<span class="mono">scripts/today.py</span>, which prints the same lineup. The rest of ` +
       `season: <span class="mono">scripts/projected.py</span>, ` +

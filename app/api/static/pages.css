@@ -641,6 +641,16 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 /* Prose that stays in view -- a status, an empty answer -- is a row's size. */
 .ws-page .ws-p{font-size:var(--t-base);color:var(--fg-2);max-width:78ch}
 .ws-empty{margin:0;padding:var(--sp-2) 0;color:var(--fg-3);font-size:var(--t-base)}
+.ws-page .ws-sect > .ws-p{margin:0 0 var(--sp-2)}
+.ws-disc-body .ws-p,.ws-panel .ws-p{margin:0 0 var(--sp-2);font-size:var(--t-md)}
+.ws-panel > .ws-note:first-child{margin:0 0 var(--sp-3)}
+.ws-panel .ws-p.side-summary{margin-top:var(--sp-3);color:var(--fg)}
+/* A line of an account page's list -- a connection, an invite, a number, a
+   token -- or the line a form answers with. */
+.ws-line{margin:0;padding:6px 0;border-top:1px solid var(--line);font-size:var(--t-base);color:var(--fg);
+  overflow-wrap:anywhere}
+.ws-line:first-child{border-top:0}
+.ws-line .ws-btn{margin-left:4px;vertical-align:middle}
 /* The calibration sentences and the refreshed line stay in view, small. */
 .ws-calib{margin:var(--sp-2) 0 0;font-size:var(--t-sm);line-height:1.5;color:var(--fg-3);max-width:90ch}
 .ws-calib b{color:var(--fg-2);font-weight:500}

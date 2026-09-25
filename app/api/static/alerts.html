@@ -63,29 +63,32 @@
   <div class="ws-sect-head"><h2 class="ws-label">Your channels</h2><span class="ws-k"></span></div>
   <div class="ws-panel">
   <div id="mine"><p class="empty">Loading…</p></div>
-  <p class="lede" id="confirmed" hidden></p>
+  <p class="ws-line" id="confirmed" hidden></p>
   </div>
 </section>
 
 <section class="ws-sect">
   <div class="ws-sect-head"><h2 class="ws-label">Add an address</h2><span class="ws-k"></span></div>
-  <p class="lede">Everything goes by email. Give an address and it gets a link to confirm it;
-    nothing is sent there before you open the link.</p>
   <div class="ws-panel">
+  <p class="ws-note">Everything goes by email. Give an address and it gets a link to confirm it;
+    nothing is sent there before you open the link.</p>
   <form class="signin" id="add" autocomplete="off">
     <label class="eyebrow" for="target">Address</label>
     <input id="target" type="email" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Add</button>
   </form>
-  <p class="lede" id="added" hidden></p>
+  <p class="ws-line" id="added" hidden></p>
   </div>
 </section>
 
 <section class="ws-sect" id="wants">
-  <div class="ws-sect-head"><h2 class="ws-label">What goes in it</h2><span class="ws-k">per league</span></div>
-  <p class="lede">Tick what you want to read. The email carries exactly these, in this order,
+  <div class="ws-sect-head"><h2 class="ws-label">What goes in it</h2><span class="ws-k">per league</span>
+    <button type="button" class="ws-btn sm quiet" data-account="wants-account" aria-haspopup="dialog">How this is worked out</button></div>
+  <div class="ws-account" id="wants-account" data-title="What goes in it" data-kicker="Your account">
+    <p data-k="The choices">Tick what you want to read. The email carries exactly these, in this order,
     and an alert between digests follows the same choices. Turn everything off and nothing is
     sent at all.</p>
+  </div>
   <div class="ws-panel">
   <div id="leagues"><p class="empty">Loading…</p></div>
   </div>
@@ -98,7 +101,7 @@
   </div>
 </section>
 
-<p class="foot">What you type is sealed before it is kept and is never shown back in full.
+<p class="ws-foot">What you type is sealed before it is kept and is never shown back in full.
   <span class="mono">docs/jobs.md</span> says when the digest goes out.</p>
 
 </div>
@@ -147,7 +150,7 @@ async function loadMine() {
   const box = $("mine");
   const got = await call("GET", "/me/channels");
   box.replaceChildren();
-  if (!got.ok) return box.append(el("p", `Your channels cannot be read: ${got.detail}`, "lede"));
+  if (!got.ok) return box.append(el("p", `Your channels cannot be read: ${got.detail}`, "ws-line"));
   // .signin is display:flex, which a hidden attribute would not override.
   const canAdd = Boolean(got.data.available.email);
   $("add").style.display = canAdd ? "" : "none";
@@ -161,7 +164,7 @@ async function loadMine() {
     box.append(el("p", "None yet: nothing is sent to you until you add an address.", "empty"));
   }
   for (const c of live) {
-    const line = el("p", "", "lede");
+    const line = el("p", "", "ws-line");
     const state = c.verified ? `confirmed ${day(c.verified_at)}` : "waiting to be confirmed";
     line.append(el("b", KIND[c.kind] || c.kind), ` ${c.masked} · ${state} `);
     const off = el("button", "Disable", "btn");
@@ -175,7 +178,7 @@ async function loadMine() {
     box.append(line);
   }
   for (const c of stopped) {
-    const line = el("p", "", "lede faint");
+    const line = el("p", "", "ws-line faint");
     line.append(el("b", KIND[c.kind] || c.kind), ` ${c.masked} · ${RETIRED}`);
     box.append(line);
   }
@@ -283,7 +286,7 @@ async function loadWants() {
   const box = $("leagues");
   const got = await call("GET", "/me/subscriptions");
   box.replaceChildren();
-  if (!got.ok) return box.append(el("p", `That cannot be read: ${got.detail}`, "lede"));
+  if (!got.ok) return box.append(el("p", `That cannot be read: ${got.detail}`, "ws-line"));
   if (!got.data.leagues.length) {
     return box.append(el("p", "No league yet, so there is nothing to choose.", "empty"));
   }
@@ -307,7 +310,7 @@ async function loadServer() {
         )
         .join("") +
       `</tbody></table></div>`
-    : `<p class="lede">None is set up in the server's <span class="mono">.env</span>, ` +
+    : `<p class="ws-line">None is set up in the server's <span class="mono">.env</span>, ` +
       `so only the addresses above receive your digest.</p>`;
 }
 

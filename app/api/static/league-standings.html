@@ -24,10 +24,13 @@
 
 <main id="body" hidden>
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">The table</h2><span class="ws-k" id="tag">regular season</span></div>
-    <p class="lede" id="lede">By matchups won, then fewest lost, then categories won. ESPN reports
+    <div class="ws-sect-head"><h2 class="ws-label">The table</h2><span class="ws-k" id="tag">regular season</span>
+      <button type="button" class="ws-btn sm quiet" data-account="table-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="table-account" data-title="The table">
+      <p id="lede" data-k="The order">By matchups won, then fewest lost, then categories won. ESPN reports
       no matchup record, so that one is counted from the stored matchups; the category record is
       ESPN's own, and counts categories rather than matchups. Byes count neither way.</p>
+    </div>
     <nav class="views" id="views" hidden>
       <button type="button" id="view-now" aria-pressed="true">As it stands</button>
       <button type="button" id="view-soon" aria-pressed="false">Projected</button>
@@ -41,7 +44,7 @@
   </section>
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>

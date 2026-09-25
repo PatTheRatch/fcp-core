@@ -24,9 +24,12 @@
 
 <main id="body" hidden>
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">Where each team was strong</h2><span class="ws-k" id="profiles-tag"></span></div>
-    <p class="lede">Each team's share of the matchups it won in each category, over the regular
+    <div class="ws-sect-head"><h2 class="ws-label">Where each team was strong</h2><span class="ws-k" id="profiles-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="profiles-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="profiles-account" data-title="Where each team was strong">
+      <p data-k="Each strip">Each team's share of the matchups it won in each category, over the regular
       season, strongest team first. Shaded by how far from a coin toss it is.</p>
+    </div>
     <div class="ws-panel" id="profiles"></div>
   </section>
 
@@ -49,9 +52,12 @@
   </section>
 
   <section class="ws-sect">
-    <div class="ws-sect-head"><h2 class="ws-label">Every owner, every season</h2><span class="ws-k" id="owners-tag"></span></div>
-    <p class="lede">Owners last longer than teams: a team is renamed, its owner is the same
+    <div class="ws-sect-head"><h2 class="ws-label">Every owner, every season</h2><span class="ws-k" id="owners-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="owners-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-account" id="owners-account" data-title="Every owner, every season">
+      <p data-k="Owners, not teams">Owners last longer than teams: a team is renamed, its owner is the same
       person. Regular-season matchups, all seasons stored.</p>
+    </div>
     <div class="ws-panel flush"><div class="scroll"><table class="ws-grid">
       <thead><tr><th>Owner</th><th>Seasons</th><th>Matchups</th><th>Share</th><th>Titles</th>
         <th>Best finish</th></tr></thead>
@@ -72,7 +78,7 @@
   </section>
 </main>
 
-<p class="foot" id="foot"></p>
+<p class="ws-foot" id="foot"></p>
 
 </div>
 <script src="/pages/static/pages.js"></script>

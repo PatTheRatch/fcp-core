@@ -26,9 +26,9 @@
 
 <section class="ws-sect">
   <div class="ws-sect-head"><h2 class="ws-label">Connect a league</h2><span class="ws-k"></span></div>
-  <p class="lede">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
-    <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
   <div class="ws-panel">
+  <p class="ws-note">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
+    <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
   <form class="signin" id="connect" autocomplete="off">
     <label class="eyebrow" for="league">League id</label>
     <input id="league" inputmode="numeric" required>
@@ -38,7 +38,7 @@
     <input id="swid" type="password" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Connect</button>
   </form>
-  <p class="lede" id="connected" hidden></p>
+  <p class="ws-line" id="connected" hidden></p>
   </div>
 </section>
 
@@ -57,11 +57,14 @@
 </section>
 
 <section class="ws-sect">
-  <div class="ws-sect-head"><h2 class="ws-label">Your league's numbers</h2><span class="ws-k">measured on your own history</span></div>
-  <p class="lede">Every number on your pages leans on these. Each one says where it came
+  <div class="ws-sect-head"><h2 class="ws-label">Your league's numbers</h2><span class="ws-k">measured on your own history</span>
+    <button type="button" class="ws-btn sm quiet" data-account="numbers-account" aria-haspopup="dialog">How this is worked out</button></div>
+  <div class="ws-account" id="numbers-account" data-title="Your league's numbers">
+    <p data-k="Where each comes from">Every number on your pages leans on these. Each one says where it came
     from: measured on your league, the pool of leagues like yours, or the default until
     your league has enough history. A bar labels a move and never hides one, so a move
     under the bar is still shown with its number.</p>
+  </div>
   <div class="ws-panel">
   <div id="numbers"><p class="empty">Loading…</p></div>
   </div>
@@ -69,40 +72,43 @@
 
 <section class="ws-sect">
   <div class="ws-sect-head"><h2 class="ws-label">Your ESPN account</h2><span class="ws-k">to verify your claims</span></div>
-  <p class="lede">Optional. Your SWID alone (never espn_s2): when it is an owner of the
-    team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
   <div class="ws-panel">
+  <p class="ws-note">Optional. Your SWID alone (never espn_s2): when it is an owner of the
+    team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
   <form class="signin" id="identity" autocomplete="off">
     <label class="eyebrow" for="myswid">SWID</label>
     <input id="myswid" type="password" required spellcheck="false" autocapitalize="off">
     <button class="btn" type="submit">Keep it</button>
   </form>
-  <p class="lede" id="identified" hidden></p>
+  <p class="ws-line" id="identified" hidden></p>
   </div>
 </section>
 
 <section class="ws-sect">
-  <div class="ws-sect-head"><h2 class="ws-label">Tools that read for you</h2><span class="ws-k">one token, shown once</span></div>
-  <p class="lede">A token lets a tool — the co-manager in Claude, say — read the same pages
+  <div class="ws-sect-head"><h2 class="ws-label">Tools that read for you</h2><span class="ws-k">one token, shown once</span>
+    <button type="button" class="ws-btn sm quiet" data-account="tokens-account" aria-haspopup="dialog">What a token is</button></div>
+  <div class="ws-account" id="tokens-account" data-title="Tools that read for you" data-kicker="Your account">
+    <p data-k="What it can do">A token lets a tool — the co-manager in Claude, say — read the same pages
     you read, and nothing more: your leagues, your teams' plans, the numbers behind them.
     It can add nobody, drop nobody and bid on nobody. Copy it when it appears; it is not
     shown again. Revoke one here and it stops working at once.</p>
-  <p class="lede">A token you made yourself is one you paste into a config file. One marked
+    <p data-k="Made here, or via OAuth">A token you made yourself is one you paste into a config file. One marked
     <b>via OAuth</b> was asked for by an app you allowed — you signed in, read what it
     wanted and pressed Allow — and it is named after that app. Both are the same kind of
     token, read the same pages, and are ended the same way: here.</p>
+  </div>
   <div class="ws-panel">
   <form class="signin" id="mint" autocomplete="off">
     <label class="eyebrow" for="tokenname">What it is for</label>
     <input id="tokenname" maxlength="60" placeholder="Claude on my laptop" required>
     <button class="btn" type="submit">Make a token</button>
   </form>
-  <p class="lede mono" id="minted" hidden></p>
+  <p class="ws-line mono" id="minted" hidden></p>
   <div id="tokens"><p class="empty">Loading…</p></div>
   </div>
 </section>
 
-<p class="foot">Nothing on this page is ever shown back: not the cookies, not the SWID.
+<p class="ws-foot">Nothing on this page is ever shown back: not the cookies, not the SWID.
   <span class="mono">docs/accounts.md</span> says where each is kept and who can open it.</p>
 
 </div>
@@ -154,10 +160,10 @@ async function loadConnections() {
   const box = $("connections");
   const got = await call("GET", "/connections");
   box.replaceChildren();
-  if (!got.ok) return box.append(el("p", got.detail, "lede"));
+  if (!got.ok) return box.append(el("p", got.detail, "ws-line"));
   if (!got.data.length) return box.append(el("p", "None yet.", "empty"));
   for (const c of got.data) {
-    const line = el("p", "", "lede");
+    const line = el("p", "", "ws-line");
     const state = c.revoked_at
       ? `revoked ${day(c.revoked_at)}`
       : c.last_error
@@ -208,7 +214,7 @@ function leagueNumbers(league, data) {
   const part = el("div");
   part.append(el("h3", league.league_name || `League ${data.espn_league_id}`, "eyebrow"));
 
-  const state = el("p", "", "lede");
+  const state = el("p", "", "ws-line");
   state.append(data.measuring ? `Measuring now: ${data.progress}.` : `${data.progress}.`);
   if (league.role === "owner") {
     const again = button("Measure again", async () => {
@@ -228,7 +234,7 @@ function leagueNumbers(league, data) {
 }
 
 function numberLine(data, number, role) {
-  const line = el("p", "", "lede");
+  const line = el("p", "", "ws-line");
   line.append(el("b", number.title), ": ");
   line.append(number.value === null ? "—" : NUMBER(number.value));
   line.append(` · ${number.source} · ${number.note}`);
@@ -269,7 +275,7 @@ async function ownedLeague(id) {
   const part = el("div");
   part.append(el("h3", `League ${id}`, "eyebrow"));
 
-  const link = el("p", "", "lede");
+  const link = el("p", "", "ws-line");
   link.append(button("New invite link", async () => {
     const made = await call("POST", `/leagues/${id}/invites`, {});
     link.replaceChildren(made.ok
@@ -281,7 +287,7 @@ async function ownedLeague(id) {
 
   const invites = await call("GET", `/leagues/${id}/invites`);
   for (const inv of invites.ok ? invites.data : []) {
-    const line = el("p", "", "lede");
+    const line = el("p", "", "ws-line");
     const expiry = inv.expires_at ? `expires ${day(inv.expires_at)}` : "no expiry";
     const status = inv.revoked_at ? `revoked ${day(inv.revoked_at)}` : expiry;
     line.append(`Invite of ${day(inv.created_at)} · ${inv.uses} joined · ${status} `);
@@ -296,9 +302,9 @@ async function ownedLeague(id) {
 
   const claims = await call("GET", `/leagues/${id}/claims`);
   const pending = claims.ok ? claims.data : [];
-  part.append(el("p", pending.length ? "Claims waiting on you:" : "No claims waiting.", "lede"));
+  part.append(el("p", pending.length ? "Claims waiting on you:" : "No claims waiting.", "ws-line"));
   for (const c of pending) {
-    const line = el("p", "", "lede");
+    const line = el("p", "", "ws-line");
     line.append(el("b", c.email), ` claims ${c.team_name} (${c.season}) `);
     line.append(button("Approve", async () => {
       await call("POST", `/leagues/${id}/claims/${c.id}/approve`);
@@ -348,7 +354,7 @@ async function loadTokens() {
     return;
   }
   for (const t of rows) {
-    const line = el("p", "", "lede");
+    const line = el("p", "", "ws-line");
     /* A token an app asked for is named "<the app> (OAuth)" by the server
        (app/oauth.py, token_name). The name is drawn as the app's own, with
        where it came from as a tag beside it, so a manager scanning the list
