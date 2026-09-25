@@ -104,6 +104,35 @@ rows stored before that rule existed were removed with
 `scripts/clear_undrafted_lineups.py`, which refuses any season the rule
 calls drafted.
 
+### The scoring type: the fact the table's order gates on
+
+`league_seasons.scoring_type` is ESPN's `settings.scoring.scoringType`,
+written by every settings pass (`app.ingest`) and filled for every stored
+season -- `H2H_CATEGORY`, Head-to-Head **Each Category**, 2019 to 2027. Since
+2026-09-25 it decides how every table is ordered
+(`app.scoring.ranking.ranking_rule`, docs/projected_record.md revision R6):
+
+| scoring type | ranked on | order |
+|---|---|---|
+| `H2H_CATEGORY` (each category) | categories | category win share, then the tied teams' category record against each other, then categories won, then fewest lost |
+| `H2H_MOST_CATEGORIES`, `H2H_POINTS` | matchups | matchups won, then fewest lost, then categories won |
+| rotisserie, or anything unnamed | -- | refused with the reason; the intake refuses such a league at its first step already |
+
+The head-to-head term reads a second setting,
+`raw_settings.schedule.playoffSeedingRule` (ESPN's seeding tiebreaker,
+`H2H_RECORD` here), and is dropped for a league that breaks its ties some
+other way. What gates on the order: the standings route and page, the
+projection's simulated tables and so every projected place, playoff and bye
+odd and lock (the what-if's finish, the stash lens, the trade page's finish),
+the digest's place line, the history page's all-time table and every MCP tool
+that says a place.
+
+| step | does | when |
+|---|---|---|
+| read | the scoring type and the seeding tiebreaker, from ESPN's settings | every settings pass, as it always was |
+| used | `ranking_rule(league_season)`, read from the row every time, never assumed | every table, every projection |
+| shown | `ranking`: the scoring type, its words, the record it ranks on and the order in words | `league_context` (docs/mcp.md); the `intake_ingest` job's payload (`ranking`) |
+
 ## Where a number comes from, in order
 
 1. **`owner`** — the league's own manager set it on the account page, with

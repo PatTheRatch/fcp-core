@@ -247,6 +247,11 @@ and `drops` leave, its `receives` and `fills` arrive. `docs/what_if.md` is the
 write-up, and it shares its engine with the `/what-if` route for a named
 pickup.
 
+The place and the odds are the projected table's, which since 2026-09-25 is
+ranked the way the league is -- category win share, not matchups won
+(docs/projected_record.md revision R6) -- and the finish says so
+(`ranked_by`).
+
 **It is a second lens and not a second bar.** Nothing on this page is
 labelled, ranked or refused on the finish; the bar is still `TRADE_HURDLE` on
 the net. The finish comes with the simulation's own ninety-five percent

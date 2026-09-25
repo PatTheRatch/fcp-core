@@ -557,8 +557,10 @@ four calls to existing ones. It never refuses a season it holds: a season
 with no stored schedule still has teams and names, and the page says what is
 missing rather than failing to draw.
 
-Records come from `/standings`, which already derives a matchup record from
-the stored matchups, so they are not repeated in the context.
+Records come from `/standings`, which orders the table by the league's
+ranking rule (category win share in this league, docs/projected_record.md
+revision R6) and derives a matchup record from the stored matchups as a
+figure beside it, so they are not repeated in the context.
 
 ## No auto-reload
 

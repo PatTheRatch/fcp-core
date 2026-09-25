@@ -415,8 +415,8 @@ within ten per cent rather than exact.
 | `season_report(...)` | the best move of each kind, drop candidates, stashes, the churn guard, both bars | 9k chars, ~2,900 |
 | `todays_lineup(...)` | the proposed lineup place by place beside the one that is set, and the places that will produce nothing tonight | 6k chars, ~1,900 |
 | `what_changed(league_id, season, team_id?, since?, until?, today?)` | injuries, adds, drops, claims and trades as one sentence each, newest first | 2.9k chars, ~800 (two days of a real week) |
-| `standings(league_id, season)` | every team's matchup and category record | 4k chars, ~1,230 |
-| `projected_standings(league_id, season, today?)` | the record each team is projected to end on, its finishing odds, and the record of the method (docs/projected_record.md) | 8.5k chars, ~2,740 |
+| `standings(league_id, season)` | every team in the league's own order (`ranked_on`, `order`): place, category record and win share first, the matchup record after; a finished season is ESPN's own table, with `place_note` where the rule differs | 4k chars, ~1,230 |
+| `projected_standings(league_id, season, today?)` | the category record each team is projected to end on, its playoff and bye odds and finishing odds -- places ranked as the league is (`ranked_by`) -- the projected matchups as a figure, and the record of the method (docs/projected_record.md) | 8.5k chars, ~2,740 |
 | `matchup(league_id, season, team_id, period?)` | one team's matchup, each side's nine as ESPN stored them | 1.7k chars, ~530 |
 | `recent_moves(league_id, season, days?)` | the league's roster moves in a window, failed claims included | 0.8k chars, ~260 (a week) |
 | `player_card(player_id, league_id?, season?, today?)` | his line per game and per week, games left, playoff games, status, and what the rate rests on | 1.4k chars, ~530 |
@@ -817,3 +817,31 @@ questions a manager would ask; it does not rule it out on the tenth.
   nothing that would entitle it to change an existing app's redirect URIs, so
   every registration is a new row. An app that wants different URIs registers
   again, which is what dynamic registration is for.
+
+## The order a place is in (2026-09-25)
+
+This league is ESPN's Head-to-Head **Each Category**, and ESPN ranks it on
+the category record, not on matchups won. Every tool that says a place says
+it in that order, from one rule (`app/scoring/ranking.py`,
+docs/projected_record.md revision R6):
+
+* `league_context.ranking` is the intake fact the order gates on: the stored
+  `scoring_type`, in words, `ranked_on` (`categories`), `order` in words
+  ("category win share, then the tied teams' category record against each
+  other, then categories won, then fewest lost") and ESPN's seeding
+  tiebreaker. A league this code does not rank (rotisserie) carries
+  `ranked_on: null` and the reason.
+* `standings` answers in that order with `ranked_on`, `order`, each team's
+  `place`, `categories` and `category_share` first and `matchups` after. A
+  finished season is ESPN's own published table; `espn_standing` and
+  `place_note` say where the rule would have put a team differently (2023's
+  second and third, a division leader seeded first).
+* `projected_standings` carries `ranked_by`; its places, `playoff_odds` and
+  `bye_odds` come from simulated tables ranked that way, and
+  `projected_matchups` is a figure beside them.
+* `what_if` and `judge_trade` carry `finish.place_ranked_by` beside
+  `place_before` and `place_after`.
+
+A matchup record is never the order and a model should not call it the
+record: it is the week-by-week result, ESPN does not report it for this
+format, and it is counted from the stored matchups.

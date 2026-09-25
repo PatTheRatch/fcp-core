@@ -45,6 +45,14 @@ the league's own numbers. Then:
 says the method is overconfident. Quote it whenever you quote an odd, the
 way you quote `trade_record` with a trade.
 
+**The record is categories.** This league is head to head, *each category*
+(`league_context.ranking`), and it is ranked on the category record: win
+share, then the tied teams' record against each other, then categories won,
+then fewest lost. When you say where a team stands, say its place and its
+category record and share (`standings`' `place`, `categories`,
+`category_share`); a matchup record is a figure beside it, never the reason
+for a place. "Third on categories, 95-76, .556", not "13-6, third".
+
 **Before the draft there is nothing to project.** `league_context`'s `draft`
 says when the season's draft is. Until it is held nobody has a roster, and
 every tool that needs one answers `ready: false` with `why_not` -- "The

@@ -242,19 +242,33 @@ since."): no route keeps a matchup's score day by day. A season whose
 matchups have no score yet says "The period has not begun".
 
 **Standings.** The header line "Standings · 2027 · 14 teams. The regular
-season's matchups, byes left out.", the seasons at its right. One table (scrolling in its own
-frame on a phone): rank, team, matchups W–L–T, categories W–L–T, the share
-of categories won, the longest winning and losing runs, the run the season
-ended on (W2, L1), the final finish (#1). The reader's team is shaded, and
-its name opens his week; in single mode every team's does. Reads
-`/standings` and `/streaks`.
+season, ranked on categories.", the seasons at its right. One table
+(scrolling in its own frame on a phone), **led by categories** since
+2026-09-25: place, team, categories W–L–T, **cat. share** (won + tied/2) /
+(won + lost + tied), the longest winning and losing runs of matchups, the
+run the season ended on (W2, L1), the final finish (#1), and **matchups
+W–L–T last**, in a quieter ink. The order is the route's, which is the
+league's ranking rule (`app/scoring/ranking.py`, docs/projected_record.md
+revision R6): this league is ESPN's Head-to-Head *Each Category*, ranked on
+category win share, then the tied teams' category record against each
+other, then categories won, then fewest lost -- never matchups won, which
+ESPN does not even report for the format. A season whose regular season is
+over is ESPN's own published table (`teams.standing`); the "How this is
+worked out" drawer says the rule in words and, for a season where ESPN's
+order and the share order part (2023's second and third, where ESPN seeded
+a division leader first), says where and why. The place printed is the
+table's own whatever column the reader sorts on. The reader's team is
+shaded, and its name opens his week; in single mode every team's does.
+Reads `/standings` and `/streaks`.
 
 Two views of that one table, chosen by a segmented control over it (added
 2026-09-22, docs/projected_record.md). **As it stands** is the above.
 **Projected** is where the season is heading: the record so far *as it stood
-on the day the projection was made*, then the projected matchup record, the
-projected category record and the odds of making the playoffs, with a bye
-column where the format has one. Tapping a playoff figure opens the odds of
+on the day the projection was made*, then the projected category record and
+the odds of making the playoffs, with a bye column where the format has one,
+and the matchups so far and the projected matchup record last. The places
+and the odds come from simulated tables ranked the way the league is, on
+category win share. Tapping a playoff figure opens the odds of
 each individual place under that team's row, as a row of little bars, rather
 than putting fourteen more columns on a phone. The projected view is in the
 projection's own order, not the table's. Every column sorts on a click in

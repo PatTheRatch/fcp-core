@@ -110,7 +110,9 @@ The finish layer is that engine run twice on the same day, the same
 `n_sims`, the same `seed` and the same measured weekly spreads: once as the
 league stands, once with the change in. Out of the pair comes the projected
 final category record, the projected matchup record, the place (the team's row
-in the engine's own ordering, which is the order the Standings page prints),
+in the engine's own ordering, which is the order the Standings page prints;
+since 2026-09-25 each simulated table is ranked on category win share, not
+matchups won, and the finish carries that order in words as `ranked_by`),
 the playoff odds, the bye odds and the full seed distribution -- before and
 after, each of them.
 
@@ -304,7 +306,8 @@ The projected-standings calibration (`projected_record.md` §0) is plain about
 what that forecast is worth: it is about as sure as it ought to be in the
 middle, it is overconfident at the ends, it names the right side of a matchup
 five weeks out about 55% of the time, and its playoff odds in the 60-70% band
-came in at 50%. A bar on top of that would be a bar on a coin. The
+came in at 49% once the table was ranked on category win share (revision
+R6, 2026-09-25; 57% before it, ranked by matchups won). A bar on top of that would be a bar on a coin. The
 recommender's own numbers have a backtest under them; the finish has a
 reliability table and a warning. Both are on the page, in that order.
 
