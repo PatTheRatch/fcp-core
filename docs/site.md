@@ -17,8 +17,10 @@ out (`app/api/site.py`, `app/api/pages.py` for the shell script,
 mail the server can produce and fails on the old name.
 
 Code: `app/api/site.py` (the routes, and the one JSON route the pages
-needed), `app/api/static/shell.js` (the navigation), `app/api/static/*.html`
-(one file per page), `app/api/static/pages.css` and `pages.js` (shared).
+needed), `app/api/static/shell.js` (the rail, the drawer, the scenario bar),
+`app/api/static/scenario.js` (the scenario state), `app/api/static/*.html`
+(one file per page), `app/api/static/pages.css` and `pages.js` (shared;
+docs/design_system.md is the language they are written in).
 Tests: `tests/test_shell.py`. Plain HTML, CSS and JavaScript, no framework
 and no build step, each file read per request so an edit shows on a refresh
 (docs/in_season_pages.md says why).
@@ -46,6 +48,7 @@ something.
 | `/account/alerts` | Alerts: your own address (add, confirm, disable), what goes in your email per league, and the server's recipients for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
 | `/join/{token}` | where an invite link lands (step 2's, under the shell) | anyone signed in | `join.html` |
+| `/design` | the design language, drawn on the viewer's league's stored 2026 season, day 52 (docs/design_system.md) | open; the file carries no data and its specimens read league routes behind their own checks | `design.html` |
 
 The league pages are the free tier and the team pages the paid one
 (docs/product.md, "Free and paid"); `require_entitlement` answers yes for
@@ -68,20 +71,39 @@ old address:
 
 ## The shell
 
+**Since 2026-09-25 the shell is the workstation's**: a rail down the left, a
+scenario bar over the page when a scenario is set, and an inspection drawer
+along the right. docs/design_system.md has the whole of it — the tokens, the
+voices, the colour rule, the components and the migration order — and this
+section is what the shell does as navigation.
+
 Drawn by `shell.js` into `<div id="shell">` at the top of every signed-in
 page, from two routes: `/auth/me` (who, his role in each league, his claims)
 and `/leagues` (his leagues, each with its name and the seasons held; in
 single mode, every league stored).
 
 ```
-BOX OUT  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTORY  MY TEAM ▾   ACCOUNT ▾  [Lights down]
-           Your leagues                                          Through The Wire   you@example.com
-           Seasons 2027 2026 ...                                 Week               Connections
-                                                                 Season             Projections
-                                                                 Moves              Alerts
-                                                                 Trades             Sign out
+BOX OUT
+● OVERVIEW                       → the team's week page, for now
+TEAM  Through The Wire
+  Matchup · Roster (soon) · Moves · Trades · Season
+LEAGUE
+  This week · Standings · Players (soon) · Draft · History
+───
+◈ SCENARIO   Current scenario · n changes
+───
+Patriot Games · 2027 ▾           Your leagues / Seasons 2027 2026 ...
+Account ▾                        you@example.com, Projections, The design language, Sign out
+Connections · Alerts · Theme ◐
 ```
 
+- **The items.** Matchup is the team's Week page (current there), Moves,
+  Trades and Season the team's other pages, This week, Standings, Draft and
+  History the league's. Overview goes to the team's Week page until the
+  Overview page exists. **Roster** and **Players** have no page yet and say
+  "soon": Roster opens the Week page at Tonight, Players opens it at What if,
+  whose wire is the nearest thing to a player screener. Every link carries
+  `?today=` and `?me=` where they mean something.
 - **The league** is the one in the URL. On a page without one (the account
   pages, `/`) it is the one this browser last looked at, kept in
   `localStorage` under `fcp-league` (wrapped in try/catch: a private window
@@ -90,35 +112,45 @@ BOX OUT  [ Patriot Games 2026 ▾ ]  THIS WEEK  STANDINGS  DRAFT  HISTORY  MY TE
 - **The switcher** lists his leagues (each to the same section of its newest
   season) and the seasons of this one (each to the same page that season).
   A league connected but not yet ingested is listed as waiting.
-- **The sections** are This week, Standings, Draft and History for this
-  league and season; the current one is in the accent with a rule under it
+- **The page you are on** is the one item with the orange edge
   (`aria-current="page"`).
-- **My team** is there only where he is a verified manager in this league:
-  this season's team, else his newest one there. Its menu is Week, Season,
-  Moves, Trades. Without one it is **Claim your team** (or **Claim pending**), to
-  the claim page. In single mode, where the one user reads every team, a
-  league with no claim falls back to the team the context route calls ours
+- **TEAM** is there only where he is a verified manager in this league:
+  this season's team, else his newest one there, named beside the word.
+  Without one it is **Claim your team** (or **Claim pending**), to the claim
+  page. In single mode, where the one user reads every team, a league with
+  no claim falls back to the team the context route calls ours
   (`MANAGER_TEAM`, or `?me=`), which is what the pages always did.
-- **Account** holds his email, Connections, Projections, Alerts and Sign out
-  (a form that posts to `/auth/sign-out`). In single mode Sign out is
-  replaced by the line "Single mode: nobody signs in", because there is no
-  session to end.
-- **The switch** (Lights down / Lights up) flips to the draft room's dark
-  palette and is remembered per browser, as before.
+- **The scenario line** says "Baseline · no changes" until a scenario is
+  set, then its name and how many changes, in orange while the scenario is
+  the view on screen. Today only the Week page's What if sets one; the bar
+  over the page is described in docs/design_system.md.
+- **Account** is a menu with his email, Projections, the design language
+  (`/design`) and Sign out (a form that posts to `/auth/sign-out`); in
+  single mode Sign out is replaced by the line "Single mode: nobody signs
+  in". Connections and Alerts are links of their own under it.
+- **Theme** follows the system's light or dark until it is pressed; the
+  choice is then kept per browser (`fcp-theme`, as before) and applied in
+  each page's head before first paint. It is no longer "light unless you
+  switch": a dark system gets the dark workstation first.
 - **The menus** are buttons that open a list of links (the disclosure
-  pattern). Click, Enter or Space opens one; ArrowDown or ArrowUp opens it
-  on the first or last item; the arrows, Home and End move through it;
-  Escape closes it and puts the focus back on its button; it closes when the
-  focus or a click goes elsewhere.
-- **At phone width** the bar is two rows: the name, the league and Account
-  with the switch (a glyph, its words kept for a screen reader) on the first,
-  the sections on the second, wrapping rather than scrolling. Nothing scrolls
-  the page sideways; a wide table scrolls in its own frame. The name is not
-  abbreviated: "Box Out" fits at any width, and the long/short pair the old
-  name needed is gone.
+  pattern), in place in the rail. Click, Enter or Space opens one; ArrowDown
+  or ArrowUp opens it on the first or last item; the arrows, Home and End
+  move through it; Escape closes it and puts the focus back on its button;
+  it closes when the focus or a click goes elsewhere.
+- **Below 960 px** the rail becomes a top bar — the name, where you are, and
+  **Menu**, which slides the same rail in over the page with a scrim behind
+  it. Escape, the scrim or Close puts it away. Nothing scrolls the page
+  sideways at 390; a wide table scrolls in its own frame.
+- **The drawer**: every player's name opens his card in the inspection
+  drawer along the right (a sheet from the bottom on a phone), not in a
+  floating card. See "Every name on it opens a card" below.
 
 `SHELL` is a promise of what it found (`{me, league, season, myTeam, ...}`),
 which the league pages await to know which team is the reader's.
+
+The three signed-out pages (the landing page, sign-in, and OAuth consent)
+keep a plain bar with the name, the way in and the theme switch; the rail is
+for someone inside. They are in the new palette and voices like the rest.
 
 ## The pages, in words
 
@@ -259,7 +291,15 @@ both sides down as a real table; **What changed**, only when the window
 holds something worth the eye; **Season**, the projected finish on one line
 with the forecast's own record under it; and **More**, which holds every
 move considered, where the season finishes, with a move and without, the
-week's standing figures, how this is worked out, and the other pages.
+week's standing figures and how this is worked out. (It held the other
+pages too, as "Elsewhere", until 2026-09-25: the rail carries them now, and
+the product's name left the eyebrow for the same reason.)
+
+A What if that has been run is the page's **scenario**: the bar over the
+page names the change and its three numbers from the answer (this week, an
+ordinary week from here on, a playoff week), its BASELINE | SCENARIO toggle
+switches the What if section between the roster as it stands and the
+answer, and Reset clears both (docs/design_system.md, "The scenario bar").
 
 It reads `teams/{team_id}/today` (drawn first: the week searches the whole
 wire and takes the better part of half a minute, and the lineup is what the
@@ -298,15 +338,20 @@ for you), and one button, **Judge this trade**. The deal is written into the
 address bar, so a judged trade is bookmarkable and comes back on a refresh.
 
 When a side gives more men than it gets, the deal leaves a roster place open,
-and **Who fills it** appears under the builder for that side: the day's wire
-as a list, ranked by what each man would be worth to the roster *this deal
-leaves* rather than to an average team, each row with his status (healthy,
-injured with a return when it is known, on waivers), his position and NBA
-team, and his week in the nine as the strip. "Leave it open" is the first row
-and the default, and it says what the report settles the place at. Picking a
-man re-judges the deal with his line in it and goes into the address bar like
-everything else (`fill`, `theirfill`). It reads `trades/pool`
-(docs/trades.md §11).
+and **Who fills it** appears under the builder for that side: the day's wire,
+ranked by what each man would be worth to the roster *this deal leaves*
+rather than to an average team. "Leave it open" is the first choice and the
+default, and it says what the report settles the place at. Since 2026-09-25
+the men are drawn by the workstation's **screener table** (the first page to
+use it, docs/design_system.md): a row a man with his status (healthy,
+injured with a return when it is known, on waivers), his NBA team and
+position, his games left, **FIT** (what he is worth to this roster, the
+figure the list was ranked by) and **League** (a week to an average team),
+and his week in the nine, one column each; sortable, with columns that can be
+put away. **Use** names him for the place, which re-judges the deal with his
+line in it and goes into the address bar like everything else (`fill`,
+`theirfill`); a click anywhere else on the row opens his card in the drawer.
+It reads `trades/pool` (docs/trades.md §11).
 
 The answer is **fit first**: each side's nine categories in the fixed order —
 what the roster posts in an ordinary week before and after, the change, and
@@ -324,13 +369,15 @@ number**, `app.trades.calibration.CALIBRATION_NOTE`, printed verbatim: the
 headline picks the better side of a trade about as often as a coin, and the
 page says so under the number rather than beside it.
 
-**Every name on it opens a card** — hover on a desktop, a sheet along the
-bottom on a phone — with his line in the nine per game, the games he has left
-and the games he has in the playoff weeks, whether he is hurt and when he is
-back, and what the projection rests on. The card lives in `pages.css` and
-`shell.js` (`cardName`, `wireCards`) and reads one route of its own, so the
-week, season and moves pages can hang it off their own names next
-(docs/trades.md §12).
+**Every name on it opens a card** — in the inspection drawer along the right
+on a desktop, a sheet along the bottom on a phone, on a click (a tap and
+Enter alike) — with his line in the nine per game, the games he has left and
+the games he has in the playoff weeks, whether he is hurt and when he is
+back, and what the projection rests on. Until 2026-09-25 it was a floating
+card opened by hover; it is the same content from the same route, in the
+drawer. The card lives in `pages.css` and `shell.js` (`cardName`,
+`wireCards`, `openCard`) and reads one route of its own, so any page can hang
+it off its own names (docs/trades.md §12).
 
 It reads three routes of its own, all the paid team layer: `trades/rosters`
 (both rosters as of the day, so the pickers are never hard-coded),
@@ -403,6 +450,15 @@ there too.
 
 ## Decisions
 
+- **The shell became a workstation's rail on 2026-09-25** (docs/design_system.md
+  has why and how). The top bar the product document drew is gone; the same
+  links and the same behaviour are in the rail, plus two pending items
+  (Roster, Players), the scenario line and the theme switch. The pages were
+  moved into it with their content untouched.
+- **`/design` is an open route.** A reference anyone can open; the file
+  carries no data and its specimens read league routes, which keep their
+  checks. It is in the open-route lists of `tests/test_access.py`,
+  `tests/test_public_ready.py` and `scripts/preflight_public.py`.
 - **The shell is a script, not a server template.** It is fed by
   `/auth/me` as the step asks, it is one file for every page, and the pages
   stay static files read per request. The cost is a moment before the bar
@@ -459,8 +515,8 @@ there too.
   team page today and from three more tomorrow, the numbers it shows are a
   league season's, and a second copy of it per page would drift. What a man
   is worth a week is not on it: that number costs two seconds to measure and
-  a hover cannot pay it, and every page that shows it shows it beside the
-  name (docs/trades.md §12).
+  opening a card should not, and every page that shows it shows it beside
+  the name (docs/trades.md §12).
 - **A season with nothing to judge from is a 200, not a 409.** The two
   pickup routes refuse an unlistened season, because a plan with no wire is
   not a plan. A trade page has a builder to draw and a record to print before

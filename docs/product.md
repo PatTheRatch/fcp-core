@@ -105,6 +105,13 @@ worth reading, or a lawyer's hour, before the first invoice.
 - The light house style for every page; the draft room keeps its dark board
   with the switch (docs/draft_room.md, docs/in_season_pages.md).
 
+**Superseded 2026-09-25** by the workstation shell (docs/design_system.md):
+the same links in a rail down the left — Overview; TEAM Matchup, Roster,
+Moves, Trades, Season; LEAGUE This week, Standings, Players, Draft, History;
+the scenario; the switcher; Account, Connections, Alerts, Theme — with light
+and dark both first-class. The two points above still hold: the switcher is
+there from day one, and the team's pages only where a team is claimed.
+
 ## How a league and its members get in
 
 1. **Someone adds the league.** Signs up, connects ESPN (the two cookies,
