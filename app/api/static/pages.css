@@ -23,10 +23,11 @@
    below with its rule beside it.
 
    THE LEGACY NAMES. The pages were written against the report house style's
-   token names (--ground, --ink, --muted, --good, --stop...). Those names are
-   kept, pointed at the new tokens, so every page sits inside the new shell in
-   the new palette with its own layout untouched. They are retired page by
-   page as each is migrated; no new component uses them.
+   token names (--ground, --ink, --muted, --good, --stop...). Every page
+   inside the rail has been moved onto the tokens' own names; the few legacy
+   names left are pointed at the tokens for the plain pages (the landing
+   page, sign-in, consent, join, claim), which keep the house style. No
+   `ws-` component and no page inside the rail reads one.
    --------------------------------------------------------------------------- */
 :root,.t-light{
   /* surfaces: three levels, lowest first */
@@ -62,9 +63,6 @@
   --focus:#15181D;
   --scrim:rgba(13,15,18,.32);
   --shadow-float:0 14px 36px rgba(13,15,18,.16),0 2px 6px rgba(13,15,18,.08);
-  --warn:#865700; --warn-soft:#F3E7CA; /* legacy only: the pages' injury flag */
-  --shade-0:transparent; --shade-1:#ECEEF1; --shade-2:#DDE1E6; --shade-3:#CBD0D8;
-  --shadow:none; --glow:none;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
@@ -78,8 +76,6 @@
     --neutral:#8E96A2;
     --focus:#E7E9EC; --scrim:rgba(0,0,0,.5);
     --shadow-float:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
-    --warn:#D9A43B; --warn-soft:#332714;
-    --shade-1:#1F242B; --shade-2:#2A3038; --shade-3:#37404A;
     color-scheme:dark;
   }
 }
@@ -93,20 +89,22 @@
   --neutral:#8E96A2;
   --focus:#E7E9EC; --scrim:rgba(0,0,0,.5);
   --shadow-float:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.4);
-  --warn:#D9A43B; --warn-soft:#332714;
-  --shade-1:#1F242B; --shade-2:#2A3038; --shade-3:#37404A;
   color-scheme:dark;
 }
-/* The legacy names, pointed at the tokens. In a rule of their own and on
-   every theme root, because a custom property that reads another is worked
-   out where it is declared: declared on :root alone, a .t-dark subtree would
-   inherit the light answer. */
+/* The legacy names, pointed at the tokens, for the plain pages alone (the
+   landing page, sign-in, consent, join, claim, home: the last pages still
+   in the report house style; docs/design_system.md, "Migration"). In a rule
+   of their own and on every theme root, because a custom property that
+   reads another is worked out where it is declared: declared on :root
+   alone, a .t-dark subtree would inherit the light answer. Every page
+   inside the rail reads the tokens by their own names; the names only
+   those pages used -- --sunk, --accent-soft, --good, --stop and their
+   -softs, --warn, --shade-*, --body -- are retired. */
 :root,.t-light,.t-dark{
-  --ground:var(--canvas); --surface:var(--panel); --sunk:var(--inset);
+  --ground:var(--canvas); --surface:var(--panel);
   --rule:var(--line); --rule-strong:var(--line-strong);
   --ink:var(--fg); --muted:var(--fg-2); --faint:var(--fg-3);
-  --accent-deep:var(--accent-text); --accent-soft:var(--accent-wash);
-  --good:var(--pos); --stop:var(--neg); --good-soft:var(--pos-wash); --stop-soft:var(--neg-wash);
+  --accent-deep:var(--accent-text);
 }
 :root{
   /* THE THREE VOICES, one job each (docs/design_system.md, "Voices").
@@ -125,8 +123,8 @@
   --r-control:4px; --r-panel:6px;
   --row:30px;            /* a screener row */
   --rail-w:224px; --drawer-w:400px; --top-h:48px;
-  /* legacy face names */
-  --display:var(--font-accent); --body:var(--font-ui); --mono:var(--font-data);
+  /* legacy face names, for the plain pages */
+  --display:var(--font-accent); --mono:var(--font-data);
 }
 
 *{box-sizing:border-box}
@@ -135,16 +133,16 @@ body{margin:0;background:var(--canvas);color:var(--fg);font-family:var(--font-ui
   font-size:var(--t-base);line-height:1.45;-webkit-font-smoothing:antialiased;
   font-feature-settings:"tnum" 1}
 button,input,select,textarea{font:inherit;color:inherit}
-a{color:var(--accent-deep);text-underline-offset:3px}
-/* A page's own column: the legacy pages' reading measure, inside the main
-   column the rail leaves. Its base size is the one the pages were set in. */
+a{color:var(--accent-text);text-underline-offset:3px}
+/* A plain page's column: the house style's reading measure, at the size it
+   was set in. A page inside the rail is `.ws-page` instead. */
 .page{max-width:1080px;margin:0 auto;padding:0 24px 96px;font-size:16px;line-height:1.55}
-.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.num,.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums}
 h1,h2,h3{font-weight:600;margin:0;text-wrap:balance}
 /* The plain pages' headings are in the accent face; a page inside the
    rail sets its own (the header line, `.ws-label`) and nothing else. */
 .page :is(h1,h2,h3){font-family:var(--display);letter-spacing:.01em}
-.muted{color:var(--muted)} .faint{color:var(--faint)}
+.muted{color:var(--fg-2)} .faint{color:var(--fg-3)}
 [hidden]{display:none !important}
 .accent{color:var(--accent)}
 /* A label a screen reader needs and a sighted reader does not: the corner of
@@ -640,7 +638,6 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .ws-sub .n{margin-left:auto;letter-spacing:.04em}
 /* Prose that stays in view -- a status, an empty answer -- is a row's size. */
 .ws-page .ws-p{font-size:var(--t-base);color:var(--fg-2);max-width:78ch}
-.ws-empty{margin:0;padding:var(--sp-2) 0;color:var(--fg-3);font-size:var(--t-base)}
 .ws-page .empty{margin:0;padding:var(--sp-1) 0;font-style:normal;color:var(--fg-3)}
 .ws-page .ws-sect > .ws-p{margin:0 0 var(--sp-2)}
 .ws-disc-body .ws-p,.ws-panel .ws-p{margin:0 0 var(--sp-2);font-size:var(--t-md)}
@@ -836,7 +833,7 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
    before the sentence explaining it. */
 .landing .claims .fig{color:var(--accent);font-size:38px;line-height:1.1;font-weight:500;
   margin:10px 0 0;letter-spacing:-.01em}
-.landing .claims .fig .against{color:var(--faint);font-size:20px;font-family:var(--body)}
+.landing .claims .fig .against{color:var(--faint);font-size:20px;font-family:var(--font-ui)}
 .landing .claims .src{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
   color:var(--muted);line-height:1.8;margin-top:12px}
 /* The stance, which is a sentence and not a section: an accent rule down its

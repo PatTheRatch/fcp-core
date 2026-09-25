@@ -319,7 +319,9 @@ def test_the_week_page_answers_before_it_explains(client: TestClient) -> None:
     assert "/today${params(WHERE)}" in page, "the day's own route, with the same ?today="
     assert "cardName(" in page and "wireCards(" in page, "every name opens the shared card"
     assert "As we would set it" in page and "As it is set" in page
-    assert page.count('<details class="disc"') >= 6, "the evidence is a tap away, not gone"
+    assert page.count('<details class="ws-disc') >= 6, "the evidence is a tap away, not gone"
+    assert page.count('class="ws-account"') >= 5, "and how it is worked out is in the drawer"
+    assert page.count('data-account="') >= 5, "one click from its section's label"
     assert "aria-expanded" in page, "and what is not a <details> says whether it is open"
 
     body = client.get(
@@ -453,11 +455,11 @@ def test_the_lineup_grid_is_styled_in_both_themes_and_at_phone_width(
     client: TestClient,
 ) -> None:
     """No colour outside the token block, and nothing new that only works
-    in one theme: the grid is the house's plain table with widths on it."""
+    in one theme: the grid is the workstation's table with widths on it."""
     css = client.get("/pages/static/pages.css").text
 
-    assert ".grid.lineup" in css and ".grid.lineup td.name .pname" in css
-    lineup = css.split("/* ---- the day's lineup")[1].split("/* ---- the schedule strip")[0]
+    assert ".ws-grid.lineup" in css and ".ws-grid.lineup td.name .pname" in css
+    lineup = css.split("The day's lineup: a place a line")[1].split("This week, by man")[0]
     assert not re.search(r"#[0-9a-fA-F]{3}", lineup), "no colour outside the token block"
     assert "var(--accent)" in lineup, "the man with a game carries the accent"
 
