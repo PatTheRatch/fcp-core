@@ -34,7 +34,7 @@ from app.db.models import (
     MatchupTeamStat,
     Team,
 )
-from app.scoring.ranking import Record, category_meetings, lookup, matchup_records, ranking_rule
+from app.scoring.ranking import league_table
 
 router = APIRouter(tags=["leagues"])
 
@@ -172,104 +172,30 @@ def get_standings(
     does not rank (rotisserie) is a 409 with the reason.
     """
     try:
-        rule = ranking_rule(league_season)
+        table = league_table(session, league_season, include_playoffs=include_playoffs)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    teams = sorted(
-        session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all(),
-        key=lambda team: team.espn_team_id,
-    )
-    matchups = matchup_records(session, league_season, include_playoffs=include_playoffs)
-    records = [
-        Record(
-            team.id,
-            team.categories_won,
-            team.categories_lost,
-            team.categories_tied,
-            *matchups.get(team.id, (0, 0, 0)),
+    return [
+        StandingOut(
+            espn_team_id=row.team.espn_team_id,
+            name=row.team.name,
+            final_standing=row.team.final_standing,
+            matchups_won=int(row.record.matchups_won),
+            matchups_lost=int(row.record.matchups_lost),
+            matchups_tied=int(row.record.matchups_tied),
+            categories_won=row.team.categories_won,
+            categories_lost=row.team.categories_lost,
+            categories_tied=row.team.categories_tied,
+            unit=table.rule.unit,
+            share=row.record.share,
+            order_note=table.order_note,
+            place=row.place,
+            rule_place=row.rule_place,
+            standing=row.team.standing if table.published else None,
+            place_note=row.note,
         )
-        for team in teams
+        for row in table.rows
     ]
-    meetings = lookup(category_meetings(session, league_season))
-    by_rule = [record.team for record in rule.order(records, meetings)]
-    rule_place = {team_id: place for place, team_id in enumerate(by_rule, start=1)}
-    by_row = {team.id: team for team in teams}
-    published = _published(session, league_season, teams)
-    order = (
-        [team.id for team in sorted(teams, key=lambda team: team.standing or 0)]
-        if published
-        else by_rule
-    )
-    divisions = len({team.division_id for team in teams if team.division_id is not None})
-    record_of = {record.team: record for record in records}
-
-    standings: list[StandingOut] = []
-    for place, team_id in enumerate(order, start=1):
-        team = by_row[team_id]
-        won, lost, tied = matchups.get(team.id, (0, 0, 0))
-        note = None
-        if published and rule_place[team.id] != place:
-            note = (
-                f"ESPN's published table puts {team.name} {_nth(place)}; "
-                f"{rule.words.split(',')[0]} puts it {_nth(rule_place[team.id])}"
-                + (
-                    f". The season had {divisions} divisions, and ESPN seeds the division "
-                    "leaders first"
-                    if divisions > 1
-                    else ""
-                )
-            )
-        standings.append(
-            StandingOut(
-                espn_team_id=team.espn_team_id,
-                name=team.name,
-                final_standing=team.final_standing,
-                matchups_won=won,
-                matchups_lost=lost,
-                matchups_tied=tied,
-                categories_won=team.categories_won,
-                categories_lost=team.categories_lost,
-                categories_tied=team.categories_tied,
-                unit=rule.unit,
-                share=record_of[team.id].share,
-                order_note=(
-                    "ESPN's own published table; by the league's rule: " + rule.words
-                    if published
-                    else rule.words
-                ),
-                place=place,
-                rule_place=rule_place[team.id],
-                standing=team.standing if published else None,
-                place_note=note,
-            )
-        )
-    return standings
-
-
-def _published(session: SessionDep, league_season: LeagueSeason, teams: list[Team]) -> bool:
-    """True when the regular season is over and ESPN has published its table.
-
-    Every team carries a standing, and the season has regular-season
-    matchups, none of them still undecided. While the season is being played
-    ESPN's `standing` moves daily and is not stored as it moves, so the rule
-    orders the table instead.
-    """
-    if not teams or any(not team.standing for team in teams):
-        return False
-    rows = session.execute(
-        select(Matchup.winner)
-        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
-        .where(
-            MatchupPeriod.league_season_id == league_season.id,
-            MatchupPeriod.is_playoff.is_(False),
-        )
-    ).all()
-    return bool(rows) and all(str(winner) in ("HOME", "AWAY", "TIE") for (winner,) in rows)
-
-
-def _nth(place: int) -> str:
-    suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
-    return f"{place}{suffix}"
 
 
 @router.get(

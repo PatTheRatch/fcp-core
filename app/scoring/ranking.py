@@ -55,7 +55,7 @@ from typing import NamedTuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import LeagueSeason, Matchup, MatchupPeriod
+from app.db.models import LeagueSeason, Matchup, MatchupPeriod, Team
 
 __all__ = [
     "BY_CATEGORIES",
@@ -68,7 +68,10 @@ __all__ = [
     "Meetings",
     "RankingRule",
     "Record",
+    "Table",
+    "TableRow",
     "category_meetings",
+    "league_table",
     "lookup",
     "matchup_records",
     "ranking_rule",
@@ -368,3 +371,140 @@ def lookup(meetings: Mapping[tuple[int, int], tuple[float, float, float]]) -> Me
         return meetings.get((a, b), (0, 0, 0))
 
     return read
+
+
+# ---------------------------------------------------------------------------
+# the table, as the standings route and the digest read it
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TableRow:
+    """One team's line in the table."""
+
+    team: Team
+    #: Categories from ESPN's own tallies, matchups counted from the winners.
+    record: Record
+    #: Its place in the table as listed.
+    place: int
+    #: Where the league's ranking rule puts it; equal to `place` in a season
+    #: in play, and where ESPN's published table differs, not.
+    rule_place: int
+    #: What ESPN's published table and the rule each say, where they differ.
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class Table:
+    """A season's table: the rule it is ordered by, and the rows, first first."""
+
+    rule: RankingRule
+    rows: tuple[TableRow, ...]
+    #: True when the regular season is over and the order is ESPN's own.
+    published: bool
+
+    @property
+    def order_note(self) -> str:
+        if self.published:
+            return "ESPN's own published table; by the league's rule: " + self.rule.words
+        return self.rule.words
+
+    def row(self, espn_team_id: int) -> TableRow | None:
+        return next((r for r in self.rows if int(r.team.espn_team_id) == espn_team_id), None)
+
+
+def league_table(
+    session: Session, league_season: LeagueSeason, *, include_playoffs: bool = False
+) -> Table:
+    """The season's table, ordered the way the league is ranked.
+
+    Categories are ESPN's own tallies on the team rows; the matchup record is
+    counted from the stored winners (`matchup_records`), because ESPN reports
+    none for a category league. `include_playoffs` touches only that count.
+
+    For a season whose regular season is over ESPN has published its own
+    table (`teams.standing`), and that is the order returned: the rule does
+    not overrule it, and a row where the rule would say otherwise carries a
+    `note` -- 2023's second and third, where ESPN seeded a division leader
+    first. A season in play is ordered by the rule.
+
+    Raises `ValueError` for a league `ranking_rule` does not rank.
+    """
+    rule = ranking_rule(league_season)
+    teams = sorted(
+        session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all(),
+        key=lambda team: team.espn_team_id,
+    )
+    matchups = matchup_records(session, league_season, include_playoffs=include_playoffs)
+    records = {
+        team.id: Record(
+            team.id,
+            team.categories_won or 0,
+            team.categories_lost or 0,
+            team.categories_tied or 0,
+            *matchups.get(team.id, (0, 0, 0)),
+        )
+        for team in teams
+    }
+    meetings = lookup(category_meetings(session, league_season))
+    by_rule = [record.team for record in rule.order(records.values(), meetings)]
+    rule_place = {team_id: place for place, team_id in enumerate(by_rule, start=1)}
+    by_row = {team.id: team for team in teams}
+    published = _published(session, league_season, teams)
+    order = (
+        [team.id for team in sorted(teams, key=lambda team: team.standing or 0)]
+        if published
+        else by_rule
+    )
+    divisions = len({team.division_id for team in teams if team.division_id is not None})
+    rows = []
+    for place, team_id in enumerate(order, start=1):
+        team = by_row[team_id]
+        note = None
+        if published and rule_place[team_id] != place:
+            note = (
+                f"ESPN's published table puts {team.name} {_nth(place)}; "
+                f"{rule.words.split(',')[0]} puts it {_nth(rule_place[team_id])}"
+            )
+            if divisions > 1:
+                note += (
+                    f". The season had {divisions} divisions, and ESPN seeds the division "
+                    "leaders first"
+                )
+        rows.append(
+            TableRow(
+                team=team,
+                record=records[team_id],
+                place=place,
+                rule_place=rule_place[team_id],
+                note=note,
+            )
+        )
+    return Table(rule=rule, rows=tuple(rows), published=published)
+
+
+def _published(session: Session, league_season: LeagueSeason, teams: Sequence[Team]) -> bool:
+    """True when the regular season is over and ESPN has published its table.
+
+    Every team carries a standing, and the season has regular-season
+    matchups, none of them still undecided. While a season is being played
+    ESPN's `standing` moves daily and is not stored as it moves, so the rule
+    orders the table instead.
+    """
+    if not teams or any(not team.standing for team in teams):
+        return False
+    winners = session.scalars(
+        select(Matchup.winner)
+        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
+        .where(
+            MatchupPeriod.league_season_id == league_season.id,
+            MatchupPeriod.is_playoff.is_(False),
+        )
+    ).all()
+    return bool(winners) and all(_decided(winner) for winner in winners)
+
+
+def _nth(place: int) -> str:
+    """1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st."""
+    suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
+    return f"{place}{suffix}"

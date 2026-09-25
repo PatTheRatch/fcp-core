@@ -339,8 +339,8 @@ def test_the_compact_standing_is_one_line_with_the_marked_slot_still_in_it() -> 
 
     html = digest_mail(digest, wanted=everything(), public_url=SITE).html
 
-    assert "3 of 12, 6-4-1 on matchups" in html
-    assert "40-31 on categories" in html
+    assert "3 of 12, 40-31 on categories (.563)" in html, "the ranked record leads"
+    assert "6-4-1 on matchups" in html
     assert "projected finish: not built yet" in html
 
 

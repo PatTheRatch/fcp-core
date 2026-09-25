@@ -528,10 +528,19 @@ def _standings(digest: Digest) -> str:
     place = digest.place
     if place is None:
         return "".join(_empty(line.strip()) for line in digest.table) or _empty("no standings yet")
+    # The record the league is ranked by leads -- categories, in a
+    # head-to-head each-category league -- and the other follows it.
+    categories = (
+        "Categories",
+        f"{place.categories_won}-{place.categories_lost}"
+        + (f"-{place.categories_tied}" if place.categories_tied else "")
+        + (f" ({place.share:.3f})".replace("(0.", "(.") if place.share is not None else ""),
+    )
+    matchups = ("Matchups", f"{place.won}-{place.lost}" + (f"-{place.tied}" if place.tied else ""))
+    records = [matchups, categories] if place.unit == "matchups" else [categories, matchups]
     rows = [
-        ("Place", f"{place.place} of {place.of}"),
-        ("Matchups", f"{place.won}-{place.lost}" + (f"-{place.tied}" if place.tied else "")),
-        ("Categories", f"{place.categories_won}-{place.categories_lost}"),
+        ("Place", f"{place.place} of {place.of}, on {place.unit}"),
+        *records,
         ("Projected finish", place.projected or "not built yet"),
     ]
     cells = "".join(

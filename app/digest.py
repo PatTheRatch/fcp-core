@@ -17,7 +17,8 @@ request. Seven sections:
    (docs/acquirable_value.md, r = -0.63 between add volume and return).
 6. The season: where it ends on this roster, and the one move over the rest
    of it that would move it (`app.pickups.season`).
-7. Standings: where he stands on matchups and on categories, and where the
+7. Standings: where he stands -- on categories first, which is what this
+   league is ranked on (`app.scoring.ranking`), then on matchups -- and where the
    season is heading -- his projected place, his projected category record
    and his playoff odds, read from the morning's stored league projection
    (`app.inseason.projected`, docs/projected_record.md) rather than built
@@ -97,8 +98,6 @@ from app import calibration
 from app.db.models import (
     League,
     LeagueSeason,
-    Matchup,
-    MatchupPeriod,
     PlayerStatusEvent,
     PlayerStatusSnapshot,
     Team,
@@ -119,6 +118,7 @@ from app.pickups.season import SeasonReport, Swap, season_recommendations
 from app.pickups.state import RosteredPlayer, period_for_day, season_calendar
 from app.pickups.stream import ADD, IR_MOVE, Move, StreamReport, stream_recommendations
 from app.pickups.today import DayPlayer, Misstart, TodayReport, today_lineup
+from app.scoring.ranking import MATCHUPS, league_table
 from app.scoring.wire import WIRE_TYPES
 
 # The topics a reader chooses between (`app.subscriptions`), named here so
@@ -547,8 +547,7 @@ class Digest:
         if place is None:
             return None
         return (
-            f"{place.describe()} on matchups · "
-            f"{place.categories_won}-{place.categories_lost} on categories · "
+            f"{place.describe()} · {place.other()} · "
             f"projected finish: {place.projected or 'not built yet'}"
         )
 
@@ -1175,15 +1174,17 @@ def season_outlook(
 
 @dataclass(frozen=True)
 class Standing:
-    """One team's place in the league, derived the way `/standings` derives it.
+    """One team's place in the league, as `/standings` puts it.
 
-    ESPN reports no matchup record, only category tallies, so the record is
-    counted from the matchups themselves and the place is the order that
-    puts. Byes are not wins and playoff matchups are not counted, exactly as
-    `app.api.leagues.get_standings` does it.
+    The table is `app.scoring.ranking.league_table`, the one the standings
+    route reads, so the message and the page cannot disagree about a place.
+    A head-to-head each-category league is ranked on its categories, so the
+    place is a place on categories and that is the line that leads; the
+    matchup record, which ESPN does not report and is counted from the
+    stored winners, is the line after it.
 
-    `projected` is the projected finish, and is None until that work lands:
-    the email leaves a marked slot rather than pretending.
+    `projected` is the projected finish, filled from the morning's stored
+    league report; None leaves the email's marked slot saying so.
     """
 
     place: int
@@ -1194,65 +1195,62 @@ class Standing:
     categories_won: int
     categories_lost: int
     projected: str | None = None
+    categories_tied: int = 0
+    #: Which record the place is on: "categories" or "matchups".
+    unit: str = "categories"
+
+    @property
+    def share(self) -> float | None:
+        """Category win share, (W + T/2) / (W + L + T)."""
+        decided = self.categories_won + self.categories_lost + self.categories_tied
+        if not decided:
+            return None
+        return (self.categories_won + self.categories_tied / 2) / decided
+
+    def categories(self) -> str:
+        """The category record, with its share: "40-31 on categories (.563)"."""
+        tied = f"-{self.categories_tied}" if self.categories_tied else ""
+        share = self.share
+        told = f" ({share:.3f})".replace("(0.", "(.") if share is not None else ""
+        return f"{self.categories_won}-{self.categories_lost}{tied} on categories{told}"
+
+    def matchups(self) -> str:
+        tied = f"-{self.tied}" if self.tied else ""
+        return f"{self.won}-{self.lost}{tied} on matchups"
 
     def describe(self) -> str:
-        tied = f"-{self.tied}" if self.tied else ""
-        return f"{self.place} of {self.of}, {self.won}-{self.lost}{tied}"
+        """The place, on the record the league is ranked by."""
+        lead = self.matchups() if self.unit == MATCHUPS else self.categories()
+        return f"{self.place} of {self.of}, {lead}"
+
+    def other(self) -> str:
+        """The record the league is not ranked by, as a figure beside it."""
+        return self.categories() if self.unit == MATCHUPS else self.matchups()
 
 
 def _place_of(session: Session, league_season: LeagueSeason, espn_team_id: int) -> Standing | None:
     """Where this team stands, or None when the season has no matchups yet."""
-    teams = list(
-        session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all()
+    table = league_table(session, league_season)
+    played = sum(
+        row.record.matchups_won + row.record.matchups_lost + row.record.matchups_tied
+        for row in table.rows
     )
-    if not teams:
-        return None
-    record = {team.id: [0, 0, 0] for team in teams}
-    rows = session.scalars(
-        select(Matchup)
-        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
-        .where(
-            MatchupPeriod.league_season_id == league_season.id,
-            MatchupPeriod.is_playoff.is_(False),
-            Matchup.away_team_id.is_not(None),
-        )
-    ).all()
-    played = 0
-    for matchup in rows:
-        home, away = matchup.home_team_id, matchup.away_team_id
-        if away is None or home not in record or away not in record:
-            continue
-        if matchup.winner == "HOME":
-            record[home][0] += 1
-            record[away][1] += 1
-        elif matchup.winner == "AWAY":
-            record[away][0] += 1
-            record[home][1] += 1
-        elif matchup.winner == "TIE":
-            record[home][2] += 1
-            record[away][2] += 1
-        else:
-            continue
-        played += 1
     if not played:
         return None
-    order = sorted(
-        teams,
-        key=lambda t: (-record[t.id][0], record[t.id][1], -(t.categories_won or 0)),
+    row = table.row(espn_team_id)
+    if row is None:
+        return None
+    return Standing(
+        place=row.place,
+        of=len(table.rows),
+        won=int(row.record.matchups_won),
+        lost=int(row.record.matchups_lost),
+        tied=int(row.record.matchups_tied),
+        categories_won=int(row.team.categories_won or 0),
+        categories_lost=int(row.team.categories_lost or 0),
+        categories_tied=int(row.team.categories_tied or 0),
+        unit=table.rule.unit,
     )
-    for place, team in enumerate(order, start=1):
-        if int(team.espn_team_id) == espn_team_id:
-            won, lost, tied = record[team.id]
-            return Standing(
-                place=place,
-                of=len(order),
-                won=won,
-                lost=lost,
-                tied=tied,
-                categories_won=int(team.categories_won or 0),
-                categories_lost=int(team.categories_lost or 0),
-            )
-    return None
 
 
 def _projected_finish(session: Session, league_season: LeagueSeason) -> dict[str, Any] | None:
@@ -1317,8 +1315,8 @@ def standing_lines(
     if projected is not None:
         place = replace(place, projected=projected)
     return place, [
-        f"  {place.describe()} on matchups",
-        f"  {place.categories_won}-{place.categories_lost} on categories",
+        f"  {place.describe()}",
+        f"  {place.other()}",
         f"  projected finish: {place.projected or 'not built yet'}",
     ]
 

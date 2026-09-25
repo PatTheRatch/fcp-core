@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.leagues import get_standings
 from app.db.models import LeagueSeason, Matchup, MatchupPeriod, Team
+from app.digest import standing_lines
 from app.scoring.ranking import CATEGORY_WORDS, MATCHUP_WORDS
 from tests.scoring_db import league_season
 
@@ -102,3 +103,16 @@ def test_a_most_categories_league_keeps_the_matchup_order(scoring_session: Sessi
     rows = get_standings(ls, scoring_session, include_playoffs=False)
     assert [row.name for row in rows] == ["Alpha", "Bravo", "Charlie"]
     assert all(row.unit == "matchups" and row.order_note == MATCHUP_WORDS for row in rows)
+
+
+def test_the_digest_s_place_is_the_standings_place_on_categories(
+    scoring_session: Session,
+) -> None:
+    """The morning message reads the same table: Alpha, with the most
+    matchups won, is third on categories, and the line says so first."""
+    ls, (alpha, _bravo, _charlie) = _season(scoring_session, finished=False)
+    place, lines = standing_lines(scoring_session, ls, int(alpha.espn_team_id))
+    assert place is not None
+    assert (place.place, place.of, place.unit) == (3, 3, "categories")
+    assert lines[0] == "  3 of 3, 11-16 on categories (.407)"
+    assert lines[1] == "  2-1 on matchups"
