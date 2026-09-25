@@ -847,79 +847,13 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
   .page{padding:0 16px 72px}
   .nav{padding:8px 16px 6px;gap:4px 16px}
   .mast{padding-top:26px}
-  .grid td.links a{display:block;margin:2px 0 0}
 }
 
 /* ===========================================================================
-   KEPT UNTIL THEIR PASS: the plain listing table, the lineup, the by-man
-   table, the standings' toggle, a name, the old disclosure and the What
-   if's form. The next passes move each into the workstation's terms.
+   KEPT UNTIL THEIR PASS: the standings' toggle, a name, the old disclosure,
+   the What if's form and a select inside a sentence. The controls pass
+   moves each into the workstation's terms.
    =========================================================================== */
-
-/* ---- plain listing tables ----------------------------------------------- */
-.grid{width:100%;border-collapse:collapse}
-.grid th,.grid td{border-bottom:1px solid var(--rule);padding:9px 10px;text-align:right}
-.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule-strong)}
-.grid th:first-child,.grid td:first-child{text-align:left}
-.grid td{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
-.grid td.name{font-family:var(--body);font-size:16px}
-.grid tr.ours td{background:var(--accent-soft)}
-.grid tr.ours td.name{font-weight:600}
-.grid td.links a{margin-left:14px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.06em;font-size:11px}
-
-/* A wide table scrolls in its own frame, never the page. */
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
-.scroll .grid{min-width:560px}
-.scroll .grid td.name,.scroll .grid th.l{text-align:left}
-.grid td.name a{color:var(--ink);text-decoration-color:var(--rule)}
-.grid td.name a:hover{color:var(--accent)}
-.grid td.rank{color:var(--faint);width:2.5em}
-.grid td.small,.grid th.small{font-size:12.5px}
-.grid tr.sub td{border-bottom-style:dotted}
-
-.lede select{font:inherit;color:var(--ink);background:transparent;border:0;
-  border-bottom:1px solid var(--rule-strong);border-radius:0;padding:2px 0;max-width:100%}
-
-/* ---- the day's lineup: a place a line, on the plain listing table -------
-   The house's `.grid` with four columns sized for a lineup rather than for
-   numbers: the place in the display face and narrow, the name in the body
-   face, the game and the flag small and left. A place nobody can fill is
-   faint rather than blank -- a blank row reads as a rendering fault -- and a
-   man on the bench who has a game carries a rule in the accent, because he
-   is the whole point of the section. */
-.grid.lineup td{text-align:left;font-family:var(--body);font-size:15px}
-.grid.lineup td.slot{font-family:var(--display);font-weight:600;font-size:13px;
-  letter-spacing:.08em;color:var(--muted);width:3.5em}
-.grid.lineup td.name{font-size:16px;overflow-wrap:anywhere}
-.grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
-.grid.lineup td.small{font-family:var(--mono);font-size:12px;width:7em;white-space:nowrap}
-.grid.lineup td.flags,.grid.lineup td.why{font-size:13.5px;color:var(--muted)}
-/* The reason takes the slack, so the game a man has stays beside his name
-   rather than drifting to the far edge of an otherwise empty row. */
-.grid.lineup td.why{width:45%}
-.grid.lineup tr.gone td.slot{color:var(--faint)}
-.grid.lineup tr.has-game{box-shadow:inset 2px 0 0 var(--accent)}
-.grid.lineup tr.has-game td.name{font-weight:600}
-
-/* This week, by man: the score broken out, one row a man, with a Total row
-   that is the score above it. A real table because it is one -- ten columns
-   of numbers with a heading over each. It scrolls sideways on a phone
-   rather than wrapping, which is why the disclosure it sits in starts
-   closed there (`BY_MAN_OPEN` in week.html says why). */
-.byman{font-variant-numeric:tabular-nums}
-.byman thead th{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
-  font-size:10.5px;color:var(--muted);font-weight:500}
-.byman td.small,.byman th.small{font-family:var(--mono);font-size:12px;text-align:right}
-.byman td.name{white-space:nowrap}
-.byman tr.sum{border-top:1px solid var(--rule-strong)}
-.byman tr.sum th{text-align:left;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:11px}
-.byman tr.sum td{font-weight:600;color:var(--ink)}
-#by-man-body .whose{margin-top:18px}
-#by-man-body .whose:first-child{margin-top:0}
-#by-man-body .note{margin:10px 0 0;font-size:13px;color:var(--muted)}
 
 /* ---- two views of one table, and the odds of each place -----------------
    The toggle is the house's small display face, the chosen one in the accent
@@ -936,15 +870,6 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
   color:var(--muted);cursor:pointer}
 .views button:hover{color:var(--ink)}
 .views button[aria-pressed="true"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
-.grid th button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;
-  background:none;border:0;padding:0;cursor:pointer}
-.grid th button:hover{color:var(--ink)}
-.grid td.odds button.seeds{font:inherit;color:inherit;background:none;border:0;padding:0;
-  cursor:pointer;border-bottom:1px dotted var(--rule-strong)}
-.grid td.odds button.seeds:hover{color:var(--accent)}
-.grid tr.seedrow td{border-bottom:1px solid var(--rule);padding-top:0}
-.grid tr.seedrow .note{margin:0 0 6px;font-family:var(--body);font-size:13px;color:var(--muted);
-  text-align:left}
 
 /* ---- a player's name, and his card -------------------------------------
    Any name a page prints (`.pname`, or an `.info` beside one) opens the
@@ -1431,6 +1356,48 @@ details.disc .inside > .lede{margin-top:0}
 .info:focus-visible{outline-offset:-2px}
 .fill-table{margin-top:var(--sp-3)}
 .fill-table .ws-scr{border-radius:var(--r-control)}
+
+/* ---- the tables' own variants -----------------------------------------------
+   The day's lineup: a place a line, the place narrow in the data face, the
+   name in the interface face. A place nobody can fill is faint rather than
+   blank -- a blank row reads as a rendering fault -- and a man on the bench
+   who has a game carries the orange edge, because he is the whole point of
+   the section. */
+.ws-grid.lineup td{text-align:left;font-family:var(--font-ui);font-size:var(--t-base)}
+.ws-grid.lineup td.slot{width:3.5em;font-family:var(--font-data);font-size:var(--t-xs);font-weight:600;
+  letter-spacing:.06em;color:var(--fg-2)}
+.ws-grid.lineup td.name{font-weight:500;overflow-wrap:anywhere}
+.ws-grid.lineup td.name .pname{font:inherit;overflow-wrap:anywhere}
+.ws-grid.lineup td.small{width:7em;font-family:var(--font-data);font-size:var(--t-sm);white-space:nowrap}
+.ws-grid.lineup td.flags,.ws-grid.lineup td.why{font-size:var(--t-md);color:var(--fg-2)}
+/* The reason takes the slack, so the game a man has stays beside his name. */
+.ws-grid.lineup td.why{width:45%}
+.ws-grid.lineup tr.gone td.slot{color:var(--fg-3)}
+.ws-grid.lineup tr.has-game > :first-child{box-shadow:inset 2px 0 0 var(--accent)}
+.ws-grid.lineup tr.has-game td.name{font-weight:600}
+/* This week, by man: one row a man, and a Total row that is the score
+   above it, to the number. It scrolls sideways on a phone in its own frame. */
+#by-man-body .whose{margin-top:var(--sp-4)}
+#by-man-body .whose:first-child{margin-top:0}
+#by-man-body .scroll{margin-top:4px;border:1px solid var(--line);border-radius:var(--r-control)}
+#by-man-body .note{margin:var(--sp-2) 0 0;font-size:var(--t-md);color:var(--fg-2)}
+.ws-grid.byman td.small,.ws-grid.byman th.small{font-size:var(--t-sm);text-align:right}
+.ws-grid.byman td.name{white-space:nowrap}
+.ws-grid.byman tr.sum > *{border-top:1px solid var(--line-strong);font-weight:600;color:var(--fg)}
+.ws-grid.byman tr.sum th{height:var(--row);background:none;border-bottom:0;text-align:left}
+/* The trade page's nine: nine rows of six narrow columns, twice over,
+   inside half a panel -- the one table that sets its own padding. */
+.ws-grid.nine td,.ws-grid.nine th{padding:0 4px;font-size:var(--t-sm)}
+.ws-grid.nine tr > :first-child{padding-left:6px}
+/* The standings: a playoff figure opens the odds of each place under the
+   team's own row, as a row of little bars. */
+.ws-grid td.odds button.seeds{padding:0;font:inherit;color:inherit;background:none;border:0;cursor:pointer;
+  text-decoration:underline dotted var(--line-strong);text-underline-offset:3px}
+.ws-grid td.odds button.seeds:hover{text-decoration-color:var(--fg)}
+.ws-grid tr.seedrow td{height:auto;padding-top:0}
+.ws-grid tr.seedrow .note{margin:0 0 6px;font-family:var(--font-ui);font-size:var(--t-sm);color:var(--fg-2);
+  text-align:left}
+#rest-grid td.small{font-size:var(--t-sm)}
 
 /* ---- the standings' seed odds: a row of bars under a team's own row --------- */
 .seeds-bar{display:flex;align-items:flex-end;gap:3px;min-height:46px;padding:8px 0 2px}

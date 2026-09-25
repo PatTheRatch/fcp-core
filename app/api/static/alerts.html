@@ -297,7 +297,7 @@ async function loadServer() {
   $("server").hidden = false;
   const a = alerts.body;
   $("channels").innerHTML = a.channels.length
-    ? `<div class="scroll"><table class="grid"><thead><tr><th>Channel</th><th>Goes to</th></tr>` +
+    ? `<div class="scroll"><table class="ws-grid"><thead><tr><th>Channel</th><th>Goes to</th></tr>` +
       `</thead><tbody>` +
       a.channels
         .map(

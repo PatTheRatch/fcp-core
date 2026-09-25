@@ -183,7 +183,7 @@
       <div class="ws-disc-body">
         <p class="lede" id="rest-lede"></p>
         <div class="scroll">
-          <table class="grid" id="rest-grid">
+          <table class="ws-grid" id="rest-grid">
             <thead><tr id="rest-head"></tr></thead>
             <tbody id="rest-weeks"></tbody>
           </table>
@@ -547,7 +547,7 @@ function byManRows(men) {
 function byManTable(who, men) {
   return (
     `<p class="whose">${escape(who)}</p>` +
-    `<div class="scroll"><table class="grid byman"><thead><tr>` +
+    `<div class="scroll"><table class="ws-grid byman"><thead><tr>` +
     `<th class="l" scope="col">Man</th><th scope="col">G</th><th scope="col">Min</th>` +
     CATS.map((cat) => `<th class="small" scope="col">${escape(cat)}</th>`).join("") +
     `</tr></thead><tbody>${byManRows(men)}</tbody></table></div>`
@@ -781,7 +781,7 @@ function theirRow(slot) {
 function lineupHtml(seats, empty) {
   if (!seats.length) return `<p class="empty">${escape(empty)}</p>`;
   return (
-    `<table class="grid lineup"><tbody>` +
+    `<table class="ws-grid lineup"><tbody>` +
     seats
       .map((seat) => {
         const player = seat.player;
@@ -829,7 +829,7 @@ function benchHtml(report) {
   return (
     `<p class="ws-sub">Not in the lineup ` +
     `<span class="n">a man with a game is flagged</span></p>` +
-    `<table class="grid lineup"><tbody>${rows.join("")}</tbody></table>`
+    `<table class="ws-grid lineup"><tbody>${rows.join("")}</tbody></table>`
   );
 }
 

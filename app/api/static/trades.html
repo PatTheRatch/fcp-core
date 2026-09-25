@@ -78,7 +78,7 @@
     <div class="ws-sect-head"><h2 class="ws-label">What it rests on</h2><span class="ws-k" id="rests-tag"></span></div>
     <p class="lede">Every line is the one knowable on the morning of the deal. A man with few
       games of his own is marked <b>thin</b>: the rate under him could be anything.</p>
-    <div class="ws-panel flush"><div class="scroll"><table class="grid">
+    <div class="ws-panel flush"><div class="scroll"><table class="ws-grid">
       <thead><tr><th class="l">Player</th><th class="l">To</th><th>A week</th><th>Games so far</th>
         <th>Games left</th><th>Playoff games</th><th class="l">Rests on</th></tr></thead>
       <tbody id="rests-rows"></tbody>
@@ -609,7 +609,7 @@ function nineHtml(side) {
     );
   });
   return (
-    `<table class="grid nine"><thead><tr><th class="l">Cat</th><th>Before</th><th>After</th>` +
+    `<table class="ws-grid nine"><thead><tr><th class="l">Cat</th><th>Before</th><th>After</th>` +
     `<th>Change</th><th>Win</th><th>Shift</th></tr></thead>` +
     `<tbody>${rows.join("")}</tbody></table>`
   );
