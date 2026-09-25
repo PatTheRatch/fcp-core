@@ -106,7 +106,9 @@ worth reading, or a lawyer's hour, before the first invoice.
   with the switch (docs/draft_room.md, docs/in_season_pages.md).
 
 **Superseded 2026-09-25** by the workstation shell (docs/design_system.md):
-the same links in a rail down the left — Overview; TEAM Matchup, Roster,
+the same links in a rail down the left — Overview (the team's morning
+briefing at its own address, and where `/` lands a manager, since
+2026-09-25: docs/site.md); TEAM Matchup, Roster,
 Moves, Trades, Season; LEAGUE This week, Standings, Players, Draft, History;
 the scenario; the switcher; Account, Connections, Alerts, Theme — with light
 and dark both first-class. The two points above still hold: the switcher is

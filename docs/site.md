@@ -33,12 +33,13 @@ something.
 
 | Address | Page | Who may open it | File |
 |---|---|---|---|
-| `/` | signed out: the landing page; signed in: goes to his default league's This week | open | `landing.html`, `home.html` |
+| `/` | signed out: the landing page; signed in: goes to his team's Overview in his default league, or with no team there to its This week | open | `landing.html`, `home.html` |
 | `/sign-in` | the sign-in form | open | `sign-in.html` |
 | `/l/{league_id}/{season}/week` | This week | a member of the league | `league-week.html` |
 | `/l/{league_id}/{season}/standings` | Standings | a member of the league | `league-standings.html` |
 | `/l/{league_id}/{season}/draft` | Draft | a member of the league | `league-draft.html` |
 | `/l/{league_id}/{season}/history` | History | a member of the league | `league-history.html` |
+| `/l/{league_id}/{season}/team/{team_id}` | Overview: the team's morning briefing | the team's verified manager, entitled | `overview.html` |
 | `/l/{league_id}/{season}/team/{team_id}/week` | My team, Week: the streaming report | the team's verified manager, entitled | `week.html` |
 | `/l/{league_id}/{season}/team/{team_id}/season` | My team, Season: the rest-of-season report | the team's verified manager, entitled | `season.html` |
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
@@ -84,7 +85,7 @@ single mode, every league stored).
 
 ```
 BOX OUT
-● OVERVIEW                       → the team's week page, for now
+● OVERVIEW                       → the team's own address, its Overview
 TEAM  Through The Wire
   Matchup · Roster (soon) · Moves · Trades · Season
 LEAGUE
@@ -99,8 +100,10 @@ Connections · Alerts · Theme ◐
 
 - **The items.** Matchup is the team's Week page (current there), Moves,
   Trades and Season the team's other pages, This week, Standings, Draft and
-  History the league's. Overview goes to the team's Week page until the
-  Overview page exists. **Roster** and **Players** have no page yet and say
+  History the league's. Overview is the team's own address, the Overview
+  page (since 2026-09-25), and is marked current there and on no other page;
+  without a team it goes to the league's This week, as `/` does, and marks
+  nothing. **Roster** and **Players** have no page yet and say
   "soon": Roster opens the Week page at Tonight, Players opens it at What if,
   whose wire is the nearest thing to a player screener. Every link carries
   `?today=` and `?me=` where they mean something.
@@ -282,6 +285,125 @@ seasons, matchups, share, titles, best finish. "Head to head": a select of
 owners, set to the reader's own, and his record against everyone he has
 met, with the seasons. Reads `/category-profiles`, `/notable-matchups`,
 `/leagues/{id}/owners` and `/leagues/{id}/head-to-head`.
+
+**Overview** (added 2026-09-25). The team's own address and the rail's
+first item: the morning's briefing, encoded as analytics, and the first page
+designed in the workstation rather than migrated into it. No number on it is
+new: every figure is a field of a route the site already reads, drawn by the
+code the other pages draw it with, and no route's answer changed for it.
+
+The header line, "Overview · Thu 11 Dec · day 52 · period 8 of 22"
+(`pages/context`'s day and period, `/periods` for the count). Under it the
+facts line, four figures in the furniture pass's pattern, each a button that
+opens the drawer on the route, the field and the day it came from:
+
+- **Matchup** "5.10 – 3.90 vs Brockley Heat · 4 days left": the glance's
+  `expected_wins` and 9 less it (as the Matchup page writes theirs), the
+  opponent named from the context's teams, the days of the period not yet
+  played, today included, from the context's own days.
+- **Place** "1st → 3rd most often · playoffs 94%": the team's place by the
+  category record (below), then the largest of the team's `finishes` and its
+  `playoff_odds` from `/projected`, the answer the Standings page's
+  Projected view draws. The projection still seeds by matchups, so "most
+  often" is its own order, and the drawer says so; it moves to the category
+  record when the projection does. `calibration_short` sits under the line,
+  in view.
+
+**The league's unit is categories; the standings' order is the category
+record, as ESPN's is**: the share of categories won, a tie counting half
+((W + T/2) / (W + L + T)), then categories won, then fewest lost. ESPN's own
+`standing` for 2024, 2025 and 2026 follows it, not matchup wins. `/standings`
+still sorts by matchups won (a backend job moves it), so the Overview puts
+the route's rows in this order itself and changes nothing the route says.
+The MATCHUP section is still this week's head-to-head, because that is what
+is played; its headline is the categories expected (5.10 – 3.90), never a
+matchup won.
+- **Adds** "7 of 7 left": the week report's `adds_left` of `adds_budget`.
+- **FAAB** "$42 left": `faab_remaining` through the site's own `faab()`
+  (never negative). The season's pot itself is on no route the site reads
+  (it is `league_seasons.acquisition_budget`, which only the co-manager's
+  `league_context` tool returns), so the figure is what is left, not "of
+  $100"; adding it to a route is a change to that route's answer and was
+  left for a job that means to.
+
+Then six sections, in the owner's order, each a label over one panel with
+its account in the drawer. On a desk 1180 px and wider MATCHUP sits beside
+NEEDS ATTENTION and STANDINGS beside TONIGHT, read across; a section whose
+partner is absent takes the width.
+
+1. **MATCHUP**: the nine in the Matchup page's three bands, drawn by the
+   same code (`bandsHtml` in pages.js, moved there from week.html), as cells
+   rather than buttons; tagged "2 in the balance"; a link to the Matchup
+   page. Drawn at once from the glance's chances; the score as it stands
+   fills in under each when the week report answers.
+2. **NEEDS ATTENTION**: facts that ask for a decision today, a line each
+   with its figure and a link to where it is acted on, and no section at all
+   when nothing asks. The candidates, each drawn only when its route says so:
+   a place in tonight's lineup the bench could fill (`today`'s `fix`, and
+   `benched` men with a game while the set lineup fills fewer places than
+   the roster can); a starter ESPN has out or in doubt tonight (`today`'s
+   lineup, `standing`); a day left in the period with a place going empty
+   that the wire could fill (the week report's `empty_days` with fillers);
+   the first move over the bar (`moves` with `clears_hurdle`, only while an
+   add is left; the rest are THE WIRE). Before the draft, the draft.
+   **The order rule**: largest figure first, where the figure is the number
+   of starting places the line is about -- the places the bench could fill
+   tonight, one for a starter out or in doubt, the places going empty that
+   day -- or, for a move, its net in categories; a tie keeps the order the
+   kinds are listed in. So a lineup or an empty day comes before a move
+   worth less than a whole category, which is the right way round for a
+   morning: tonight's places close first. Left out: the stashes and the
+   locks of `pickups/season`. That route is a second full report, as dear
+   as the week report (2.5 s warm, and the half-minute first build on a
+   cold process), for one line, so they stay on the Season page.
+3. **THE WIRE**: the first three of the week report's `moves` in its own
+   order, as `/design`'s move blocks (`moveBlockHtml`), each with the bar's
+   label ("worth a look", or "under the 0.20 bar"), and Inspect opening its
+   working in the drawer (`inspectMove` in shell.js, moved there from
+   `/design`), the bid's ladder among it; then "Every move considered →",
+   which opens that disclosure on the Matchup page.
+4. **STANDINGS**: five rows of the standings table in the category record's
+   order -- place, team, categories (W–L–T), the category share, the
+   projected finish (the projection's `projected_record`, in categories) and
+   the playoff odds; matchups are left out of the cut -- the viewer's row
+   with its orange edge, the two above and the two below, or the top five
+   when he is in them. The records are the standings route's, which has no
+   day, so on a past day asked for with `?today=` they are the latest
+   stored, as on the Standings page.
+5. **TONIGHT**: the day's lineup a place a row (slot, the man and his mark,
+   the game and its tip-off, what ESPN says, his line once it is stored),
+   built of the Matchup page's Tonight pieces (`standing`, `tipOff`,
+   `boxRow`, `playerName`, moved to pages.js); tagged "5 of 10 places
+   filled"; their side, as stored (`lineups`, `theirRow`), in a closed
+   disclosure.
+6. **RECENT**: the league's last five adds, claims, drops, trades and status
+   changes over the seven days to the day on the page (never past now), from
+   `/changes`, drawn as This week's What changed draws them (`changedHtml`,
+   moved to pages.js); a link to Moves.
+
+**What waits for the week report.** `pickups/stream` is the slow one: with
+nothing stored a process's first build is about half a minute. So the page
+reads `pages/context`, `/periods`, `/standings`, `/projected`, `today` and
+the glance at once and draws the header, MATCHUP, STANDINGS, TONIGHT and
+RECENT as they land; the stream is asked for once the glance has answered
+(with nothing stored both would otherwise build the same report at once),
+and THE WIRE, NEEDS ATTENTION's week lines, the score under the nine, and
+ADDS and FAAB fill in when it does, each with a one-line "Working out the
+wire…" meanwhile, never a spinner.
+
+**Before the draft** every route answers with `readiness`, and the page
+prints the sentence once where the facts line would be, keeps STANDINGS as
+it stands (0–0 rows, no projected columns) and RECENT, makes the draft the
+one line of NEEDS ATTENTION (the sentence's first clause, "The auction is
+Sat, Oct 10 at 2:00 PM ET", linked to the Draft page), leaves MATCHUP, THE
+WIRE and TONIGHT out rather than empty, and does not ask for the week
+report at all.
+
+The scenario bar draws over it as over every page; nothing on the Overview
+reads a scenario yet, and the one place it would subscribe is marked in the
+file. The foot is the read-only line. A viewer who is not the team's
+verified manager hears the team pages' one line (403), and with billing on
+the free tier hears the paid plan's (402) and keeps This week.
 
 **My team: Week.** The streaming report as **a game sheet**, rewritten
 2026-09-23 (docs/in_season_pages.md has it top to bottom). The page shows
@@ -466,9 +588,12 @@ out a second time in `app/mail/style.py`, and that is the one place in this
 product where a colour is written twice. When the palette moves, it moves
 there too.
 
-**Home** (`/`, signed in). Goes to the default league's This week at once
-(`location.replace`, so Back does not return to it); with no league yet,
-"No league yet" and the two ways in: an invite link, or Connections.
+**Home** (`/`, signed in). Goes at once (`location.replace`, so Back does
+not return to it) to the Overview of the team he manages in his default
+league -- his verified claim, or in single mode the team the context route
+calls ours -- and with no team there to that league's This week, as before;
+with no league yet, "No league yet" and the two ways in: an invite link, or
+Connections.
 
 ## Decisions
 

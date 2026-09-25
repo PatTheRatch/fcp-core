@@ -191,7 +191,7 @@ Connections · Alerts · Theme  Light ◐
 
 | Item | Goes to | Notes |
 |---|---|---|
-| Overview | the team's week page | the Overview page is a later job; never marked current |
+| Overview | `/l/{l}/{s}/team/{t}`, the team's own address | the Overview page (2026-09-25); current there and nowhere else; without a team, the league's This week |
 | Matchup | `/l/{l}/{s}/team/{t}/week` | current on the week page |
 | Roster | the week page at `#tonight-section` | **pending**: no page of its own; says "soon" |
 | Moves, Trades, Season | the team's pages | |
@@ -492,6 +492,30 @@ The page-by-page migration order still stands for what the pages *say* —
 (a new screener page) → **Trades** → **Standings** → the rest — and each of
 those is now a change of content inside furniture that is already the
 workstation's.
+
+### Overview: done (2026-09-25)
+
+The first page designed in the system rather than migrated into it, and the
+pattern for the ones that follow: a header line, a facts line whose every
+figure is a button that opens the drawer on its route and field (the
+provenance rule, as the scenario bar does it), then sections in a fixed
+order, each a label over one panel with its account behind "How this is
+worked out", and almost no copy on the page itself — labels, figures,
+names, marks, the calibration line and the read-only foot. docs/site.md,
+"Overview", has what it reads and draws. The rail's OVERVIEW item is live:
+it points at the team's own address and is the orange item there.
+
+It is built of the components the other pages already had, moved rather
+than copied so the pages cannot drift: the nine's three bands
+(`bandsHtml`, `scoreCell`), a man of Tonight (`standing`, `tipOff`,
+`boxLine`, `boxRow`, `tonightRow`, `theirRow`) and What changed's line
+(`changedHtml`, `changeHtml`, `withPlayers`, `CHANGE_WORDS`) went into
+`pages.js`; a move's Inspect (`inspectMove`) into `shell.js`. What it adds
+is its own furniture only (`.ov-*` in `pages.css`): the facts line's
+figure buttons, the NEEDS ATTENTION list (a figure column, the fact, the
+link), THE WIRE's three move blocks on one panel, the five-row standings
+cut and the lineup a place a row; and on a desk 1180 px and wider, two
+sections side by side where the owner's order pairs them.
 
 ## Decisions
 

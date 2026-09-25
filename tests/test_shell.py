@@ -502,6 +502,7 @@ def test_the_map_in_the_docs_names_every_page() -> None:
         "/l/{league_id}/{season}/standings",
         "/l/{league_id}/{season}/draft",
         "/l/{league_id}/{season}/history",
+        "/l/{league_id}/{season}/team/{team_id}",
         "/l/{league_id}/{season}/team/{team_id}/week",
         "/l/{league_id}/{season}/team/{team_id}/season",
         "/l/{league_id}/{season}/team/{team_id}/moves",
