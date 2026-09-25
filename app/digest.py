@@ -111,6 +111,7 @@ from app.inseason import changes as feed
 # one sentence, written once, and this is where it used to live.
 from app.inseason.changes import EVENT_KINDS, Change, describe
 from app.inseason.changes import changes as what_changed
+from app.inseason.drafted import season_is_drafted
 from app.listener import events as kinds
 from app.listener.snapshots import latest_snapshots
 from app.pickups.judge import Judgement
@@ -898,6 +899,17 @@ def _names(players: Sequence[DayPlayer], limit: int) -> str:
     return f"{named} and {extra} more" if extra > 0 else named
 
 
+def _not_drafted(session: Session, league_season: LeagueSeason) -> str | None:
+    """The draft's own sentence when the season has not been drafted, else None.
+
+    The three blocks below build on a roster, and before the draft there is
+    none, whatever ESPN's feed stored (`app.inseason.drafted`): the morning
+    message says when the draft is instead of a plan for a roster nobody has.
+    """
+    drafted = season_is_drafted(session, league_season)
+    return None if drafted.drafted else drafted.reason
+
+
 def today_block(
     session: Session,
     league_season: LeagueSeason,
@@ -922,6 +934,9 @@ def today_block(
     roster news with it.
     """
     season = int(league_season.season)
+    not_yet = _not_drafted(session, league_season)
+    if not_yet is not None:
+        return None, [f"  no lineup today: {not_yet}"]
     try:
         calendar = season_calendar(session, season)
         if calendar is None:
@@ -993,6 +1008,9 @@ def week_block(
     carry a query and a connection string.
     """
     season = int(league_season.season)
+    not_yet = _not_drafted(session, league_season)
+    if not_yet is not None:
+        return None, None, [f"  no plan today: {not_yet}"]
     try:
         calendar = season_calendar(session, season)
         if calendar is None:
@@ -1125,6 +1143,9 @@ def season_outlook(
     under both headings (`planned_adds`).
     """
     season = int(league_season.season)
+    not_yet = _not_drafted(session, league_season)
+    if not_yet is not None:
+        return None, [f"  no season view today: {not_yet}"]
     try:
         calendar = season_calendar(session, season)
         if calendar is None:
