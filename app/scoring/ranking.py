@@ -71,11 +71,13 @@ __all__ = [
     "Table",
     "TableRow",
     "category_meetings",
+    "describe",
     "league_table",
     "lookup",
     "matchup_records",
     "ranking_rule",
     "scoring_type_of",
+    "scoring_words",
     "seeding_rule_of",
 ]
 
@@ -223,6 +225,52 @@ def _against(record: Record, group: Sequence[Record], meetings: Meetings) -> flo
         won, lost, tied = won + w, lost + lo, tied + ti
     share = _share(won, lost, tied)
     return share if share is not None else 0.5
+
+
+#: ESPN's scoring types said the way a person would.
+SCORING_WORDS = {
+    "H2H_CATEGORY": "head to head, each category",
+    "H2H_EACH_CATEGORY": "head to head, each category",
+    "H2H_MOST_CATEGORIES": "head to head, most categories",
+    "H2H_POINTS": "on points, head to head",
+    "POINTS": "on points",
+    "ROTO": "on rotisserie standings",
+}
+
+
+def scoring_words(scoring: str) -> str:
+    """ESPN's own word for a scoring type, said the way a person would."""
+    return SCORING_WORDS.get(scoring, f"as {scoring}")
+
+
+def describe(league_season: LeagueSeason) -> dict[str, str | None]:
+    """The intake fact the table's order gates on, as `league_context` shows it.
+
+    The scoring type as stored (`league_seasons.scoring_type`, ESPN's
+    `settings.scoring.scoringType`), in words, the record the table is ranked
+    on and the order in words -- or, for a league this code does not rank,
+    `ranked_on` None and the reason.
+    """
+    scoring = scoring_type_of(league_season)
+    seeding = seeding_rule_of(league_season)
+    out: dict[str, str | None] = {
+        "scoring_type": scoring or None,
+        "scoring": scoring_words(scoring) if scoring else "not stated",
+        "seeding_tiebreaker": seeding or None,
+    }
+    try:
+        rule = ranking_rule(league_season)
+    except ValueError as error:
+        return {**out, "ranked_on": None, "order": None, "note": str(error)}
+    return {
+        **out,
+        "ranked_on": rule.unit,
+        "order": rule.words,
+        "note": (
+            "the table, the projected places, the playoff odds and every place a "
+            f"tool quotes are ranked on {rule.unit}: {rule.words}"
+        ),
+    }
 
 
 def scoring_type_of(league_season: LeagueSeason) -> str:

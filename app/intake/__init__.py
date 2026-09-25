@@ -72,6 +72,7 @@ from sqlalchemy.orm import Session
 
 from app import jobs
 from app.db.models import Job, League, LeagueSeason, LeagueSeasonCategory
+from app.scoring.ranking import scoring_words
 
 log = logging.getLogger("fcp.intake")
 
@@ -186,14 +187,9 @@ def refusal(session: Session, league_id: int) -> Refusal | None:
 
 
 def _scoring_words(scoring: str) -> str:
-    """ESPN's own word for a scoring type, said the way a person would."""
-    return {
-        "H2H_POINTS": "on points, head to head",
-        "POINTS": "on points",
-        "ROTO": "on rotisserie standings",
-        "H2H_MOST_CATEGORIES": "head to head, most categories",
-        "H2H_EACH_CATEGORY": "head to head, each category",
-    }.get(scoring, f"as {scoring}")
+    """ESPN's own word for a scoring type, said the way a person would; the
+    one map is `app.scoring.ranking.SCORING_WORDS`."""
+    return scoring_words(scoring)
 
 
 # ---------------------------------------------------------------------------

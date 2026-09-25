@@ -81,6 +81,7 @@ from app.pickups.state import (
     load_team_week,
     season_calendar,
 )
+from app.scoring import ranking
 
 #: The bars each answer leans on. A week report reads the streaming bar and
 #: the two measurements of the wire; a season report the two season bars; a
@@ -288,6 +289,9 @@ def league_context(session: Session, viewer: Viewer, league_id: int, season: int
             "scoring_type": settings["scoring_type"],
         },
         "categories": [row["abbreviation"] for row in settings["categories"]],
+        # The fact every table's order gates on: a head-to-head each-category
+        # league is ranked on categories, never on matchups won.
+        "ranking": ranking.describe(found),
         # The fact every other tool gates on: before it, nobody has a roster.
         "draft": _draft(session, found),
         "roster": {

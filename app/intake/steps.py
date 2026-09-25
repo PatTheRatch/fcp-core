@@ -46,6 +46,7 @@ from app.db.models import League, LeagueSeason
 from app.espn import ESPNSettings, current_season, fetch_league, prior_seasons
 from app.intake import measure
 from app.jobs import JobError, JobRef
+from app.scoring import ranking
 
 log = logging.getLogger("fcp.intake")
 
@@ -170,6 +171,7 @@ def run_intake_ingest(
                 "seasons": landed,
                 "not_offered": sorted(set(missing)),
                 "draft": _newest_draft(session, league),
+                "ranking": _newest_ranking(session, league),
             },
         )
         connection = memberships.active_connection(session, league.id)
@@ -195,6 +197,23 @@ def _newest_draft(session: Session, league: League) -> dict[str, Any] | None:
         "type": newest.draft_type,
         "drafted_at": newest.drafted_at.isoformat() if newest.drafted_at else None,
     }
+
+
+def _newest_ranking(session: Session, league: League) -> dict[str, Any] | None:
+    """The newest stored season's scoring type and the order it ranks by, or None.
+
+    The fact the standings, the projected places and the playoff odds gate on
+    (`app.scoring.ranking`, docs/intake.md "The scoring type").
+    """
+    newest = session.scalar(
+        select(LeagueSeason)
+        .where(LeagueSeason.league_id == league.id)
+        .order_by(LeagueSeason.season.desc())
+        .limit(1)
+    )
+    if newest is None:
+        return None
+    return {"season": int(newest.season), **ranking.describe(newest)}
 
 
 def _years(seasons: list[int]) -> str:

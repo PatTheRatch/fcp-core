@@ -886,3 +886,30 @@ def test_the_tools_that_need_no_roster_answer_and_carry_the_draft_line(
         assert answer["provenance"]["draft"]["note"] == AUCTION_NOTE, name
     for name, arguments in ALL_CALLS.items():
         assert "draft" not in call(server, name, arguments)["provenance"], name
+
+
+def test_the_context_says_the_league_is_ranked_on_categories(
+    server: MCPServer, league: dict[str, Any]
+) -> None:
+    """The scoring type is an intake fact, and the order it gives is said in
+    words wherever a place is: the context, the standings, the projection."""
+    context = call(server, "league_context", {"league_id": LEAGUE_ID, "season": SEASON})
+    ranking = context["ranking"]
+    assert ranking["scoring_type"] == "H2H_CATEGORY"
+    assert ranking["scoring"] == "head to head, each category"
+    assert ranking["ranked_on"] == "categories"
+    assert ranking["order"].startswith("category win share")
+
+    table = call(server, "standings", {"league_id": LEAGUE_ID, "season": SEASON})
+    assert table["ranked_on"] == "categories"
+    assert "category win share" in table["order"]
+    first = table["teams"][0]
+    assert list(first)[:5] == ["place", "espn_team_id", "name", "categories", "category_share"]
+    assert [team["place"] for team in table["teams"]] == list(range(1, len(table["teams"]) + 1))
+    shares = [team["category_share"] or 0.0 for team in table["teams"]]
+    assert shares == sorted(shares, reverse=True)
+
+    projected = call(
+        server, "projected_standings", {"league_id": LEAGUE_ID, "season": SEASON, "today": TODAY}
+    )
+    assert projected["ranked_by"].startswith("category win share")
