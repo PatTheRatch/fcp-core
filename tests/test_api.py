@@ -232,7 +232,12 @@ def test_standings_show_matchup_record_and_category_tally_separately(client: Tes
     assert (loser["matchups_won"], loser["matchups_lost"]) == (0, 1)
     # Category tallies come from ESPN and are a different measure entirely.
     assert winner["categories_won"] == 95
-    assert standings[0]["espn_team_id"] == 3, "sorted by matchups won"
+    # A category league is ranked on its categories; the matchup record is a
+    # figure beside the order, never the order.
+    assert winner["unit"] == "categories"
+    assert winner["share"] == 95 / 171
+    assert winner["order_note"].startswith("ESPN's own published table")
+    assert standings[0]["espn_team_id"] == 3, "ESPN's own order for a finished season"
 
 
 def test_standings_exclude_byes(client: TestClient) -> None:

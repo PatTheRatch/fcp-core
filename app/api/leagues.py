@@ -34,6 +34,7 @@ from app.db.models import (
     MatchupTeamStat,
     Team,
 )
+from app.scoring.ranking import Record, category_meetings, lookup, matchup_records, ranking_rule
 
 router = APIRouter(tags=["leagues"])
 
@@ -143,66 +144,132 @@ def list_teams(league_season: LeagueSeasonDep, session: SessionDep) -> list[Team
 
 @router.get(
     "/leagues/{league_id}/seasons/{season}/standings",
-    summary="Matchup records, derived, alongside ESPN's category tallies",
+    summary="The table, in the league's own order: categories first in a category league",
     dependencies=[LEAGUE_MEMBER],
 )
 def get_standings(
     league_season: LeagueSeasonDep,
     session: SessionDep,
     include_playoffs: bool = Query(
-        default=False, description="Include playoff matchups in the derived record"
+        default=False, description="Include playoff matchups in the derived matchup record"
     ),
 ) -> list[StandingOut]:
-    """Derive each team's matchup record by counting winners.
+    """Every team's record, ordered by the league's ranking rule.
 
-    ESPN reports no matchup record, only category tallies, so this is the
-    only place the two appear side by side. Byes are excluded: an
-    unopposed matchup is not a win.
+    The rule is `app.scoring.ranking.ranking_rule`, read off the scoring
+    type: a head-to-head each-category league -- this one -- is ranked on
+    category win share, with its tiebreaks in `order_note`. The category
+    record is ESPN's own. The matchup record is counted from the stored
+    winners, because ESPN reports none for a category league; it stays in
+    the payload as a figure, and orders the table only in a league ranked on
+    matchups. Byes are excluded: an unopposed matchup is not a win.
+
+    For a season whose regular season is over, ESPN has published its own
+    table (`teams.standing`), and that is the order returned: the rule does
+    not overrule it. Any place where the rule would say otherwise carries a
+    `place_note` -- 2023's second and third, where ESPN seeded a division
+    leader first. A season in play is ordered by the rule. A league this code
+    does not rank (rotisserie) is a 409 with the reason.
     """
-    teams = session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all()
-    record = {team.id: [0, 0, 0] for team in teams}  # won, lost, tied
-
-    query = (
-        select(Matchup)
-        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
-        .where(
-            MatchupPeriod.league_season_id == league_season.id,
-            Matchup.away_team_id.is_not(None),
-        )
+    try:
+        rule = ranking_rule(league_season)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    teams = sorted(
+        session.scalars(select(Team).where(Team.league_season_id == league_season.id)).all(),
+        key=lambda team: team.espn_team_id,
     )
-    if not include_playoffs:
-        query = query.where(MatchupPeriod.is_playoff.is_(False))
-
-    for matchup in session.scalars(query).all():
-        home, away = matchup.home_team_id, matchup.away_team_id
-        if away is None or home not in record or away not in record:
-            continue
-        if matchup.winner == "HOME":
-            record[home][0] += 1
-            record[away][1] += 1
-        elif matchup.winner == "AWAY":
-            record[away][0] += 1
-            record[home][1] += 1
-        elif matchup.winner == "TIE":
-            record[home][2] += 1
-            record[away][2] += 1
-
-    standings = [
-        StandingOut(
-            espn_team_id=team.espn_team_id,
-            name=team.name,
-            final_standing=team.final_standing,
-            matchups_won=record[team.id][0],
-            matchups_lost=record[team.id][1],
-            matchups_tied=record[team.id][2],
-            categories_won=team.categories_won,
-            categories_lost=team.categories_lost,
-            categories_tied=team.categories_tied,
+    matchups = matchup_records(session, league_season, include_playoffs=include_playoffs)
+    records = [
+        Record(
+            team.id,
+            team.categories_won,
+            team.categories_lost,
+            team.categories_tied,
+            *matchups.get(team.id, (0, 0, 0)),
         )
         for team in teams
     ]
-    standings.sort(key=lambda s: (-s.matchups_won, s.matchups_lost, -s.categories_won))
+    meetings = lookup(category_meetings(session, league_season))
+    by_rule = [record.team for record in rule.order(records, meetings)]
+    rule_place = {team_id: place for place, team_id in enumerate(by_rule, start=1)}
+    by_row = {team.id: team for team in teams}
+    published = _published(session, league_season, teams)
+    order = (
+        [team.id for team in sorted(teams, key=lambda team: team.standing or 0)]
+        if published
+        else by_rule
+    )
+    divisions = len({team.division_id for team in teams if team.division_id is not None})
+    record_of = {record.team: record for record in records}
+
+    standings: list[StandingOut] = []
+    for place, team_id in enumerate(order, start=1):
+        team = by_row[team_id]
+        won, lost, tied = matchups.get(team.id, (0, 0, 0))
+        note = None
+        if published and rule_place[team.id] != place:
+            note = (
+                f"ESPN's published table puts {team.name} {_nth(place)}; "
+                f"{rule.words.split(',')[0]} puts it {_nth(rule_place[team.id])}"
+                + (
+                    f". The season had {divisions} divisions, and ESPN seeds the division "
+                    "leaders first"
+                    if divisions > 1
+                    else ""
+                )
+            )
+        standings.append(
+            StandingOut(
+                espn_team_id=team.espn_team_id,
+                name=team.name,
+                final_standing=team.final_standing,
+                matchups_won=won,
+                matchups_lost=lost,
+                matchups_tied=tied,
+                categories_won=team.categories_won,
+                categories_lost=team.categories_lost,
+                categories_tied=team.categories_tied,
+                unit=rule.unit,
+                share=record_of[team.id].share,
+                order_note=(
+                    "ESPN's own published table; by the league's rule: " + rule.words
+                    if published
+                    else rule.words
+                ),
+                place=place,
+                rule_place=rule_place[team.id],
+                standing=team.standing if published else None,
+                place_note=note,
+            )
+        )
     return standings
+
+
+def _published(session: SessionDep, league_season: LeagueSeason, teams: list[Team]) -> bool:
+    """True when the regular season is over and ESPN has published its table.
+
+    Every team carries a standing, and the season has regular-season
+    matchups, none of them still undecided. While the season is being played
+    ESPN's `standing` moves daily and is not stored as it moves, so the rule
+    orders the table instead.
+    """
+    if not teams or any(not team.standing for team in teams):
+        return False
+    rows = session.execute(
+        select(Matchup.winner)
+        .join(MatchupPeriod, MatchupPeriod.id == Matchup.matchup_period_id)
+        .where(
+            MatchupPeriod.league_season_id == league_season.id,
+            MatchupPeriod.is_playoff.is_(False),
+        )
+    ).all()
+    return bool(rows) and all(str(winner) in ("HOME", "AWAY", "TIE") for (winner,) in rows)
+
+
+def _nth(place: int) -> str:
+    suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
+    return f"{place}{suffix}"
 
 
 @router.get(

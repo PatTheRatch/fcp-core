@@ -46,8 +46,10 @@ default, every request is the owner and nothing is refused.
 Paths are keyed on ESPN's own identifiers, so a URL can be built from a
 league id and a year. Two details are worth knowing before reading results:
 
-* A team's `categories_won` counts CATEGORIES, not matchups. ESPN reports no
-  matchup record, so `/standings` derives one and shows both side by side.
+* A team's `categories_won` counts CATEGORIES, not matchups. A head-to-head
+  each-category league is ranked on them: `/standings` orders by category
+  win share (its `order_note` gives the tiebreaks) and derives a matchup
+  record, which ESPN does not report, as a figure beside the order.
 * Percentages are ratios. FG% is 0.457, not 45.7.
 """
 

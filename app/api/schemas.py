@@ -77,11 +77,14 @@ class TeamOut(BaseModel):
 
 
 class StandingOut(BaseModel):
-    """A team's season record, in both of the senses this league has one.
+    """A team's season record, in both of the senses a league can have one.
 
-    ESPN reports no matchup record at all, so `matchups_won` and friends are
-    derived here by counting winners. The category tallies are what ESPN
-    calls wins and losses, and they count categories, not matchups.
+    Which one orders the table is the league's scoring type
+    (`app.scoring.ranking`): a head-to-head each-category league is ranked on
+    its **categories**, and ESPN reports no matchup record for one at all, so
+    `matchups_won` and friends are derived here by counting winners and are a
+    figure beside the order, never the order. The category tallies are what
+    ESPN calls wins and losses.
     """
 
     espn_team_id: int
@@ -93,6 +96,28 @@ class StandingOut(BaseModel):
     categories_won: int
     categories_lost: int
     categories_tied: int
+    unit: str = Field(
+        default="categories",
+        description="Which record orders the table: 'categories' or 'matchups'",
+    )
+    share: float | None = Field(
+        default=None,
+        description="Category win share, (W + T/2) / (W + L + T); null before any is decided",
+    )
+    order_note: str = Field(default="", description="How the table is ordered, in words")
+    place: int = Field(default=0, description="This team's place in the table as listed")
+    rule_place: int = Field(default=0, description="Where the league's ranking rule puts it")
+    standing: int | None = Field(
+        default=None,
+        description=(
+            "ESPN's own published place, for a season whose regular season is over; "
+            "null while it is being played"
+        ),
+    )
+    place_note: str | None = Field(
+        default=None,
+        description="Where ESPN's published order and the rule disagree, what each says",
+    )
 
 
 class MatchupPeriodOut(BaseModel):
