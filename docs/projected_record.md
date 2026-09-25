@@ -508,6 +508,19 @@ manager could see would be worth less to everyone. The team route is that
 team's manager and the paid tier, the same scope as the Week page it is drawn
 on.
 
+**Nothing is projected before the draft** (2026-09-25). Both routes ask
+`app.api.pickups.readiness` first, and a season that has not been drafted
+(`app.inseason.drafted`), or has no schedule or roster stored, answers 200
+with `readiness` -- the draft's own sentence as `note`, "The auction is Sat,
+Oct 10 at 2:00 PM ET; there are no rosters to project until then." -- and an
+empty table: no teams, no periods, no odds, `n_sims` and `seed` null.
+`calibration_note` stays, since the method's published record is true of any
+season. The team route answers the same thing rather than the 409 it gave for
+a team missing from the table. Before this, 2027's ghost rosters -- ESPN's
+pre-draft feed, stored as lineup days -- were projected to a 93.2-68.8 finish
+for a team nobody had drafted. The morning `project_standings` job skips such
+a season with the same reason in its note.
+
 ---
 
 ## 4. No look-ahead, and the one place it is not proved

@@ -433,7 +433,7 @@ tests hold them; the route turns each into a 422.
 | an injured-reserve move with no place | *{team}* has no free injured-reserve place on day *{day}*… |
 | an injured-reserve move on a fit man | *{name}* is not ruled out on day *{day}*, and ESPN's injured reserve only holds a man who is. |
 | a player id nobody knows | There is no player *{id}* on record… (the route's own, because the ids come in as ESPN's) |
-| a season with no schedule and no rosters | the pickup routes' own 409, word for word |
+| a season not drafted, or with no schedule or no rosters | not a refusal: 200 with `readiness` and every number empty, before any name is read (docs/site.md, "Readiness") |
 | a day in no matchup period | scoring period *{day}* is in no matchup period of *{season}* -- the projected engine's own sentence, which is a preseason with no matchups yet and a season already over |
 
 A **drop with no add** is refused rather than answered, which is a choice

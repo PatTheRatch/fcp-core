@@ -1068,12 +1068,14 @@ asked for: a builder opened on a replayed day 52 offers day 52's men, and
 more.
 
 **A season with nothing to judge from is not an error.** 2027 before its
-draft has no schedule and no rosters; both routes answer 200 with
-`readiness` — the same two things `app.api.pickups.readiness` looks for — and
-the page says so in a sentence and draws no pickers. That is a deliberate
-difference from the pickup routes, which 409: a plan with no wire is not a
-plan, but a trade page has a builder to draw and a record to print before any
-deal exists.
+draft has no rosters, whatever ESPN's pre-draft feed stored; every route
+answers 200 with `readiness` — the things `app.api.pickups.readiness` looks
+for, the draft first (`app.inseason.drafted`), then a schedule and a roster —
+and the page says so in a sentence and draws no pickers. Before the draft
+`note` is the draft's own dated sentence ("The auction is Sat, Oct 10 at
+2:00 PM ET; there are no rosters to project until then."). This used to be a
+difference from the pickup routes, which answered 409; since 2026-09-25 they
+answer the same way (docs/site.md, "Readiness").
 
 **Bad input is a 422 with a sentence a manager can act on.** Every one of
 them, in `app/api/trades.py`:

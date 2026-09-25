@@ -405,7 +405,8 @@ It reads three routes of its own, all the paid team layer: `trades/rosters`
 judged); and the card's, which is league scope like the pages it will be
 drawn on next. A season with nothing to judge from yet — 2027 before its
 draft — is not an error: the routes answer with `readiness` and the page says
-so in a sentence and draws no broken pickers. An evaluation is a couple of
+so in a sentence and draws no broken pickers. Every projection route now
+answers the same way (**Readiness**, below). An evaluation is a couple of
 seconds, and so is the pool, so the button disables itself and the chooser
 says it is reading the wire while the builder stays usable.
 
@@ -538,11 +539,43 @@ there too.
   is worth a week is not on it: that number costs two seconds to measure and
   opening a card should not, and every page that shows it shows it beside
   the name (docs/trades.md §12).
-- **A season with nothing to judge from is a 200, not a 409.** The two
-  pickup routes refuse an unlistened season, because a plan with no wire is
-  not a plan. A trade page has a builder to draw and a record to print before
-  any deal exists, so its routes answer with `readiness` and let the page say
-  what is missing.
+- **A season with nothing to judge from is a 200, not a 409.** The trade
+  routes did it first, because a trade page has a builder to draw and a
+  record to print before any deal exists. Since 2026-09-25 every projection
+  route does: a plan with no roster is still not a plan, but the page is the
+  one that says so, in the route's own sentence (**Readiness**, below).
+
+**Readiness** (2026-09-25). Every route that projects, plans or judges --
+`/projected` (league and team, which the Standings page's projected tab and
+the league week page's chances read), `/pickups/glance` (what the league
+week and team week pages read for "your week"), `/pickups/stream` (the week
+report), `/pickups/season`, `/today`, `/what-if`, and `trades/rosters`,
+`trades/pool` and `trades/report` -- asks one question first,
+`app.api.pickups.readiness`: has the season been drafted
+(`app.inseason.drafted`), is its NBA schedule stored, is there a roster to
+read? A season that is not ready answers **200, never 409**, with
+
+```json
+"readiness": {
+  "ready": false,
+  "missing": ["the season has not been drafted, so no roster is a roster yet"],
+  "note": "The auction is Sat, Oct 10 at 2:00 PM ET; there are no rosters to project until then."
+}
+```
+
+and every number on the answer empty -- null, `[]` or `{}` -- never a guess.
+`note` is the sentence the page prints; before the draft it is the draft's
+own, dated in Eastern time, because the other gaps follow from it. The
+facts that need no roster stay: the glance and the week report still say
+the matchup period and the scheduled opponent. A season that **is** ready
+carries no `readiness` field at all (the trade routes', which always did,
+excepted), so its answers are byte for byte what they were
+(`app.api.schemas.Readied`). The gate exists because ESPN's roster feed for
+a season before its draft shows every team holding last season's roster on
+every future day, and on 2026-09-23 the ingest stored 23,892 of those rows
+for 2027: every read asked only whether a lineup row existed, and the site
+told the owner he was "Expected to take 4.90 of 9 categories" in a week
+nobody had a roster for.
 - **The season is chosen in the switcher and on each league page's header
   line**, not as a new item in the bar, which is drawn exactly as the
   product document has it.
