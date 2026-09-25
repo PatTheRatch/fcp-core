@@ -33,7 +33,7 @@
       <p class="ws-note" id="builder-lede">Pick the other team, then tap the men on each roster to
         move them into the deal. Tap a man again to take him back out.</p>
       <p class="room"><label for="other">Trade with</label>
-        <select id="other"><option value="">choose a team</option></select></p>
+        <span class="ws-field sel"><select class="ws-select" id="other"><option value="">choose a team</option></select></span></p>
       <div class="two">
         <div class="side">
           <h3 id="ours-name">Our roster</h3>
@@ -49,9 +49,9 @@
       <div class="deal" id="deal"></div>
       <div id="rooms"></div>
       <p class="doing">
-        <button class="cta" id="judge" type="button">Judge this trade</button>
+        <button class="ws-btn primary" id="judge" type="button">Judge this trade</button>
         <span class="working" id="working"></span>
-        <a class="more" id="clear" href="#">Start again</a>
+        <a class="ws-btn quiet" id="clear" href="#">Start again</a>
       </p>
     </div>
   </section>
@@ -328,9 +328,9 @@ function drawRooms() {
             `${p.espn_player_id === here ? " selected" : ""}>${escape(p.name)}</option>`,
         );
         picks.push(
-          `<select id="${key}-${at}" data-side="${key}">` +
+          `<span class="ws-field sel"><select class="ws-select" id="${key}-${at}" data-side="${key}">` +
           `<option value="">the cheapest place (chosen for you)</option>${options.join("")}` +
-          `</select>`,
+          `</select></span>`,
         );
       }
       return (

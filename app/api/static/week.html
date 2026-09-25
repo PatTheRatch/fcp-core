@@ -131,20 +131,23 @@
     <p class="ws-p" id="whatif-said"></p>
     <div class="ws-panel">
       <form class="whatif" id="whatif-form" autocomplete="off">
-        <div class="room" id="whatif-add-room">
-          <span class="k">Add</span>
-          <span class="chosen" id="whatif-add-name"></span>
-          <details class="disc" id="whatif-wire">
-            <summary>Off the wire <span class="n" id="whatif-wire-n"></span></summary>
-            <div class="inside"><ul class="wire" id="whatif-pool"></ul></div>
-          </details>
-        </div>
-        <p class="room"><label for="whatif-drop">Drop</label>
-          <select id="whatif-drop"></select></p>
-        <p class="room" id="whatif-ir-room" hidden><label for="whatif-ir">To IR</label>
-          <select id="whatif-ir"></select></p>
+        <!-- The move as rows of the drawer's fact list: ADD, OFF THE WIRE,
+             DROP (and TO IR where the league has a place free). -->
+        <dl class="ws-facts whatif-rows">
+          <div id="whatif-add-room"><dt>Add</dt>
+            <dd><span class="chosen" id="whatif-add-name"></span></dd></div>
+          <div><dt>Off the wire</dt>
+            <dd><details class="ws-disc" id="whatif-wire">
+              <summary>The wire <span class="n" id="whatif-wire-n"></span></summary>
+              <div class="ws-disc-body flush"><ul class="wire" id="whatif-pool"></ul></div>
+            </details></dd></div>
+          <div><dt><label for="whatif-drop">Drop</label></dt>
+            <dd><span class="ws-field sel"><select class="ws-select" id="whatif-drop"></select></span></dd></div>
+          <div id="whatif-ir-room" hidden><dt><label for="whatif-ir">To IR</label></dt>
+            <dd><span class="ws-field sel"><select class="ws-select" id="whatif-ir"></select></span></dd></div>
+        </dl>
         <p class="doing">
-          <button class="cta" id="whatif-run" type="submit">Run</button>
+          <button class="ws-btn primary" id="whatif-run" type="submit">Run</button>
           <span class="working" id="whatif-working"></span>
         </p>
       </form>

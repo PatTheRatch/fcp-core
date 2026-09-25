@@ -288,7 +288,7 @@ function dayRange(period, context) {
 async function drawYours(ctx, context, report) {
   const team = ctx.myTeam;
   const link =
-    `<p><a class="more" href="${teamUrl(WHERE.league, WHERE.season, team.espn_team_id, "week")}` +
+    `<p><a class="ws-btn quiet" href="${teamUrl(WHERE.league, WHERE.season, team.espn_team_id, "week")}` +
     `${params(WHERE)}">See the moves worth a look</a></p>`;
   $("yours-title").textContent = "Your week";
   $("yours").querySelector(".ws-k").textContent = team.name;

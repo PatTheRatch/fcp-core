@@ -641,6 +641,7 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 /* Prose that stays in view -- a status, an empty answer -- is a row's size. */
 .ws-page .ws-p{font-size:var(--t-base);color:var(--fg-2);max-width:78ch}
 .ws-empty{margin:0;padding:var(--sp-2) 0;color:var(--fg-3);font-size:var(--t-base)}
+.ws-page .empty{margin:0;padding:var(--sp-1) 0;font-style:normal;color:var(--fg-3)}
 .ws-page .ws-sect > .ws-p{margin:0 0 var(--sp-2)}
 .ws-disc-body .ws-p,.ws-panel .ws-p{margin:0 0 var(--sp-2);font-size:var(--t-md)}
 .ws-panel > .ws-note:first-child{margin:0 0 var(--sp-3)}
@@ -859,81 +860,12 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
   .mast{padding-top:26px}
 }
 
-/* ===========================================================================
-   KEPT UNTIL THEIR PASS: the standings' toggle, a name, the old disclosure,
-   the What if's form and a select inside a sentence. The controls pass
-   moves each into the workstation's terms.
-   =========================================================================== */
+/* ---- a player's card, in the drawer: its own body ----------------------- */
 
-/* ---- two views of one table, and the odds of each place -----------------
-   The toggle is the house's small display face, the chosen one in the accent
-   with a rule under it -- the same language the section links in the shell
-   use, so "which view am I in" reads the same way everywhere. A sortable
-   heading is a button that looks exactly like the heading it replaces.
-
-   The seed odds are a row of little bars under the team's own row rather
-   than fourteen more columns: fourteen columns is not a table anybody reads
-   on a phone, and the shape of a distribution is the thing worth seeing. */
-.views{display:flex;gap:0;margin:0 0 16px;border-bottom:1px solid var(--rule)}
-.views button{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
-  font-size:11px;padding:7px 14px;background:none;border:0;border-bottom:2px solid transparent;
-  color:var(--muted);cursor:pointer}
-.views button:hover{color:var(--ink)}
-.views button[aria-pressed="true"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
-
-/* ---- a player's name, and his card -------------------------------------
-   Any name a page prints (`.pname`, or an `.info` beside one) opens the
-   player's card in the inspection drawer (shell.js): a panel along the
-   right on a desk, a sheet from the bottom on a phone. The card's own body
-   is `.pcard`; the drawer's frame is in the workstation block above. */
-.pname{background:none;border:0;border-radius:0;padding:0;font:inherit;text-align:left;
-  cursor:pointer;border-bottom:1px dotted var(--rule-strong);color:inherit}
-.pname:hover{color:var(--accent-deep);border-bottom-color:var(--accent)}
-.pname[aria-expanded="true"]{border-bottom-style:solid;border-bottom-color:var(--accent)}
 .pcard .flag{margin:var(--sp-3) 0 0;padding-top:8px;border-top:1px solid var(--line);
   font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
 .pcard .ws-loading{color:var(--fg-3);font-family:var(--font-data);font-size:var(--t-sm)}
 
-/* A disclosure, everywhere on the page: a real <details>, the summary in the
-   house's small display face with a rule over it, the marker a sign rather
-   than a triangle so it reads the same in both themes and at any size. */
-details.disc{border-top:1px solid var(--rule)}
-details.disc > summary{list-style:none;cursor:pointer;padding:8px 0 7px;display:flex;
-  align-items:baseline;gap:10px;font-family:var(--display);text-transform:uppercase;
-  letter-spacing:.08em;font-size:11.5px;color:var(--muted)}
-details.disc > summary::-webkit-details-marker{display:none}
-details.disc > summary::after{content:"+";margin-left:auto;font-family:var(--mono);font-size:15px;
-  line-height:1;color:var(--muted)}
-details.disc[open] > summary::after{content:"\2212"}
-details.disc > summary:hover{color:var(--ink)}
-details.disc[open] > summary{color:var(--accent-deep)}
-details.disc > summary .n{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
-  color:var(--muted);text-transform:none}
-details.disc .inside{padding:2px 0 18px}
-details.disc .inside > .lede{margin-top:0}
-.disclist{border-bottom:1px solid var(--rule)}
-.disclist > details.disc:first-child{border-top:1px solid var(--rule-strong)}
-
-/* ---- what if: a move the manager names ----------------------------------
-   Three choices and a button, so the section adds a heading and a form to
-   the first load and nothing else. The wire sits behind a disclosure and is
-   not read until it is opened; nothing is judged until Run. The answer is
-   drawn in furniture the page already has -- the bands above, a move's own
-   article, the finish block the trade page draws -- so there is very little
-   here beyond the form itself. */
-.whatif .room{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap}
-.whatif .room > label,.whatif .room > .k{flex:0 0 4.5em;font-family:var(--display);
-  text-transform:uppercase;letter-spacing:.09em;font-size:11.5px;color:var(--muted)}
-.whatif .room select{flex:1 1 15em}
-.whatif .room select[disabled]{color:var(--faint)}
-.whatif .chosen{flex:1 1 15em;color:var(--ink);font-size:16px;overflow-wrap:anywhere}
-.whatif .chosen .none{color:var(--faint);font-style:italic}
-.whatif details.disc{flex:1 1 100%;margin-top:2px;border-top:0}
-.whatif details.disc > summary{padding:4px 0}
-.whatif .wire{max-height:340px;margin-top:0}
-.whatif .doing{margin-top:20px}
-.whatif .doing .working{flex:1 1 16em;line-height:1.7}
-#whatif-answer .band{margin-top:12px}
 
 
 /* ===========================================================================
@@ -1408,6 +1340,41 @@ details.disc .inside > .lede{margin-top:0}
 .ws-grid tr.seedrow .note{margin:0 0 6px;font-family:var(--font-ui);font-size:var(--t-sm);color:var(--fg-2);
   text-align:left}
 #rest-grid td.small{font-size:var(--t-sm)}
+
+/* ---- controls on a page ----------------------------------------------------
+   A player's name is a name button: the interface face at 500, no dotted
+   underline -- a click opens his card in the drawer, and the one whose card
+   is open is underlined in orange, because it is the thing in focus. */
+.pname{padding:0;font:inherit;font-family:var(--font-ui);font-weight:500;color:inherit;text-align:left;
+  background:none;border:0;border-radius:0;cursor:pointer;text-decoration:none}
+.pname:hover{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+.pname[aria-expanded="true"]{text-decoration:underline;text-decoration-color:var(--accent);
+  text-underline-offset:3px}
+.pname:focus-visible{outline-offset:1px}
+.ws-seg.views{margin:0 0 var(--sp-3)}
+.ws-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);font-size:var(--t-md);
+  color:var(--fg-2)}
+.ws-line .ws-input{width:auto}
+.room .ws-field{margin-left:var(--sp-2)}
+#rooms .room .ws-field{margin:2px 4px 2px 0}
+/* The What if's form: the move as rows of the drawer's fact list -- ADD,
+   OFF THE WIRE, DROP, TO IR -- then Run, which is ink, not orange. The wire
+   sits in a disclosure and is not read until it is opened; nothing is
+   judged until Run. */
+.whatif-rows{gap:var(--sp-2) var(--sp-4);align-items:center}
+.whatif-rows > div{display:contents}
+.whatif-rows dt{padding-top:0}
+.whatif-rows dt label{cursor:pointer}
+.whatif-rows dd{min-width:0}
+.whatif-rows .ws-select{width:min(100%,28rem)}
+.whatif .chosen{font-size:var(--t-base);font-weight:600;overflow-wrap:anywhere}
+.whatif .chosen .none{color:var(--fg-3);font-weight:400;font-style:italic}
+.whatif details.ws-disc .n{font-family:var(--font-data);font-size:var(--t-xs);font-weight:400;color:var(--fg-3)}
+.whatif .wire{max-height:340px;border-top:0}
+.whatif .doing{margin-top:var(--sp-4)}
+.whatif .doing .working{flex:1 1 16em;line-height:1.6}
+#whatif-answer .band{margin-top:var(--sp-3)}
+#whatif-answer > :first-child{margin-top:0}
 
 /* ---- the standings' seed odds: a row of bars under a team's own row --------- */
 .seeds-bar{display:flex;align-items:flex-end;gap:3px;min-height:46px;padding:8px 0 2px}

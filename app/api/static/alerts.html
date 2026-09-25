@@ -10,8 +10,6 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Oswald:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/pages/static/pages.css">
 <style>
-  .signin select{font:inherit;color:var(--fg);background:transparent;border:0;
-    border-bottom:1px solid var(--line-strong);padding:6px 0}
   #added,#confirmed{margin-top:var(--sp-3)}
   /* One topic a row, a hairline between them. The label is the line, the
      note under it is what it puts in the message, and the box is on the
@@ -72,10 +70,10 @@
   <div class="ws-panel">
   <p class="ws-note">Everything goes by email. Give an address and it gets a link to confirm it;
     nothing is sent there before you open the link.</p>
-  <form class="signin" id="add" autocomplete="off">
-    <label class="eyebrow" for="target">Address</label>
-    <input id="target" type="email" required spellcheck="false" autocapitalize="off">
-    <button class="btn" type="submit">Add</button>
+  <form class="ws-form" id="add" autocomplete="off">
+    <span class="ws-fld"><label for="target">Address</label>
+      <input class="ws-input plain" id="target" type="email" required spellcheck="false" autocapitalize="off"></span>
+    <button class="ws-btn primary" type="submit">Add</button>
   </form>
   <p class="ws-line" id="added" hidden></p>
   </div>
@@ -151,7 +149,7 @@ async function loadMine() {
   const got = await call("GET", "/me/channels");
   box.replaceChildren();
   if (!got.ok) return box.append(el("p", `Your channels cannot be read: ${got.detail}`, "ws-line"));
-  // .signin is display:flex, which a hidden attribute would not override.
+  // The form is display:flex, which a hidden attribute would not override.
   const canAdd = Boolean(got.data.available.email);
   $("add").style.display = canAdd ? "" : "none";
   if (!canAdd) say("added", "Adding an address is not set up on this server yet.");
@@ -167,7 +165,7 @@ async function loadMine() {
     const line = el("p", "", "ws-line");
     const state = c.verified ? `confirmed ${day(c.verified_at)}` : "waiting to be confirmed";
     line.append(el("b", KIND[c.kind] || c.kind), ` ${c.masked} · ${state} `);
-    const off = el("button", "Disable", "btn");
+    const off = el("button", "Disable", "ws-btn sm");
     off.type = "button";
     off.onclick = async () => {
       if (!window.confirm("Stop sending to this address? It is forgotten.")) return;
@@ -214,7 +212,7 @@ function cadence(id, label, on, onChange) {
 
 function lengths(row, onChange) {
   const wrap = el("div", undefined, "length");
-  wrap.append(el("p", "Email length", "eyebrow"));
+  wrap.append(el("p", "Email length", "ws-sub"));
   for (const option of row.lengths || []) {
     const id = `len-${row.espn_league_id}-${option.name}`;
     const box = el("input");

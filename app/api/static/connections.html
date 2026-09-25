@@ -29,14 +29,14 @@
   <div class="ws-panel">
   <p class="ws-note">From a browser signed in to ESPN: the cookies <b>espn_s2</b> and
     <b>SWID</b> for fantasy.espn.com, and the league id from the league's address.</p>
-  <form class="signin" id="connect" autocomplete="off">
-    <label class="eyebrow" for="league">League id</label>
-    <input id="league" inputmode="numeric" required>
-    <label class="eyebrow" for="s2">espn_s2</label>
-    <input id="s2" type="password" required spellcheck="false" autocapitalize="off">
-    <label class="eyebrow" for="swid">SWID</label>
-    <input id="swid" type="password" required spellcheck="false" autocapitalize="off">
-    <button class="btn" type="submit">Connect</button>
+  <form class="ws-form" id="connect" autocomplete="off">
+    <span class="ws-fld"><label for="league">League id</label>
+      <input class="ws-input plain" id="league" inputmode="numeric" required></span>
+    <span class="ws-fld"><label for="s2">espn_s2</label>
+      <input class="ws-input plain" id="s2" type="password" required spellcheck="false" autocapitalize="off"></span>
+    <span class="ws-fld"><label for="swid">SWID</label>
+      <input class="ws-input plain" id="swid" type="password" required spellcheck="false" autocapitalize="off"></span>
+    <button class="ws-btn primary" type="submit">Connect</button>
   </form>
   <p class="ws-line" id="connected" hidden></p>
   </div>
@@ -75,10 +75,10 @@
   <div class="ws-panel">
   <p class="ws-note">Optional. Your SWID alone (never espn_s2): when it is an owner of the
     team you claim, the claim is verified at once instead of waiting for the league's owner.</p>
-  <form class="signin" id="identity" autocomplete="off">
-    <label class="eyebrow" for="myswid">SWID</label>
-    <input id="myswid" type="password" required spellcheck="false" autocapitalize="off">
-    <button class="btn" type="submit">Keep it</button>
+  <form class="ws-form" id="identity" autocomplete="off">
+    <span class="ws-fld"><label for="myswid">SWID</label>
+      <input class="ws-input plain" id="myswid" type="password" required spellcheck="false" autocapitalize="off"></span>
+    <button class="ws-btn primary" type="submit">Keep it</button>
   </form>
   <p class="ws-line" id="identified" hidden></p>
   </div>
@@ -98,10 +98,10 @@
     token, read the same pages, and are ended the same way: here.</p>
   </div>
   <div class="ws-panel">
-  <form class="signin" id="mint" autocomplete="off">
-    <label class="eyebrow" for="tokenname">What it is for</label>
-    <input id="tokenname" maxlength="60" placeholder="Claude on my laptop" required>
-    <button class="btn" type="submit">Make a token</button>
+  <form class="ws-form" id="mint" autocomplete="off">
+    <span class="ws-fld"><label for="tokenname">What it is for</label>
+    <input class="ws-input plain" id="tokenname" maxlength="60" placeholder="Claude on my laptop" required></span>
+    <button class="ws-btn primary" type="submit">Make a token</button>
   </form>
   <p class="ws-line mono" id="minted" hidden></p>
   <div id="tokens"><p class="empty">Loading…</p></div>
@@ -143,7 +143,7 @@ function el(tag, text, cls) {
 }
 
 function button(text, onclick) {
-  const node = el("button", text, "btn");
+  const node = el("button", text, "ws-btn sm");
   node.type = "button";
   node.onclick = onclick;
   return node;
@@ -212,7 +212,7 @@ async function loadNumbers() {
 
 function leagueNumbers(league, data) {
   const part = el("div");
-  part.append(el("h3", league.league_name || `League ${data.espn_league_id}`, "eyebrow"));
+  part.append(el("h3", league.league_name || `League ${data.espn_league_id}`, "ws-sub"));
 
   const state = el("p", "", "ws-line");
   state.append(data.measuring ? `Measuring now: ${data.progress}.` : `${data.progress}.`);
@@ -246,10 +246,12 @@ function numberLine(data, number, role) {
   }
   if (role === "owner" && number.settable) {
     const field = document.createElement("input");
+    field.className = "ws-input plain";
     field.inputMode = "decimal";
     field.size = 5;
     field.value = number.value === null ? "" : NUMBER(number.value);
     const why = document.createElement("input");
+    why.className = "ws-input plain";
     why.size = 30;
     why.placeholder = "one line of why";
     line.append(" ", field, " ", why, " ");
@@ -273,7 +275,7 @@ function numberLine(data, number, role) {
 
 async function ownedLeague(id) {
   const part = el("div");
-  part.append(el("h3", `League ${id}`, "eyebrow"));
+  part.append(el("h3", `League ${id}`, "ws-sub"));
 
   const link = el("p", "", "ws-line");
   link.append(button("New invite link", async () => {
@@ -361,7 +363,7 @@ async function loadTokens() {
        sees which of these he pasted somewhere himself. */
     const viaOAuth = t.name.endsWith(" (OAuth)");
     line.append(el("b", viaOAuth ? t.name.slice(0, -8) : t.name), " ");
-    if (viaOAuth) line.append(el("span", "via OAuth", "tag"), " ");
+    if (viaOAuth) line.append(el("span", "via OAuth", "ws-tag"), " ");
     const when = new Date(t.created_at).toLocaleDateString();
     const used = t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "never used";
     if (t.revoked_at) {
