@@ -1470,3 +1470,70 @@ def test_a_played_season_leaves_the_wire_alone_on_a_full_pass(session: Session) 
     session.commit()
 
     assert session.scalars(select(PlayerSeasonStat)).all() == []
+
+
+def _before_the_draft(espn: Any) -> Any:
+    """The same league with its draft still ahead, as ESPN reports 2027 today."""
+    far_ahead = int(datetime(2030, 10, 18, tzinfo=UTC).timestamp() * 1000)
+    attach_transactions(
+        espn,
+        {},
+        draft_settings={
+            "auctionBudget": 200,
+            "type": "AUCTION",
+            "timePerSelection": 90,
+            "date": far_ahead,
+            "pickOrder": [3, 1, 2],
+        },
+    )
+    return espn
+
+
+def test_before_the_draft_no_lineup_day_is_stored(session: Session) -> None:
+    """ESPN's roster feed before a draft is last season's rosters projected onto
+    every future day. On 2026-09-23 that was 23,892 rows for 2027; now it is
+    none, while the period's window -- the schedule, not a roster -- is kept."""
+    espn = _before_the_draft(
+        _daily_league(day_slots={7: [(100, "PG")], 8: [(100, "BE")], 10: [(200, "PG")]})
+    )
+
+    ingest_season(session, espn)
+    session.commit()
+
+    assert session.scalars(select(DailyLineupSlot)).all() == []
+    period = session.scalars(select(MatchupPeriod)).one()
+    assert (period.first_scoring_period, period.final_scoring_period) == (7, 10)
+
+
+def test_a_restricted_run_before_the_draft_leaves_the_window_alone(session: Session) -> None:
+    espn = _before_the_draft(_daily_league(day_slots={7: [(100, "PG")], 8: [(100, "BE")]}))
+    stored = ingest_league_structure(session, espn)
+    ingest_teams(session, stored, espn)
+    ingest_matchups_and_rosters(session, stored, espn)
+    period = session.scalars(select(MatchupPeriod)).one()
+    period.first_scoring_period, period.final_scoring_period = 1, 14
+
+    written = ingest_daily_lineups(
+        session, stored, espn, IngestScope(scoring_periods=frozenset({8}))
+    )
+
+    assert written == 0
+    assert (period.first_scoring_period, period.final_scoring_period) == (1, 14)
+
+
+def test_the_same_feed_once_drafted_is_stored_as_ever(session: Session) -> None:
+    """The gate is the draft, not the feed: the default date is 2025-10-18."""
+    written = ingest_daily_lineups(
+        session,
+        *_structure(session, _daily_league(day_slots={7: [(100, "PG")], 8: [(100, "BE")]})),
+    )
+
+    assert written == 2
+    assert len(session.scalars(select(DailyLineupSlot)).all()) == 2
+
+
+def _structure(session: Session, espn: Any) -> tuple[LeagueSeason, Any]:
+    stored = ingest_league_structure(session, espn)
+    ingest_teams(session, stored, espn)
+    ingest_matchups_and_rosters(session, stored, espn)
+    return stored, espn

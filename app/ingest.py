@@ -943,8 +943,22 @@ def ingest_daily_lineups(
     empty for older seasons, so scoping player stats to it would miss most
     of the league.
 
+    **Nothing is written for a season that has not been drafted**
+    (`app.inseason.drafted`). Before its draft ESPN's roster feed shows every
+    team holding last season's final roster on every future day, and a run
+    on 2026-09-23 stored all of it for 2027 -- 23,892 rows for a season
+    nobody had a roster in, which every page then projected. The periods'
+    windows are still recorded from `matchup_ids`, which is the league's
+    schedule and not a roster, and no day is requested: a preseason run
+    saves a request a day. The wire, which is the draft board's input, is
+    `ingest_player_stats`'s and is untouched (`_season_is_live`).
+
     Returns the number of rows written.
     """
+    # Here rather than at the top: `app.inseason.drafted` reads this module's
+    # `draft_is_pending`.
+    from app.inseason.drafted import season_is_drafted
+
     teams = _team_index(session, league_season)
     periods = {
         period.period: period
@@ -956,6 +970,15 @@ def ingest_daily_lineups(
         return 0
 
     windows = _matchup_id_windows(espn_league)
+    if not season_is_drafted(session, league_season).drafted:
+        if scope.is_full:
+            for period_number, days in windows.items():
+                period = periods.get(period_number)
+                if period is not None and days:
+                    period.first_scoring_period = min(days)
+                    period.final_scoring_period = max(days)
+            session.flush()
+        return 0
     players = {player.espn_player_id: player for player in session.scalars(select(Player)).all()}
     observed: dict[int, list[int]] = {}
     written = 0
