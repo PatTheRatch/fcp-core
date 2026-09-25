@@ -356,34 +356,85 @@ def test_every_page_draws_the_shell_in_the_house_style(name: str) -> None:
     assert "recommend" not in visible, "the tool suggests; the manager decides"
 
 
-def test_the_shell_is_the_navigation_the_product_draws() -> None:
-    """docs/product.md, "Navigation": the words, in the order drawn."""
+def test_the_shell_is_the_rail_the_design_draws() -> None:
+    """docs/design_system.md, "The rail": the words, in the order drawn --
+    the team's pages, then the league's -- and the two with no page of their
+    own yet say so rather than pretending."""
     shell = (STATIC / "shell.js").read_text()
-    order = ["This week", "Standings", "Draft", "History", "Week", "Season", "Moves", "Trades"]
+    order = [
+        "Matchup",
+        "Roster",
+        "Moves",
+        "Trades",
+        "Season",
+        "This week",
+        "Standings",
+        "Players",
+        "Draft",
+        "History",
+    ]
     at = [shell.index(f'"{word}"') for word in order]
     assert at == sorted(at)
-    for word in ("My team", "Claim your team", "Connections", "Projections", "Alerts", "Sign out"):
+    for word in ("Overview", "Scenario", "Claim your team", "Connections", "Projections"):
         assert word in shell
+    for word in ("Alerts", "Sign out", "Theme"):
+        assert word in shell
+    assert '"roster", "Roster", "week", "#tonight-section", false' in shell, "pending, and says so"
+    assert '"players", "Players", null, false' in shell
     assert "localStorage" in shell and "try {" in shell, "the league is remembered, wrapped"
     assert "aria-expanded" in shell and "Escape" in shell, "the menus work from the keyboard"
     assert "recommend" not in shell.lower()
 
 
 def test_a_tap_on_a_name_opens_the_card_the_first_time() -> None:
-    """The card is pinned at phone width whoever opened it, so the focus
-    that comes with a tap used to pin it a moment before the tap arrived --
-    and the tap then read as the second one and closed it again. The first
-    tap opened nothing and the second opened it.
+    """The card opens into the inspection drawer on a click -- a tap, a
+    mouse click and Enter are all one click -- so the first tap opens it.
 
-    Neither hover nor focus opens a card at phone width now; the tap does,
-    and a keyboard opens it with Enter, which is the same click.
+    The old floating card was opened by hover and focus as well, and at
+    phone width the focus that comes with a tap pinned it a moment before
+    the tap arrived, which then read as a second tap and closed it. Now
+    hover and focus never open anything: on a `data-card-hover` control of
+    its own they only follow a drawer that is already open, on a desk.
     """
     shell = (STATIC / "shell.js").read_text()
-    wired = shell.split("function wireCards")[1]
-    hover, focus = wired.index("onmouseenter"), wired.index("onfocus")
-    assert wired.count("!phoneWidth()", 0, focus) == 1, "hover does not open one on a phone"
-    assert "!phoneWidth()" in wired[focus : wired.index("onblur")], "and neither does focus"
-    assert hover < focus, "read in the order they fire"
+    wired = shell.split("function wireCards")[1].split("\n}\n")[0]
+    follow = wired.split("const follow")[1].split("return;\n    }")[0]
+    assert "DRAWER.isOpen()" in follow and "!phoneWidth()" in follow, "hover only follows"
+    assert "trigger.onmouseenter = follow" in wired and "trigger.onfocus = follow" in wired
+    assert "trigger.onclick" in wired and "openCard(id, trigger)" in wired, "the click opens it"
+    assert wired.index("const follow") < wired.index("trigger.onclick")
+
+
+def test_the_drawer_is_one_panel_the_page_stays_live_beside() -> None:
+    """A right-side panel on a desk and a sheet from the bottom on a phone,
+    closed by its button or Escape, which gives the focus back."""
+    shell = (STATIC / "shell.js").read_text()
+    css = (STATIC / "pages.css").read_text()
+    drawer = shell.split("const DRAWER")[1].split("})();")[0]
+    assert 'setAttribute("aria-modal", "false")' in drawer, "the page stays live beside it"
+    assert "was.focus()" in drawer, "closing gives the focus back"
+    assert ".ws-drawer{position:fixed;top:0;right:0;bottom:0" in css
+    phone = css.split("@media (max-width:700px){\n  .ws-drawer{")[1].split("}")[0]
+    assert "top:auto" in phone and "bottom:0" in phone, "a sheet from the bottom on a phone"
+
+
+def test_the_week_page_leaves_its_navigation_to_the_shell() -> None:
+    """The rail carries Trades, Season and Moves, so the week page's own
+    "Elsewhere" and the product's name in its eyebrow are gone."""
+    week = (STATIC / "week.html").read_text()
+    assert "Elsewhere" not in week and 'id="elsewhere"' not in week
+    assert "{{brand}} &middot; the week" not in week
+
+
+def test_orange_is_never_a_buttons_fill() -> None:
+    """Orange is spent on what is selected, not on what to press: the new
+    controls' primary button is ink (docs/design_system.md, "Colour")."""
+    css = (STATIC / "pages.css").read_text()
+    primary = css.split(".ws-btn.primary{")[1].split("}")[0]
+    assert "accent" not in primary
+    tokens = css.split(":root,.t-light{")[1].split("}")[0]
+    for name in ("--accent:", "--pos:", "--neg:", "--neutral:"):
+        assert name in tokens, name
 
 
 #: A declaration at the top level of a classic script: one global scope is

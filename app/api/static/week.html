@@ -19,7 +19,7 @@
      masthead and the readout is under More, one tap away. -->
 <header class="mast" id="mast">
   <div class="head">
-    <p class="eyebrow" id="eyebrow">{{brand}} &middot; the week</p>
+    <p class="eyebrow" id="eyebrow">the week</p>
     <h1 id="title">&nbsp;</h1>
     <p class="versus" id="versus"></p>
     <p class="when" id="when"></p>
@@ -218,10 +218,6 @@
         <summary>How this is worked out</summary>
         <div class="inside"><div id="provenance"></div></div>
       </details>
-      <details class="disc">
-        <summary>Elsewhere</summary>
-        <div class="inside"><p class="lede" id="elsewhere"></p></div>
-      </details>
     </div>
   </section>
 
@@ -352,7 +348,7 @@ function drawMatchup(report) {
   const last = days.length ? days[days.length - 1] : first;
   document.title = `${us} — the week`;
   $("title").textContent = us;
-  $("eyebrow").textContent = `{{brand}} · ${WHERE.season} · matchup period ${report.matchup_period}`;
+  $("eyebrow").textContent = `${WHERE.season} · matchup period ${report.matchup_period}`;
   $("versus").innerHTML =
     them === null ? "On a <b>bye</b> this period" : `vs <b>${escape(them)}</b>`;
   $("when").textContent =
@@ -1991,14 +1987,6 @@ function drawMore(report) {
   $("readout").innerHTML = cells
     .map(([label, value, cls]) => `<div class="${cls}"><dt>${escape(label)}</dt><dd>${value}</dd></div>`)
     .join("");
-
-  $("elsewhere").innerHTML =
-    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "trades"))}">Trades</a>: ` +
-    `build a deal and see what it does to these nine. ` +
-    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "season"))}">Season</a>: ` +
-    `who to hold for the rest of the year. ` +
-    `<a href="${escape(teamUrl(WHERE.league, WHERE.season, WHERE.team, "moves"))}">Moves</a>: ` +
-    `the season's own moves, graded.`;
 }
 
 /** Where every number on the page came from, verbatim. */

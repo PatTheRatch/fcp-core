@@ -175,6 +175,211 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   white-space:nowrap}
 .ws-bb b{font-weight:600;color:var(--fg)}
 
+/* ---- the shell: the rail, and the top bar that stands in for it ----------
+   `#shell` is laid out as if it were not there, so the top bar and the
+   scenario bar are the body's own children and can stick. */
+#shell{display:contents}
+body.ws{padding-left:var(--rail-w)}
+.ws-rail{position:fixed;top:0;bottom:0;left:0;width:var(--rail-w);z-index:30;display:flex;
+  flex-direction:column;background:var(--canvas);border-right:1px solid var(--line);
+  font-size:var(--t-md);line-height:1.3}
+.ws-rail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);
+  min-height:var(--top-h);padding:0 var(--sp-4);border-bottom:1px solid var(--line)}
+.ws-brand{font-family:var(--font-accent);font-weight:600;font-size:16px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg);text-decoration:none;white-space:nowrap}
+.ws-brand:hover{color:var(--accent-text)}
+.ws-rail-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:var(--sp-2) 0 var(--sp-3)}
+.ws-group{display:flex;align-items:baseline;gap:var(--sp-2);margin:var(--sp-4) 0 2px;
+  padding:0 var(--sp-4);font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3);font-weight:500}
+.ws-group .ws-who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  letter-spacing:0;text-transform:none;font-family:var(--font-ui);font-size:var(--t-xs);
+  color:var(--fg-2)}
+.ws-navlist{list-style:none;margin:0;padding:0}
+.ws-nav{display:flex;align-items:center;gap:var(--sp-2);min-height:30px;
+  padding:4px var(--sp-4) 4px calc(var(--sp-4) - 2px);border-left:2px solid transparent;
+  color:var(--fg-2);text-decoration:none;font-weight:500;background:none;border-top:0;
+  border-right:0;border-bottom:0;width:100%;text-align:left;cursor:pointer;font-size:var(--t-md)}
+.ws-nav:hover{background:var(--inset);color:var(--fg)}
+/* The page you are on: the one place orange marks navigation. */
+.ws-nav[aria-current="page"]{color:var(--fg);background:var(--panel);border-left-color:var(--accent)}
+.ws-nav .ws-soon{margin-left:auto;font-family:var(--font-data);font-size:var(--t-2xs);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:400}
+.ws-overview{margin-top:var(--sp-1);text-transform:uppercase;letter-spacing:.08em;
+  font-size:var(--t-sm);font-weight:600}
+.ws-overview .ws-dot{width:7px;height:7px;background:var(--fg-3);flex:0 0 auto}
+.ws-overview[aria-current="page"] .ws-dot{background:var(--accent)}
+.ws-sep{height:1px;background:var(--line);margin:var(--sp-3) 0;border:0}
+/* The scenario, in the rail: its name and how many changes, the mark in
+   orange only while a scenario is the one in view. */
+.ws-scn{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 var(--sp-2);align-items:baseline;
+  padding:6px var(--sp-4) 6px calc(var(--sp-4) - 2px);border-left:2px solid transparent;
+  color:var(--fg-2);text-decoration:none}
+.ws-scn:hover{background:var(--inset);color:var(--fg)}
+.ws-scn .ws-scn-mark{grid-row:span 2;font-size:13px;color:var(--fg-3)}
+.ws-scn .ws-scn-word{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.12em;
+  text-transform:uppercase;font-weight:600;color:var(--fg-2)}
+.ws-scn .ws-scn-state{font-size:var(--t-sm);color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.ws-scn.on{border-left-color:var(--accent);background:var(--panel)}
+.ws-scn.on .ws-scn-mark{color:var(--accent)}
+.ws-scn.on .ws-scn-state{color:var(--fg)}
+.ws-rail-foot{border-top:1px solid var(--line);padding:var(--sp-2) 0}
+.ws-rail-foot .ws-nav{min-height:28px;font-size:var(--t-sm)}
+.ws-theme .ws-theme-state{margin-left:auto;font-family:var(--font-data);font-size:var(--t-2xs);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
+
+/* A menu in the rail opens in place, pushing what is under it down, rather
+   than floating over the page: the rail is a column and there is room. */
+.ws-menu{position:relative}
+.ws-menu-btn{display:flex;align-items:center;gap:var(--sp-2);width:100%;min-height:32px;
+  padding:4px var(--sp-4);background:none;border:0;text-align:left;cursor:pointer;color:var(--fg);
+  font-size:var(--t-md);font-weight:500}
+.ws-menu-btn:hover{background:var(--inset)}
+.ws-menu-btn .ws-lname{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.ws-menu-btn .ws-season{font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
+.ws-menu-btn .ws-caret{font-size:10px;color:var(--fg-3)}
+.ws-menu-btn[aria-expanded="true"] .ws-caret{transform:rotate(180deg)}
+.ws-menu-list{list-style:none;margin:2px var(--sp-2) var(--sp-2);padding:4px 0;background:var(--panel);
+  border:1px solid var(--line);border-radius:var(--r-control)}
+.ws-menu-list a,.ws-menu-list button{display:block;width:100%;text-align:left;padding:6px 10px;
+  font-size:var(--t-md);color:var(--fg);text-decoration:none;background:none;border:0;
+  cursor:pointer;overflow-wrap:anywhere}
+.ws-menu-list a:hover,.ws-menu-list a:focus-visible,.ws-menu-list button:hover,
+.ws-menu-list button:focus-visible{background:var(--inset);outline:none}
+.ws-menu-list a[aria-current]{color:var(--fg);font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.ws-menu-list .ws-mgroup{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3);padding:8px 10px 2px;overflow-wrap:anywhere}
+.ws-menu-list form{margin:4px 0 0;border-top:1px solid var(--line);padding-top:4px}
+
+/* The top bar, at a width too narrow for the rail: the name, where you
+   are, and the button that brings the rail in over the page. */
+.ws-top{display:none}
+.ws-scrim{position:fixed;inset:0;z-index:28;background:var(--scrim)}
+@media (max-width:959px){
+  body.ws{padding-left:0}
+  .ws-top{display:flex;position:sticky;top:0;z-index:25;height:var(--top-h);align-items:center;
+    gap:var(--sp-3);padding:0 var(--sp-4);background:var(--canvas);border-bottom:1px solid var(--line)}
+  .ws-top .ws-where{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;font-size:var(--t-md);color:var(--fg-2)}
+  .ws-rail{width:min(300px,86vw);transform:translateX(-100%);visibility:hidden;
+    transition:transform .16s ease,visibility 0s linear .16s}
+  body.ws-nav-open .ws-rail{transform:none;visibility:visible;box-shadow:var(--shadow-float);
+    transition:transform .16s ease}
+}
+@media (min-width:960px){ .ws-btn.ws-rail-close{display:none} }
+
+/* ---- the inspection drawer ----------------------------------------------
+   A panel along the right that a player -- or a number's provenance --
+   opens into, so a thing is inspected without leaving the page. It sits
+   above the page and so it is the one panel with a shadow. On a phone it
+   is a sheet from the bottom with a scrim behind it. */
+.ws-drawer{position:fixed;top:0;right:0;bottom:0;z-index:40;width:min(var(--drawer-w),100vw);
+  display:flex;flex-direction:column;background:var(--panel);color:var(--fg);
+  border-left:1px solid var(--line-strong);box-shadow:var(--shadow-float);font-size:var(--t-md);
+  line-height:1.45;transform:translateX(100%);visibility:hidden;
+  transition:transform .18s ease,visibility 0s linear .18s}
+.ws-drawer.on{transform:none;visibility:visible;transition:transform .18s ease}
+.ws-drawer-head{display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);
+  border-bottom:1px solid var(--line)}
+.ws-drawer-head > div{flex:1 1 auto;min-width:0}
+.ws-drawer-title{margin:2px 0 0;font-family:var(--font-ui);font-size:18px;font-weight:600;
+  line-height:1.2;letter-spacing:0;overflow-wrap:anywhere}
+.ws-drawer-meta{margin:3px 0 0}
+.ws-drawer-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:var(--sp-4)}
+.ws-drawer-x{flex:0 0 auto}
+.ws-drawer-scrim{display:none}
+@media (max-width:700px){
+  .ws-drawer{top:auto;left:0;right:0;bottom:0;width:auto;max-height:82vh;border-left:0;
+    border-top:1px solid var(--line-strong);border-radius:var(--r-panel) var(--r-panel) 0 0;
+    transform:translateY(100%)}
+  .ws-drawer.on + .ws-drawer-scrim{display:block;position:fixed;inset:0;z-index:39;
+    background:var(--scrim)}
+}
+/* A drawer's section: a small label with a rule, then its facts. */
+.ws-dsec{margin:0 0 var(--sp-4)}
+.ws-dsec > .ws-k{display:block;padding-bottom:4px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.ws-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px var(--sp-3);margin:0}
+.ws-facts dt{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3);padding-top:2px;white-space:nowrap}
+.ws-facts dd{margin:0;overflow-wrap:anywhere}
+.ws-facts dd .ws-data{font-weight:600}
+.ws-note{margin:6px 0 0;font-size:var(--t-sm);color:var(--fg-2)}
+/* The player's card, in the drawer: the nine per game in a strip of nine
+   cells that share their edges, then what the line rests on. */
+.ws-nine{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));border:1px solid var(--line);
+  border-radius:var(--r-control);overflow:hidden;margin:0 0 var(--sp-4)}
+.ws-nine div{padding:5px 4px;text-align:right;border-right:1px solid var(--line);min-width:0}
+.ws-nine div:last-child{border-right:0}
+.ws-nine .ws-k{display:block;font-size:9.5px;letter-spacing:.04em}
+.ws-nine b{display:block;font-family:var(--font-data);font-size:var(--t-sm);font-weight:500;
+  font-variant-numeric:tabular-nums}
+
+/* ---- controls -----------------------------------------------------------
+   Sharp, 4px, one height (30px; 26px small). The primary button is ink,
+   not orange: orange is spent on what is selected, not on what to press. */
+.ws-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;
+  padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--r-control);
+  background:var(--panel);color:var(--fg);font-family:var(--font-ui);font-size:var(--t-md);
+  font-weight:500;line-height:1;cursor:pointer;text-decoration:none;white-space:nowrap}
+.ws-btn:hover{background:var(--inset)}
+.ws-btn.primary{background:var(--fg);border-color:var(--fg);color:var(--canvas)}
+.ws-btn.primary:hover{background:var(--fg-2);border-color:var(--fg-2)}
+.ws-btn.quiet{border-color:transparent;background:transparent;color:var(--fg-2)}
+.ws-btn.quiet:hover{background:var(--inset);color:var(--fg)}
+.ws-btn.sm{height:26px;padding:0 9px;font-size:var(--t-sm)}
+.ws-btn:disabled,.ws-btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.ws-btn:disabled:hover{background:var(--panel)}
+.ws-btn.quiet:disabled:hover{background:transparent}
+/* The segmented toggle: a set of buttons that share their edges, one
+   pressed. Neutral by default; `.scn`, the BASELINE | SCENARIO toggle,
+   marks the pressed half in orange, because that is the scenario in view. */
+.ws-seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-control);
+  overflow:hidden;background:var(--panel);vertical-align:middle}
+.ws-seg button{height:26px;padding:0 10px;border:0;background:none;font-family:var(--font-data);
+  font-size:var(--t-2xs);font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--fg-2);cursor:pointer}
+.ws-seg button + button{border-left:1px solid var(--line-strong)}
+.ws-seg button:hover{background:var(--inset);color:var(--fg)}
+.ws-seg button[aria-pressed="true"]{background:var(--inset);color:var(--fg)}
+.ws-seg.scn button[aria-pressed="true"]{background:var(--accent-wash);color:var(--accent-text);
+  box-shadow:inset 0 -2px 0 var(--accent)}
+.ws-seg button:focus-visible{outline-offset:-2px}
+.ws-field{display:inline-flex;align-items:center;position:relative}
+.ws-select,.ws-input{height:30px;border:1px solid var(--line-strong);border-radius:var(--r-control);
+  background:var(--panel);color:var(--fg);font-family:var(--font-ui);font-size:var(--t-md);
+  max-width:100%}
+.ws-select{appearance:none;-webkit-appearance:none;padding:0 28px 0 10px;cursor:pointer}
+.ws-field.sel::after{content:"\25BE";position:absolute;right:10px;pointer-events:none;font-size:10px;
+  color:var(--fg-2)}
+.ws-input{padding:0 10px 0 28px;width:16rem}
+.ws-field.search::before{content:"\2315";position:absolute;left:9px;pointer-events:none;
+  font-size:14px;color:var(--fg-3)}
+.ws-input::placeholder{color:var(--fg-3);opacity:1}
+.ws-input:focus-visible,.ws-select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+/* A disclosure: a real <details>, the marker a sign so it reads the same
+   in both themes and at any size. */
+details.ws-disc{border:1px solid var(--line);border-radius:var(--r-control);background:var(--panel)}
+details.ws-disc > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:var(--sp-2);
+  min-height:30px;padding:0 10px;font-size:var(--t-md);font-weight:500;color:var(--fg)}
+details.ws-disc > summary::-webkit-details-marker{display:none}
+details.ws-disc > summary::after{content:"+";margin-left:auto;font-family:var(--font-data);
+  color:var(--fg-3)}
+details.ws-disc[open] > summary::after{content:"\2212"}
+details.ws-disc[open] > summary{border-bottom:1px solid var(--line)}
+details.ws-disc > summary:hover{background:var(--inset)}
+details.ws-disc .ws-disc-body{padding:var(--sp-3)}
+/* A tag: a fact in four letters. Grey, because a status is not a change;
+   green or red only when it names a change to the viewer's own roster. */
+.ws-tag{display:inline-flex;align-items:center;height:18px;padding:0 5px;border:1px solid var(--line-strong);
+  border-radius:2px;font-family:var(--font-data);font-size:var(--t-2xs);font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--fg-2);white-space:nowrap;
+  vertical-align:middle;line-height:1}
+.ws-tag.pos{color:var(--pos);border-color:currentColor}
+.ws-tag.neg{color:var(--neg);border-color:currentColor}
+.ws-tag.accent{color:var(--accent-text);border-color:var(--accent)}
+
 /* ===========================================================================
    EACH PAGE'S OWN FURNITURE -- the report house style, kept as it was while
    the pages move into the workstation language one at a time (the order is
@@ -182,22 +387,15 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
    at the new palette, so it sits in the new shell without a seam.
    =========================================================================== */
 
-/* ---- the shell: one bar over every page, a rule under it (shell.js) ------
-   Links and menu buttons in the display face, the current one in the accent
-   with a rule under it. A menu opens as a list on the surface with a rule
-   round it: no radius, no shadow. At phone width the sections take a row of
-   their own and wrap; nothing scrolls the page sideways. */
-.shell{border-bottom:1px solid var(--rule-strong);background:var(--ground)}
+/* ---- the signed-out bar: the landing page, sign-in and consent ----------
+   The three pages with nobody signed in keep a plain bar with the name, the
+   way in and the theme switch; the rail is for someone inside. */
+.shell{border-bottom:1px solid var(--rule);background:var(--ground)}
 .nav{max-width:1080px;margin:0 auto;padding:10px 24px 8px;display:flex;flex-wrap:wrap;
   align-items:center;gap:6px 22px}
-.nav-main{display:contents}
-.brand{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.1em;
+.brand{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap}
-.brand:hover{color:var(--accent)}
-/* At phone width the bar is two rows: the brand, the league and the account
-   with the switch on one, the sections on the next. The switch keeps its
-   words for a screen reader and shows a glyph. The name is short enough to
-   fit at any width, so it is not abbreviated. */
+.brand:hover{color:var(--accent-deep)}
 @media (max-width:560px){
   /* A section's tag is pushed to the right of its heading, and it never
      wraps, so on a phone a long heading was squeezed to one word a line.
@@ -206,38 +404,15 @@ h1,h2,h3,.disp{font-family:var(--display);font-weight:600;margin:0;text-wrap:bal
   .shead .tag{margin-left:0;flex-basis:100%;white-space:normal}
   .nav{gap:4px 12px}
   .nav .end{gap:10px}
-  .league-name{max-width:22vw !important}
   .btn.theme{font-size:0;padding:4px 8px;line-height:1}
   .btn.theme::before{content:"◐";font-size:15px}
 }
-.sections{display:flex;flex-wrap:wrap;align-items:center;gap:2px 20px;list-style:none;
-  margin:0;padding:0}
-.navlink,.menu-btn{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+.navlink{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
   font-size:13px;font-weight:500;color:var(--muted);text-decoration:none;background:none;
   border:0;border-bottom:2px solid transparent;padding:6px 0 4px;cursor:pointer;
   white-space:nowrap;border-radius:0}
-.navlink:hover,.menu-btn:hover{color:var(--ink)}
-.navlink[aria-current="page"],.menu-btn.on{color:var(--accent-deep);
-  border-bottom-color:var(--accent)}
-.menu-btn .caret{margin-left:5px;font-size:10px}
-.menu-btn[aria-expanded="true"]{color:var(--ink)}
-.league-name{display:inline-block;max-width:30ch;overflow:hidden;text-overflow:ellipsis;
-  vertical-align:bottom;text-transform:none;letter-spacing:.02em;font-size:14px;color:var(--ink)}
-.menu-btn .season{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--muted)}
-.menu{position:relative}
-.menu-list{position:absolute;z-index:20;top:100%;left:0;min-width:230px;
-  max-width:calc(100vw - 32px);margin:6px 0 0;padding:6px 0;list-style:none;
-  background:var(--surface);border:1px solid var(--rule);border-top:2px solid var(--rule-strong)}
-.menu.right .menu-list{left:auto;right:0}
-.menu-list a,.menu-list button{display:block;width:100%;text-align:left;padding:7px 14px;
-  font-family:var(--body);font-size:15px;color:var(--ink);text-decoration:none;
-  background:none;border:0;cursor:pointer;overflow-wrap:anywhere}
-.menu-list a:hover,.menu-list a:focus-visible,.menu-list button:hover,
-.menu-list button:focus-visible{background:var(--sunk);outline:none}
-.menu-list a[aria-current]{color:var(--accent-deep);font-weight:600}
-.menu-list .group{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--muted);padding:10px 14px 3px;overflow-wrap:anywhere}
-.menu-list form{margin:0;border-top:1px solid var(--rule);margin-top:6px;padding-top:4px}
+.navlink:hover{color:var(--ink)}
+.navlink[aria-current="page"]{color:var(--accent-deep);border-bottom-color:var(--accent)}
 .nav .end{margin-left:auto;display:flex;align-items:center;gap:16px}
 .btn.theme{white-space:nowrap}
 
@@ -614,48 +789,18 @@ section{margin-top:56px}
   letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .info:hover{color:var(--accent)}
 
-/* ---- a player's card: a popover on a desktop, a sheet on a phone --------
-   Drawn by shell.js on any name (`.pname`) and on any `.info` beside one.
-   The house's rules: a rule round it, no radius and no shadow, the nine in
-   the same strip every other screen draws. */
+/* ---- a player's name, and his card -------------------------------------
+   Any name a page prints (`.pname`, or an `.info` beside one) opens the
+   player's card in the inspection drawer (shell.js): a panel along the
+   right on a desk, a sheet from the bottom on a phone. The card's own body
+   is `.pcard`; the drawer's frame is in the workstation block above. */
 .pname{background:none;border:0;border-radius:0;padding:0;font:inherit;text-align:left;
-  cursor:pointer;border-bottom:1px dotted var(--rule)}
-.pname:hover{color:var(--accent);border-bottom-color:var(--accent)}
-.pcard{position:fixed;z-index:40;width:320px;max-width:calc(100vw - 24px);
-  background:var(--surface);color:var(--ink);border:1px solid var(--rule-strong);
-  padding:12px 14px 14px;opacity:0;pointer-events:none;transition:opacity .08s}
-.pcard.on{opacity:1}
-.pcard.pinned{pointer-events:auto}
-.pcard .cx{position:absolute;top:0;right:0;width:44px;height:44px;display:none;
-  align-items:center;justify-content:center;background:none;border:0;border-left:1px solid
-  var(--rule);border-bottom:1px solid var(--rule);color:var(--ink);font-size:22px;
-  line-height:1;cursor:pointer;padding:0}
-.pcard.pinned .cx{display:flex}
-.pcard.pinned .cn{padding-right:46px}
-.pcard .cn{font-family:var(--display);font-weight:600;font-size:20px;line-height:1.05;
-  text-transform:uppercase;letter-spacing:.01em}
-.pcard .cm{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--muted);margin:4px 0 10px}
-.pcard .strip{margin:0 0 10px;grid-template-columns:repeat(9,minmax(0,1fr));
-  border-width:1px 0 1px 1px}
-.pcard .strip div{padding:3px 4px;border-bottom:0}
-.pcard .strip .lab{font-size:8.5px;letter-spacing:.04em} .pcard .strip b{font-size:11.5px}
-.pcard .facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;margin:0;
-  font-size:13.5px}
-.pcard .facts dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--muted);padding-top:3px;white-space:nowrap}
-.pcard .facts dd{margin:0;font-variant-numeric:tabular-nums}
-.pcard .flag{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--rule);
-  font-family:var(--mono);font-size:11.5px;color:var(--warn)}
-@media (max-width:700px){
-  /* A thumb cannot hover and cannot reach the top of a tall screen: the card
-     comes up along the bottom instead, full width, and stays until it is
-     dismissed. The inline position the popover set is overridden outright. */
-  .pcard{left:0 !important;right:0;top:auto !important;bottom:0;width:auto;
-    max-width:none;border-width:2px 0 0;padding:14px 16px 26px;pointer-events:auto}
-  .pcard .strip{grid-template-columns:repeat(9,minmax(0,1fr));border-width:1px 0 1px 1px}
-  .pcard .strip div{border-bottom:0}
-}
+  cursor:pointer;border-bottom:1px dotted var(--rule-strong);color:inherit}
+.pname:hover{color:var(--accent-deep);border-bottom-color:var(--accent)}
+.pname[aria-expanded="true"]{border-bottom-style:solid;border-bottom-color:var(--accent)}
+.pcard .flag{margin:var(--sp-3) 0 0;padding-top:8px;border-top:1px solid var(--line);
+  font-family:var(--font-data);font-size:var(--t-xs);color:var(--fg-2)}
+.pcard .ws-loading{color:var(--fg-3);font-family:var(--font-data);font-size:var(--t-sm)}
 
 /* ---- the landing page ----------------------------------------------------
    The one page a stranger sees, in the same house style as everything behind
@@ -1077,12 +1222,8 @@ details.disc .inside > .lede{margin-top:0}
   color:var(--stop);font-size:15px}
 
 @media (max-width:860px){
-  body{font-size:16px}
   .page{padding:0 16px 72px}
   .nav{padding:8px 16px 6px;gap:4px 16px}
-  .brand{order:1} .nav-main > .menu{order:2} .nav .end{order:3;gap:12px}
-  .sections{order:4;flex-basis:100%;gap:0 16px}
-  .league-name{max-width:40vw}
   .profile{grid-template-columns:1fr}
   .profile .who{padding-bottom:4px}
   .matchup .side{font-size:16px}
@@ -1095,9 +1236,9 @@ details.disc .inside > .lede{margin-top:0}
   .grid td.links a{display:block;margin:2px 0 0}
 }
 
-/* Nothing on these pages animates to say anything -- the one transition is
-   the player card fading in -- but a reader who has asked for stillness gets
-   it outright rather than nearly. */
+/* Nothing on these pages animates to say anything -- the drawer and the
+   rail slide in, and that is all -- and a reader who has asked for
+   stillness gets it outright rather than nearly. */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
     transition-duration:.01ms !important;scroll-behavior:auto !important}

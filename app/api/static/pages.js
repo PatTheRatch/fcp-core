@@ -471,6 +471,34 @@ function startTheme() {
   }
 }
 
+/* ---- the workstation's shared pieces -----------------------------------
+   The components a page builds from once it is migrated
+   (docs/design_system.md): the category glyph scale, the FIT cell, the
+   screener table and a move in the owner's format. None of them works a
+   number out; each is handed a figure the page already holds and draws it. */
+
+/** A negative in the new components carries a true minus sign. */
+const minus = (text) => String(text).replace(/^-/, "−");
+
+/** ESPN's injury status as the few letters a tag has room for. */
+const STATUS_MARKS = {
+  QUESTIONABLE: "Q",
+  DOUBTFUL: "D",
+  PROBABLE: "P",
+  OUT: "OUT",
+  DAY_TO_DAY: "DTD",
+  INJURY_RESERVE: "IR",
+  SUSPENSION: "SUSP",
+};
+const statusMark = (status) => {
+  const key = String(status || "").toUpperCase();
+  return STATUS_MARKS[key] || key.replace(/_/g, " ").slice(0, 4) || "";
+};
+
+/** "BKN · SF": a man's team and position, the mark this site uses for him. */
+const bbMark = (player) =>
+  [player && player.pro_team, player && player.position].filter(Boolean).join(" · ");
+
 /** The page could not be drawn: say what happened, in the page, not the console. */
 function fail(message) {
   const where = $("failed");

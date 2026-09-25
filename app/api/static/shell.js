@@ -1,28 +1,41 @@
-/* The shell: one bar over every page (docs/product.md "Navigation",
-   docs/site.md).
+/* The shell: the workstation's frame around every page (docs/site.md,
+   docs/design_system.md).
 
-     [ League ▾ ]   This week   Standings   Draft   History   My team ▾    [ Account ▾ ]
+     BOX OUT
+     ● OVERVIEW
+     TEAM    Matchup · Roster · Moves · Trades · Season
+     LEAGUE  This week · Standings · Players · Draft · History
+     ───
+     ◈ SCENARIO   Current scenario · n changes
+     ───
+     Patriot Games · 2027 ▾        (the league and season switcher)
+     Account ▾ · Connections · Alerts · Theme ◐
 
-   Drawn into <div id="shell"> from two routes: /auth/me (who this is, his
-   role in each league and his claims on teams) and /leagues (his leagues,
-   each with its name and the seasons held). Loaded after pages.js, whose
-   `get`, `place`, `escape` and URL helpers it uses.
+   A rail down the left on a desk; at a narrower width a top bar whose Menu
+   button brings the same rail in over the page. Drawn into <div id="shell">
+   from two routes: /auth/me (who this is, his role in each league and his
+   claims on teams) and /leagues (his leagues, each with its name and the
+   seasons held). Loaded after pages.js, whose `get`, `place`, `escape` and
+   URL helpers it uses.
 
    * The league is the one in the URL; on a page without one (the account
      pages, the home page) it is the one this browser last looked at, kept
      in localStorage (wrapped: a private window merely forgets it), else his
      first. The switcher lists his leagues, and the seasons of this one.
-   * "My team" is there only in a league where he is a verified manager: this
+   * TEAM is there only in a league where he is a verified manager: this
      season's team, or his newest one in the league. Otherwise it is "Claim
      your team", to the claim page. In single mode, where the owner may read
      every team, a league with no claim falls back to the team the context
      route names as ours, which is what the pages always did.
+   * Two items have no page of their own yet and say so: Roster opens the
+     week page at Tonight, and Players opens it at What if, whose wire is the
+     nearest thing to a player screener that exists.
    * The menus are buttons that open a list of links: Enter, Space or the
      arrow keys open one, the arrows move through it, Escape closes it and
      puts the focus back on its button, and it closes when the focus or a
      click goes elsewhere.
-   * Every page's player card is here too (`cardName`, `wireCards`): the same
-     card on every name, on whichever page prints it.
+   * The inspection drawer is here, and every name's player card opens into
+     it (`cardName`, `wireCards`, `openCard`).
 
    `SHELL` is a promise of what the shell found ({me, league, season,
    myTeam, ...}), for a page that wants to know whose team is whose. */
@@ -32,17 +45,21 @@
 /** Where the last league looked at is kept, per browser. */
 const LEAGUE_KEY = "fcp-league";
 
-const LEAGUE_SECTIONS = [
-  ["week", "This week"],
-  ["standings", "Standings"],
-  ["draft", "Draft"],
-  ["history", "History"],
-];
+/** The team's pages, in the rail's order: [key, word, the page it opens,
+ *  where on it, whether that page is its own yet]. */
 const TEAM_SECTIONS = [
-  ["week", "Week"],
-  ["season", "Season"],
-  ["moves", "Moves"],
-  ["trades", "Trades"],
+  ["week", "Matchup", "week", "", true],
+  ["roster", "Roster", "week", "#tonight-section", false],
+  ["moves", "Moves", "moves", "", true],
+  ["trades", "Trades", "trades", "", true],
+  ["season", "Season", "season", "", true],
+];
+const LEAGUE_SECTIONS = [
+  ["week", "This week", "week", true],
+  ["standings", "Standings", "standings", true],
+  ["players", "Players", null, false],
+  ["draft", "Draft", "draft", true],
+  ["history", "History", "history", true],
 ];
 const ACCOUNT_SECTIONS = [
   ["connections", "Connections"],
@@ -67,19 +84,32 @@ function rememberLeague(id) {
   }
 }
 
-/** The bar's frame, drawn at once so the theme switch is there before any
- *  fetch returns; the links are filled in when /auth/me answers. */
+/** The frame, drawn at once so the name and the theme switch are there
+ *  before any fetch returns; the links are filled in when /auth/me answers. */
 function shellFrame() {
   const host = $("shell");
   if (!host) return;
+  document.body.classList.add("ws");
   host.innerHTML =
-    `<header class="shell"><nav class="nav" aria-label="Site">` +
-    `<a class="brand" href="/" aria-label="{{brand}}, home">{{brand}}</a>` +
-    `<div class="nav-main" id="shell-main"></div>` +
-    `<div class="end"><div id="shell-account"></div>` +
-    `<button class="btn theme" id="theme" type="button" aria-pressed="false" ` +
-    `title="light or dark">Lights down</button></div>` +
-    `</nav></header>`;
+    `<header class="ws-top">` +
+    `<a class="ws-brand" href="/">{{brand}}</a>` +
+    `<span class="ws-where" id="ws-where"></span>` +
+    `<button type="button" class="ws-btn sm" id="ws-menu" aria-controls="ws-rail" ` +
+    `aria-expanded="false">Menu</button></header>` +
+    `<nav class="ws-rail" id="ws-rail" aria-label="Site">` +
+    `<div class="ws-rail-head">` +
+    `<a class="ws-brand" href="/" aria-label="{{brand}}, home">{{brand}}</a>` +
+    `<button type="button" class="ws-btn sm quiet ws-rail-close" id="ws-rail-close">Close</button>` +
+    `</div>` +
+    `<div class="ws-rail-body" id="shell-main"></div>` +
+    `<div class="ws-rail-foot"><div id="shell-account"></div>` +
+    `<button type="button" class="ws-nav ws-theme" id="theme" aria-pressed="false" ` +
+    `title="Light or dark; follows your system until you choose">` +
+    `Theme <span class="ws-theme-state">Light</span> <span aria-hidden="true">◐</span>` +
+    `</button></div>` +
+    `</nav>` +
+    `<div class="ws-scn-bar" id="ws-scn-bar" role="region" aria-label="Scenario" hidden></div>`;
+  wirePhoneNav();
 }
 
 /** `aria-current`: "page" for a link to this very page, "true" for the
@@ -87,21 +117,27 @@ function shellFrame() {
  *  switcher, which opens its newest season). */
 const current = (yes, what) => (yes ? ` aria-current="${what || "page"}"` : "");
 
-/** One menu: a button and the list it opens. */
-function menuHtml(id, label, items, options) {
-  const opts = options || {};
+/** One menu: a button and the list it opens, in place. */
+function menuHtml(id, label, items) {
   return (
-    `<div class="menu${opts.right ? " right" : ""}" data-menu>` +
-    `<button type="button" class="menu-btn${opts.on ? " on" : ""}" id="${id}-btn" ` +
+    `<div class="ws-menu" data-menu>` +
+    `<button type="button" class="ws-menu-btn" id="${id}-btn" ` +
     `aria-expanded="false" aria-controls="${id}-list">` +
-    `${label}<span class="caret" aria-hidden="true">▾</span></button>` +
-    `<ul class="menu-list" id="${id}-list" hidden>${items.join("")}</ul></div>`
+    `${label}<span class="ws-caret" aria-hidden="true">▾</span></button>` +
+    `<ul class="ws-menu-list" id="${id}-list" hidden>${items.join("")}</ul></div>`
   );
 }
 
 const itemHtml = (href, text, on, what) =>
   `<li><a href="${escape(href)}"${current(on, what)}>${text}</a></li>`;
-const groupHtml = (text) => `<li class="group" role="presentation">${text}</li>`;
+const groupHtml = (text) => `<li class="ws-mgroup" role="presentation">${text}</li>`;
+
+/** A link in the rail. A page with none of its own yet says "soon" and
+ *  names, in its title, the page it opens instead. */
+const navHtml = (href, text, on, pending) =>
+  `<li><a class="ws-nav" href="${escape(href)}"${current(on)}` +
+  `${pending ? ` title="${escape(pending)}"` : ""}>${text}` +
+  `${pending ? `<span class="ws-soon">soon</span>` : ""}</a></li>`;
 
 /** The team a viewer manages in this league: this season's, else his newest. */
 function managedTeam(league, season) {
@@ -114,12 +150,12 @@ function managedTeam(league, season) {
 function leagueMenu(ctx, where) {
   const { league, season, leagues } = ctx;
   if (!league) {
-    return menuHtml("league", "No league yet", [
+    return menuHtml("league", `<span class="ws-lname">No league yet</span>`, [
       itemHtml("/account/connections", "Connect a league", false),
       groupHtml("Or open the invite link a league's owner sent you."),
     ]);
   }
-  const onLeaguePage = LEAGUE_SECTIONS.some(([key]) => key === where.section);
+  const onLeaguePage = LEAGUE_SECTIONS.some(([key, , page]) => page && key === where.section);
   const section = onLeaguePage ? where.section : "week";
   const items = [groupHtml("Your leagues")];
   leagues.forEach((each) => {
@@ -152,47 +188,98 @@ function leagueMenu(ctx, where) {
       });
   }
   const label =
-    `<span class="league-name">${escape(league.name || `League ${league.id}`)}</span>` +
-    (season ? ` <span class="season">${season}</span>` : "");
+    `<span class="ws-lname">${escape(league.name || `League ${league.id}`)}</span>` +
+    (season ? ` <span class="ws-season">${season}</span>` : "");
   return menuHtml("league", label, items);
 }
 
-function sectionsHtml(ctx, where) {
+/** The rail's body: Overview, the team's pages, the league's, the scenario
+ *  and the switcher. `?today=` rides along on every link that means it. */
+function railHtml(ctx, where) {
   const { league, season, myTeam, pending } = ctx;
-  if (!league || !season) return "";
-  const here = where.league === league.id;
-  const links = LEAGUE_SECTIONS.map(
-    ([key, text]) =>
-      `<li><a class="navlink" href="${leagueUrl(league.id, season, key)}"` +
-      `${current(here && where.section === key)}>${text}</a></li>`,
-  );
-  if (myTeam) {
-    const ours = where.team === myTeam.espn_team_id && where.season === myTeam.season;
-    const items = TEAM_SECTIONS.map(([key, text]) =>
-      itemHtml(
-        teamUrl(league.id, myTeam.season, myTeam.espn_team_id, key),
-        text,
-        ours && where.section === `team-${key}`,
-      ),
-    );
-    items.unshift(groupHtml(escape(myTeam.name) + (myTeam.season !== season ? `, ${myTeam.season}` : "")));
-    links.push(`<li>${menuHtml("team", "My team", items, { on: ours })}</li>`);
-  } else {
-    const text = pending ? "Claim pending" : "Claim your team";
-    links.push(
-      `<li><a class="navlink" href="/pages/claim/${league.id}/${season}"` +
-      `${current(where.section === "claim")}>${text}</a></li>`,
+  if (!league || !season) {
+    return (
+      `<p class="ws-group">League</p>` +
+      `<ul class="ws-navlist">${navHtml("/account/connections", "Connect a league", false)}</ul>` +
+      `<hr class="ws-sep">${leagueMenu(ctx, where)}`
     );
   }
-  return `<ul class="sections">${links.join("")}</ul>`;
+  const keep = params({ today: where.today, me: where.me });
+  const here = where.league === league.id;
+  const ours =
+    myTeam !== null && where.team === myTeam.espn_team_id && where.season === myTeam.season;
+  const teamPage = (page, anchor) =>
+    teamUrl(league.id, myTeam.season, myTeam.espn_team_id, page) + keep + (anchor || "");
+  const parts = [];
+
+  parts.push(
+    myTeam
+      ? `<a class="ws-nav ws-overview" href="${escape(teamPage("week"))}" ` +
+          `title="The overview is still to come; this is your matchup"><span class="ws-dot"></span>Overview</a>`
+      : `<a class="ws-nav ws-overview" href="${escape(leagueUrl(league.id, season, "week") + keep)}">` +
+          `<span class="ws-dot"></span>Overview</a>`,
+  );
+
+  if (myTeam) {
+    parts.push(
+      `<p class="ws-group">Team <span class="ws-who">${escape(myTeam.name)}` +
+        `${myTeam.season !== season ? `, ${myTeam.season}` : ""}</span></p>`,
+    );
+    parts.push(
+      `<ul class="ws-navlist">` +
+        TEAM_SECTIONS.map(([key, text, page, anchor, own]) =>
+          navHtml(
+            teamPage(page, anchor),
+            text,
+            own && ours && where.section === `team-${key}`,
+            own ? "" : `No page of its own yet: opens ${text === "Roster" ? "Tonight" : "What if"} on the week page`,
+          ),
+        ).join("") +
+        `</ul>`,
+    );
+  } else {
+    parts.push(`<p class="ws-group">Team</p>`);
+    const text = pending ? "Claim pending" : "Claim your team";
+    parts.push(
+      `<ul class="ws-navlist">` +
+        navHtml(`/pages/claim/${league.id}/${season}`, text, where.section === "claim") +
+        `</ul>`,
+    );
+  }
+
+  parts.push(`<p class="ws-group">League</p>`);
+  parts.push(
+    `<ul class="ws-navlist">` +
+      LEAGUE_SECTIONS.map(([key, text, page]) => {
+        if (page) {
+          return navHtml(leagueUrl(league.id, season, page) + keep, text, here && where.section === key);
+        }
+        // Players: no page yet. The wire in What if is the nearest thing.
+        const href = myTeam ? teamPage("week", "#whatif-section") : leagueUrl(league.id, season, "week") + keep;
+        return navHtml(href, text, false, "No page of its own yet: opens the wire in What if on the week page");
+      }).join("") +
+      `</ul>`,
+  );
+
+  const scenarioHref = myTeam ? teamPage("week", "#whatif-section") : "";
+  parts.push(`<hr class="ws-sep">`);
+  parts.push(
+    `<a class="ws-scn" id="ws-scn"${scenarioHref ? ` href="${escape(scenarioHref)}"` : ""}>` +
+      `<span class="ws-scn-mark" aria-hidden="true">◈</span>` +
+      `<span class="ws-scn-word">Scenario</span>` +
+      `<span class="ws-scn-state" id="ws-scn-state">Baseline · no changes</span></a>`,
+  );
+  parts.push(`<hr class="ws-sep">`);
+  parts.push(leagueMenu(ctx, where));
+  return parts.join("");
 }
 
-function accountMenu(ctx, where) {
+/** The rail's foot: the account menu, and Connections and Alerts as links
+ *  of their own. The theme switch is drawn with the frame. */
+function accountHtml(ctx, where) {
   const { me } = ctx;
   const items = [groupHtml(escape(me.email))];
-  ACCOUNT_SECTIONS.forEach(([key, text]) =>
-    items.push(itemHtml(`/account/${key}`, text, where.section === key && where.league === null)),
-  );
+  items.push(itemHtml("/account/projections", "Projections", where.section === "projections"));
   if (me.mode === "single") {
     items.push(groupHtml("Single mode: nobody signs in"));
   } else {
@@ -201,16 +288,33 @@ function accountMenu(ctx, where) {
         `<button type="submit">Sign out</button></form></li>`,
     );
   }
-  const on = ACCOUNT_SECTIONS.some(([key]) => key === where.section);
-  return menuHtml("account", "Account", items, { right: true, on });
+  const links = ACCOUNT_SECTIONS.filter(([key]) => key !== "projections")
+    .map(([key, text]) =>
+      navHtml(`/account/${key}`, text, where.section === key && where.league === null),
+    )
+    .join("");
+  return menuHtml("account", `<span class="ws-lname">Account</span>`, items) +
+    `<ul class="ws-navlist">${links}</ul>`;
+}
+
+/** The words in the top bar at phone width: where this page is. */
+function whereWords(ctx, where) {
+  const team = TEAM_SECTIONS.find(([key]) => where.section === `team-${key}`);
+  if (team) return `${team[1]}${ctx && ctx.myTeam ? ` · ${ctx.myTeam.name}` : ""}`;
+  const league = LEAGUE_SECTIONS.find(([key, , page]) => page && key === where.section);
+  if (league) return league[1];
+  const account = ACCOUNT_SECTIONS.find(([key]) => key === where.section);
+  if (account) return account[1];
+  if (where.section === "claim") return "Claim your team";
+  return "";
 }
 
 /* ---- the menus' behaviour ---------------------------------------------- */
 
 function wireMenus(root) {
   root.querySelectorAll("[data-menu]").forEach((menu) => {
-    const button = menu.querySelector(".menu-btn");
-    const list = menu.querySelector(".menu-list");
+    const button = menu.querySelector(".ws-menu-btn");
+    const list = menu.querySelector(".ws-menu-list");
     const items = () => Array.from(list.querySelectorAll("a, button"));
     const close = (refocus) => {
       list.hidden = true;
@@ -236,6 +340,7 @@ function wireMenus(root) {
         open("last");
       } else if (event.key === "Escape" && !list.hidden) {
         event.preventDefault();
+        event.stopPropagation();
         close(true);
       }
     });
@@ -248,6 +353,7 @@ function wireMenus(root) {
         all[(move + all.length) % all.length].focus();
       } else if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         close(true);
       }
     });
@@ -269,6 +375,41 @@ document.addEventListener("click", (event) => {
     if (!menu.contains(event.target) && menu.closeMenu) menu.closeMenu(false);
   });
 });
+
+/* ---- the rail at phone width ------------------------------------------- */
+
+let navScrim = null;
+
+function setPhoneNav(open, refocus) {
+  const button = $("ws-menu");
+  document.body.classList.toggle("ws-nav-open", open);
+  if (button) button.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    if (!navScrim) {
+      navScrim = document.createElement("div");
+      navScrim.className = "ws-scrim";
+      navScrim.onclick = () => setPhoneNav(false, true);
+    }
+    document.body.appendChild(navScrim);
+    const first = document.querySelector("#ws-rail a, #ws-rail button");
+    if (first) first.focus();
+  } else {
+    if (navScrim && navScrim.parentNode) navScrim.parentNode.removeChild(navScrim);
+    if (refocus && button) button.focus();
+  }
+}
+
+function wirePhoneNav() {
+  const button = $("ws-menu");
+  const close = $("ws-rail-close");
+  if (button) button.onclick = () => setPhoneNav(!document.body.classList.contains("ws-nav-open"));
+  if (close) close.onclick = () => setPhoneNav(false, true);
+  window.addEventListener("resize", () => {
+    if (window.innerWidth >= 960 && document.body.classList.contains("ws-nav-open")) {
+      setPhoneNav(false, false);
+    }
+  });
+}
 
 /* ---- what the shell knows ---------------------------------------------- */
 
@@ -344,11 +485,113 @@ function seasonLinks(ctx, where) {
 const leagueName = (ctx, id) =>
   ctx && ctx.league && ctx.league.name ? ctx.league.name : `League ${id}`;
 
-/* ---- the player card ----------------------------------------------------
-   Every page that prints a name can hang a card off it: hover on a desktop,
-   tap on a phone, where it comes up as a sheet along the bottom. It lives
-   here rather than in one page because the week, the season and the moves
-   pages all want the same one, and a second copy of it would drift.
+/* ---- the inspection drawer ----------------------------------------------
+   One panel along the right (a sheet from the bottom on a phone) that a
+   thing opens into so it can be inspected without leaving the page: a
+   player's card, or the account of how a number was worked out. It does
+   not trap the page: on a desk the page stays live beside it, and the
+   drawer stays until it is closed (the button, or Escape, which puts the
+   focus back where it came from). */
+
+const DRAWER = (() => {
+  let box = null;
+  let scrim = null;
+  let trigger = null;
+  let onClose = null;
+  let key = null;
+
+  function frame() {
+    if (box) return box;
+    box = document.createElement("aside");
+    box.className = "ws-drawer";
+    box.id = "ws-drawer";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "false");
+    box.setAttribute("aria-labelledby", "ws-drawer-title");
+    box.innerHTML =
+      `<div class="ws-drawer-head"><div>` +
+      `<span class="ws-k" id="ws-drawer-kicker"></span>` +
+      `<h2 class="ws-drawer-title" id="ws-drawer-title"></h2>` +
+      `<p class="ws-drawer-meta ws-bb" id="ws-drawer-meta"></p></div>` +
+      `<button type="button" class="ws-btn sm ws-drawer-x" id="ws-drawer-x">Close</button></div>` +
+      `<div class="ws-drawer-body" id="ws-drawer-body"></div>`;
+    scrim = document.createElement("div");
+    scrim.className = "ws-drawer-scrim";
+    document.body.appendChild(box);
+    document.body.appendChild(scrim);
+    $("ws-drawer-x").onclick = () => close(true);
+    scrim.onclick = () => close(true);
+    return box;
+  }
+
+  function fill(spec) {
+    $("ws-drawer-kicker").textContent = spec.kicker || "";
+    $("ws-drawer-title").textContent = spec.title || "";
+    $("ws-drawer-meta").innerHTML = spec.meta || "";
+    $("ws-drawer-meta").hidden = !spec.meta;
+    $("ws-drawer-body").innerHTML = spec.body || "";
+    wireCards($("ws-drawer-body"));
+  }
+
+  /** Open it on `spec` = {key, kicker, title, meta (html), body (html),
+   *  trigger, onClose, focus}. The focus moves into it unless `focus` is
+   *  false (a drawer following the pointer must not steal it). */
+  function open(spec) {
+    frame();
+    if (trigger && trigger !== spec.trigger) trigger.setAttribute("aria-expanded", "false");
+    const previous = onClose;
+    onClose = null;
+    if (previous && spec.key !== key) previous();
+    key = spec.key || null;
+    trigger = spec.trigger || null;
+    onClose = spec.onClose || null;
+    if (trigger && trigger.setAttribute) trigger.setAttribute("aria-expanded", "true");
+    fill(spec);
+    box.classList.add("on");
+    if (spec.focus !== false) $("ws-drawer-x").focus({ preventScroll: true });
+  }
+
+  /** New contents for the drawer that is open, if it is still `forKey`'s. */
+  function update(forKey, spec) {
+    if (!box || key !== forKey) return;
+    fill(spec);
+  }
+
+  function close(refocus) {
+    if (!box || !box.classList.contains("on")) return;
+    box.classList.remove("on");
+    const was = trigger;
+    if (was && was.setAttribute) was.setAttribute("aria-expanded", "false");
+    trigger = null;
+    key = null;
+    const after = onClose;
+    onClose = null;
+    if (after) after();
+    if (refocus && was && was.focus && document.contains(was)) was.focus();
+  }
+
+  return {
+    open,
+    update,
+    close,
+    isOpen: () => Boolean(box && box.classList.contains("on")),
+    keyOf: () => key,
+  };
+})();
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (document.body.classList.contains("ws-nav-open")) {
+    setPhoneNav(false, true);
+    return;
+  }
+  if (DRAWER.isOpen()) DRAWER.close(true);
+});
+
+/* ---- the player card, in the drawer --------------------------------------
+   Every page that prints a name hangs the card off it, and the card opens
+   into the drawer: a click on a desk, a tap on a phone, Enter from the
+   keyboard -- all one click, so the first tap always opens it.
 
    The card is `GET .../players/{id}/card`, which is the reports' own numbers
    (`app/inseason/card.py`) -- so what it says about a man is what the table
@@ -357,18 +600,20 @@ const leagueName = (ctx, id) =>
    Two triggers, because a roster row is already a button that puts a man in
    a deal and cannot also be the button that opens his card:
 
-     data-card="ESPN id"        hover, focus and tap all open it
-     data-card-hover="ESPN id"  hover and focus only, for a control of its own
+     data-card="ESPN id"        a click opens the drawer on him
+     data-card-hover="ESPN id"  while the drawer is showing a card, hovering
+                                or focusing this one shows his instead; it
+                                never opens the drawer by itself
 
    `cardName(id, text)` is the markup for a name that opens one; call
-   `wireCards(root)` after any innerHTML that writes some. */
+   `wireCards(root)` after any innerHTML that writes some. `CARD_SCOPE`
+   says which league, season and day the card is read in when the page's
+   own address does not. */
 
 /** One fetch per player per page, kept for as long as the page is open. */
 const CARDS = new Map();
 
-let cardBox = null;
-let cardFor = null; // the trigger the card is open for
-let cardPinned = false; // opened by a tap: it stays until it is dismissed
+const CARD_SCOPE = { league: null, season: null, today: null };
 
 const phoneWidth = () => window.matchMedia("(max-width: 700px)").matches;
 
@@ -378,44 +623,22 @@ const cardName = (id, text, cls) =>
   `<button type="button" class="pname${cls ? ` ${cls}` : ""}" data-card="${Number(id)}">` +
   `${text === undefined ? "" : text}</button>`;
 
-function cardFrame() {
-  if (cardBox) return cardBox;
-  cardBox = document.createElement("div");
-  cardBox.className = "pcard";
-  cardBox.id = "pcard";
-  cardBox.setAttribute("role", "dialog");
-  cardBox.setAttribute("aria-label", "Player card");
-  document.body.appendChild(cardBox);
-  cardBox.addEventListener("click", (event) => {
-    if (event.target.closest(".cx")) hideCard(true);
-  });
-  return cardBox;
-}
-
-/** The nine per game, in the shared strip, plus what the line rests on. */
-function cardHtml(card) {
-  if (card === null) return `<div class="cn">Not found</div>`;
-  if (card.loading) return `<div class="cn">${escape(card.name || "…")}</div>` +
-    `<p class="cm">reading his line…</p>`;
-  const what = [card.position, card.pro_team].filter(Boolean).join(" · ");
-  const flags = [];
-  if (card.hurt) {
-    flags.push(
-      escape(String(card.injury_status || "hurt").toLowerCase()) +
-        (card.expected_return_date ? `, back ${dayName(card.expected_return_date)}` : ""),
-    );
-  }
-  if (card.thin) flags.push(`thin: ${count(card.games_so_far, "game")} of his own`);
-  const strip = stripHtml(
-    Object.fromEntries(CATS.map((cat) => [cat, { text: showCat(cat, card.per_game[cat]) }])),
-  );
+/** The nine per game, then what the line rests on, then what is wrong. */
+function cardBodyHtml(card) {
+  if (card === null) return `<div class="pcard"><p class="ws-loading">Not found.</p></div>`;
+  if (card.loading) return `<div class="pcard"><p class="ws-loading">Reading his line…</p></div>`;
+  const nine = CATS.map(
+    (cat) =>
+      `<div><span class="ws-k">${escape(cat)}</span><b>${escape(showCat(cat, card.per_game[cat]))}</b></div>`,
+  ).join("");
   const facts = [
-    ["Games left", `${card.games_left} through day ${card.last_scoring_period}`],
+    ["Games left", `<span class="ws-data">${card.games_left}</span> through day ${card.last_scoring_period}`],
     [
       "Playoff games",
       card.playoff_first === null
         ? "no playoff weeks stored"
-        : `${card.playoff_games} in days ${card.playoff_first}–${card.playoff_last}`,
+        : `<span class="ws-data">${card.playoff_games}</span> in days ` +
+          `${card.playoff_first}–${card.playoff_last}`,
     ],
     [
       "Rests on",
@@ -424,73 +647,71 @@ function cardHtml(card) {
         `(${escape(card.projection_source)})`,
     ],
   ];
+  const flags = [];
+  if (card.hurt) {
+    flags.push(
+      escape(String(card.injury_status || "hurt").toLowerCase()) +
+        (card.expected_return_date ? `, back ${dayName(card.expected_return_date)}` : ""),
+    );
+  }
+  if (card.thin) flags.push(`thin: ${count(card.games_so_far, "game")} of his own`);
   return (
-    `<button class="cx" type="button" aria-label="Close">&times;</button>` +
-    `<div class="cn">${escape(card.name)}</div>` +
-    `<p class="cm">${escape(what || "no team stored")} · per game, day ${card.today}</p>` +
-    `<div class="strip">${strip}</div>` +
-    `<dl class="facts">` +
+    `<div class="pcard">` +
+    `<section class="ws-dsec"><span class="ws-k">Per game, day ${card.today}</span>` +
+    `<div class="ws-nine">${nine}</div></section>` +
+    `<section class="ws-dsec"><span class="ws-k">What it rests on</span>` +
+    `<dl class="ws-facts">` +
     facts.map(([label, value]) => `<dt>${escape(label)}</dt><dd>${value}</dd>`).join("") +
-    `</dl>` +
-    (flags.length ? `<p class="flag">${flags.join(" · ")}</p>` : "")
+    `</dl></section>` +
+    (flags.length ? `<p class="flag">${flags.join(" · ")}</p>` : "") +
+    `</div>`
   );
 }
 
-/** Below the name, flipped above it when there is no room, never off an
- *  edge. A phone ignores all of it: the stylesheet puts the card along the
- *  bottom, where a thumb can reach it. */
-function placeCard(trigger) {
-  if (phoneWidth()) {
-    cardBox.style.left = "";
-    cardBox.style.top = "";
-    return;
-  }
-  const at = trigger.getBoundingClientRect();
-  const width = 320;
-  const height = cardBox.offsetHeight || 200;
-  const left = Math.max(12, Math.min(window.innerWidth - width - 12, at.left));
-  let top = at.bottom + 6;
-  if (top + height > window.innerHeight - 8) top = at.top - height - 6;
-  cardBox.style.left = `${left}px`;
-  cardBox.style.top = `${Math.max(8, top)}px`;
+/** The drawer's head for a card: his name, and PHI · SG with the flag. */
+function cardSpec(card, name) {
+  const meta = card && !card.loading
+    ? `<b>${escape(bbMark(card) || "no team stored")}</b>` +
+      (card.hurt
+        ? ` <span class="ws-tag" title="${escape(String(card.injury_status || "hurt").toLowerCase())}">` +
+          `${escape(statusMark(card.injury_status) || "hurt")}</span>`
+        : "")
+    : "";
+  return {
+    kicker: "Player",
+    title: card && card.name ? card.name : name || "…",
+    meta,
+    body: cardBodyHtml(card),
+  };
 }
 
-async function showCard(trigger, pinned) {
-  const id = Number(trigger.dataset.card || trigger.dataset.cardHover);
+/** Open the drawer on a man's card, reading it the first time. */
+async function openCard(id, trigger, options) {
+  const opts = options || {};
   if (!Number.isFinite(id) || id <= 0) return;
   const where = place();
-  if (where.league === null || where.season === null) return;
-  const box = cardFrame();
-  cardFor = trigger;
-  cardPinned = Boolean(pinned) || phoneWidth();
-  box.classList.toggle("pinned", cardPinned);
-  box.classList.add("on");
-  if (!CARDS.has(id)) {
-    box.innerHTML = cardHtml({ loading: true, name: trigger.dataset.cardName });
-    placeCard(trigger);
-    const query = new URLSearchParams();
-    if (where.today !== null) query.set("today", where.today);
-    const answer = await get(
-      `/leagues/${where.league}/seasons/${where.season}/players/${id}/card?${query.toString()}`,
-      { quiet: true },
-    );
-    CARDS.set(id, answer.ok ? answer.body : null);
-    if (cardFor !== trigger) return; // the reader moved on while it loaded
-  }
-  box.innerHTML = cardHtml(CARDS.get(id));
-  placeCard(trigger);
-  if (cardPinned) {
-    const close = box.querySelector(".cx");
-    if (close) close.focus();
-  }
-}
-
-function hideCard(refocus) {
-  if (!cardBox) return;
-  cardBox.classList.remove("on", "pinned");
-  if (refocus && cardFor && cardFor.focus) cardFor.focus();
-  cardFor = null;
-  cardPinned = false;
+  const league = CARD_SCOPE.league !== null ? CARD_SCOPE.league : where.league;
+  const season = CARD_SCOPE.season !== null ? CARD_SCOPE.season : where.season;
+  const today = CARD_SCOPE.today !== null ? CARD_SCOPE.today : where.today;
+  if (league === null || season === null) return;
+  const key = `card-${id}`;
+  const name = trigger && trigger.textContent ? trigger.textContent.trim() : "";
+  DRAWER.open({
+    key,
+    trigger,
+    focus: opts.focus,
+    onClose: opts.onClose,
+    ...cardSpec(CARDS.has(id) ? CARDS.get(id) : { loading: true }, name),
+  });
+  if (CARDS.has(id)) return;
+  const query = new URLSearchParams();
+  if (today !== null) query.set("today", today);
+  const answer = await get(
+    `/leagues/${league}/seasons/${season}/players/${id}/card?${query.toString()}`,
+    { quiet: true },
+  );
+  CARDS.set(id, answer.ok ? answer.body : null);
+  DRAWER.update(key, cardSpec(CARDS.get(id), name));
 }
 
 /** Attach the card to every name in `root`. Safe to call again: the handlers
@@ -498,65 +719,48 @@ function hideCard(refocus) {
 function wireCards(root) {
   (root || document).querySelectorAll("[data-card],[data-card-hover]").forEach((trigger) => {
     const tappable = trigger.dataset.card !== undefined;
-    trigger.onmouseenter = () => {
-      if (!cardPinned && !phoneWidth()) showCard(trigger, false);
-    };
-    trigger.onmouseleave = () => {
-      if (!cardPinned && cardFor === trigger) hideCard(false);
-    };
-    /* Not at phone width, for the reason hovering is not: there the card is
-       pinned whoever opened it, so a focus that came with the tap pinned it
-       a moment before the tap itself arrived -- and the tap then read as the
-       second one and closed it again. The first tap on a name opened
-       nothing and the second opened it. A thumb has no focus of its own; a
-       keyboard opens the card with Enter, which is the click below. */
-    trigger.onfocus = () => {
-      if (!cardPinned && !phoneWidth()) showCard(trigger, false);
-    };
-    trigger.onblur = () => {
-      if (!cardPinned && cardFor === trigger) hideCard(false);
-    };
-    if (!tappable) return;
+    const id = Number(trigger.dataset.card || trigger.dataset.cardHover);
+    if (!tappable) {
+      // Hover and focus only follow a drawer that is already showing a
+      // card, on a desk; they never open one, so nothing opens by accident
+      // and a tap is never read as a second one.
+      const follow = () => {
+        const showing = String(DRAWER.keyOf() || "");
+        if (!phoneWidth() && DRAWER.isOpen() && showing.startsWith("card-") && showing !== `card-${id}`) {
+          openCard(id, null, { focus: false });
+        }
+      };
+      trigger.onmouseenter = follow;
+      trigger.onfocus = follow;
+      return;
+    }
+    trigger.setAttribute("aria-haspopup", "dialog");
+    trigger.setAttribute("aria-expanded", DRAWER.keyOf() === `card-${id}` ? "true" : "false");
     trigger.onclick = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (cardPinned && cardFor === trigger) {
-        hideCard(false);
+      if (DRAWER.isOpen() && DRAWER.keyOf() === `card-${id}`) {
+        DRAWER.close(false);
         return;
       }
-      showCard(trigger, true);
+      openCard(id, trigger);
     };
   });
 }
 
-document.addEventListener("click", (event) => {
-  if (!cardPinned) return;
-  if (event.target.closest && (event.target.closest("#pcard") || event.target.closest("[data-card]")))
-    return;
-  hideCard(false);
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && cardFor) hideCard(true);
-});
-/* A card follows the name it belongs to rather than closing when the page
-   moves. Closing was the first cut, and it broke the keyboard: tabbing to a
-   name below the fold scrolls it into view, which fired this and shut the
-   card in the same breath as opening it. On a phone the sheet is fixed to
-   the bottom and `placeCard` leaves it there. */
-window.addEventListener("scroll", () => {
-  if (cardFor) placeCard(cardFor);
-}, { passive: true });
-
 async function startShell() {
   const where = place();
   shellFrame();
-  const ctx = await shellContext(where);
   const main = $("shell-main");
   const account = $("shell-account");
+  const whereText = $("ws-where");
+  if (whereText) whereText.textContent = whereWords(null, where);
+  const ctx = await shellContext(where);
   if (!ctx || !main || !account) return ctx;
   if (ctx.league && where.league !== null) rememberLeague(ctx.league.id);
-  main.innerHTML = leagueMenu(ctx, where) + sectionsHtml(ctx, where);
-  account.innerHTML = accountMenu(ctx, where);
+  main.innerHTML = railHtml(ctx, where);
+  account.innerHTML = accountHtml(ctx, where);
+  if (whereText) whereText.textContent = whereWords(ctx, where);
   wireMenus(main);
   wireMenus(account);
   return ctx;
