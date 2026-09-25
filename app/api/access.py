@@ -387,7 +387,8 @@ TEAM_PLAN_PAGE = Depends(require_team_plan_page)
 REFUSED_PAGE = """<!doctype html>
 <html lang="en" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
+<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css">
+<link rel="icon" href="/pages/static/favicon.svg" type="image/svg+xml"></head>
 <body><main class="page"><header class="mast"><p class="eyebrow">{brand}</p>
 <p class="sub">{message}</p><p class="sub"><a href="/">Your leagues</a></p></header></main>
 </body></html>

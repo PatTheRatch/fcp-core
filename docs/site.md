@@ -20,7 +20,9 @@ Code: `app/api/site.py` (the routes, and the one JSON route the pages
 needed), `app/api/static/shell.js` (the rail, the drawer, the scenario bar),
 `app/api/static/scenario.js` (the scenario state), `app/api/static/*.html`
 (one file per page), `app/api/static/pages.css` and `pages.js` (shared;
-docs/design_system.md is the language they are written in).
+docs/design_system.md is the language they are written in), and the icon
+every page declares, `favicon.svg` and `apple-touch-icon.png`, copied from
+`brand/box-out-icon.svg` (the brand folder is the source; `brand/README.md`).
 Tests: `tests/test_shell.py`. Plain HTML, CSS and JavaScript, no framework
 and no build step, each file read per request so an edit shows on a refresh
 (docs/in_season_pages.md says why).

@@ -97,6 +97,13 @@ def home(request: Request, session: SessionDep, settings: SettingsDep) -> HTMLRe
     return _page("landing.html" if viewer is None else "home.html")
 
 
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> RedirectResponse:
+    """The address a browser tries on its own before it has read a page's
+    `<link rel="icon">`: sent to the one icon the pages declare."""
+    return RedirectResponse("/pages/static/favicon.svg", status_code=MOVED)
+
+
 @router.get("/design", include_in_schema=False, response_class=HTMLResponse)
 def design_page() -> HTMLResponse:
     """The workstation's design language, drawn on a league's stored season.

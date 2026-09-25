@@ -86,8 +86,17 @@ def test_fill_replaces_every_token_and_leaves_the_rest_alone() -> None:
 # ---------------------------------------------------------------------------
 
 
+#: The one served file that is not text: the touch icon, bytes with no name in them.
+BINARY = {".png"}
+
+
 def served_files() -> list[Path]:
-    return sorted(path for folder in SERVED_DIRS for path in folder.iterdir() if path.is_file())
+    return sorted(
+        path
+        for folder in SERVED_DIRS
+        for path in folder.iterdir()
+        if path.is_file() and path.suffix not in BINARY
+    )
 
 
 def test_no_served_file_says_the_old_name() -> None:
@@ -159,6 +168,13 @@ def test_a_served_page_says_the_new_name_and_no_token(single: TestClient, path: 
     assert page.status_code == 200, path
     assert offences(page.text) == [], path
     assert UNFILLED.search(page.text) is None, f"{path} was served without brand.fill"
+
+
+@pytest.mark.parametrize("path", [p for p in PAGES if "/pages/static/" not in p])
+def test_a_served_page_declares_the_icon(single: TestClient, path: str) -> None:
+    page = single.get(path)
+    assert page.status_code == 200, path
+    assert '<link rel="icon" href="/pages/static/favicon.svg" type="image/svg+xml">' in page.text
 
 
 def test_the_shell_draws_the_name(single: TestClient) -> None:
