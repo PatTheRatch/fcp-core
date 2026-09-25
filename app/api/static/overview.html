@@ -111,8 +111,8 @@
         with <span class="mono">?today=</span> still shows the latest. The projected finish (the
         projection's mean simulated record) and the playoff odds are from
         <span class="mono">projected</span>, the answer the Standings page's Projected view
-        draws; that projection still seeds by matchups, so its places are its own order until it
-        moves to the category record.</p>
+        draws; that projection orders its seasons and seeds their playoffs by the same category
+        rule as the standings, so the two places are one order.</p>
     </div>
   </section>
 
@@ -312,8 +312,8 @@ function facts() {
       label: "Place",
       figure: `<b>${at >= 0 ? escape(ordinal(at + 1)) : dash}</b>${soon}`,
       rows: [
-        ["Now", `${at >= 0 ? ordinal(at + 1) : dash} of ${st.length} by the category record (${own ? `${wlt(own.categories_won, own.categories_lost, own.categories_tied)}, a share of ${shareText(own)}` : dash}): the league's unit is categories, and its order is the share of categories won (a tie counts half), then categories won, then fewest lost, as ESPN's standing is. The records are <span class="ws-data">categories_won</span>, <span class="ws-data">categories_lost</span> and <span class="ws-data">categories_tied</span> from <span class="ws-data">GET ${escape(BASE)}/standings</span>, put in that order here`],
-        ["Most often", mine ? `${ordinal(likeliest.place)}, in ${pct(likeliest.share)} of the simulated seasons: the largest of your <span class="ws-data">finishes</span> in <span class="ws-data">GET ${escape(BASE)}/projected${escape(Q)}</span>. That is the projection's own order, which still seeds by matchups; it moves to the category record when the projection does` : "no projection"],
+        ["Now", `${at >= 0 ? ordinal(at + 1) : dash} of ${st.length} by the category record (${own ? `${wlt(own.categories_won, own.categories_lost, own.categories_tied)}, a share of ${shareText(own)}` : dash}): the league's unit is categories, and its order is ${own && own.order_note ? escape(own.order_note) : "the share of categories won (a tie counts half), then the tied teams' record against each other, then categories won, then fewest lost"}, as ESPN's standing is. The place is the route's own <span class="ws-data">place</span>; the records are <span class="ws-data">categories_won</span>, <span class="ws-data">categories_lost</span> and <span class="ws-data">categories_tied</span> from <span class="ws-data">GET ${escape(BASE)}/standings</span>, put in that order here`],
+        ["Most often", mine ? `${ordinal(likeliest.place)}, in ${pct(likeliest.share)} of the simulated seasons: the largest of your <span class="ws-data">finishes</span> in <span class="ws-data">GET ${escape(BASE)}/projected${escape(Q)}</span>. The projection orders its simulated seasons and seeds their playoffs by the same category rule as the standings (app/scoring/ranking.py), so the two places are one order` : "no projection"],
         ["Playoffs", mine ? `${pct(mine.playoff_odds)}: <span class="ws-data">playoff_odds</span>, the same field the Standings page's Projected view prints` : "no projection"],
         ["Built", p ? `on day ${p.as_of}, over ${count(p.n_sims, "simulated season")}` : dash],
         ["Its record", p ? escape(p.calibration_note || "") : dash],
@@ -625,9 +625,9 @@ const CUT_SIDE = 2;
 /* The league's unit is categories, and its standings' order is the category
    record, as ESPN's own `standing` is: the share of categories won, a tie
    counting half, then categories won, then fewest lost (docs/site.md,
-   "Overview"). `/standings` still sorts by matchups won, so the page puts
-   its rows in this order itself; a record with nothing decided yet (before
-   the draft, 0–0) keeps the route's order. */
+   "Overview"). `/standings` orders by the category rule and says each
+   team's `place` and `share`; the page uses those, and sorts by share
+   itself only for an answer without them. */
 
 /** A team's share of the categories decided, a tie counting half; null
  *  with none decided. */
@@ -638,12 +638,18 @@ function catShare(row) {
 
 /** ".631", as the Standings page writes a share. */
 const shareText = (row) => {
-  const share = catShare(row);
+  const share = isNum(row.share) ? row.share : catShare(row);
   return isNum(share) ? share.toFixed(3).replace(/^0/, "") : dash;
 };
 
-/** The standings rows in the category record's order. */
+/** The standings rows in the category record's order: the route's own
+ *  `place` when it carries one (app/scoring/ranking.py -- the same rule the
+ *  projection seeds by, with the tied teams' record against each other as
+ *  the tiebreak), else the share order worked out here. */
 function byCategories(rows) {
+  if (rows.length && rows.every((row) => isNum(row.place) && row.place > 0)) {
+    return rows.slice().sort((a, b) => a.place - b.place);
+  }
   const key = (row) => (isNum(catShare(row)) ? catShare(row) : -1);
   return rows
     .map((row, i) => ({ row, i }))

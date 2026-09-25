@@ -318,17 +318,19 @@ opens the drawer on the route, the field and the day it came from:
 - **Place** "1st → 3rd most often · playoffs 94%": the team's place by the
   category record (below), then the largest of the team's `finishes` and its
   `playoff_odds` from `/projected`, the answer the Standings page's
-  Projected view draws. The projection still seeds by matchups, so "most
-  often" is its own order, and the drawer says so; it moves to the category
-  record when the projection does. `calibration_short` sits under the line,
-  in view.
+  Projected view draws. Since the ranking revision (docs/projected_record.md
+  R6) the projection orders and seeds by the same category rule as the
+  standings, so "now" and "most often" are one order. `calibration_short`
+  sits under the line, in view.
 
 **The league's unit is categories; the standings' order is the category
 record, as ESPN's is**: the share of categories won, a tie counting half
-((W + T/2) / (W + L + T)), then categories won, then fewest lost. ESPN's own
-`standing` for 2024, 2025 and 2026 follows it, not matchup wins. `/standings`
-still sorts by matchups won (a backend job moves it), so the Overview puts
-the route's rows in this order itself and changes nothing the route says.
+((W + T/2) / (W + L + T)), then the tied teams' record against each other,
+then categories won, then fewest lost (`app/scoring/ranking.py`). ESPN's own
+`standing` for every stored season follows it, not matchup wins. `/standings`
+orders by that rule and carries each team's `place` and `share`; the
+Overview uses them, and sorts by share itself only for an answer without
+them.
 The MATCHUP section is still this week's head-to-head, because that is what
 is played; its headline is the categories expected (5.10 – 3.90), never a
 matchup won.
