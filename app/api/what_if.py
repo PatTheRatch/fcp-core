@@ -36,8 +36,9 @@ A change that cannot be made is a 422 with a sentence a manager can act on,
 in the house style of docs/trades.md section 10: a man dropped who is not on
 the roster, a man added who is not on the wire, a roster left over or under
 size, a roster outside the position limits, an injured-reserve move with no
-free place or no injury. A season with nothing to judge from answers 200 with
-`readiness`, exactly as the trade routes do.
+free place or no injury. A season with nothing to judge from -- not drafted
+yet, no schedule, no roster -- answers 200 with `readiness` and every number
+empty, exactly as the trade routes do, before any name is read.
 """
 
 from typing import Annotated
@@ -110,7 +111,20 @@ def what_if_report(
     the projected-standings engine run twice, once as things stand and once
     with this roster changed, on the same seed.
     """
-    calendar = pickups._ready(session, league_season)
+    calendar, missing = pickups.readiness(session, league_season)
+    if missing or calendar is None:
+        # Before the names are read: a season that cannot be judged says so
+        # once, whoever was named, rather than a 422 about a man who is on
+        # nobody's roster because nobody has one yet.
+        day_asked = pickups._asked_day(calendar, today)
+        return WhatIfOut(
+            readiness=pickups.readiness_out(session, league_season, missing),
+            season=int(league_season.season),
+            today=day_asked,
+            today_date=calendar.date_of(day_asked) if calendar is not None and day_asked else None,
+            espn_team_id=int(team.espn_team_id),
+            team_name=str(team.name),
+        )
     day = pickups._day(calendar, today)
     bars = calibration.bars(session, int(league_season.league_id))
     try:

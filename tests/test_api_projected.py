@@ -4,7 +4,8 @@ The same small season the pickup routes are tested on: two teams, a
 three-slot lineup, and an NBA schedule everyone plays every day. What matters
 here is not the numbers -- `tests/test_inseason_projected.py` pins those -- but
 the two scopes, the shapes they answer, the day they are about, and the
-refusal on a season with nothing to build from.
+answer on a season with nothing to build from -- one with no schedule, and
+2027 before its auction, whose ghost rosters are not rosters.
 """
 
 from collections.abc import Iterator
@@ -14,6 +15,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
+from app.api.pickups import NO_ROSTER, NO_SCHEDULE, NOT_DRAFTED
+from app.inseason import drafted
 from app.inseason.projected_calibration import CALIBRATION_NOTE, SHORT_NOTE
 from app.main import create_app
 from tests.pickups_db import (
@@ -25,10 +28,20 @@ from tests.pickups_db import (
     projected,
     snapshot,
 )
-from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.scoring_db import (
+    AUCTION_NOTE,
+    BEFORE_THE_AUCTION,
+    LEAGUE_ID,
+    held,
+    league_season,
+    matchup,
+    player,
+    undrafted_season,
+)
 
 SEASON = 2026
 QUIET_SEASON = 2025
+UNDRAFTED = 2027
 HOME, AWAY = 1, 2
 EVERY_DAY = list(range(1, 15))
 
@@ -87,8 +100,18 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
         games(session, 10, EVERY_DAY, season=SEASON)
         # A season nobody listened to: teams and settings, no schedule.
         league_season(session, season=QUIET_SEASON, days_per_period=7)
+        # 2027 before its auction: a schedule and a roster on every day, all
+        # of it ESPN's pre-draft feed.
+        undrafted_season(session, days_per_period=7)
+        games(session, 10, EVERY_DAY, season=UNDRAFTED)
         session.commit()
     yield scoring_factory
+
+
+@pytest.fixture(autouse=True)
+def before_the_auction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The morning the ghost rosters were found, so 2027's auction is ahead."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: BEFORE_THE_AUCTION)
 
 
 @pytest.fixture
@@ -210,10 +233,47 @@ def test_the_day_moves_the_week_being_played(client: TestClient) -> None:
     assert next_week["periods"] == [2]
 
 
-def test_a_season_with_nothing_to_build_from_is_refused(client: TestClient) -> None:
-    refused = client.get(league_url(season=QUIET_SEASON))
-    assert refused.status_code == 409
-    assert "nothing to build" in refused.json()["detail"]
+def test_a_season_with_nothing_to_build_from_says_so(client: TestClient) -> None:
+    """Not a 409 since 2026-09-25: a 200 with `readiness`, and no table."""
+    answer = client.get(league_url(season=QUIET_SEASON))
+    assert answer.status_code == 200
+    body = answer.json()
+    assert body["readiness"]["missing"] == [NO_SCHEDULE, NO_ROSTER]
+    assert "nothing to build" in body["readiness"]["note"]
+    assert body["teams"] == [] and body["periods"] == []
+    assert body["as_of"] is None, "no schedule, so no day to be about"
+
+
+def test_the_standings_before_the_auction_project_nobody(client: TestClient) -> None:
+    """The league route is the Standings page's projected tab and the league
+    week page's chances: before the draft, readiness and an empty table."""
+    answer = client.get(league_url(season=UNDRAFTED), params={"today": 1})
+
+    assert answer.status_code == 200
+    body = answer.json()
+    assert body["readiness"] == {"ready": False, "missing": [NOT_DRAFTED], "note": AUCTION_NOTE}
+    assert (body["league_id"], body["season"], body["as_of"]) == (LEAGUE_ID, UNDRAFTED, 1)
+    assert body["as_of_date"] == "2025-10-21"
+    assert body["teams"] == [] and body["periods"] == []
+    for empty in ("matchup_period", "n_sims", "seed", "source_note", "basis", "playoff_note"):
+        assert body[empty] is None, empty
+    # The method's published record is true of any season, and says nothing false here.
+    assert body["calibration_note"] == CALIBRATION_NOTE
+    assert body["stored"] is False
+
+
+def test_one_teams_slice_before_the_auction_is_the_same_answer(client: TestClient) -> None:
+    """The team route used to 409 when its team was missing from the table;
+    before the draft the table is empty on purpose, and it says why."""
+    answer = client.get(team_url(season=UNDRAFTED), params={"today": 1})
+
+    assert answer.status_code == 200
+    assert answer.json() == client.get(league_url(season=UNDRAFTED), params={"today": 1}).json()
+
+
+def test_a_projected_season_carries_no_readiness_field(client: TestClient) -> None:
+    for where in (league_url(), team_url()):
+        assert "readiness" not in client.get(where, params={"today": 1}).json()
 
 
 def test_a_team_that_is_not_in_the_season_is_a_404(client: TestClient) -> None:

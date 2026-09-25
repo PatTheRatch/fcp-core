@@ -19,9 +19,25 @@ make it. An empty `recommended` says nothing cleared the bar, which is an
 answer in itself (docs/pickups.md section 4).
 
 Neither route talks to ESPN. Both read what the listener and the ingest
-have already stored, which is why a season the listener has never seen is
-a 409 rather than an empty report: the difference between "nothing clears
-the bar" and "no rows to decide on" is the whole value of the answer.
+have already stored, which is why a season with nothing to decide on
+answers with `readiness` and no numbers rather than an empty report: the
+difference between "nothing clears the bar" and "no rows to decide on" is
+the whole value of the answer.
+
+READINESS
+
+`readiness` is the one gate every projection route, the morning jobs and
+the co-manager's tools pass through. A season is ready when it has been
+drafted (`app.inseason.drafted`), has an NBA schedule stored, and has a
+roster to read. Before 2026-09-25 it asked only whether a lineup row
+existed, and ESPN's pre-draft roster feed -- every team holding last
+season's roster on every future day -- had stored 23,892 of them for 2027,
+so the site projected a season nobody had drafted.
+
+A route asked about a season that is not ready answers **200**, not 409,
+with `readiness` (`ready`, `missing`, and `note`, the sentence a page
+prints) and every number empty, the pattern the trade routes set. A ready
+answer carries no `readiness` field at all (`app.api.schemas.Readied`).
 
 `today` is a scoring period. Left out, it is the calendar day turned into
 one through the stored NBA schedule, which before opening night is the
@@ -49,7 +65,7 @@ from typing import Annotated, Any
 
 from espn_api.basketball.constant import PRO_TEAM_MAP
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app import calibration, reports
@@ -83,22 +99,32 @@ from app.api.schemas import (
     TodayPlayerOut,
     TodayReportOut,
     TodaySeatOut,
+    TradeReadinessOut,
     VolumeGuardOut,
 )
 from app.db.models import (
     DailyLineupSlot,
     LeagueSeason,
+    Matchup,
     Player,
     PlayerStatusSnapshot,
     ProTeamGame,
     Team,
 )
+from app.inseason.drafted import season_is_drafted
 from app.pickups.bids import Bid
 from app.pickups.judge import Judgement
 from app.pickups.season import DropCandidate, SeasonReport, StashCandidate, Swap
 from app.pickups.season import season_recommendations as build_season
 from app.pickups.stash import Lock, Stash
-from app.pickups.state import BoxScore, PostedMan, RosteredPlayer, SeasonCalendar, season_calendar
+from app.pickups.state import (
+    BoxScore,
+    PostedMan,
+    RosteredPlayer,
+    SeasonCalendar,
+    period_for_day,
+    season_calendar,
+)
 from app.pickups.stream import CategoryShift, Move, Schedule, SideGames, StreamReport
 from app.pickups.stream import stream_recommendations as build_stream
 from app.pickups.today import Benched, DayPlayer, Misstart, Seat, TodayReport
@@ -120,7 +146,13 @@ TodayQuery = Annotated[
 #: snapshots, because the listener only ever runs for the current year
 #: (`app.pickups.state.has_free_agent_snapshots`), and that is not a reason to
 #: refuse it: its lineup days are the roster and its box scores are the wire.
+#:
+#: And a third, first: the season has to have been drafted. Before its draft
+#: whatever the store holds is not a roster (`app.inseason.drafted`), and
+#: when it is the reason, `note` is the draft's own dated sentence rather
+#: than this list.
 NOT_LISTENED = "season {season} has nothing to build a pickup report from: {missing}"
+NOT_DRAFTED = "the season has not been drafted, so no roster is a roster yet"
 NO_SCHEDULE = "no NBA schedule is stored (scripts/backfill_pro_schedule.py)"
 NO_ROSTER = "no status snapshots and no lineup days, so no roster can be read"
 
@@ -139,13 +171,20 @@ def readiness(
     """The season's calendar, and what is missing to report on it (nothing
     when a report can be built).
 
-    A schedule, and a roster from one of the two places one can come from.
-    The snapshot check used to be the only one, which refused every played
-    season although its lineup days say exactly who was held on every day of
-    it; a season with the schedule backfilled now reports.
+    A draft, a schedule, and a roster from one of the two places one can
+    come from. The draft is asked first and on its own terms
+    (`app.inseason.drafted.season_is_drafted`): a lineup row proves nothing
+    before it, because ESPN's roster feed for an undrafted season is last
+    season's rosters projected forward. The snapshot check used to be the
+    only one, which refused every played season although its lineup days say
+    exactly who was held on every day of it; a season with the schedule
+    backfilled now reports.
     """
     season = int(league_season.season)
     calendar = season_calendar(session, season)
+    missing = []
+    if not season_is_drafted(session, league_season).drafted:
+        missing.append(NOT_DRAFTED)
     scheduled = session.scalar(select(ProTeamGame.id).where(ProTeamGame.season == season).limit(1))
     snapshots = session.scalar(
         select(PlayerStatusSnapshot.id).where(PlayerStatusSnapshot.season == season).limit(1)
@@ -156,7 +195,6 @@ def readiness(
         .where(Team.league_season_id == league_season.id)
         .limit(1)
     )
-    missing = []
     if calendar is None or not scheduled:
         missing.append(NO_SCHEDULE)
     if not snapshots and not lineups:
@@ -164,21 +202,122 @@ def readiness(
     return calendar, missing
 
 
-def _ready(session: Session, league_season: LeagueSeason) -> SeasonCalendar:
-    """The season's calendar, or 409 when there is nothing to report on."""
-    calendar, missing = readiness(session, league_season)
-    if missing or calendar is None:
-        raise HTTPException(
-            status_code=409,
-            detail=NOT_LISTENED.format(
-                season=int(league_season.season), missing=" and ".join(missing)
-            ),
-        )
-    return calendar
+def readiness_note(
+    session: Session,
+    league_season: LeagueSeason,
+    missing: list[str],
+    template: str = NOT_LISTENED,
+) -> str | None:
+    """What `missing` says, as the one sentence a page or a tool prints.
+
+    The draft's own sentence when the draft is what is missing -- a fact and
+    a date ("The auction is Sat, Oct 10 at 2:00 PM ET; there are no rosters
+    to project until then."), because the other gaps follow from it and
+    naming them would only be noise. Otherwise `template` with the gaps
+    listed. None when nothing is missing.
+    """
+    if not missing:
+        return None
+    if NOT_DRAFTED in missing:
+        return season_is_drafted(session, league_season).reason
+    return template.format(season=int(league_season.season), missing=" and ".join(missing))
+
+
+def readiness_out(
+    session: Session,
+    league_season: LeagueSeason,
+    missing: list[str],
+    template: str = NOT_LISTENED,
+) -> TradeReadinessOut:
+    """`readiness` as a route answers it: ready, the gaps, and the sentence."""
+    return TradeReadinessOut(
+        ready=not missing,
+        missing=list(missing),
+        note=readiness_note(session, league_season, missing, template),
+    )
 
 
 def _day(calendar: SeasonCalendar, today: int | None) -> int:
     return today if today is not None else calendar.scoring_period_on(TODAY())
+
+
+def _asked_day(calendar: SeasonCalendar | None, today: int | None) -> int | None:
+    """The day a not-ready answer is about: the one asked for, else the
+    calendar's, else none -- a season with no schedule has no days."""
+    if today is not None:
+        return today
+    return calendar.scoring_period_on(TODAY()) if calendar is not None else None
+
+
+def fixture(
+    session: Session, league_season: LeagueSeason, team: Team, day: int | None
+) -> tuple[int | None, int | None]:
+    """The matchup period holding `day` and this team's scheduled opponent in
+    it, from the league's own stored schedule; (None, None) when there is none.
+
+    Facts of the schedule, not a projection: ESPN sets every pairing before
+    the draft, so a not-ready answer can still say who the week is against.
+    The opponent is None on a bye and when no pairing is stored.
+    """
+    if day is None:
+        return None, None
+    period = period_for_day(session, league_season, day)
+    if period is None:
+        return None, None
+    game = session.scalar(
+        select(Matchup).where(
+            Matchup.matchup_period_id == period.id,
+            or_(Matchup.home_team_id == team.id, Matchup.away_team_id == team.id),
+        )
+    )
+    if game is None:
+        return int(period.period), None
+    other = game.away_team_id if game.home_team_id == team.id else game.home_team_id
+    opponent = session.get(Team, other) if other is not None else None
+    return int(period.period), int(opponent.espn_team_id) if opponent is not None else None
+
+
+def not_ready_payload(
+    session: Session,
+    league_season: LeagueSeason,
+    team: Team,
+    kind: str,
+    calendar: SeasonCalendar | None,
+    today: int | None,
+    missing: list[str],
+) -> dict[str, Any]:
+    """A report for a season that cannot be built, as its route answers it:
+    `readiness`, the day and the fixture it would have been about, and every
+    number empty. Never stored: the precompute skips a season like this."""
+    ready = readiness_out(session, league_season, missing)
+    espn_team_id = int(team.espn_team_id)
+    day = _asked_day(calendar, today)
+    period, opponent = fixture(session, league_season, team, day)
+    out: StreamReportOut | SeasonReportOut | TodayReportOut
+    if kind == reports.STREAM:
+        out = StreamReportOut(
+            readiness=ready,
+            espn_team_id=espn_team_id,
+            matchup_period=period,
+            opponent_espn_team_id=opponent,
+            schedule=None,
+            hurdle_source="",
+        )
+    elif kind == reports.SEASON:
+        out = SeasonReportOut(
+            readiness=ready, espn_team_id=espn_team_id, today=day, hurdle_source=""
+        )
+    elif kind == reports.TODAY:
+        out = TodayReportOut(
+            readiness=ready,
+            espn_team_id=espn_team_id,
+            today=day,
+            calendar_date=calendar.date_of(day) if calendar is not None and day else None,
+            matchup_period=period,
+        )
+    else:
+        raise ValueError(f"unknown report kind {kind!r}")
+    return out.model_dump(mode="json")
 
 
 def build_payload(
@@ -268,8 +407,16 @@ def report(
     Public, because the co-manager's tools answer with the same payload the
     page is drawn from (`app/mcp/tools.py`) and have to be able to say which
     of the two it was.
+
+    A season that is not ready (`readiness`) answers with `not_ready_payload`
+    before any stored row is read, so a report stored before the gate
+    existed can never be served for a season that has not been drafted.
     """
-    calendar = _ready(session, league_season)
+    calendar, missing = readiness(session, league_season)
+    if missing or calendar is None:
+        return not_ready_payload(
+            session, league_season, team, kind, calendar, today, missing
+        ), False
     day = _day(calendar, today)
     stored = stored_report(session, calendar, team, kind, day)
     if stored is not None:
@@ -347,8 +494,19 @@ def glance(
     """The free tier's look at the reader's own week, from the stored week
     report when there is one (built live otherwise): the expected categories
     against this week's opponent, their chances one by one, and the season's
-    projected record with no move made. Not the moves: those are the plan."""
+    projected record with no move made. Not the moves: those are the plan.
+
+    A season that is not ready answers with `readiness`, the period and the
+    scheduled opponent, and no numbers."""
     body, stored = report(session, league_season, team, reports.STREAM, today)
+    if body.get("readiness") is not None:
+        return GlanceOut(
+            readiness=TradeReadinessOut.model_validate(body["readiness"]),
+            espn_team_id=int(body["espn_team_id"]),
+            matchup_period=body["matchup_period"],
+            opponent_espn_team_id=body["opponent_espn_team_id"],
+            stored=False,
+        )
     return GlanceOut(
         espn_team_id=int(body["espn_team_id"]),
         matchup_period=int(body["matchup_period"]),

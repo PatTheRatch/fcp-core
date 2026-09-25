@@ -43,14 +43,17 @@ payload: it is chances, records and the reasons for them.
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.orm import Session
 
 from app import reports
 from app.api.access import LEAGUE_MEMBER, TEAM_PLAN
 from app.api.deps import LeagueSeasonDep, SessionDep, TeamDep
-from app.api.pickups import TODAY, TodayQuery, _day, _ready
+from app.api.pickups import TODAY, TodayQuery, _asked_day, _day, readiness, readiness_out
 from app.api.schemas import ProjectedOut, ProjectedTeamOut, ProjectedWeekOut
+from app.db.models import LeagueSeason
 from app.inseason.projected import Projection, TeamOutlook, Week, project_standings
 from app.inseason.projected_calibration import CALIBRATION_NOTE, SHORT_NOTE
+from app.pickups.state import SeasonCalendar
 
 router = APIRouter(tags=["projected"])
 
@@ -125,6 +128,32 @@ def _out(report: Projection) -> ProjectedOut:
     )
 
 
+def not_ready(
+    session: Session,
+    league_season: LeagueSeason,
+    calendar: SeasonCalendar | None,
+    today: int | None,
+    missing: list[str],
+) -> ProjectedOut:
+    """The answer for a season that cannot be projected: `readiness`, the day
+    it was asked about, and no teams, no weeks, no odds.
+
+    `calibration_note` is kept: it is this method's published record, true of
+    any season, and a page that prints it under an empty table is saying
+    nothing false. Everything the run would have produced is empty.
+    """
+    day = _asked_day(calendar, today)
+    return ProjectedOut(
+        readiness=readiness_out(session, league_season, missing),
+        league_id=int(league_season.league.espn_league_id),
+        season=int(league_season.season),
+        as_of=day,
+        as_of_date=calendar.date_of(day) if calendar is not None and day else None,
+        calibration_note=CALIBRATION_NOTE,
+        calibration_short=SHORT_NOTE,
+    )
+
+
 def _projection(
     session: SessionDep, league_season: LeagueSeasonDep, today: int | None
 ) -> ProjectedOut:
@@ -136,7 +165,9 @@ def _projection(
     a build takes a few seconds for a fourteen-team league
     (docs/projected_record.md, "Timing").
     """
-    calendar = _ready(session, league_season)
+    calendar, missing = readiness(session, league_season)
+    if missing or calendar is None:
+        return not_ready(session, league_season, calendar, today, missing)
     day = _day(calendar, today)
     on = TODAY()
     if day == calendar.scoring_period_on(on):
@@ -193,6 +224,8 @@ def projected_team(
     taken from the league answer rather than computed again.
     """
     whole = _projection(session, league_season, today)
+    if whole.readiness is not None:
+        return whole
     espn_team_id = int(team.espn_team_id)
     mine = [one for one in whole.teams if one.espn_team_id == espn_team_id]
     if not mine:

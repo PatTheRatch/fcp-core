@@ -4,10 +4,13 @@ One small season is built once for the module: a four-man roster on a
 three-slot lineup, two men on the wire, and an NBA schedule every one of
 them plays every day. The routes are then asked the same questions the CLIs
 ask, plus the two refusals that matter -- a team that does not exist, and a
-season the listener has never run for.
+season the listener has never run for -- and the season that is not a
+refusal at all: 2027 before its auction, ghost rosters and all, which answers
+200 with `readiness` and no number.
 """
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from espn_api.basketball.constant import PRO_TEAM_MAP
@@ -15,7 +18,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
+from app.api.pickups import NO_ROSTER, NO_SCHEDULE, NOT_DRAFTED
 from app.api.schemas import StreamReportOut
+from app.inseason import drafted
 from app.main import create_app
 from app.pickups.bids import clear_cache
 from tests.pickups_db import (
@@ -29,10 +34,20 @@ from tests.pickups_db import (
     projected,
     snapshot,
 )
-from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.scoring_db import (
+    AUCTION_NOTE,
+    BEFORE_THE_AUCTION,
+    LEAGUE_ID,
+    held,
+    league_season,
+    matchup,
+    player,
+    undrafted_season,
+)
 
 SEASON = 2026
 QUIET_SEASON = 2025
+UNDRAFTED = 2027
 HOME, AWAY, NOBODY = 1, 2, 99
 
 EVERY_DAY = list(range(1, 15))
@@ -107,9 +122,20 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
         # A season nobody listened to: settings and teams, no schedule and
         # no snapshots, which is what a report cannot be built from.
         league_season(session, season=QUIET_SEASON, days_per_period=7)
+        # 2027 as it was stored before its auction: a schedule, a week-one
+        # pairing and a roster on every day -- all of it ESPN's pre-draft feed.
+        undrafted_season(session, days_per_period=7)
+        for pro_team in (10, 20, 21):
+            games(session, pro_team, EVERY_DAY, season=UNDRAFTED)
         session.commit()
     clear_cache()
     yield scoring_factory
+
+
+@pytest.fixture(autouse=True)
+def before_the_auction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The morning the ghost rosters were found, so 2027's auction is ahead."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: BEFORE_THE_AUCTION)
 
 
 @pytest.fixture
@@ -237,6 +263,7 @@ def test_a_report_stored_before_the_schedule_existed_still_validates(
 
     out = StreamReportOut.model_validate(body)
 
+    assert out.schedule is not None, "the default, not the not-ready answer's null"
     assert out.schedule.days == []
     assert out.schedule.mine_total.games == 0
     assert out.schedule.theirs_total is None
@@ -345,22 +372,110 @@ def test_an_unknown_team_is_404(client: TestClient) -> None:
     assert unknown.status_code == 404 and "team 99" in unknown.json()["detail"]
 
 
-def test_a_season_with_nothing_to_report_on_is_409(client: TestClient) -> None:
+def test_a_season_with_nothing_to_report_on_answers_with_readiness(client: TestClient) -> None:
     """Settings and teams and nothing else: no schedule, and no roster anywhere.
 
     Not the same thing as a season the listener never ran for, which is
     every played season and now reports perfectly well off its lineup days
-    (`tests/test_api_pages.py`). The refusal names both things it wanted.
+    (`tests/test_api_pages.py`). Not a 409 either, since 2026-09-25: a 200
+    with `readiness`, naming both things it wanted, and no number.
     """
     asked = [url(season=QUIET_SEASON, which="stream"), url(season=QUIET_SEASON, which="season")]
     asked.append(today_url(season=QUIET_SEASON))
+    asked.append(url(season=QUIET_SEASON, which="glance"))
     for where in asked:
         response = client.get(where, params={"today": 1})
-        assert response.status_code == 409
-        detail = response.json()["detail"]
-        assert f"season {QUIET_SEASON} has nothing to build a pickup report from" in detail
-        assert "no NBA schedule is stored" in detail
-        assert "no roster can be read" in detail
+        assert response.status_code == 200, where
+        ready = response.json()["readiness"]
+        assert ready["ready"] is False
+        assert ready["missing"] == [NO_SCHEDULE, NO_ROSTER]
+        assert f"season {QUIET_SEASON} has nothing to build a pickup report from" in ready["note"]
+        assert "no NBA schedule is stored" in ready["note"]
+        assert "no roster can be read" in ready["note"]
+        assert response.json().get("expected_wins") is None, "no number, on any of them"
+
+
+# ---------------------------------------------------------------------------
+# 2027 before its auction
+# ---------------------------------------------------------------------------
+
+
+def test_the_week_before_the_auction_is_readiness_and_no_number(client: TestClient) -> None:
+    """The owner, 2026-09-25: "why do we have projections for the first week of
+    2027? no one even has a roster or anything." Every lineup row is there; not
+    one of them is a roster."""
+    response = client.get(url(season=UNDRAFTED), params={"today": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["readiness"] == {"ready": False, "missing": [NOT_DRAFTED], "note": AUCTION_NOTE}
+    # The schedule's own facts stay: which week, and who it is against.
+    assert (body["espn_team_id"], body["matchup_period"], body["opponent_espn_team_id"]) == (
+        HOME,
+        1,
+        AWAY,
+    )
+    for empty in ("expected_wins", "outlook", "hurdle", "pool_size", "adds_left", "schedule"):
+        assert body[empty] is None, empty
+    for empty in ("probabilities", "projected", "opponent_projected", "posted"):
+        assert body[empty] == {}, empty
+    for empty in ("moves", "recommended", "empty_days", "scoring_periods_remaining", "stashed"):
+        assert body[empty] == [], empty
+    assert body["hurdle_source"] == "", "no bar was read, so none is named"
+
+
+def test_the_glance_before_the_auction_is_readiness_and_the_fixture(client: TestClient) -> None:
+    """What the league week and team week pages read for "your week"."""
+    response = client.get(url(season=UNDRAFTED, which="glance"), params={"today": 1})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "readiness": {"ready": False, "missing": [NOT_DRAFTED], "note": AUCTION_NOTE},
+        "espn_team_id": HOME,
+        "matchup_period": 1,
+        "opponent_espn_team_id": AWAY,
+        "expected_wins": None,
+        "probabilities": {},
+        "record_without": [],
+        "stored": False,
+    }
+
+
+def test_the_season_and_the_day_before_the_auction_say_so_too(client: TestClient) -> None:
+    season = client.get(url(season=UNDRAFTED, which="season"), params={"today": 1}).json()
+    assert season["readiness"]["note"] == AUCTION_NOTE
+    assert season["today"] == 1
+    assert season["expected_wins"] is None and season["weekly"] == {}
+    assert season["recommended"] is None and season["drops"] == [] and season["churn"] is None
+
+    day = client.get(today_url(season=UNDRAFTED), params={"today": 1}).json()
+    assert day["readiness"]["note"] == AUCTION_NOTE
+    assert (day["today"], day["calendar_date"], day["matchup_period"]) == (1, "2025-10-21", 1)
+    assert day["lineup"] == [] and day["projected"] == {} and day["edge"] is None
+
+
+def test_the_day_before_the_auction_defaults_to_the_calendars_own(client: TestClient) -> None:
+    """No `today`: the calendar's day, as a ready season reads it."""
+    body = client.get(url(season=UNDRAFTED)).json()
+    assert body["readiness"]["note"] == AUCTION_NOTE
+
+
+def test_a_ready_season_carries_no_readiness_field_at_all(client: TestClient) -> None:
+    """2026 answers exactly as it did before the field existed."""
+    for where in (url(), url(which="season"), today_url(), url(which="glance")):
+        body = client.get(where, params={"today": 1}).json()
+        assert "readiness" not in body, where
+    assert client.get(url(which="glance"), params={"today": 1}).json()["expected_wins"] > 0
+
+
+def test_once_the_auction_is_held_the_rosters_are_read(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate is the date, not the rows: a minute after the auction the same
+    store is a drafted season, and whatever else it lacks is what it says."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: datetime(2026, 10, 10, 18, 1, tzinfo=UTC))
+    body = client.get(url(season=UNDRAFTED, which="glance"), params={"today": 1}).json()
+    assert "readiness" not in body or NOT_DRAFTED not in body["readiness"]["missing"]
 
 
 def test_an_unknown_season_is_still_404(client: TestClient) -> None:

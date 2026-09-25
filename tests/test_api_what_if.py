@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import access
 from app.api.deps import get_session
+from app.api.pickups import NO_SCHEDULE, NOT_DRAFTED
 from app.db.models import LeagueSeason, Player, Team
+from app.inseason import drafted
 from app.inseason.projected_calibration import SHORT_NOTE
 from app.inseason.what_if import FINISH_IS_A_SECOND_LENS, what_if
 from app.main import create_app
@@ -37,7 +39,16 @@ from tests.pickups_db import (
     projected,
     snapshot,
 )
-from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.scoring_db import (
+    AUCTION_NOTE,
+    BEFORE_THE_AUCTION,
+    LEAGUE_ID,
+    held,
+    league_season,
+    matchup,
+    player,
+    undrafted_season,
+)
 
 SEASON = 2026
 UNDRAFTED = 2027
@@ -144,11 +155,19 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
                 played(session, free, day, 30.0, scaled(factor), season=SEASON)
             on_the_wire(session, ls, free)
 
-        league_season(session, season=UNDRAFTED, periods=1, days_per_period=7)
+        # 2027 before its auction: a roster on every day, all of it ESPN's
+        # pre-draft feed, and no NBA schedule stored yet either.
+        undrafted_season(session, periods=1, days_per_period=7)
         session.commit()
     clear_cache()
     clear_lines()
     yield scoring_factory
+
+
+@pytest.fixture(autouse=True)
+def before_the_auction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The morning the ghost rosters were found, so 2027's auction is ahead."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: BEFORE_THE_AUCTION)
 
 
 @pytest.fixture
@@ -316,11 +335,33 @@ def test_every_refusal_is_a_sentence_and_never_a_stack_trace(
 
 
 def test_a_season_with_nothing_to_judge_from_is_told_so(client: TestClient) -> None:
-    """2027 before its draft: the pickup routes' own 409, word for word."""
-    answer = client.get(url(season=UNDRAFTED), params={"add": 1})
-    assert answer.status_code == 409
-    said = answer.json()["detail"]
-    assert f"season {UNDRAFTED} has nothing to build a pickup report from" in said
+    """2027 before its draft: 200, the draft's own sentence, and no number --
+    before any name is read, so a man nobody holds is not a 422 about him."""
+    answer = client.get(url(season=UNDRAFTED), params={"add": 1, "drop": 2, "today": 1})
+    assert answer.status_code == 200
+    body = answer.json()
+    assert body["readiness"] == {
+        "ready": False,
+        "missing": [NOT_DRAFTED, NO_SCHEDULE],
+        "note": AUCTION_NOTE,
+    }
+    assert (body["season"], body["today"], body["espn_team_id"], body["team_name"]) == (
+        UNDRAFTED,
+        1,
+        HOME,
+        "Home",
+    )
+    assert body["today_date"] is None, "no NBA schedule stored for 2027 here"
+    for empty in ("week", "finish", "judgement", "net", "hurdle", "clears_hurdle", "bid"):
+        assert body[empty] is None, empty
+    assert body["adds"] == [] and body["drops"] == [] and body["notes"] == []
+
+
+def test_a_ready_season_carries_no_readiness_field(client: TestClient, session: Session) -> None:
+    params = {"drop": espn(session, "HomeWeak")[0], "add": espn(session, "Wire")[0], "today": TODAY}
+    answer = client.get(url(), params=params)
+    assert answer.status_code == 200
+    assert "readiness" not in answer.json()
 
 
 def test_the_route_is_on_the_app_under_the_teams_paid_layer(client: TestClient) -> None:

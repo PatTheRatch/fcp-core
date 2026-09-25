@@ -42,6 +42,7 @@ and a date, never a verdict.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -59,6 +60,17 @@ UNSCHEDULED = "The draft has not been scheduled; there are no rosters to project
 #: And the two a drafted season is described by, for a caller that prints it.
 HELD = "The {draft} was held {when}."
 PROVEN = "The draft has been held: its picks, moves or scores are stored."
+
+
+def _real_clock() -> datetime:
+    return datetime.now(UTC)
+
+
+#: The moment a caller that names none is asked about. The server never
+#: moves it; a test does, so that "an auction still ahead" stays ahead
+#: whatever day the suite runs on -- the same arrangement as
+#: `app.api.pickups.TODAY`.
+CLOCK: Callable[[], datetime] = _real_clock
 
 
 @dataclass(frozen=True)
@@ -98,8 +110,8 @@ def season_is_drafted(
     session: Session, league_season: LeagueSeason, now: datetime | None = None
 ) -> Drafted:
     """Whether `league_season` has been drafted, by the rule in the module
-    docstring, as of `now` (the real clock when it is left out)."""
-    moment = now or datetime.now(UTC)
+    docstring, as of `now` (`CLOCK`, the real clock, when it is left out)."""
+    moment = now or CLOCK()
     at = league_season.drafted_at
     draft = _draft_word(league_season)
     if at is not None:

@@ -34,10 +34,11 @@ a man chosen from it comes back to the report as `fill` or `their_fill`.
 
 A SEASON WITH NOTHING TO JUDGE FROM
 
-A season before its draft has no rosters and no schedule. That is not bad
-input and not a refusal: both routes answer 200 with `readiness`, which says
-plainly what the season is missing, exactly the two things
-`app.api.pickups.readiness` looks for.
+A season before its draft has no rosters, whatever the store holds. That is
+not bad input and not a refusal: every route answers 200 with `readiness`,
+which says plainly what the season is missing, exactly the things
+`app.api.pickups.readiness` looks for -- the draft first, then a schedule and
+a roster -- and, before the draft, the draft's own dated sentence as `note`.
 
 BAD INPUT
 
@@ -191,7 +192,7 @@ def trade_rosters(
     day 52's men and nothing later.
     """
     calendar, missing = pickups.readiness(session, league_season)
-    ready = _readiness(league_season, missing)
+    ready = _readiness(session, league_season, missing)
     day = _day(calendar, today)
     teams: list[TradeRosterOut] = []
     if not missing:
@@ -313,7 +314,7 @@ def trade_report(
     calendar, missing = pickups.readiness(session, league_season)
     if missing:
         return TradeReportOut(
-            readiness=_readiness(league_season, missing),
+            readiness=_readiness(session, league_season, missing),
             trade=None,
             calibration_note=_note(session, league_season),
         )
@@ -419,15 +420,12 @@ def _bad(detail: str) -> HTTPException:
     return HTTPException(status_code=422, detail=detail)
 
 
-def _readiness(league_season: LeagueSeason, missing: list[str]) -> TradeReadinessOut:
-    """What the season is missing, in its own words and in one sentence."""
-    return TradeReadinessOut(
-        ready=not missing,
-        missing=missing,
-        note=None
-        if not missing
-        else NOT_READY.format(season=int(league_season.season), missing=" and ".join(missing)),
-    )
+def _readiness(
+    session: Session, league_season: LeagueSeason, missing: list[str]
+) -> TradeReadinessOut:
+    """What the season is missing, in its own words and in one sentence --
+    the draft's own dated sentence when the draft is what is missing."""
+    return pickups.readiness_out(session, league_season, missing, NOT_READY)
 
 
 def _day(calendar: SeasonCalendar | None, today: int | None) -> int:
@@ -703,7 +701,7 @@ def _empty_pool(
         espn_team_id=int(team.espn_team_id),
         team_name=str(team.name),
         ours=True,
-        readiness=_readiness(league_season, missing),
+        readiness=_readiness(session, league_season, missing),
         places_opened=0,
         opened_value=0.0,
         replacement=0.0,

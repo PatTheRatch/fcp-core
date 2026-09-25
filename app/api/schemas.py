@@ -9,7 +9,7 @@ an unbounded response by accident.
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 
 class Page[T](BaseModel):
@@ -764,19 +764,78 @@ class ScheduleOut(BaseModel):
     theirs_total: SideGamesOut | None = None
 
 
-class GlanceOut(BaseModel):
+class TradeReadinessOut(BaseModel):
+    """Whether the season has anything to judge or project from, and what is missing.
+
+    Named for the trade routes, which carried it first; every projection
+    route answers with the same shape now (`Readied`). A season before its
+    draft -- no rosters, whatever the store holds -- is not an error: there is
+    simply nothing to judge yet, and the page says so in a sentence rather
+    than drawing a broken builder (docs/trades.md, "The page"; docs/site.md,
+    "Readiness").
+    """
+
+    ready: bool
+    missing: list[str] = Field(description="What the season lacks; empty when it is ready")
+    note: str | None = Field(
+        description=(
+            "The same thing as one sentence for a reader. Before the draft it is the draft's "
+            "own sentence, dated: 'The auction is Sat, Oct 10 at 2:00 PM ET; there are no "
+            "rosters to project until then.'"
+        )
+    )
+
+
+class Readied(BaseModel):
+    """A projection answer that can say, instead of numbers, why it has none.
+
+    `readiness` is present only when the season cannot be projected -- not
+    drafted yet, no NBA schedule, no roster -- and then every number on the
+    answer is empty (null, or an empty list or map) rather than a guess. A
+    ready answer leaves the field out entirely, so the answers for a season
+    that can be projected are byte for byte what they were before the field
+    existed (docs/site.md, "Readiness").
+    """
+
+    readiness: TradeReadinessOut | None = Field(
+        default=None,
+        description=(
+            "Present only when the season cannot be projected, and then the numbers are "
+            "empty; `note` is the sentence to show. Absent on every ready answer"
+        ),
+    )
+
+    # Unannotated on purpose: an annotated wrap serializer replaces the
+    # model's own schema with its return type, and the OpenAPI document would
+    # lose every field of every answer built on this.
+    @model_serializer(mode="wrap")
+    def _leave_out_when_ready(self, handler: SerializerFunctionWrapHandler):  # type: ignore[no-untyped-def]
+        data = handler(self)
+        if isinstance(data, dict) and data.get("readiness") is None:
+            data.pop("readiness", None)
+        return data
+
+
+class GlanceOut(Readied):
     """A team's week at a glance: what the free This week page shows its
     manager, from the week report, without the plan."""
 
     espn_team_id: int
-    matchup_period: int
-    opponent_espn_team_id: int | None = Field(description="Null on a bye")
-    expected_wins: float = Field(description="Categories expected to be won this week, of 9")
-    probabilities: dict[str, float] = Field(description="Each category's chance this week")
-    record_without: list[float] = Field(
-        description="The season's projected record in categories, won and lost, with no move"
+    matchup_period: int | None = None
+    opponent_espn_team_id: int | None = Field(default=None, description="Null on a bye")
+    expected_wins: float | None = Field(
+        default=None, description="Categories expected to be won this week, of 9"
     )
-    stored: bool = Field(description="Read from the morning's stored report, not built now")
+    probabilities: dict[str, float] = Field(
+        default_factory=dict, description="Each category's chance this week"
+    )
+    record_without: list[float] = Field(
+        default_factory=list,
+        description="The season's projected record in categories, won and lost, with no move",
+    )
+    stored: bool | None = Field(
+        default=None, description="Read from the morning's stored report, not built now"
+    )
 
 
 class BoxScoreOut(BaseModel):
@@ -870,17 +929,19 @@ class StashOut(BaseModel):
     )
 
 
-class StreamReportOut(BaseModel):
+class StreamReportOut(Readied):
     """Who to stream this week, and whether anyone is worth a look."""
 
     espn_team_id: int
-    matchup_period: int
-    scoring_periods_remaining: list[int]
-    opponent_espn_team_id: int | None = Field(description="Null on a bye")
-    expected_wins: float
-    probabilities: dict[str, float]
-    projected: dict[str, float] = Field(description="Raw counts, the week as projected")
-    opponent_projected: dict[str, float]
+    matchup_period: int | None = None
+    scoring_periods_remaining: list[int] = Field(default_factory=list)
+    opponent_espn_team_id: int | None = Field(default=None, description="Null on a bye")
+    expected_wins: float | None = None
+    probabilities: dict[str, float] = Field(default_factory=dict)
+    projected: dict[str, float] = Field(
+        default_factory=dict, description="Raw counts, the week as projected"
+    )
+    opponent_projected: dict[str, float] = Field(default_factory=dict)
     posted: dict[str, float] = Field(
         default_factory=dict,
         description=(
@@ -910,23 +971,26 @@ class StreamReportOut(BaseModel):
         ),
     )
     opponent_posted_men: list[PostedManOut] = Field(default_factory=list)
-    moves: list[StreamMoveOut]
+    moves: list[StreamMoveOut] = Field(default_factory=list)
     recommended: list[StreamMoveOut] = Field(
+        default_factory=list,
         description=(
             "The plan: independent moves worth a look today, in order, each clearing the "
             "bar on its own. Empty when nothing clears it and when no adds are left"
-        )
+        ),
     )
-    empty_days: list[EmptyDayOut]
-    schedule: ScheduleOut = Field(
+    empty_days: list[EmptyDayOut] = Field(default_factory=list)
+    schedule: ScheduleOut | None = Field(
         default_factory=ScheduleOut,
         description=(
             "Games and starts day by day for both sides, over the days left. Empty on a "
             "report stored before the field existed"
         ),
     )
-    outlook: JudgementOut = Field(description="The season as it stands, with no move")
-    hurdle: float
+    outlook: JudgementOut | None = Field(
+        default=None, description="The season as it stands, with no move"
+    )
+    hurdle: float | None = None
     hurdle_source: str = Field(
         default="default",
         description=(
@@ -941,26 +1005,32 @@ class StreamReportOut(BaseModel):
             "`source_note` is printed: 'measured on this league, 616 decision points'"
         ),
     )
-    pool_size: int = Field(description="Free agents evaluated")
-    historical_wire: bool = Field(
+    pool_size: int | None = Field(default=None, description="Free agents evaluated")
+    historical_wire: bool | None = Field(
+        default=None,
         description=(
             "True when the wire was rebuilt from what was played rather than read from the "
             "listener's snapshots, which is every played season. A narrower wire: it cannot "
             "see a free agent who did not play, and it knows nothing about waivers"
-        )
+        ),
     )
-    faab_remaining: int = Field(description="The pot left as of `today`, never below zero")
-    faab_overspent: int = Field(
+    faab_remaining: int | None = Field(
+        default=None, description="The pot left as of `today`, never below zero"
+    )
+    faab_overspent: int | None = Field(
+        default=None,
         description=(
             "How far our sum of ESPN's bid feed ran past the budget, normally 0. Non-zero "
             "means the feed and ESPN's own ledger disagree and the pot should be read as spent"
-        )
+        ),
     )
-    open_slots: int
-    ir_slot_free: bool
-    adds_used: int = Field(description="Executed adds this matchup period")
-    adds_budget: int = Field(description="Adds the period allows: one for each of its days")
-    adds_left: int
+    open_slots: int | None = None
+    ir_slot_free: bool | None = None
+    adds_used: int | None = Field(default=None, description="Executed adds this matchup period")
+    adds_budget: int | None = Field(
+        default=None, description="Adds the period allows: one for each of its days"
+    )
+    adds_left: int | None = None
     stashed: list[StashOut] = Field(
         default_factory=list,
         description=(
@@ -1011,27 +1081,33 @@ class VolumeGuardOut(BaseModel):
     finding: str
 
 
-class SeasonReportOut(BaseModel):
+class SeasonReportOut(Readied):
     """Who to hold for the rest of the year, and who should go."""
 
     espn_team_id: int
-    today: int
-    last_scoring_period: int
-    weeks_remaining: float
-    total_weeks: float
-    expected_wins: float
-    probabilities: dict[str, float]
-    weekly: dict[str, float] = Field(description="The roster's own weekly category totals")
-    best_add: SeasonSwapOut | None
-    best_swap: SeasonSwapOut | None
-    best_two_swap: SeasonSwapOut | None
-    recommended: SeasonSwapOut | None = Field(description="Null when nothing clears its bar")
-    drops: list[DropCandidateOut]
-    stashes: list[StashCandidateOut]
-    churn: VolumeGuardOut
-    outlook: JudgementOut = Field(description="The season as it stands, with no move")
-    hurdle_paid: float
-    hurdle_free: float
+    today: int | None = None
+    last_scoring_period: int | None = None
+    weeks_remaining: float | None = None
+    total_weeks: float | None = None
+    expected_wins: float | None = None
+    probabilities: dict[str, float] = Field(default_factory=dict)
+    weekly: dict[str, float] = Field(
+        default_factory=dict, description="The roster's own weekly category totals"
+    )
+    best_add: SeasonSwapOut | None = None
+    best_swap: SeasonSwapOut | None = None
+    best_two_swap: SeasonSwapOut | None = None
+    recommended: SeasonSwapOut | None = Field(
+        default=None, description="Null when nothing clears its bar"
+    )
+    drops: list[DropCandidateOut] = Field(default_factory=list)
+    stashes: list[StashCandidateOut] = Field(default_factory=list)
+    churn: VolumeGuardOut | None = None
+    outlook: JudgementOut | None = Field(
+        default=None, description="The season as it stands, with no move"
+    )
+    hurdle_paid: float | None = None
+    hurdle_free: float | None = None
     hurdle_source: str = Field(
         default="default",
         description=(
@@ -1043,26 +1119,34 @@ class SeasonReportOut(BaseModel):
         default="",
         description="The one sentence a page prints under them",
     )
-    pool_size: int = Field(description="Free agents evaluated")
-    historical_wire: bool = Field(
+    pool_size: int | None = Field(default=None, description="Free agents evaluated")
+    historical_wire: bool | None = Field(
+        default=None,
         description=(
             "True when the wire was rebuilt from what was played rather than read from the "
             "listener's snapshots, which is every played season. A narrower wire: it cannot "
             "see a free agent who did not play, and it knows nothing about waivers"
-        )
+        ),
     )
-    faab_remaining: int = Field(description="The pot left as of `today`, never below zero")
-    faab_overspent: int = Field(
+    faab_remaining: int | None = Field(
+        default=None, description="The pot left as of `today`, never below zero"
+    )
+    faab_overspent: int | None = Field(
+        default=None,
         description=(
             "How far our sum of ESPN's bid feed ran past the budget, normally 0. Non-zero "
             "means the feed and ESPN's own ledger disagree and the pot should be read as spent"
-        )
+        ),
     )
-    open_slots: int
-    ir_slot_free: bool
-    adds_used: int = Field(description="Executed adds in the matchup period `today` falls in")
-    adds_budget: int = Field(description="Adds the period allows: one for each of its days")
-    adds_left: int
+    open_slots: int | None = None
+    ir_slot_free: bool | None = None
+    adds_used: int | None = Field(
+        default=None, description="Executed adds in the matchup period `today` falls in"
+    )
+    adds_budget: int | None = Field(
+        default=None, description="Adds the period allows: one for each of its days"
+    )
+    adds_left: int | None = None
 
 
 class TodayGameOut(BaseModel):
@@ -1132,7 +1216,7 @@ class TodayFixOut(BaseModel):
     )
 
 
-class TodayReportOut(BaseModel):
+class TodayReportOut(Readied):
     """Who starts today, against who the team is actually set to start.
 
     The week report's own seating for one day (`app.pickups.today`), with the
@@ -1141,59 +1225,61 @@ class TodayReportOut(BaseModel):
     """
 
     espn_team_id: int
-    today: int = Field(description="The scoring period reported on")
+    today: int | None = Field(default=None, description="The scoring period reported on")
     calendar_date: date | None = Field(
+        default=None,
         description="The day it falls on; null with no stored schedule. Not `date`, which\n"
-        " would shadow the type the fields beside it are annotated with"
+        " would shadow the type the fields beside it are annotated with",
     )
-    matchup_period: int
-    teams_playing: int = Field(
-        description="NBA teams with a game today. Zero on a day like the All-Star break"
+    matchup_period: int | None = None
+    teams_playing: int | None = Field(
+        default=None,
+        description="NBA teams with a game today. Zero on a day like the All-Star break",
     )
     lineup: list[TodaySeatOut] = Field(
-        description="The proposed lineup, one entry per place, in the league's slot order"
+        default_factory=list,
+        description="The proposed lineup, one entry per place, in the league's slot order",
     )
-    starts: int = Field(
-        description="Places the proposal fills, which is the most the roster can fill today"
+    starts: int | None = Field(
+        default=None,
+        description="Places the proposal fills, which is the most the roster can fill today",
     )
-    actual_starts: int = Field(
-        description="Places the set lineup fills with a man who is playing; 0 when unknown"
+    actual_starts: int | None = Field(
+        default=None,
+        description="Places the set lineup fills with a man who is playing; 0 when unknown",
     )
-    benched: list[TodayBenchedOut]
-    idle: list[TodayPlayerOut] = Field(description="Men held who cannot be started today")
-    injured_reserve: list[TodayPlayerOut]
-    actual_known: bool = Field(
-        description="Whether the stored lineup days carry today's lineup yet"
+    benched: list[TodayBenchedOut] = Field(default_factory=list)
+    idle: list[TodayPlayerOut] = Field(
+        default_factory=list, description="Men held who cannot be started today"
     )
-    actual: list[TodaySeatOut] = Field(description="What the team has set; empty when unknown")
+    injured_reserve: list[TodayPlayerOut] = Field(default_factory=list)
+    actual_known: bool | None = Field(
+        default=None, description="Whether the stored lineup days carry today's lineup yet"
+    )
+    actual: list[TodaySeatOut] = Field(
+        default_factory=list, description="What the team has set; empty when unknown"
+    )
     fix: list[TodayFixOut] = Field(
-        description="Places set with a man who is not playing while the bench has one who is"
+        default_factory=list,
+        description="Places set with a man who is not playing while the bench has one who is",
     )
     projected: dict[str, float] = Field(
-        description="Raw counts the proposed lineup projects to add today"
+        default_factory=dict, description="Raw counts the proposed lineup projects to add today"
     )
-    actual_projected: dict[str, float] = Field(description="The same for the lineup that is set")
-    edge: float = Field(
+    actual_projected: dict[str, float] = Field(
+        default_factory=dict, description="The same for the lineup that is set"
+    )
+    edge: float | None = Field(
+        default=None,
         description=(
             "What the proposal is worth over what is set, in the currency the seating orders "
             "by: each count over its category's weekly spread, turnovers against. Zero when "
             "the two lineups agree and when today's is not stored"
-        )
+        ),
     )
-    source_note: str = Field(description="Where the numbers came from, in the page's words")
-
-
-class TradeReadinessOut(BaseModel):
-    """Whether the season has anything to judge a trade from, and what is missing.
-
-    A season before its draft -- no rosters, no schedule -- is not an error:
-    there is simply nothing to judge yet, and the page says so in a sentence
-    rather than drawing a broken builder (docs/trades.md, "The page").
-    """
-
-    ready: bool
-    missing: list[str] = Field(description="What the season lacks; empty when it is ready")
-    note: str | None = Field(description="The same thing as one sentence for a reader")
+    source_note: str | None = Field(
+        default=None, description="Where the numbers came from, in the page's words"
+    )
 
 
 class TradeRosterPlayerOut(BaseModel):
@@ -1733,7 +1819,7 @@ class ProjectedTeamOut(BaseModel):
     bye_odds: float | None = Field(description="Null where the format gives no first-round bye")
 
 
-class ProjectedOut(BaseModel):
+class ProjectedOut(Readied):
     """The league's projected standings (docs/projected_record.md).
 
     A forecast with its reasons and its record: every number here is built
@@ -1744,23 +1830,31 @@ class ProjectedOut(BaseModel):
 
     league_id: int
     season: int
-    as_of: int = Field(description="The scoring period this was built for")
-    as_of_date: date | None
-    matchup_period: int
-    teams: list[ProjectedTeamOut] = Field(description="In projected order, first place first")
-    periods: list[int] = Field(description="Matchup periods projected, ascending")
-    playoff_team_count: int
-    bye_count: int = Field(description="Seeds that skip the first round; 0 when there are none")
-    playoffs_projected: bool
-    playoff_note: str = Field(
-        description="Why the playoff rounds were left out; '' when they were not"
+    as_of: int | None = Field(default=None, description="The scoring period this was built for")
+    as_of_date: date | None = None
+    matchup_period: int | None = None
+    teams: list[ProjectedTeamOut] = Field(
+        default_factory=list, description="In projected order, first place first"
     )
-    tiebreak: str = Field(description="How the table is ordered, in words")
-    n_sims: int
-    seed: int
-    source_note: str
-    basis: str
-    calibration_note: str = Field(description="What this forecast scored on a replayed season")
+    periods: list[int] = Field(
+        default_factory=list, description="Matchup periods projected, ascending"
+    )
+    playoff_team_count: int | None = None
+    bye_count: int | None = Field(
+        default=None, description="Seeds that skip the first round; 0 when there are none"
+    )
+    playoffs_projected: bool | None = None
+    playoff_note: str | None = Field(
+        default=None, description="Why the playoff rounds were left out; '' when they were not"
+    )
+    tiebreak: str | None = Field(default=None, description="How the table is ordered, in words")
+    n_sims: int | None = None
+    seed: int | None = None
+    source_note: str | None = None
+    basis: str | None = None
+    calibration_note: str | None = Field(
+        default=None, description="What this forecast scored on a replayed season"
+    )
     calibration_short: str = Field(
         default="",
         description=(
@@ -1836,7 +1930,7 @@ class WhatIfPlayoffsOut(BaseModel):
     line: str = Field(description="The one line a page prints")
 
 
-class WhatIfOut(BaseModel):
+class WhatIfOut(Readied):
     """A pickup a manager named, in three layers (docs/what_if.md).
 
     The week and the judgement are the recommender's own numbers for the
@@ -1845,26 +1939,38 @@ class WhatIfOut(BaseModel):
     """
 
     season: int
-    today: int = Field(description="The day it is judged on; nothing after it is read")
-    today_date: date | None
+    today: int | None = Field(
+        default=None, description="The day it is judged on; nothing after it is read"
+    )
+    today_date: date | None = None
     espn_team_id: int
     team_name: str
-    adds: list[WhatIfManOut]
-    drops: list[WhatIfManOut]
-    to_ir: list[WhatIfManOut]
-    kind: str = Field(description='"swap", "add", "ir_move", or "" for any other shape')
-    week: WhatIfWeekOut
-    finish: FinishOut
-    judgement: JudgementOut = Field(description="The recommender's own, untouched")
-    net: float = Field(description="Categories the move is worth over both horizons")
-    hurdle: float
-    hurdle_source: str
-    hurdle_note: str
-    clears_hurdle: bool = Field(description="A label, not advice")
-    bid: BidOut | None = Field(description="What to pay, on a move that clears the bar")
-    pool_size: int = Field(description="Free agents the replacement charge was taken over")
-    historical_wire: bool
-    notes: list[str]
+    adds: list[WhatIfManOut] = Field(default_factory=list)
+    drops: list[WhatIfManOut] = Field(default_factory=list)
+    to_ir: list[WhatIfManOut] = Field(default_factory=list)
+    kind: str | None = Field(
+        default=None, description='"swap", "add", "ir_move", or "" for any other shape'
+    )
+    week: WhatIfWeekOut | None = None
+    finish: FinishOut | None = None
+    judgement: JudgementOut | None = Field(
+        default=None, description="The recommender's own, untouched"
+    )
+    net: float | None = Field(
+        default=None, description="Categories the move is worth over both horizons"
+    )
+    hurdle: float | None = None
+    hurdle_source: str | None = None
+    hurdle_note: str | None = None
+    clears_hurdle: bool | None = Field(default=None, description="A label, not advice")
+    bid: BidOut | None = Field(
+        default=None, description="What to pay, on a move that clears the bar"
+    )
+    pool_size: int | None = Field(
+        default=None, description="Free agents the replacement charge was taken over"
+    )
+    historical_wire: bool | None = None
+    notes: list[str] = Field(default_factory=list)
     stash: StashOut | None = Field(
         default=None,
         description="What the wait costs, when the man added or moved to IR is ruled out",

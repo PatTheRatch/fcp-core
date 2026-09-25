@@ -250,9 +250,10 @@ def week_page(team: int) -> str:
 
 
 #: A pickups route that passed its checks and then found nothing to report
-#: on: these leagues have no schedule and no lineups, so 409 is the sign the
-#: request got through the door.
-THROUGH = 409
+#: on: these leagues have no draft, no schedule and no lineups, so the route
+#: answers 200 with `readiness` and no number -- and a 200 is the sign the
+#: request got through the door (a refused one is a 401, 402 or 403).
+THROUGH = 200
 
 
 # ---------------------------------------------------------------------------

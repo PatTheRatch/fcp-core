@@ -30,7 +30,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api import access
 from app.api import trades as routes
 from app.api.deps import get_session
+from app.api.pickups import NO_SCHEDULE, NOT_DRAFTED
 from app.db.models import LeagueSeason, Player, Team
+from app.inseason import drafted
 from app.inseason.projected_calibration import SHORT_NOTE
 from app.main import create_app
 from app.pickups.bids import clear_cache
@@ -46,7 +48,16 @@ from tests.pickups_db import (
     projected,
     snapshot,
 )
-from tests.scoring_db import LEAGUE_ID, held, league_season, matchup, player
+from tests.scoring_db import (
+    AUCTION_NOTE,
+    BEFORE_THE_AUCTION,
+    LEAGUE_ID,
+    held,
+    league_season,
+    matchup,
+    player,
+    undrafted_season,
+)
 
 SEASON = 2026
 #: A season with settings and teams and nothing else: the shape 2027 is in
@@ -169,11 +180,19 @@ def seeded(scoring_factory: sessionmaker[Session]) -> Iterator[sessionmaker[Sess
             projected(session, free, 70, scaled(factor), season=SEASON)
             on_the_wire(session, ls, free)
 
-        league_season(session, season=UNDRAFTED, periods=1, days_per_period=7)
+        # 2027 before its auction: a roster on every day, all of it ESPN's
+        # pre-draft feed, and no NBA schedule stored yet either.
+        undrafted_season(session, periods=1, days_per_period=7)
         session.commit()
     clear_cache()
     clear_lines()
     yield scoring_factory
+
+
+@pytest.fixture(autouse=True)
+def before_the_auction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The morning the ghost rosters were found, so 2027's auction is ahead."""
+    monkeypatch.setattr(drafted, "CLOCK", lambda: BEFORE_THE_AUCTION)
 
 
 @pytest.fixture
@@ -270,16 +289,24 @@ def test_a_roster_as_of_a_day_is_that_days_and_never_a_later_ones(client: TestCl
 def test_a_season_with_nothing_to_judge_from_says_so_rather_than_refusing(
     client: TestClient,
 ) -> None:
-    """2027 before its draft: no schedule, no rosters, and no error either."""
-    for which, params in (("rosters", {}), ("report", {"with_team": AWAY, "give": 1})):
+    """2027 before its draft: rosters on every day, none of them a roster, and
+    no error either. The note is the draft's own dated sentence, because the
+    draft is what everything else waits on; `missing` still lists the rest."""
+    for which, params in (
+        ("rosters", {}),
+        ("report", {"with_team": AWAY, "give": 1}),
+        ("pool", {"with_team": AWAY}),
+    ):
         answer = client.get(url(which, season=UNDRAFTED), params=params)
         assert answer.status_code == 200, which
         body = answer.json()
-        assert body["readiness"]["ready"] is False
-        note = body["readiness"]["note"]
-        assert f"season {UNDRAFTED} has nothing to judge a trade from yet" in note
-        assert "no NBA schedule is stored" in note
+        assert body["readiness"] == {
+            "ready": False,
+            "missing": [NOT_DRAFTED, NO_SCHEDULE],
+            "note": AUCTION_NOTE,
+        }, which
         assert body["calibration_note"] == CALIBRATION_NOTE
+    assert client.get(url("pool", season=UNDRAFTED)).json()["candidates"] == []
     assert client.get(url("rosters", season=UNDRAFTED)).json()["teams"] == []
     assert (
         client.get(url("report", season=UNDRAFTED), params={"with_team": AWAY, "give": 1}).json()[

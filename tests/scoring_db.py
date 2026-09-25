@@ -40,10 +40,17 @@ NINE = ("PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%")
 #: says so with `drafted_at=` a date ahead, or None.
 DRAFTED = object()
 
+#: The latest draft a default may name: 2026's, which is behind the real
+#: clock. A 2027 test season drafted "the October before" would otherwise be
+#: an auction still ahead until 2026-10-18 and a held one after it, and the
+#: suite would change its answers on a date.
+LATEST_DRAFT = datetime(2025, 10, 18, 17, tzinfo=UTC)
+
 
 def drafted_before(season: int) -> datetime:
-    """The draft of `season`: 2025-10-18 at 17:00 UTC for 2026, as it was."""
-    return datetime(season - 1, 10, 18, 17, tzinfo=UTC)
+    """The draft of `season`: 2025-10-18 at 17:00 UTC for 2026, as it was,
+    and never later than that."""
+    return min(datetime(season - 1, 10, 18, 17, tzinfo=UTC), LATEST_DRAFT)
 
 
 def league_season(
@@ -54,7 +61,7 @@ def league_season(
     periods: int = 2,
     regular_season_periods: int | None = None,
     days_per_period: int = 7,
-    drafted_at: datetime | None | object = DRAFTED,
+    drafted_at: datetime | object | None = DRAFTED,
 ) -> tuple[LeagueSeason, list[Team], list[MatchupPeriod]]:
     """A season with teams, the nine categories and `periods` matchup periods,
     drafted the October before unless `drafted_at` says otherwise."""
@@ -275,3 +282,61 @@ def transaction(
             )
         )
     session.flush()
+
+
+#: The morning the ghost rosters were found, and the auction they were found
+#: before: 2027's, scheduled for Sat, Oct 10 at 2:00 PM Eastern.
+BEFORE_THE_AUCTION = datetime(2026, 9, 25, 12, tzinfo=UTC)
+AUCTION = datetime(2026, 10, 10, 18, tzinfo=UTC)
+#: What every route says about that season, word for word.
+AUCTION_NOTE = (
+    "The auction is Sat, Oct 10 at 2:00 PM ET; there are no rosters to project until then."
+)
+
+
+def ghost_rosters(
+    session: Session, teams: list[Team], period: MatchupPeriod, days: range = range(1, 8)
+) -> None:
+    """ESPN's pre-draft roster feed as the ingest of 2026-09-23 stored it: every
+    team holding a roster on every day, and no pick, move or score behind it."""
+    for team in teams:
+        for number in (1, 2, 3):
+            who = player(session, f"Ghost {team.espn_team_id}-{number}")
+            for day in days:
+                held(session, team, period, who, day, season=2027)
+
+
+def undrafted_season(
+    session: Session,
+    *,
+    team_names: tuple[str, ...] = ("Home", "Away"),
+    periods: int = 2,
+    days_per_period: int = 7,
+) -> tuple[LeagueSeason, list[Team], list[MatchupPeriod]]:
+    """2027 as it was stored before its auction: the date ahead, a week-one
+    pairing, and ghost rosters on every day of the first period. A test that
+    reads it moves `app.inseason.drafted.CLOCK` to `BEFORE_THE_AUCTION`, so the
+    auction stays ahead whatever day the suite runs on."""
+    ls, teams, matchup_periods = league_season(
+        session,
+        season=2027,
+        team_names=team_names,
+        periods=periods,
+        days_per_period=days_per_period,
+        drafted_at=AUCTION,
+    )
+    ls.draft_type = "AUCTION"
+    session.add(
+        Matchup(
+            matchup_period_id=matchup_periods[0].id,
+            home_team_id=teams[0].id,
+            away_team_id=teams[1].id if len(teams) > 1 else None,
+            winner="UNDECIDED",
+            home_categories_won=0,
+            home_categories_lost=0,
+            categories_tied=0,
+        )
+    )
+    session.flush()
+    ghost_rosters(session, teams, matchup_periods[0], range(1, days_per_period + 1))
+    return ls, teams, matchup_periods
