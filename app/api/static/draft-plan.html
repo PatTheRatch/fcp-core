@@ -1032,7 +1032,8 @@ function drawYours() {
     const rows = roster
       .map((man, i) => {
         const place = ladder[i];
-        const over = isNum(place) && man.price > place;
+        // Red only past what the room lets a place take: the place plus its slack.
+        const over = isNum(place) && man.price > Math.floor(place * (1 + plan().facts.slack));
         return `<tr><td>${i + 1}</td><td>${money(place)}</td><td class="name">${escape(man.name)}</td>` +
           `<td class="${over ? "ws-neg" : ""}">${money(man.price)}</td></tr>`;
       })
