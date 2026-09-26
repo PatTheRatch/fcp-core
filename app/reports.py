@@ -51,7 +51,12 @@ SEASON = "season"
 #: on every load of the week page and by the morning digest, so it is built
 #: once with the others rather than on each reader's clock.
 TODAY = "today"
-KINDS = (STREAM, SEASON, TODAY)
+#: A team's draft plan (`app.draft.plan_store`): not a day's report, but kept
+#: here the same way -- the payload is what the route answers -- because a
+#: cold one takes two minutes. Its "scoring period" is which pool it was
+#: built on (`plan_store.slot_for`), and it is fresh while its key matches.
+DRAFT_PLAN = "draft_plan"
+KINDS = (STREAM, SEASON, TODAY, DRAFT_PLAN)
 
 #: The league's own kinds (`league_reports`): the projected standings, built
 #: once a morning for the whole league rather than once per team.

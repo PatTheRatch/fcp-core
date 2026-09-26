@@ -1758,7 +1758,9 @@ class TeamReport(Base):
 
     __tablename__ = "team_reports"
     __table_args__ = (
-        CheckConstraint("kind IN ('stream', 'season', 'today')", name="ck_team_reports_kind"),
+        CheckConstraint(
+            "kind IN ('stream', 'season', 'today', 'draft_plan')", name="ck_team_reports_kind"
+        ),
         UniqueConstraint(
             "team_id", "kind", "scoring_period", name="uq_team_reports_team_kind_period"
         ),
@@ -1770,6 +1772,74 @@ class TeamReport(Base):
     scoring_period: Mapped[int] = mapped_column(Integer, nullable=False)
     built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DraftPlan(Base):
+    """What one manager keeps of his pre-auction plan (docs/draft_plan.md).
+
+    One row per team (a team row is one team in one season). The model's
+    numbers are not here: they are built from the room and kept in
+    `team_reports` (kind `draft_plan`). This is only what the manager set:
+    his ladder (the amount per place, largest first; null for the model's),
+    his notes, his fan team, and who last wrote it.
+    """
+
+    __tablename__ = "draft_plans"
+    __table_args__ = (UniqueConstraint("team_id", name="uq_draft_plans_team"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    ladder: Mapped[list[int] | None] = mapped_column(JSONB)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    #: An NBA abbreviation ("CLE"), or None: the plan's FAN section.
+    fan_team: Mapped[str | None] = mapped_column(String)
+
+    marks: Mapped[list["DraftPlanMark"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan", order_by="DraftPlanMark.player_id"
+    )
+
+
+class DraftPlanMark(Base):
+    """One man the manager marked in his plan: his going price and his ceiling
+    (bid-up-to) for him, a tag, a note.
+
+    `player_id` is the room's own id -- an ESPN player id, or the negative
+    synthetic id a BBM rookie is boarded under -- so it is not a foreign key.
+    """
+
+    __tablename__ = "draft_plan_marks"
+    __table_args__ = (
+        CheckConstraint(
+            "tag IN ('target', 'let_go', 'nominate', 'ir', 'must', 'none')",
+            name="ck_draft_plan_marks_tag",
+        ),
+        CheckConstraint("bid_up_to IS NULL OR bid_up_to >= 1", name="ck_draft_plan_marks_bid"),
+        CheckConstraint(
+            "going_price IS NULL OR going_price >= 1", name="ck_draft_plan_marks_going"
+        ),
+        UniqueConstraint("plan_id", "player_id", name="uq_draft_plan_marks_plan_player"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("draft_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    player_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: What he thinks the room will pay: the man's cost in the build. None: the model's.
+    going_price: Mapped[int | None] = mapped_column(Integer)
+    #: His own ceiling: caps what the plan pays; what the room holds up. None: the model's.
+    bid_up_to: Mapped[int | None] = mapped_column(Integer)
+    tag: Mapped[str] = mapped_column(String, nullable=False, server_default="none")
+    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    plan: Mapped[DraftPlan] = relationship(back_populates="marks")
 
 
 class LeagueReport(Base):

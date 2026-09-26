@@ -106,6 +106,41 @@ REFRESH_COMMAND = ".venv/bin/python scripts/bbm_pull.py --season {season} --stor
 #: The tags a manager may put on a man (`draft_plan_marks.tag`).
 TAGS = ("target", "let_go", "nominate", "ir", "must", "none")
 
+#: The NBA teams a fan team can be, as Basketball Monster abbreviates them:
+#: the FAN section reads a man's team from BBM's row, so it is BBM's spelling.
+NBA_TEAMS = (
+    "ATL",
+    "BKN",
+    "BOS",
+    "CHA",
+    "CHI",
+    "CLE",
+    "DAL",
+    "DEN",
+    "DET",
+    "GSW",
+    "HOU",
+    "IND",
+    "LAC",
+    "LAL",
+    "MEM",
+    "MIA",
+    "MIL",
+    "MIN",
+    "NOR",
+    "NYK",
+    "OKC",
+    "ORL",
+    "PHI",
+    "PHO",
+    "POR",
+    "SAC",
+    "SAS",
+    "TOR",
+    "UTA",
+    "WAS",
+)
+
 #: How the room's search is run for a plan: the script's defaults.
 RESTARTS = 4
 BUILD_RESTARTS = 12
@@ -308,6 +343,10 @@ class Plan:
     par: dict[str, dict[str, float]]
     #: The model's best roster (the balanced build), with ids.
     best: dict[str, Any] = field(default_factory=dict)
+    #: The room the plan was built in, and its state once the must men are
+    #: bought: what the manager's own prices are re-solved in. Not written.
+    room: Room | None = field(default=None, repr=False)
+    plan_state: DraftState | None = field(default=None, repr=False)
     exported: str = ""
     generated: str = ""
     build_seconds: float | None = None
@@ -710,6 +749,8 @@ def plan_from_room(
         rest=rest_rows,
         par=par,
         best=best_json(balanced, room.distributions),
+        room=room,
+        plan_state=plan_state,
         exported=source.exported,
         generated="computed " + (today or dt.date.today()).strftime("%-d %b %Y"),
     )
