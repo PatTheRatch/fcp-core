@@ -22,6 +22,7 @@
   <div class="ws-head-tools">
     <span class="ws-seg" id="pools" role="group" aria-label="The pool the plan is built on"></span>
     <button type="button" class="ws-btn sm quiet" id="rebuild" hidden>Build again</button>
+    <button type="button" class="ws-btn sm" data-account="page-account" aria-haspopup="dialog">How this page works</button>
     <button type="button" class="ws-btn sm quiet" data-account="plan-account" aria-haspopup="dialog">How this is worked out</button>
   </div>
 </header>
@@ -37,6 +38,34 @@
      a mapping he can fix (sources.js). Above THE LADDER, in every state but
      a drafted season. -->
 <div id="sources" hidden></div>
+
+<!-- How this page works: six short facts, each a door to the deeper account
+     that already exists (the shell's data-account delegate opens it from
+     inside the drawer). The source line is filled in from the answer. -->
+<div class="ws-account" id="page-account" data-title="How this page works" data-kicker="The draft plan">
+  <p data-k="The source"><span id="how-source">One pool of projections at a time, named at the top and in
+    SOURCES.</span> Basketball Monster's numbers are paid and yours alone: a plan on them, or on a composite
+    with them in it, is shown to nobody else.
+    <button type="button" class="ws-btn sm quiet" data-account="sources-account">Sources, in full →</button></p>
+  <p data-k="What the model works out">The ladder, from how this league's winning teams spent; a going price
+    per man, from what the room pays; our ceiling per man, from the best roster with him against the best
+    roster without him; and the model's lists.
+    <button type="button" class="ws-btn sm quiet" data-account="ladder-account">The ladder →</button>
+    <button type="button" class="ws-btn sm quiet" data-account="plan-account">The figures →</button></p>
+  <p data-k="What is yours">Your going price, your ceiling, a tag, the must-have men and your notes, per team
+    whatever pool is in view. They feed the build -- your going price is his cost in the best roster, your
+    ceiling caps what the plan pays -- and never overwrite the model's figures, which stay beside them.
+    <button type="button" class="ws-btn sm quiet" data-account="board-account">The board →</button></p>
+  <p data-k="On the night">The draft room reads what you kept when it opens: your ceiling held up beside
+    ours, your tag and your going price on each man, your ladder's cap.
+    <button type="button" class="ws-btn sm quiet" data-account="yours-account">Your plan →</button></p>
+  <p data-k="A composite">A source you make from others with your own weights: per man the weighted mean over
+    the sources that carry him, FG% and FT% from the weighted makes and attempts, worked out again whenever
+    one of them changes. The weights are yours; nothing here calls a source better.
+    <button type="button" class="ws-btn sm quiet" data-account="sources-account">How a composite is made →</button></p>
+  <p data-k="Nothing here acts">Nothing on this page bids, nominates or touches ESPN. It is a plan you make;
+    the room is where you act, and ESPN is where a bid is placed.</p>
+</div>
 
 <div class="ws-account" id="plan-account" data-title="The draft plan">
   <p data-k="What this is">The plan you take into the auction, made from the draft room's own
@@ -383,6 +412,17 @@ const poolLabel = (choice) => {
   return found ? found.label : choice;
 };
 
+/** A composite's recipe in words, with how many men each count of sources carried. */
+const poolNote = (choice) => {
+  const found = ((ANSWER && ANSWER.choices) || []).find((c) => c.source === choice);
+  if (!found) return "";
+  const carried = Object.keys(found.carried || {})
+    .sort((a, b) => b - a)
+    .map((k) => `${found.carried[k]} men from ${k} of ${(found.recipe || []).filter((p) => p.weight > 0).length}`)
+    .join(", ");
+  return `${found.note}${carried ? ` (${carried})` : ""}`;
+};
+
 function facts() {
   const a = ANSWER;
   const p = plan();
@@ -445,6 +485,13 @@ function facts() {
       (source.stale ? ` <span class="ws-tag neg">old</span>` : ""),
     rows: [
       ["Pool", escape(source.label || p.source.note || source.name)],
+      ...(source.kind === "composite"
+        ? [[
+            "Recipe",
+            `${escape(poolNote(source.choice))}: per man the weighted mean over the sources that carry him, ` +
+              `FG% and FT% from the weighted makes and attempts (app/projections/composite.py)`,
+          ]]
+        : []),
       ["Chooser", "the pools you may plan on are at the top of the page and in SOURCES; each keeps its own build"],
       ["Detail", escape(p.source.pool || "")],
       ["Captured", source.captured_on ? `${escape(source.captured_on)}${escape(age)}` : "not a capture"],
@@ -1153,10 +1200,22 @@ function drawSources() {
   });
 }
 
+/** How this page works: its first fact names the pool in view. */
+function drawHow() {
+  const s = ANSWER.source;
+  if (!s) return;
+  const found = (ANSWER.choices || []).find((c) => c.source === s.choice);
+  const when = s.captured_on ? `, captured ${shortDate(s.captured_on)}${isNum(s.age_days) ? ` (${count(s.age_days, "day")} ago)` : ""}` : "";
+  const what =
+    s.kind === "composite" ? ` (a composite: ${found ? found.note : "your weights"})` : s.kind === "upload" ? " (your upload)" : "";
+  $("how-source").textContent = `This plan reads ${s.label || s.name}${what}${when}, one pool at a time; the chooser at the top switches it.`;
+}
+
 function draw(options) {
   drawHeader();
   drawState();
   drawSources();
+  drawHow();
   const ready = ANSWER.state === "ready";
   $("facts").hidden = !ready;
   $("body").hidden = !ready;

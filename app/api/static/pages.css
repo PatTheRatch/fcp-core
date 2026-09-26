@@ -1599,7 +1599,7 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 /* ---- SOURCES (sources.js): the pools, the upload's mapping, a composite ---- */
 .src-season{margin:0 0 var(--sp-3)}
 .src-grid td.name{min-width:12rem;white-space:normal;overflow-wrap:break-word}
-.src-grid td.src-by{white-space:nowrap}
+.src-grid td.src-by,.src-grid td.small{white-space:nowrap}
 .src-pick{padding:0;font:inherit;font-weight:inherit;color:var(--fg);background:none;border:0;cursor:pointer;
   text-align:left}
 .src-pick:hover{text-decoration:underline;text-underline-offset:3px}
