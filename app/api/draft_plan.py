@@ -57,7 +57,7 @@ from app.draft import plan as engine
 from app.draft.market import MINIMUM_BID
 from app.draft.pool import roster_size_for
 from app.inseason.drafted import season_is_drafted, when
-from app.projections.sources import describe, may_show
+from app.projections.sources import choice_of, describe, may_show
 
 router = APIRouter(tags=["draft plan"])
 
@@ -198,6 +198,7 @@ def get_plan(
         "source": {
             **engine.source_facts(pool, season, dt.date.today()),
             "name": describe(pool.tag),
+            "choice": choice_of(pool.tag),
         },
         "choices": _choices(session, season, viewer),
     }

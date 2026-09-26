@@ -17,7 +17,8 @@ lands, one function learns the answer and nothing else moves.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from app.draft.valuation import PlayerProjection
 
@@ -33,9 +34,50 @@ BBM = "bbm"
 UPLOAD_PREFIX = "upload:"
 
 
+#: A composite: a named source worked out from other sources with weights
+#: (`app.projections.composite`), tagged with its set id, e.g. "composite:9".
+#: One whose recipe carries BBM is tagged "composite:9+bbm", and is gated
+#: exactly like BBM: a number that is half BBM's is still BBM's number.
+COMPOSITE_PREFIX = "composite:"
+WITH_BBM = "+bbm"
+
+
 def upload_source(set_id: int) -> str:
     """The source tag for one stored projection set."""
     return f"{UPLOAD_PREFIX}{set_id}"
+
+
+def recipe_has_bbm(recipe: Iterable[Mapping[str, Any]] | None) -> bool:
+    """Whether a composite's recipe reads Basketball Monster at any weight above none."""
+    return any(
+        str(part.get("source")) == BBM and float(part.get("weight") or 0) > 0
+        for part in recipe or ()
+    )
+
+
+def composite_source(set_id: int, recipe: Iterable[Mapping[str, Any]] | None) -> str:
+    """The source tag for a composite: its gate is learned from its recipe."""
+    return f"{COMPOSITE_PREFIX}{set_id}{WITH_BBM if recipe_has_bbm(recipe) else ''}"
+
+
+def composite_set_id(source: str) -> int | None:
+    """The set id behind a composite tag or choice, or None for any other source."""
+    if not source.startswith(COMPOSITE_PREFIX):
+        return None
+    tail = source[len(COMPOSITE_PREFIX) :].removesuffix(WITH_BBM)
+    return int(tail) if tail.isdigit() else None
+
+
+def set_source(projection_set: Any) -> str:
+    """The tag for a stored set of either kind (`projection_sets.kind`)."""
+    if getattr(projection_set, "kind", "upload") == "composite":
+        return composite_source(int(projection_set.id), projection_set.recipe)
+    return upload_source(int(projection_set.id))
+
+
+def choice_of(source: str) -> str:
+    """What a page or a URL names a source by: the tag without its gate mark."""
+    return source.removesuffix(WITH_BBM) if source.startswith(COMPOSITE_PREFIX) else source
 
 
 def upload_set_id(source: str) -> int | None:
@@ -49,10 +91,13 @@ def upload_set_id(source: str) -> int | None:
 def is_gated(source: str) -> bool:
     """Whether per-player numbers from this source may leave their owner.
 
-    Only BBM's are. An uploaded set belongs to the manager who uploaded it and
-    an ESPN line belongs to the league, so neither is withheld from anyone who
-    can already see the room.
+    Only BBM's are, and a composite's whose recipe carries BBM (its tag says
+    so, `composite_source`). An uploaded set belongs to the manager who
+    uploaded it and an ESPN line belongs to the league, so neither is
+    withheld from anyone who can already see the room.
     """
+    if source.startswith(COMPOSITE_PREFIX):
+        return source.endswith(WITH_BBM)
     return source == BBM
 
 
@@ -92,4 +137,8 @@ def _named(source: str) -> str:
     set_id = upload_set_id(source)
     if set_id is not None:
         return f"uploaded projection set {set_id}"
+    set_id = composite_set_id(source)
+    if set_id is not None:
+        with_bbm = " (carries Basketball Monster's paid numbers; not to be shared)"
+        return f"composite source {set_id}{with_bbm if source.endswith(WITH_BBM) else ''}"
     return source

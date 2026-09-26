@@ -1590,6 +1590,49 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .dp-nine dd{margin:0;display:flex;flex-direction:column;align-items:center}
 .dp-nine small{font-family:var(--font-data);font-size:var(--t-2xs);color:var(--fg-2);white-space:nowrap}
 
+/* ---- SOURCES (sources.js): the pools, the upload's mapping, a composite ---- */
+.src-season{margin:0 0 var(--sp-3)}
+.src-grid td.name{white-space:normal;overflow-wrap:anywhere}
+.src-grid td.src-by{white-space:nowrap}
+.src-pick{padding:0;font:inherit;font-weight:inherit;color:var(--fg);background:none;border:0;cursor:pointer;
+  text-align:left}
+.src-pick:hover{text-decoration:underline;text-underline-offset:3px}
+.src-up{display:flex;flex-direction:column;gap:var(--sp-3)}
+.src-up > *{margin:0}
+.src-file{max-width:100%;font:inherit;font-size:var(--t-md);color:var(--fg-2)}
+.src-file::file-selector-button{height:30px;margin-right:var(--sp-2);padding:0 12px;border:1px solid var(--line-strong);
+  border-radius:var(--r-control);background:var(--panel);color:var(--fg);font:inherit;cursor:pointer}
+.src-file::file-selector-button:hover{background:var(--inset)}
+.src-maphead{margin:0}
+.src-last{margin:0}
+.src-mapframe{border:1px solid var(--line);border-radius:var(--r-control)}
+.dp .scroll .ws-grid.src-map,.ws-page .scroll .ws-grid.src-map{min-width:0}
+.src-map td{height:34px}
+.src-map .ws-select{height:28px;min-width:8rem;max-width:14rem}
+.src-field b{display:block;font-family:var(--font-data);font-weight:600;color:var(--fg)}
+.src-field .faint{font-size:var(--t-2xs)}
+.src-sample{color:var(--fg-2);font-size:var(--t-sm);white-space:pre;overflow:hidden;text-overflow:ellipsis;
+  max-width:12rem}
+.src-basis{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
+.src-basis .ws-sub{margin:0}
+.src-basis .ws-note{flex:1 1 100%;margin:0}
+.src-match{margin:0}
+.src-names summary{padding:0 var(--sp-3);min-height:30px;font-size:var(--t-sm)}
+.src-reasons{margin:0;padding-left:1.2em;font-size:var(--t-md)}
+.src-why{min-height:1.3em;font-size:var(--t-md);color:var(--fg-2)}
+.src-why.ws-neg{color:var(--neg)}
+@media (max-width:700px){
+  /* A phone: the mapping's four columns stack two and two, no sideways scroll. */
+  .src-map thead{display:none}
+  .src-map tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);border-bottom:1px solid var(--line)}
+  .src-map tbody tr:last-child{border-bottom:0}
+  .src-map td{height:auto;padding:4px var(--sp-2);border-bottom:0;text-align:left}
+  .src-map tr > :first-child{padding-left:var(--sp-2)}
+  .src-map .ws-select{max-width:100%;width:100%}
+  .src-map .ws-field.sel{display:flex}
+  .src-sample{max-width:none;white-space:pre-wrap;overflow-wrap:anywhere}
+}
+
 /* Nothing on these pages animates to say anything -- the drawer and the
    rail slide in, and that is all -- and a reader who has asked for
    stillness gets it outright rather than nearly. */

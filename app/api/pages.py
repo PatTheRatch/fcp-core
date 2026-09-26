@@ -95,6 +95,7 @@ ASSETS = {
     "pages.js": "text/javascript; charset=utf-8",
     "shell.js": "text/javascript; charset=utf-8",
     "scenario.js": "text/javascript; charset=utf-8",
+    "sources.js": "text/javascript; charset=utf-8",
     "favicon.svg": "image/svg+xml",
 }
 

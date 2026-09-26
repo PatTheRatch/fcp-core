@@ -38,28 +38,11 @@
   </div>
 </section>
 
-<section class="ws-sect">
-  <div class="ws-sect-head"><h2 class="ws-label">How to upload one</h2><span class="ws-k">three ways</span></div>
-  <details class="ws-disc ws-panel" id="upload-how">
-  <summary>The file it wants, and where to send it</summary>
-  <div class="ws-disc-body">
-  <p class="ws-p">A CSV, .xlsx or .xls with one row per player and a column for each of the
-    nine (with the made and attempted behind the two percentages), per game or season totals:
-    the importer measures which. Preview first: it reports how it read each column and which
-    names it could not match, and stores nothing.</p>
-  <p class="ws-p"><b>In the browser:</b> the upload form is the API's own page,
-    <a href="/docs#/projections">/docs, under projections</a>. Try
-    <span class="mono">POST /projections/sets/preview</span> with your file and the season,
-    read what it says, then the same with <span class="mono">POST /projections/sets</span>
-    and a name to keep it.</p>
-  <p class="ws-p"><b>From a terminal:</b>
-    <span class="mono">python scripts/upload_projections.py --season 2027 --file FILE --name "…"</span>
-    previews it, and the same with <span class="mono">--commit</span> keeps it.
-    <span class="mono">docs/projection_sources.md</span> has the
-    columns it understands and how to force one it guesses wrong.</p>
-  </div>
-  </details>
-</section>
+<!-- SOURCES (sources.js): the pools for a season, and a file uploaded with a
+     mapping he can fix -- the same section the draft plan page draws. -->
+<div class="src-season" id="season-pick" hidden><span class="ws-field sel"><label class="sr" for="season">Season</label>
+  <select class="ws-select" id="season"></select></span></div>
+<div id="sources"></div>
 
 <p class="ws-foot" id="foot"></p>
 
@@ -67,19 +50,28 @@
 <script src="/pages/static/pages.js"></script>
 <script src="/pages/static/scenario.js"></script>
 <script src="/pages/static/shell.js"></script>
+<script src="/pages/static/sources.js"></script>
 <script>
 "use strict";
 
 /* Projections, an account page: the reader's own uploaded sets
-   (/projections/sets answers with his own only) and how to add one. */
+   (/projections/sets answers with his own only), and SOURCES for a season --
+   the pools he may plan on and the upload with its mapping, as on the draft
+   plan page (sources.js). */
 
 async function start() {
   startTheme();
+  const stored = await drawSets();
+  if (stored) await sourcesFor(stored);
+}
+
+/** Every set of his, every season: the list this page has always drawn. */
+async function drawSets() {
   const sets = await get("/projections/sets");
   if (!sets.ok) {
     fail(`Your sets cannot be read: ${sets.detail}`);
     $("sets").innerHTML = "";
-    return;
+    return null;
   }
   $("tag").textContent = count(sets.body.length, "set");
   $("sets").innerHTML = sets.body.length
@@ -88,12 +80,30 @@ async function start() {
           (s) =>
             `<tr><td class="name">${escape(s.name)}</td><td>${s.season}</td>` +
             `<td>${s.rows}</td><td>${escape(String(s.uploaded_at).slice(0, 10))}</td>` +
-            `<td class="name small">${escape(s.source_note || dash)}</td></tr>`,
+            `<td class="name small">${escape(s.kind === "composite" ? "a composite" : s.source_note || dash)}</td></tr>`,
         )
         .join("")
     : `<tr><td colspan="5" class="empty">None yet. Without one, the room and the plans ` +
       `work from ESPN's own projections.</td></tr>`;
   $("foot").innerHTML = `Refreshed at <b>${clock()}</b>.`;
+  return sets.body;
+}
+
+/** SOURCES for the newest season of his leagues (or of his sets), with the
+ *  others a select away. */
+async function sourcesFor(stored) {
+  const leagues = await get("/leagues", { quiet: true });
+  const seasons = new Set(stored.map((s) => s.season));
+  (leagues.ok ? leagues.body : []).forEach((row) => (row.seasons || []).forEach((s) => seasons.add(s)));
+  const listed = [...seasons].sort((a, b) => b - a);
+  const asked = Number(new URLSearchParams(window.location.search).get("season"));
+  const season = listed.includes(asked) ? asked : listed[0] || new Date().getFullYear() + 1;
+  if (listed.length > 1) {
+    $("season-pick").hidden = false;
+    $("season").innerHTML = listed.map((s) => `<option${s === season ? " selected" : ""}>${s}</option>`).join("");
+    $("season").onchange = () => window.location.assign(`?season=${$("season").value}`);
+  }
+  await SOURCES.mount({ host: $("sources"), season, current: null, choose: null, onChanged: () => drawSets() });
 }
 
 start();

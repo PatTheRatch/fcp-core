@@ -33,6 +33,11 @@
 <dl class="ws-factline ov-facts" id="facts" hidden></dl>
 <p class="ws-p dp-state" id="state" hidden></p>
 
+<!-- SOURCES: every pool he may plan on, and a file of his own uploaded with
+     a mapping he can fix (sources.js). Above THE LADDER, in every state but
+     a drafted season. -->
+<div id="sources" hidden></div>
+
 <div class="ws-account" id="plan-account" data-title="The draft plan">
   <p data-k="What this is">The plan you take into the auction, made from the draft room's own
     arithmetic before the first pick (<span class="mono">app/draft/plan.py</span>): the league's
@@ -177,6 +182,7 @@
 <script src="/pages/static/pages.js"></script>
 <script src="/pages/static/scenario.js"></script>
 <script src="/pages/static/shell.js"></script>
+<script src="/pages/static/sources.js"></script>
 <script>
 "use strict";
 
@@ -1088,9 +1094,25 @@ $("notes").addEventListener("input", () => {
 
 /* ---- the whole page ------------------------------------------------------------- */
 
+/** SOURCES, mounted once the first answer says which pool is in view. */
+let SOURCES_UP = false;
+function drawSources() {
+  const host = $("sources");
+  host.hidden = ANSWER.state === "drafted";
+  if (host.hidden || SOURCES_UP) return;
+  SOURCES_UP = true;
+  SOURCES.mount({
+    host,
+    season: ANSWER.season || WHERE.season,
+    current: ANSWER.source ? ANSWER.source.choice : null,
+    choose: (choice) => window.location.assign(window.location.pathname + `?source=${encodeURIComponent(choice)}`),
+  });
+}
+
 function draw(options) {
   drawHeader();
   drawState();
+  drawSources();
   const ready = ANSWER.state === "ready";
   $("facts").hidden = !ready;
   $("body").hidden = !ready;

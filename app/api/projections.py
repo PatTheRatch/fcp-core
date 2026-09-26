@@ -51,7 +51,8 @@ from app.api.schemas import (
     RejectedRowOut,
 )
 from app.db.models import Player, ProjectionRow, ProjectionSet
-from app.projections.sources import describe, may_show, upload_source
+from app.projections.catalog import catalog
+from app.projections.sources import describe, may_show, set_source
 from app.projections.upload import (
     COUNTS,
     FIELDS,
@@ -168,6 +169,27 @@ def create_set(
     return out
 
 
+@router.get("/sources", summary="Every pool this viewer may plan on for a season")
+def list_sources(
+    session: SessionDep,
+    viewer: CurrentUser,
+    season: int = Query(description="The season to plan, e.g. 2027"),
+) -> dict[str, Any]:
+    """The draft plan's SOURCES: BBM's newest capture when it is his, ESPN's
+    projections, his uploads and his composites, each with its rows, how
+    many matched, when and by whom (`app.projections.catalog`). A composite
+    that carries BBM is listed only to the viewer who owns BBM."""
+    listed = catalog(
+        session, season, owners=upload_owners(viewer), owns_bbm=viewer_owns_bbm(viewer)
+    )
+    return {
+        "season": season,
+        "owns_bbm": viewer_owns_bbm(viewer),
+        "sources": [one.as_json() for one in listed],
+        "fields": [{"field": name, "required": name in REQUIRED} for name in FIELDS],
+    }
+
+
 @router.get("/sets", summary="Stored projection sets, newest first")
 def list_sets(
     session: SessionDep,
@@ -277,6 +299,21 @@ def _as_path(file: UploadFile) -> Iterator[Path]:
 # ---------------------------------------------------------------------------
 
 
+def viewer_owns_bbm(viewer: Viewer) -> bool:
+    """Whether this viewer owns the stored BBM captures: the site's owner,
+    whose membership `scripts/bbm_pull.py` signs in with."""
+    return viewer.is_owner
+
+
+def upload_owners(viewer: Viewer) -> list[str]:
+    """Whose stored sets are this viewer's (`_owns`): his user id, and for
+    the site's owner the label the sets before accounts were stored under."""
+    owners = [str(viewer.user_id)] if viewer.user_id is not None else []
+    if viewer.is_owner or viewer.all_access:
+        owners.append(DEFAULT_OWNER)
+    return owners
+
+
 def _owner_of(viewer: Viewer, asked: str) -> str:
     """Whose a new set is: the uploader's user id, or in single mode the label."""
     if viewer.all_access or viewer.user_id is None:
@@ -299,10 +336,13 @@ def _readable(projection_set: ProjectionSet, viewer: Viewer) -> bool:
     His own set only, and then the API's half of the one check the
     constraint asks for (docs/projection_sources.md): `may_show`, with
     `viewer_owns_source` answered from `projection_set.owner`. An uploaded
-    set is not gated, so for an owner that answer is yes.
+    set is not gated, so for an owner that answer is yes. A composite whose
+    recipe carries BBM is gated like BBM (`sources.set_source`), so it
+    also needs the viewer who owns BBM's captures.
     """
     owns = _owns(projection_set, viewer)
-    return owns and may_show(upload_source(projection_set.id), viewer_owns_source=owns)
+    tag = set_source(projection_set)
+    return owns and may_show(tag, viewer_owns_source=owns and viewer_owns_bbm(viewer))
 
 
 def _stored_set(session: Session, set_id: int, viewer: Viewer) -> ProjectionSet:
@@ -312,7 +352,7 @@ def _stored_set(session: Session, set_id: int, viewer: Viewer) -> ProjectionSet:
     if not _readable(projection_set, viewer):
         raise HTTPException(
             status_code=403,
-            detail=f"{describe(upload_source(set_id))}: not this reader's to see",
+            detail=f"{describe(set_source(projection_set))}: not this reader's to see",
         )
     return projection_set
 

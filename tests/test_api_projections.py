@@ -462,6 +462,34 @@ def test_the_stored_mapping_is_offered_on_a_reupload_by_name(client: TestClient)
     assert mobley["per_game"]["PTS"] == pytest.approx(19.5)
 
 
+def test_sources_lists_espn_and_his_uploads_with_their_matching(client: TestClient) -> None:
+    """SOURCES: ESPN's projections for the season and each upload by name,
+    with its rows, matched and unmatched. No BBM capture is stored here."""
+    client.post(
+        "/projections/sets",
+        files=upload(ODD, "odd.csv"),
+        data=page_data(ODD_FIELDS, name="Hand sheet"),
+    )
+    body = client.get("/projections/sources", params={"season": SEASON}).json()
+    listed = {s["source"]: s for s in body["sources"]}
+    assert [s["kind"] for s in body["sources"]] == ["espn", "upload"]
+    assert listed["espn"]["rows"] == 1  # the one projected line seeded
+    hand = next(s for s in body["sources"] if s["kind"] == "upload")
+    assert hand["source"] == f"upload:{hand['set_id']}"
+    assert (hand["name"], hand["rows"], hand["matched"], hand["unmatched"]) == (
+        "Hand sheet",
+        2,
+        1,
+        1,
+    )
+    assert hand["by"] == "patrick" and hand["gated"] is False
+    assert [f["field"] for f in body["fields"] if not f["required"]][-3:] == [
+        "minutes",
+        "value",
+        "injury",
+    ]
+
+
 def test_a_reupload_missing_a_column_is_partly_as_last_time(client: TestClient) -> None:
     client.post(
         "/projections/sets",

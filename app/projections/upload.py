@@ -192,7 +192,17 @@ SYNONYMS: Mapping[str, tuple[str, ...]] = {
     "minutes": ("mpg", "min", "minutes", "m/g", "min/g", "mins", "minutes per game"),
     # `$` before `value`: Basketball Monster's `Value` column is a z-score
     # total, not dollars, and a file carrying both means the dollars.
-    "value": ("$", "auction $", "auction value", "dollars", "dollar value", "$ value", "value"),
+    "value": (
+        "$",
+        "auction $",
+        "auction value",
+        "proj $",
+        "projected $",
+        "dollars",
+        "dollar value",
+        "$ value",
+        "value",
+    ),
     "injury": ("inj", "injury", "injury status", "injury note", "health"),
 }
 
