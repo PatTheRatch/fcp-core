@@ -1,8 +1,10 @@
 # Where projections come from, and which of them may leave this machine
 
 **Written:** 2026-09-17, after the BBM store and the in-season listener landed.
-**Status:** steps 2 and 3 below are built (2026-09-18); the gate's ownership
-question still waits on accounts. Nothing here changed how the draft room's
+**Status:** steps 2 and 3 below are built (2026-09-18), and sources on the
+draft plan page -- the mapping, the chooser, composites -- on 2026-09-26
+("Sources on the draft plan page", below); the gate's ownership question
+still waits on accounts. Nothing here changed how the draft room's
 numbers come out; what changed is that every output now names its source.
 
 ## The constraint
@@ -138,6 +140,132 @@ Two things deliberately not done: the set is not versioned per player per day
 the way `bbm_projections` is (a new upload is a new set, which answers "what
 did I draft on" without the machinery), and an uploaded set is discounted for
 availability like ESPN's, because unlike BBM's it makes no promise about it.
+
+## Sources on the draft plan page, 2026-09-26
+
+The owner: "we should be able to upload projections here [on the draft plan
+page] ... then we can name that source and it comes up. from here, we'd be
+able to select from different sources, or ... a consensus one where you can
+add weights." Built: SOURCES on the plan page (and on `/account/projections`,
+whose how-to that sent people to `/docs` is gone), the source chooser, and
+composites. docs/draft_plan.md has the page.
+
+**The mapping he can fix.** `upload.py` stays the one parser; the page's
+mapping is the existing `map` override, extended to every field (`FIELDS`:
+name, games, PTS, REB, AST, STL, BLK, 3PM, TO, FGM, FGA, FTM, FTA, FG%, FT%,
+and the optional team, position, minutes, value and injury -- the last
+three new, stored on `projection_rows`) and sent whole (`exact=true`: only
+his entries are applied, so a field he set to none stays none). The preview
+now returns the file's headers, the first three values under each, every
+field with its column (or, for a makes field, "FG% x FGA"), the basis with
+its reason ("the median of 'Pts/G' is 15.8, not above 200: per-game
+numbers"), and `basis` can be forced (`per_game` or `totals`; `auto`
+measures). The page blocks Store while a required field has no column or
+one column is chosen for two fields, and says which; the server refuses a
+percentage without attempts with the same reason as before.
+
+**The stored mapping.** A name is the source: unique per owner and season
+(migration 0033; any stored twins were renamed "name (2)" first). A file
+stored under a name he already keeps replaces that set's rows in place and
+keeps its id, so a composite that reads it knows to rebuild, and a plan on it
+is keyed on the new upload time. `projection_sets.mapping` keeps the mapping
+it was stored with -- `{"fields": {field: header | null}, "basis": "auto" |
+"per_game" | "totals", "headers": [...]}` -- beside `column_map`, which is how
+the file was actually read. A file previewed or stored under that name with
+no mapping sent is read with it first (`upload.last_time`): "as last time",
+or "partly as last time" naming the fields whose column is gone, which the
+synonyms then guess. A mapping he fixes is his, for that file; it never
+edits `SYNONYMS`.
+
+**The synonyms, widened.** From memory of the sites' own tables, nothing
+downloaded: Hashtag Basketball (`TREB`, `MPG`), Rotowire (`MIN`),
+FantasyPros (`Positions`), Yahoo (`GP*`, `3PTM`, `ST`; a trailing asterisk is
+now dropped from every header), ESPN's own table (`PLAYER`, `MIN`), a
+hand-made sheet (`Points`, `Field Goals Made`, `Free Throws Attempted`,
+`Threes Made`, `3PT`, `TOV/G`), and `$`, `Auction $`, `Proj $`, `Dollars`,
+`Value` for value; `Inj`, `Injury`, `Health` for injury. **Unsure:** whether
+FantasyPros writes its positions as `Positions` or folds them into the name
+cell ("Name (TEAM - POS)", which would need splitting); Hashtag's `TOTAL`
+is a z-score total, not dollars, and is left unmapped; `Value` is last among
+value's spellings because Basketball Monster's `Value` is a z-score, and a
+file whose `Value` is dollars will still read right when it has no `$`.
+**Not handled:** a single `FGM/FGA` or `FGM/A*` cell holding "7.2/13.4"
+(ESPN's and Yahoo's tables) has to be split into two columns first.
+
+**The chooser.** Every pool the viewer may plan on, from one list
+(`app/projections/catalog.py`, `GET /projections/sources`) that SOURCES, the
+plan header and `draft_board` all read: BBM only to the member who owns the
+captures, ESPN, his uploads, his composites (one that reads BBM only when he
+owns BBM too). The owner of the captures sees `BBM · ESPN · his sets`;
+another manager of the same team sees `ESPN · his own sets`, never BBM and
+never the owner's sets.
+
+### Composites
+
+A composite is a named source built from other sources with weights: a
+`projection_sets` row of kind `composite` (migration 0033), its `recipe`
+`[{source, weight}]` (`source` is `"bbm"`, `"espn"` or one of his upload
+ids; weight 0-100, 0 not read), its rows materialised by
+`app/projections/composite.py` and rebuilt whenever an input changes. The
+recipe is the truth; the rows are a cache, and `built_from` records what
+they were worked out from -- the BBM capture's date, each input set's upload
+time, a fingerprint of ESPN's projections (rows, points, games), the weights
+-- and when, with how many men each count of sources carried. They are
+rebuilt when that record no longer matches (reading SOURCES, planning on
+the composite) and at once when one of its sheets is uploaded again; not
+otherwise.
+
+**The rules, per player, over the sources that carry him:**
+
+- per-game rates are the **weighted mean**, the weights renormalised over
+  the sources present: a man BBM has and an upload lacks is BBM's number at
+  full weight, and his row says so (`raw`: `{"sources": ["bbm"], "of": 2}`);
+- **games** are the weighted mean the same way;
+- **the two percentages come from weighted makes and attempts**, never from
+  averaging percentages: FGM, FGA, FTM and FTA are each blended like any
+  count and the room's FG% is makes over attempts (`app/scoring/lines.py`);
+- **minutes and value** are the weighted mean where present, renormalised
+  over the sources that carry them, null otherwise;
+- **position, team and injury** come from the first source in the recipe
+  that names one;
+- a player present in no source is absent.
+
+Matching across sources is the id each source already gives a man: his ESPN
+id where it placed him (BBM and an upload through the strict matcher, ESPN
+by its own id), else the synthetic id of his name, so two sources' unmatched
+rows merge only on an exact `name_key`.
+
+The fixture (`tests/test_projection_composite.py`): ESPN at 30 and a sheet
+at 70; Mobley in both (ESPN 20 points on 70 games, 8/14 from the field; the
+sheet 17 on 66, 7/16) comes out 17.9 points on 67.2 games and 7.3/15.4 =
+.474 from the field -- where averaging the percentages would have said .478;
+Garland, ESPN's alone, is ESPN's line at full weight, "1 of 2"; a rookie
+only the sheet carries is the sheet's line under a synthetic id.
+
+**The gate.** A composite that includes BBM (at any weight above none) is
+gated exactly like BBM: a per-player number that is half BBM's is still
+BBM's number to anyone who is not the member. `sources.py` learns it from
+the recipe: the tag is `composite:9+bbm` (`composite_source`), `is_gated`
+reads the tag, and `may_show` answers it with no lookup. Only a viewer who
+may plan on BBM can put BBM in a recipe (`check_recipe`), and a BBM
+composite is withheld from anyone else even if the set were theirs. One
+without BBM is its owner's, like an upload.
+
+**What is not done**, to the best of our ability and no further:
+
+- **No source calibration.** A weight is the manager's, not measured from a
+  source's past accuracy. A candidate study for after the draft: which
+  source's 2026 projection came closest to the 2026 season, by category
+  (ESPN's stored 2026 projections against the stored box scores; any 2026
+  upload a manager still has) -- which would let the page show, beside a
+  weight, how that source has done, never set the weight itself.
+- **No injury-aware blending.** Two sources' games are averaged like any
+  number, whatever each thought of a man's health.
+- **No positional eligibility merge** beyond the first source that names a
+  position; eligibility is ESPN's own line where we hold one, as for any set.
+- **No availability promise.** The room discounts a composite's games like
+  an upload's or ESPN's, even with BBM in it.
+- **No composite of composites.**
 
 ## What to do next, in order
 

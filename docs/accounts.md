@@ -200,8 +200,11 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /players/{player_id}/games` | signed in | his box scores, global |
 | `GET /players/{player_id}/news` | signed in | ESPN's news about him, global |
 | `GET /players/{player_id}/status` | member of the followed league | carries `on_team_id`: who in `ESPN_LEAGUE_ID` holds him |
-| `POST /projections/sets/preview` | signed in | the caller's own file |
-| `POST /projections/sets` | signed in | stored with the caller as owner |
+| `POST /projections/sets/preview` | signed in | the caller's own file; with a name he stored before, read with last time's mapping |
+| `POST /projections/sets` | signed in | stored with the caller as owner; a name he already keeps for the season is replaced in place |
+| `GET /projections/sources?season=` | signed in | every pool he may plan on: BBM only for the owner of the captures, ESPN, his uploads, his composites (one with BBM in it only for BBM's owner) |
+| `POST /projections/composites` | signed in | a composite of his own sources with his weights; BBM in a recipe only for BBM's owner |
+| `PUT /projections/composites/{set_id}` | signed in, own composite only (404 otherwise) | change its name or weights; rebuilt at once |
 | `GET /projections/sets` | signed in, own sets only | a set is its owner's |
 | `GET /projections/sets/{set_id}` | signed in, own set only (404 otherwise) | |
 | `GET /projections/sets/{set_id}/rows` | signed in, own set only (404 otherwise) | |
@@ -617,7 +620,10 @@ sessions simply stop being asked for.
 
 Projection sets uploaded before accounts carry the label `patrick`. They stay
 readable by the owner in accounts mode (`app/api/projections.py`, `_owns`),
-so nothing has to be rewritten.
+so nothing has to be rewritten. A composite (docs/projection_sources.md) is a
+set like any other and belongs to its owner; one whose recipe reads BBM is
+also gated exactly like BBM, so its numbers reach only the viewer who owns
+the captures (`viewer_owns_bbm`), whoever holds the set.
 
 ## Security notes
 

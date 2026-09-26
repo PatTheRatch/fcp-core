@@ -4,7 +4,10 @@
 2:00 PM ET). **Status:** built and driven on a copy of the league's own
 database: the engine, the kept marks, the route, the page, the rail item, the
 room reading the plan on the night, the co-manager's `draft_board`, and the
-fan-team setting. Local only; not deployed.
+fan-team setting. Local only; not deployed. **Sources (2026-09-26, later):**
+SOURCES on the page (an upload with a mapping he can fix, a named composite
+with his weights), the source chooser, and How this page works; built and
+driven on a copy of the league's database (docs/projection_sources.md).
 
 The owner (2026-09-23): "We need planning help. We also need to build a UI
 for making a plan." The rule the page is built to: **a plan the manager
@@ -20,13 +23,46 @@ rail's TEAM group between Trades and Season. The team layer's check, as every
 team page; its data route asks the projection source's gate as well.
 
 - **The header line**: `Draft plan · 2027 · auction Sat, Oct 10 · 2:00 PM ET`,
-  the pools he may plan on as a segmented control (BBM, ESPN, his own sets),
-  Build again, and the page's account.
+  the **source chooser**, Build again, **How this page works** and the
+  page's account. The chooser lists every pool he may plan on -- exactly
+  SOURCES' list (`app/projections/catalog.py`): BBM only to the member who
+  owns the captures (`may_show`), ESPN, each of his uploads by its name,
+  each of his composites by its name. Three or fewer are a segmented
+  control, more a `ws-select`. Choosing one plans on it (`?source=`); each
+  pool's cold build is kept, so going back is instant once built.
+- **How this page works**: six short facts in the drawer -- the pool in view
+  (named, with its capture date or its recipe) and that BBM is his alone;
+  what the model works out; what is his; what the room does with it on the
+  night; what a composite is; that nothing here bids, nominates or touches
+  ESPN -- each with a button that opens the deeper account that already
+  exists (SOURCES, the ladder, the figures, the board, your plan).
 - **The facts line**: POT (`$3,200 · 16 teams`), BUDGET (`$200 · 13
   places`), NOMINATE (`13th of 16`), CAP (`$60 while the top place is open`,
   his ladder's when he kept one), SOURCE (`BBM captured Sep 17 (9 days)`,
-  flagged OLD past seven days). Every figure opens the drawer on its field
-  and, for the source, the command that refreshes it.
+  flagged OLD past seven days; a set or a composite by its own name). Every
+  figure opens the drawer on its field and, for the source, the command
+  that refreshes it, or a composite's recipe (`30% ESPN + 70% Odd sheet`),
+  how many men each count of sources carried and the rule it is worked out
+  by.
+- **SOURCES** (`app/api/static/sources.js`, above THE LADDER, in every
+  state but a drafted season; the same section is on `/account/projections`):
+  every pool he may plan on as a `ws-grid` -- NAME (a button that plans on
+  it; the pool in view marked "in view"; BBM and a composite with BBM in it
+  marked "paid"), KIND, SEASON, ROWS, MATCHED, UNMATCHED, WHEN, BY; a
+  composite's row carries its recipe and its counts and "Edit weights".
+  **Upload a file** reads a CSV, .xlsx or .xls through the preview route
+  and draws the mapping: a column select per field the plan needs (name,
+  games, the nine's counts, the makes and attempts, FG% and FT%, and the
+  optional team, position, minutes, value and injury), pre-filled by the
+  synonyms table, the first three values under each; the per-game / totals
+  verdict with its reason and a switch; how many matched, and the names that
+  did not, "stored anyway under a synthetic id". A required field without a
+  column, or one column for two fields, keeps Store disabled and says which.
+  He names the source (unique for him and the season) and stores it; a name
+  he stored before is read as last time and replaced in place. **New
+  composite**: a name and a weight (0-100, equal to begin with) per source
+  he may read, the share each comes to beside it, Save. docs/projection_sources.md
+  has the mapping, the stored mapping and the composite's rules.
 - **THE LADDER**: a field per place, largest first; the sum against the
   budget, red and not kept until it adds up; "Reset to the league's shape".
   The game plan's sentences (draft balanced, pay for the middle, a star only
@@ -97,7 +133,13 @@ JSON).
 
 One source per plan, never mixed (`PoolSource`): the newest stored BBM
 capture for the season by default (`bbm_store.latest_capture`), else the
-viewer's newest uploaded set, else ESPN's projections. BBM's stored rows are
+viewer's newest uploaded set or composite, else ESPN's projections; the
+chooser picks any other he may plan on. A composite is one source too: its
+rows are stored like an upload's, worked out from its recipe beforehand
+(`app.projections.composite`), so the room never mixes pools. An uploaded
+set's or a composite's plan is keyed on when it was last uploaded or worked
+out as well as its id (`PoolSource.version`), so a sheet stored again, or a
+composite rebuilt because an input moved, builds the plan again. BBM's stored rows are
 read by the same parser as the file (`bbm.parse_records`) and put back in the
 export's order by BBM's own `Rank`, because the order is the order players are
 matched and the optimizer's candidates are shuffled in. A capture older than
@@ -137,6 +179,13 @@ man): `going_price` and `bid_up_to` (both null for the model's), `tag`
 (`target`, `let_go`, `nominate`, `ir`, `must`, `none`) and `note`.
 `player_id` is the room's id, an ESPN id or a BBM rookie's negative synthetic
 one, so it is not a foreign key.
+
+**Marks are per team, not per source.** A going price is his opinion of the
+room, whatever pool the model reads, so the same marks stand on every pool.
+Migration 0033 adds `draft_plan_marks.source`, the pool in view when he last
+wrote the mark (the page sends it with every write); the man's drawer says
+"your marks for him were last set with ESPN's projections in view; this plan
+reads Consensus" when the two differ.
 
 `PUT .../draft/plan/marks` takes any of `marks` (a field left out is left as
 it is; null clears it), `ladder` (null: the league's shape again), `notes`,
@@ -211,6 +260,9 @@ script keeps `--fan-team CLE`.
   mode). Anyone else hears `state: "withheld"`, the sentence, and the pools he
   may plan on; nothing derived from BBM is in that answer, and Build again on
   it is refused. An uploaded set is his own, and is readable only by him.
+  A composite is his own too, and one whose recipe reads BBM (at any weight
+  above none) is gated exactly like BBM: withheld from anyone who does not
+  own the captures, and missing from his chooser and SOURCES.
 - **The season's**: a drafted season (`app.inseason.drafted`) answers
   `state: "drafted"` with when it was held and the league's Draft page.
 
@@ -238,7 +290,9 @@ own answer trimmed to the ladder, the cap, the forty dearest men with `model`,
 `effective` and `yours` side by side, his marked men, the lists (twelve men
 each) with their rules, the must set and its lock cost, and the best roster
 at his prices. Gated the same way; provenance names the pool and its capture
-date. About 28k characters. It never bids or nominates.
+date. About 28k characters. It never bids or nominates. `sources` lists every
+pool he may plan on, as the chooser does, and `source` names one by its token
+(`bbm`, `espn`, `upload:<id>`, `composite:<id>`) or its own name.
 
 ## Every figure, traced
 
@@ -281,5 +335,20 @@ keeping him out of the best roster, the effective figures beside the
 model's, reset restoring the model's plan byte for byte);
 `tests/test_api_draft_plan.py` (the route's shape, the marks' round trip and
 checks, the ladder rule, a must man, the fan team, the drafted season, the
-team gate, the source gate, and `draft_board`'s gate); the rail item in
-`tests/test_shell.py`; the room's `yours` in `tests/test_draft_session.py`.
+team gate, the source gate, and `draft_board`'s gate; the chooser listing
+exactly what `may_show` allows for the owner and for Alice, the plan on an
+upload, a composite with BBM withheld from a non-owner and one without not,
+a mark remembering the pool it was made on, `draft_board`'s `sources` and a
+source by name); the rail item in `tests/test_shell.py`; the room's `yours`
+in `tests/test_draft_session.py`; the mapping, the stored mapping and
+SOURCES in `tests/test_api_projections.py`; the composite's arithmetic, gate,
+cache and a plan on it in `tests/test_projection_composite.py`.
+
+Driven in a browser (headless Chromium, 390 and 1280 px, both themes) on a
+pg_dump copy of the league's database: a 181-row CSV with odd headers
+(`Pts/G`, `TOV/G`, `3P` for attempts beside `Threes Made`) uploaded, the
+guessed `3P` fixed by hand to `Threes Made`, named "Odd sheet" and stored
+(179 matched, 2 on the board by name); the plan built on it (30 s); a
+composite "Consensus" of it at 70 and ESPN at 30 (350 men: 179 carried by
+both, 171 by one); the plan built on the composite (64 s). No console
+errors and no sideways scroll at either width.

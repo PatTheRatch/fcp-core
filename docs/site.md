@@ -46,9 +46,9 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/season` | My team, Season: the rest-of-season report | the team's verified manager, entitled | `season.html` |
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
 | `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
-| `/l/{league_id}/{season}/team/{team_id}/draft/plan` | My team, Draft plan: the pre-auction plan -- the ladder and the board he edits, the model's lists, his own plan (docs/draft_plan.md); for a drafted season, when it was held and a link to Draft | the team's verified manager, entitled; its data route asks the projection source's gate as well | `draft-plan.html` |
+| `/l/{league_id}/{season}/team/{team_id}/draft/plan` | My team, Draft plan: the pre-auction plan -- How this page works, the source chooser, SOURCES (upload with a mapping, composites), the ladder and the board he edits, the model's lists, his own plan (docs/draft_plan.md); for a drafted season, when it was held and a link to Draft | the team's verified manager, entitled; its data route asks the projection source's gate as well | `draft-plan.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your league's numbers, your machine tokens, your SWID | anyone signed in | `connections.html` |
-| `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
+| `/account/projections` | Projections: your uploaded sets, and SOURCES for a season (upload with a mapping, composites) | anyone signed in | `projections.html` |
 | `/upgrade` | The team layer: what it is, your season pass, "Have a code?", purchase (drawn disabled until it opens), the free tier's links; where a team page without a pass sends you, with `?next=` | anyone signed in | `upgrade.html` |
 | `/account/alerts` | Alerts: your own address (add, confirm, disable), what goes in your email per league, and the server's recipients for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
@@ -572,12 +572,15 @@ his tokens with when each was made and last used, and a Revoke beside each
 live one. The line above says what a token can do, which is read the pages
 he can read and nothing else.
 
-**Projections.** "Your sets": a table of the reader's own uploaded sets
-(name, season, players, uploaded, where from), or "None yet. Without one,
-the room and the plans work from ESPN's own projections." "How to upload
-one": the file it wants, preview first, the API's own form at
-`/docs#/projections`, and `scripts/upload_projections.py` from a terminal.
-Reads `/projections/sets`, which answers with his own sets only.
+**Projections.** "Your sets": a table of the reader's own uploaded sets and
+composites (name, season, players, uploaded, where from), or "None yet.
+Without one, the room and the plans work from ESPN's own projections."
+Under it, SOURCES for a season (the newest of his leagues', a select for the
+others): the same section the draft plan page draws (`sources.js`,
+docs/draft_plan.md), with Upload a file and its mapping, and New composite.
+The how-to that sent people to `/docs#/projections` is gone. Reads
+`/projections/sets` and `/projections/sources`, which answer with his own
+sets only.
 
 **Alerts.** Step 4 (docs/jobs.md). "Your channels": each of the reader's own,
 masked ("p•••@example.com"), confirmed or waiting, with Disable; or "None
