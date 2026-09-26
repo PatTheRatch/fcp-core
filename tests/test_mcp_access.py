@@ -25,6 +25,7 @@ import pytest
 from mcp import Client, StdioServerParameters
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, TextContent
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import accounts, api_tokens
@@ -150,6 +151,48 @@ def test_only_the_team_she_manages_is_hers_to_plan(
     listed = json.loads(said(server, "my_leagues", {}))
     mine = {row["espn_team_id"]: row["i_manage_it"] for row in listed["leagues"][0]["teams"]}
     assert mine == {3: True, 5: False}
+
+
+def test_the_tools_say_whether_the_pass_is_live_and_send_a_402_to_upgrade(
+    seeded: sessionmaker[Session],  # noqa: F811
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """docs/mcp.md, "The season pass": a fact from the entitlement row, and
+    the site's 402 with the address to go to."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import billing
+    from app.api import access
+
+    server = server_for(seeded, token_for(session, "alice@example.com"))
+    held = json.loads(said(server, "my_leagues", {}))["season_pass"]
+    assert held["live"] is False and held["until"] is None
+    assert held["required"] is False and held["team_plans_open"] is True
+
+    gated = accounts_settings(fcp_billing_enabled=True, fcp_public_url="https://boxout.example")
+    monkeypatch.setattr(access, "get_settings", lambda: gated)
+    monkeypatch.setattr("app.mcp.scope.get_settings", lambda: gated)
+    refused = called(server, "week_report", plan(3))
+    assert refused.is_error
+    assert "https://boxout.example/upgrade" in text_of(refused)
+    context = json.loads(said(server, "league_context", {"league_id": LEAGUE_A, "season": SEASON}))
+    assert context["season_pass"]["team_plans_open"] is False
+    assert context["season_pass"]["upgrade"] == "https://boxout.example/upgrade"
+
+    alice = accounts.user_by_email(session, "alice@example.com")
+    assert alice is not None
+    until = datetime.now(UTC) + timedelta(days=30)
+    billing.grant(session, alice.id, "comp", until)
+    session.commit()
+    try:
+        held = json.loads(said(server, "my_leagues", {}))["season_pass"]
+        assert held["live"] is True and held["from"] == "a code"
+        assert held["until"] == until.isoformat() and held["team_plans_open"] is True
+        assert not called(server, "week_report", plan(3)).is_error
+    finally:
+        session.execute(text("DELETE FROM entitlements WHERE user_id = :u"), {"u": alice.id})
+        session.commit()
 
 
 def test_a_revoked_token_is_refused(

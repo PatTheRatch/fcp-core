@@ -21,15 +21,19 @@ from sqlalchemy.orm import Session
 from app import accounts, api_tokens
 from app.api import access
 from app.api.access import Viewer
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.db.models import League, LeagueSeason, Team
 
-#: The sentences. The first three are the site's own, word for word
+#: The sentences. The first two are the site's own, word for word
 #: (`app.api.access`), so a manager who has seen one in the browser reads the
-#: same one here.
+#: same one here. The third is the site's 402 with the address to go to: a
+#: conversation has no browser to send there (`not_entitled`).
 NOT_A_MEMBER = access.NOT_A_MEMBER
 TEAM_REFUSED = access.TEAM_REFUSED
-NOT_ENTITLED = access.NOT_ENTITLED
+NOT_ENTITLED = (
+    "The team layer needs a season pass, and this account has no live one: "
+    "a code redeemed at {where} opens it."
+)
 NO_TOKEN = (
     "this co-manager has no token: put one in BOX_OUT_TOKEN, made at "
     "/account/connections (docs/mcp.md)"
@@ -43,6 +47,18 @@ WHICH_LEAGUE = "say which league: you are a member of {leagues}"
 
 class RefusedError(Exception):
     """One sentence a manager can act on, and nothing else."""
+
+
+def upgrade_address(settings: Settings | None = None) -> str:
+    """Where a manager goes for a pass: the site's own address when it is
+    configured (`FCP_PUBLIC_URL`), else the path on it."""
+    base = (settings if settings is not None else get_settings()).fcp_public_url
+    return f"{base.rstrip('/')}{access.UPGRADE_PATH}" if base else access.UPGRADE_PATH
+
+
+def not_entitled(settings: Settings | None = None) -> str:
+    """The 402, as a tool says it: with the upgrade page's address in it."""
+    return NOT_ENTITLED.format(where=upgrade_address(settings))
 
 
 def viewer_for_token(session: Session, settings: Settings, presented: str | None) -> Viewer:
@@ -159,7 +175,7 @@ def team_plan(
     if not access.is_team_manager(session, viewer, league_id, season, team_id):
         raise RefusedError(TEAM_REFUSED)
     if not access.is_entitled(session, viewer):
-        raise RefusedError(NOT_ENTITLED)
+        raise RefusedError(not_entitled())
     found = session.scalar(
         select(Team).where(Team.league_season_id == league_season.id, Team.espn_team_id == team_id)
     )

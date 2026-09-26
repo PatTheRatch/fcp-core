@@ -72,6 +72,7 @@ from app.mcp.scope import (
     team_of_league,
     team_plan,
     the_one_league,
+    upgrade_address,
 )
 from app.pickups.judge import load_spots, standard_lens, weekly_lines
 from app.pickups.state import (
@@ -198,8 +199,35 @@ def _draft(session: Session, found: LeagueSeason) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def season_pass(session: Session, viewer: Viewer) -> dict[str, Any]:
+    """Whether this viewer's season pass is live and until when: a fact from
+    `accounts.active_entitlement`, the same row the site's gate reads
+    (docs/accounts.md, "The pass"). `team_plans_open` is the gate's own
+    answer, which is yes for everyone while passes are not asked for."""
+    from app import accounts, billing
+    from app.api import access
+
+    held = accounts.active_entitlement(session, viewer.user_id) if viewer.user_id else None
+    return {
+        "live": held is not None or viewer.all_access,
+        "until": held.valid_until.isoformat() if held is not None and held.valid_until else None,
+        "until_words": billing.says_until(held.valid_until) if held is not None else None,
+        "from": billing.SOURCE_WORDS.get(held.source, held.source) if held is not None else None,
+        "required": access.billing_enabled(),
+        "team_plans_open": access.is_entitled(session, viewer),
+        "upgrade": upgrade_address(),
+        "note": (
+            "A season pass opens the team layer (the plans, the what-if, the trade "
+            "judgement) for every team this account manages, until `until`; null "
+            "`until` on a live pass means it does not end. It does not renew itself. "
+            "While `required` is false, every manager's team plans are open anyway."
+        ),
+    }
+
+
 def my_leagues(session: Session, viewer: Viewer) -> dict[str, Any]:
-    """Every league and team this token may read, with its role in each."""
+    """Every league and team this token may read, with its role in each, and
+    whether his season pass is live."""
     mine = member_leagues(session, viewer)
     out: list[dict[str, Any]] = []
     for league_id in mine:
@@ -237,6 +265,7 @@ def my_leagues(session: Session, viewer: Viewer) -> dict[str, Any]:
     return {
         "as": viewer.email,
         "how": viewer.via,
+        "season_pass": season_pass(session, viewer),
         "leagues": out,
         "note": (
             "A team marked `i_manage_it` is one whose plan this token may read. "
@@ -289,6 +318,8 @@ def league_context(session: Session, viewer: Viewer, league_id: int, season: int
             "scoring_type": settings["scoring_type"],
         },
         "categories": [row["abbreviation"] for row in settings["categories"]],
+        # Whether the manager asking can read his team's plan here at all.
+        "season_pass": season_pass(session, viewer),
         # The fact every table's order gates on: a head-to-head each-category
         # league is ranked on categories, never on matchups won.
         "ranking": ranking.describe(found),
