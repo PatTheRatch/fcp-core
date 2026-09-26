@@ -666,6 +666,8 @@ OPEN = {
     ("GET", "/auth/callback"),
     ("POST", "/auth/sign-out"),
     ("GET", "/pages/static/{name}"),
+    # The address a browser tries for an icon on its own: a redirect to the one above.
+    ("GET", "/favicon.ico"),
     # The design language: a static file with no data in it; its specimens
     # read league routes, each behind its own check (docs/design_system.md).
     ("GET", "/design"),

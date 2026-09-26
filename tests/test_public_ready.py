@@ -62,6 +62,7 @@ OPEN = {
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    "GET /favicon.ico",
     "GET /design",
     "GET /.well-known/oauth-authorization-server",
     "POST /oauth/register",

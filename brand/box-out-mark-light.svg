@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 620" width="1040" height="620">
+  <title>Box Out Fantasy mark</title>
+  <defs>
+    <clipPath id="ball"><circle cx="810" cy="530" r="165"/></clipPath>
+    <clipPath id="lb"><rect x="0" y="0" width="100" height="140"/></clipPath>
+  </defs>
+  
+  <g transform="translate(520,310) scale(1.0) translate(-600,-530)">
+  <g fill="none" stroke="#F7F6F3" stroke-width="80" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M160 300 V760"/>
+    <path d="M160 300 H350 Q420 300 420 370 V460 Q420 530 350 530 H160"/>
+    <path d="M160 530 H380 Q460 530 460 610 V680 Q460 760 380 760 H160"/>
+    <circle cx="810" cy="530" r="230"/>
+  </g>
+  
+  <circle cx="810" cy="530" r="165" fill="#F26A1B"/>
+  <g clip-path="url(#ball)" fill="none" stroke="#F7F6F3" stroke-width="16">
+    <path d="M810 360 V700"/><path d="M640 530 H980"/>
+    <path d="M690 400 Q760 530 690 660"/><path d="M930 400 Q860 530 930 660"/>
+  </g>
+</g>
+</svg>

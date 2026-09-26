@@ -155,7 +155,8 @@ def _single_mode_page() -> HTMLResponse:
 SHELL = """<!doctype html>
 <html lang="en" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
+<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css">
+<link rel="icon" href="/pages/static/favicon.svg" type="image/svg+xml"></head>
 <body><main class="page"><header class="mast"><p class="eyebrow">{brand}</p>
 <h1>{heading}</h1>{body}</header></main></body></html>
 """

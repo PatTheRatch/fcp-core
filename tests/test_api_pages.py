@@ -531,6 +531,25 @@ def test_only_the_named_assets_are_served(client: TestClient) -> None:
     assert client.get("/pages/static/league-week.html").status_code == 404
 
 
+def test_the_icon_is_served_and_the_browsers_own_guess_is_sent_to_it(
+    client: TestClient,
+) -> None:
+    """The BO mark (brand/box-out-icon.svg) as the favicon, as the touch
+    icon, and at the address a browser tries before it has read a page."""
+    svg = client.get("/pages/static/favicon.svg")
+    png = client.get("/pages/static/apple-touch-icon.png")
+    guess = client.get("/favicon.ico", follow_redirects=False)
+
+    assert svg.status_code == 200
+    assert svg.headers["content-type"] == "image/svg+xml"
+    assert "<svg" in svg.text and "Box Out Fantasy mark" in svg.text
+    assert png.status_code == 200
+    assert png.headers["content-type"] == "image/png"
+    assert png.content.startswith(b"\x89PNG")
+    assert guess.status_code == 308
+    assert guess.headers["location"] == "/pages/static/favicon.svg"
+
+
 # --------------------------------------------------------------------------
 # The context route
 

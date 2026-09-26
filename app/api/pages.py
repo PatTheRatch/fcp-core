@@ -95,6 +95,14 @@ ASSETS = {
     "pages.js": "text/javascript; charset=utf-8",
     "shell.js": "text/javascript; charset=utf-8",
     "scenario.js": "text/javascript; charset=utf-8",
+    "favicon.svg": "image/svg+xml",
+}
+
+#: The icons that are bytes, not text: served as they are, no brand token in
+#: them. `favicon.svg` is text and sits above, though it names nothing either.
+#: Both are copies of `brand/box-out-icon.svg`; that folder is the source.
+ICONS = {
+    "apple-touch-icon.png": "image/png",
 }
 
 TodayQuery = Annotated[
@@ -114,6 +122,9 @@ def asset(name: str) -> Response:
     Through `brand.fill` like a page, because the shell draws the product's
     name and the shell is one of these files.
     """
+    media_type = ICONS.get(name)
+    if media_type is not None:
+        return Response((STATIC / name).read_bytes(), media_type=media_type)
     media_type = ASSETS.get(name)
     if media_type is None:
         raise HTTPException(status_code=404, detail=f"no page asset {name!r}")

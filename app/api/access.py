@@ -449,7 +449,8 @@ document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600\
 &family=IBM+Plex+Mono:wght@400;500&family=Oswald:wght@500;600&display=swap">
-<link rel="stylesheet" href="/pages/static/pages.css"></head>
+<link rel="stylesheet" href="/pages/static/pages.css">
+<link rel="icon" href="/pages/static/favicon.svg" type="image/svg+xml"></head>
 <body><main class="ws-page ws-refused">
 <header class="ws-head"><p class="ws-label">{brand}</p></header>
 <section class="ws-sect"><div class="ws-panel"><p class="ws-line">{message}</p>

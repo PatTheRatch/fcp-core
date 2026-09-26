@@ -161,7 +161,8 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `POST /auth/sign-in` | open, rate-limited | asking for a link |
 | `GET /auth/callback` | open | the link itself is the credential |
 | `POST /auth/sign-out` | open | acts only on the caller's own cookie |
-| `GET /pages/static/{name}` | open | the shared CSS and JS, no data |
+| `GET /pages/static/{name}` | open | the shared CSS and JS, and the icons; no data |
+| `GET /favicon.ico` | open | a redirect to the icon under `/pages/static/`, for a browser that asks before reading a page |
 | `GET /design` | open | the design language (docs/design_system.md); the file carries no data, and its specimens read league routes behind their own checks, so signed out it draws the language and no numbers |
 | `GET /` | open | the landing page signed out; signed in, the shell's home, which finds his league in the browser; no data either way |
 | `GET /auth/me` | signed in | the caller's own account |

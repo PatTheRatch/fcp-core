@@ -204,6 +204,9 @@ OPEN_ROUTES = (
     "POST /auth/sign-in",
     "POST /auth/sign-out",
     "GET /pages/static/{name}",
+    # A browser's own guess at an icon, before it has read a page: a redirect
+    # to the icon under `/pages/static/`. Nothing behind it but the mark.
+    "GET /favicon.ico",
     # The design language (docs/design_system.md): a static file with no data
     # in it. Its specimens read league routes, each behind its own check.
     "GET /design",
