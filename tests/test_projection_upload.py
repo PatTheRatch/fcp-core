@@ -122,7 +122,9 @@ def test_headers_nobody_standardised_are_mapped_by_their_synonyms() -> None:
     assert mapping.fields["TO"] == "TO/G"
     assert mapping.fields["team"] == "Tm"
     assert mapping.fields["position"] == "Pos."
-    assert mapping.ignored == ("Min", "ADP")
+    # Minutes are an optional field since 2026-09-26; ADP is nothing of ours.
+    assert mapping.fields["minutes"] == "Min"
+    assert mapping.ignored == ("ADP",)
 
 
 def test_makes_are_rebuilt_from_a_percentage_and_its_attempts() -> None:

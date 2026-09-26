@@ -16,11 +16,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_session
-from app.db.models import PlayerSeasonStat
+from app.db.models import PlayerSeasonStat, ProjectionRow
 from app.db.session import make_engine, make_session_factory
 from app.main import create_app
 from tests.scoring_db import player
@@ -296,3 +296,184 @@ def test_a_set_nobody_stored_is_a_404(client: TestClient) -> None:
     assert client.get("/projections/sets/9999").status_code == 404
     assert client.get("/projections/sets/9999/rows").status_code == 404
     assert "no projection set" in client.get("/projections/sets/9999").json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# the mapping the plan page sends, and the mapping a source is stored with
+# ---------------------------------------------------------------------------
+
+#: Every field under a header no synonym knows, as a hand-kept sheet might.
+ODD = (
+    "Athlete Name,Club,Elig,Gms,Scoring,Boards,Dimes,Swipes,Rejections,Treys,Giveaways,"
+    "Makes,Tries,FT Makes,FT Tries,Shot Pct,Line Pct,Mins,Auction Price,Health\n"
+    "Evan Mobley,CLE,PF,70,18.5,9.3,3.2,0.9,1.6,1.1,2.1,7.2,13.4,3.0,4.1,.537,.732,32.5,41,\n"
+    "Cameron Boozer,CHA,PF/C,65,14.0,7.5,2.0,0.8,0.9,0.7,1.8,5.5,11.0,2.5,3.4,.5,.735,27,12,"
+    "ankle\n"
+)
+
+#: The page's mapping for ODD: one entry per field, every field named.
+ODD_FIELDS = {
+    "name": "Athlete Name",
+    "games": "Gms",
+    "PTS": "Scoring",
+    "REB": "Boards",
+    "AST": "Dimes",
+    "STL": "Swipes",
+    "BLK": "Rejections",
+    "3PM": "Treys",
+    "TO": "Giveaways",
+    "FGM": "Makes",
+    "FGA": "Tries",
+    "FTM": "FT Makes",
+    "FTA": "FT Tries",
+    "FG%": "Shot Pct",
+    "FT%": "Line Pct",
+    "team": "Club",
+    "position": "Elig",
+    "minutes": "Mins",
+    "value": "Auction Price",
+    "injury": "Health",
+}
+
+
+def exact_map(fields: dict[str, str]) -> list[str]:
+    return [f"{header}={field}" for field, header in fields.items()]
+
+
+def page_data(fields: dict[str, str], **extra: str) -> dict[str, Any]:
+    """The form the plan page posts: the whole mapping, nothing guessed."""
+    return {"season": str(SEASON), "exact": "true", "map": exact_map(fields), **extra}
+
+
+def test_the_pages_mapping_round_trips_every_field(
+    client: TestClient, seeded: sessionmaker[Session]
+) -> None:
+    """The page sends the whole mapping (`exact`): every field comes back
+    under the column he chose, is stored as the set's mapping, and the
+    optional three land in the rows."""
+    guessed = client.post(
+        "/projections/sets/preview", files=upload(ODD, "odd.csv"), data={"season": str(SEASON)}
+    ).json()
+    assert guessed["ok"] is False  # hardly anything in ODD is a known spelling
+    assert guessed["headers"][:3] == ["Athlete Name", "Club", "Elig"]
+    assert guessed["samples"]["Scoring"] == ["18.5", "14.0"]
+
+    data = page_data(ODD_FIELDS, name="Hand sheet")
+    body = client.post("/projections/sets/preview", files=upload(ODD, "odd.csv"), data=data).json()
+    assert body["ok"] is True, body["reasons"]
+    assert {f["field"]: f["header"] for f in body["fields"]} == ODD_FIELDS
+    assert [f["field"] for f in body["fields"] if f["required"]][:2] == ["name", "games"]
+    assert "median of 'Scoring'" in body["basis_reason"]
+
+    stored = client.post("/projections/sets", files=upload(ODD, "odd.csv"), data=data).json()
+    kept = client.get(f"/projections/sets/{stored['set_id']}").json()
+    assert kept["kind"] == "upload"
+    assert kept["mapping"]["fields"] == ODD_FIELDS
+    assert kept["mapping"]["basis"] == "auto"
+
+    with seeded() as session:
+        rows = {
+            row.name: row
+            for row in session.scalars(
+                select(ProjectionRow).where(ProjectionRow.set_id == stored["set_id"])
+            )
+        }
+    assert rows["Evan Mobley"].minutes == pytest.approx(32.5)
+    assert rows["Evan Mobley"].value == pytest.approx(41.0)
+    assert rows["Evan Mobley"].injury is None
+    assert rows["Cameron Boozer"].injury == "ankle"
+    assert rows["Cameron Boozer"].team == "CHA"
+
+
+def test_a_field_set_to_none_stays_none(client: TestClient) -> None:
+    """`exact` guesses nothing: a required field left without a column
+    blocks the store, and is named."""
+    fields = {k: v for k, v in ODD_FIELDS.items() if k != "BLK"}
+    body = client.post(
+        "/projections/sets/preview", files=upload(ODD, "odd.csv"), data=page_data(fields)
+    ).json()
+    assert body["ok"] is False
+    assert any(reason.startswith("BLK is missing") for reason in body["reasons"])
+
+
+def test_a_percentage_and_no_attempts_is_refused_through_the_pages_mapping(
+    client: TestClient,
+) -> None:
+    fields = {k: v for k, v in ODD_FIELDS.items() if k not in ("FGM", "FGA")}
+    response = client.post(
+        "/projections/sets", files=upload(ODD, "odd.csv"), data=page_data(fields, name="x")
+    )
+    assert response.status_code == 422
+    said = " ".join(response.json()["detail"]["reasons"])
+    assert "FGM is missing and only FG% is on file" in said
+    assert "carry FGA as well" in said
+    assert "FGA is missing: no column is chosen for it" in said
+
+
+def test_a_forced_basis_wins_and_says_what_was_measured(client: TestClient) -> None:
+    body = client.post(
+        "/projections/sets/preview",
+        files=upload(ODD, "odd.csv"),
+        data=page_data(ODD_FIELDS, basis="totals"),
+    ).json()
+    assert body["basis"] == "totals"
+    assert body["basis_forced"] is True
+    assert "set by hand to totals" in body["basis_reason"]
+    assert "per game" in body["basis_reason"]
+
+
+def test_the_stored_mapping_is_offered_on_a_reupload_by_name(client: TestClient) -> None:
+    """Next week's file under the same name is read as last time, and
+    replaces the set in place: the same id, new rows."""
+    data = page_data(ODD_FIELDS, name="Hand sheet")
+    first = client.post("/projections/sets", files=upload(ODD, "odd.csv"), data=data).json()
+
+    next_week = ODD.replace("18.5", "19.5")
+    again = client.post(
+        "/projections/sets/preview",
+        files=upload(next_week, "odd.csv"),
+        data={"season": str(SEASON), "name": "Hand sheet"},
+    ).json()
+    assert again["ok"] is True
+    assert again["last_time"]["set_id"] == first["set_id"]
+    assert again["last_time"]["whole"] is True
+    assert again["replaces"] == first["set_id"]
+    assert {f["field"]: f["header"] for f in again["fields"]} == ODD_FIELDS
+
+    # Under another name it is guessed afresh, and refused.
+    other = client.post(
+        "/projections/sets/preview",
+        files=upload(next_week, "odd.csv"),
+        data={"season": str(SEASON), "name": "Another"},
+    ).json()
+    assert other["last_time"] is None
+    assert other["ok"] is False
+
+    stored = client.post(
+        "/projections/sets",
+        files=upload(next_week, "odd.csv"),
+        data={"season": str(SEASON), "name": "Hand sheet"},
+    ).json()
+    assert stored["set_id"] == first["set_id"]
+    listed = client.get("/projections/sets", params={"season": SEASON}).json()
+    assert [s["name"] for s in listed] == ["Hand sheet"]
+    rows = client.get(f"/projections/sets/{first['set_id']}/rows").json()
+    mobley = next(row for row in rows if row["name"] == "Evan Mobley")
+    assert mobley["per_game"]["PTS"] == pytest.approx(19.5)
+
+
+def test_a_reupload_missing_a_column_is_partly_as_last_time(client: TestClient) -> None:
+    client.post(
+        "/projections/sets",
+        files=upload(ODD, "odd.csv"),
+        data=page_data(ODD_FIELDS, name="Hand sheet"),
+    )
+    renamed = ODD.replace("Health", "Status Note")
+    again = client.post(
+        "/projections/sets/preview",
+        files=upload(renamed, "odd.csv"),
+        data={"season": str(SEASON), "name": "Hand sheet"},
+    ).json()
+    assert again["last_time"]["whole"] is False
+    assert again["last_time"]["gone"] == ["injury"]
+    assert again["ok"] is True

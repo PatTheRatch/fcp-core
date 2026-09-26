@@ -15,6 +15,15 @@ stored, and `--map` overrides any column the guess got wrong. What was applied
 is kept on the set (`projection_sets.column_map`), so a set read back next
 season still says how its columns were understood.
 
+The draft plan page's mapping is the same override, extended to every field
+(`FIELDS`) and sent whole (`exact`, so a field he set to none stays none),
+with the basis forced when he switches it. A set also keeps the mapping it
+was stored with (`projection_sets.mapping`, `ImportReport.stored_mapping`):
+a name is the source, unique per owner and season, and a file uploaded
+under it again replaces its rows in place and is read with last time's
+mapping first when he sends none (`last_time`). A per-file fix never edits
+`SYNONYMS`.
+
 WHY ATTEMPTS ARE REQUIRED AND A PERCENTAGE IS NOT ENOUGH
 
 Nine categories, and two of them are rates. A roster's FG% is its made shots
@@ -44,15 +53,16 @@ still goes on the board under a synthetic id, the way BBM's rookies do.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from statistics import median
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import ProjectionRow, ProjectionSet
@@ -83,8 +93,16 @@ COUNTS: Mapping[str, str] = {
 #: *and* attempts behind both percentages.
 REQUIRED: tuple[str, ...] = ("name", "games", *COUNTS)
 
-#: Worth having and not worth refusing a file over.
-OPTIONAL: tuple[str, ...] = ("team", "position")
+#: Worth having and not worth refusing a file over. `minutes` is per game
+#: (divided by games when the file is totals), `value` the source's own dollar
+#: value as the file wrote it, `injury` its note. None of the three moves the
+#: room's own arithmetic; a composite averages the first two.
+OPTIONAL: tuple[str, ...] = ("team", "position", "minutes", "value", "injury")
+
+#: Every field a mapping can name, in the order the plan page lists them:
+#: the required, the two percentages (which rebuild a makes column from its
+#: attempts), then the optional.
+FIELDS: tuple[str, ...] = (*REQUIRED, "FG%", "FT%", *OPTIONAL)
 
 #: A percentage column and the pair it can rebuild a makes column from:
 #: FGM = fg% x FGA. The pairs are the valuation's own.
@@ -100,24 +118,82 @@ PERCENTAGE_FIELDS: Mapping[str, tuple[str, str]] = {
 #: column export, `tov` matched BBM's `toV` -- its derived turnover *value*,
 #: not turnovers -- because `tov` was listed before `to/g`. A file that carries
 #: both a count and a value column for a category has to land on the count.
+#:
+#: Widened 2026-09-26 with the spellings of the files managers bring, written
+#: from memory of those sites' tables (nothing was downloaded to check):
+#: Hashtag Basketball (`TREB`, `MPG`), Rotowire (`MIN`), FantasyPros
+#: (`Positions`), Yahoo (`GP*`, `3PTM`, `ST` -- the asterisk is dropped by
+#: `header_key`), ESPN's own table (`PLAYER`, `MIN`) and a hand-made sheet
+#: (`Points`, `Field Goals Made`, `Free Throws Attempted`, `Threes`). Not
+#: handled, whatever the spelling: a single `FGM/FGA` or `FGM/A` column that
+#: carries "7.2/13.4" in one cell (ESPN's and Yahoo's tables do), which has to
+#: be split into two columns before it is uploaded. A mapping the manager
+#: fixes on the page is his, for that file; it never edits this table.
 SYNONYMS: Mapping[str, tuple[str, ...]] = {
-    "name": ("name", "player", "player name", "players", "full name"),
-    "games": ("g", "gp", "games", "games played", "gms", "gm"),
-    "team": ("team", "tm", "nba team", "pro team"),
-    "position": ("pos", "position", "positions", "pos."),
-    "PTS": ("pts", "points", "p/g", "ppg", "pts/g", "p"),
-    "REB": ("reb", "rebounds", "r/g", "rpg", "trb", "reb/g", "tot reb"),
+    "name": ("name", "player", "player name", "players", "full name", "playername", "athlete"),
+    "games": (
+        "g",
+        "gp",
+        "games",
+        "games played",
+        "gms",
+        "gm",
+        "proj gp",
+        "proj g",
+        "projected games",
+    ),
+    "team": ("team", "tm", "nba team", "pro team", "nba"),
+    "position": ("pos", "position", "positions", "pos.", "eligibility", "elig", "eligible"),
+    "PTS": ("pts", "points", "p/g", "ppg", "pts/g", "p", "points per game"),
+    "REB": ("reb", "rebounds", "r/g", "rpg", "trb", "reb/g", "tot reb", "treb", "total rebounds"),
     "AST": ("ast", "assists", "a/g", "apg", "ast/g"),
     "STL": ("stl", "steals", "s/g", "spg", "stl/g", "st"),
     "BLK": ("blk", "blocks", "b/g", "bpg", "blk/g", "bl"),
-    "3PM": ("3pm", "3/g", "threes", "3ptm", "3pg", "3p", "3s", "tpm", "3pm/g"),
-    "TO": ("to/g", "turnovers", "to", "tov", "topg", "tos"),
-    "FGM": ("fgm", "fg made", "fgm/g", "fg m", "fg"),
-    "FGA": ("fga", "fg att", "fga/g", "fg a", "fg attempts"),
-    "FTM": ("ftm", "ft made", "ftm/g", "ft m", "ft"),
-    "FTA": ("fta", "ft att", "fta/g", "ft a", "ft attempts"),
-    "FG%": ("fg%", "fg pct", "fgpct", "fg percent", "field goal %"),
-    "FT%": ("ft%", "ft pct", "ftpct", "ft percent", "free throw %"),
+    "3PM": (
+        "3pm",
+        "3/g",
+        "threes",
+        "3ptm",
+        "3pg",
+        "3p",
+        "3s",
+        "tpm",
+        "3pm/g",
+        "3pt",
+        "3pt made",
+        "3 pointers made",
+        "three pointers made",
+        "threes made",
+        "3ptm/g",
+    ),
+    "TO": ("to/g", "turnovers", "to", "tov", "topg", "tos", "tov/g"),
+    "FGM": ("fgm", "fg made", "fgm/g", "fg m", "field goals made", "fg"),
+    "FGA": (
+        "fga",
+        "fg att",
+        "fga/g",
+        "fg a",
+        "fg attempts",
+        "field goals attempted",
+        "fg attempted",
+    ),
+    "FTM": ("ftm", "ft made", "ftm/g", "ft m", "free throws made", "ft"),
+    "FTA": (
+        "fta",
+        "ft att",
+        "fta/g",
+        "ft a",
+        "ft attempts",
+        "free throws attempted",
+        "ft attempted",
+    ),
+    "FG%": ("fg%", "fg pct", "fgpct", "fg percent", "field goal %", "fg %", "field goal pct"),
+    "FT%": ("ft%", "ft pct", "ftpct", "ft percent", "free throw %", "ft %", "free throw pct"),
+    "minutes": ("mpg", "min", "minutes", "m/g", "min/g", "mins", "minutes per game"),
+    # `$` before `value`: Basketball Monster's `Value` column is a z-score
+    # total, not dollars, and a file carrying both means the dollars.
+    "value": ("$", "auction $", "auction value", "dollars", "dollar value", "$ value", "value"),
+    "injury": ("inj", "injury", "injury status", "injury note", "health"),
 }
 
 #: Above this many points the file is season totals, not per-game rates. The
@@ -216,8 +292,9 @@ def _text(cell: Any) -> str:
 
 
 def header_key(header: str) -> str:
-    """A header with case, underscores and spacing gone, for matching synonyms."""
-    text = re.sub(r"[_\-]+", " ", str(header).strip().lower())
+    """A header with case, underscores, spacing and a trailing footnote
+    asterisk (Yahoo's `GP*`) gone, for matching synonyms."""
+    text = re.sub(r"[_\-]+", " ", str(header).strip().lower()).rstrip("*").strip()
     return " ".join(text.split())
 
 
@@ -270,7 +347,8 @@ def parse_overrides(entries: Iterable[str]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for entry in entries:
-        header, sep, field_name = entry.partition("=")
+        # From the right: a field never has "=" in it, and a header might.
+        header, sep, field_name = entry.rpartition("=")
         if not sep or not header.strip() or not field_name.strip():
             raise ValueError(f"map {entry!r}: expected HEADER=FIELD, e.g. 'Points=PTS'")
         out[header.strip()] = field_name.strip()
@@ -278,12 +356,17 @@ def parse_overrides(entries: Iterable[str]) -> dict[str, str]:
 
 
 def guess_mapping(
-    headers: Sequence[str], *, overrides: Mapping[str, str] | None = None
+    headers: Sequence[str],
+    *,
+    overrides: Mapping[str, str] | None = None,
+    exact: bool = False,
 ) -> ColumnMapping:
     """Map a file's headers onto our fields, and say what is missing and why.
 
     `overrides` is the manager's own `header=FIELD` corrections, applied over
-    the guess and winning against it.
+    the guess and winning against it. With `exact` the overrides are the
+    whole mapping and nothing is guessed: the plan page sends one entry per
+    field he left a column on, so a field he set to none stays none.
     """
     by_key: dict[str, str] = {}
     for header in headers:
@@ -291,7 +374,7 @@ def guess_mapping(
 
     fields: dict[str, str] = {}
     claimed: set[str] = set()
-    for field_name in (*REQUIRED, *OPTIONAL, *PERCENTAGE_FIELDS):
+    for field_name in () if exact else (*REQUIRED, *OPTIONAL, *PERCENTAGE_FIELDS):
         for synonym in SYNONYMS.get(field_name, ()):
             column = by_key.get(synonym)
             if column is not None and column not in claimed:
@@ -302,7 +385,7 @@ def guess_mapping(
     problems: list[str] = []
     known = (*REQUIRED, *OPTIONAL, *PERCENTAGE_FIELDS)
     for header, field_name in (overrides or {}).items():
-        found = by_key.get(header_key(header))
+        found = header if header in headers else by_key.get(header_key(header))
         if found is None:
             problems.append(
                 f"--map {header}={field_name}: the file has no column called {header!r}"
@@ -343,7 +426,10 @@ def guess_mapping(
                 f"the file has to carry {_attempts_for(field_name)} as well (app/scoring/lines.py)"
             )
         else:
-            notes.append(f"{field_name} is missing: no column matched it")
+            notes.append(
+                f"{field_name} is missing: "
+                + ("no column is chosen for it" if exact else "no column matched it")
+            )
 
     used = set(fields.values())
     ignored = tuple(header for header in headers if header not in used)
@@ -411,13 +497,37 @@ def detect_basis(rows: Sequence[Mapping[str, Any]], mapping: ColumnMapping) -> s
     The median rather than the mean, so a handful of unparsed cells or one
     season-total row in a per-game file cannot flip it.
     """
+    return measure_basis(rows, mapping)[0]
+
+
+def measure_basis(rows: Sequence[Mapping[str, Any]], mapping: ColumnMapping) -> tuple[str, str]:
+    """The basis and the reason for it, in the words the plan page shows."""
     header = mapping.header_for("PTS")
     if header is None:
-        return "per_game"
+        return "per_game", "no points column to measure, so read as per game"
     points = [number for row in rows if (number := _number(row.get(header))) is not None]
     if not points:
-        return "per_game"
-    return "totals" if median(points) > TOTALS_ABOVE else "per_game"
+        return "per_game", f"no numbers in {header!r} to measure, so read as per game"
+    middle = median(points)
+    if middle > TOTALS_ABOVE:
+        return "totals", (
+            f"the median of {header!r} is {middle:,.1f}, above {TOTALS_ABOVE:.0f}: no one scores "
+            "that many a game, so these are season totals, divided by games on the way in"
+        )
+    return "per_game", (
+        f"the median of {header!r} is {middle:,.1f}, not above {TOTALS_ABOVE:.0f}: per-game numbers"
+    )
+
+
+def samples(
+    headers: Sequence[str], rows: Sequence[Mapping[str, Any]], count: int = 3
+) -> dict[str, list[Any]]:
+    """The first few values of every column, so a wrong guess is visible."""
+    return {header: [_jsonable(row.get(header)) for row in rows[:count]] for header in headers}
+
+
+#: What a forced basis may be; "auto" is measured (`measure_basis`).
+BASES = ("auto", "per_game", "totals")
 
 
 # ---------------------------------------------------------------------------
@@ -450,10 +560,30 @@ class ImportReport:
     dry_run: bool = True
     #: The stored set, when one was stored.
     set_id: int | None = None
+    #: The file's headers in order, and the first values under each.
+    headers: tuple[str, ...] = ()
+    samples: Mapping[str, list[Any]] = field(default_factory=dict)
+    #: Why the basis is what it is: measured, or forced by the manager.
+    basis_reason: str = ""
+    basis_forced: bool = False
+    #: The set of the same name this replaced (or would replace), if any.
+    replaces: int | None = None
+    #: Last time's mapping, when it was applied because none was given.
+    last_time: LastTime | None = None
 
     @property
     def ok(self) -> bool:
         return self.mapping.usable
+
+    def stored_mapping(self) -> dict[str, Any]:
+        """What the set keeps of how it was mapped (`projection_sets.mapping`):
+        the column per field, the basis if he forced one, the headers seen."""
+        fields: dict[str, str | None] = {name: self.mapping.header_for(name) for name in FIELDS}
+        return {
+            "fields": fields,
+            "basis": self.basis if self.basis_forced else "auto",
+            "headers": list(self.headers),
+        }
 
     def lines(self) -> list[str]:
         """The report in plain language, for a terminal."""
@@ -504,6 +634,69 @@ class _Parsed:
     position: str | None
     team: str | None
     raw: dict[str, Any]
+    minutes: float | None = None
+    value: float | None = None
+    injury: str | None = None
+
+
+def named_set(session: Session, *, owner: str, season: int, name: str) -> ProjectionSet | None:
+    """The set this owner already keeps under this name for this season.
+
+    A name is the source (unique per owner and season, migration 0033): a
+    file uploaded under it again replaces its rows, keeping its id.
+    """
+    return session.scalar(
+        select(ProjectionSet).where(
+            ProjectionSet.owner == owner,
+            ProjectionSet.season == season,
+            ProjectionSet.name == name,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class LastTime:
+    """The mapping a named source was last stored with, fitted to a new file.
+
+    `overrides` are the stored columns this file still has, as `header=FIELD`
+    entries for `import_set`; `gone` the fields whose stored column this
+    file has not got, which the synonyms guess instead (and the page says
+    so); `basis` what was forced last time, or "auto".
+    """
+
+    set_id: int
+    uploaded_at: dt.datetime
+    overrides: dict[str, str]
+    gone: tuple[str, ...]
+    basis: str
+
+    @property
+    def whole(self) -> bool:
+        """Every stored column is in this file: the mapping is last time's exactly."""
+        return not self.gone
+
+
+def last_time(projection_set: ProjectionSet | None, headers: Sequence[str]) -> LastTime | None:
+    """Last time's mapping for this file, when the name was stored before with one."""
+    if projection_set is None or not projection_set.mapping:
+        return None
+    stored = projection_set.mapping.get("fields") or {}
+    overrides: dict[str, str] = {}
+    gone: list[str] = []
+    for field_name, header in stored.items():
+        if not header:
+            continue
+        if header in headers:
+            overrides[str(header)] = str(field_name)
+        else:
+            gone.append(str(field_name))
+    return LastTime(
+        set_id=int(projection_set.id),
+        uploaded_at=projection_set.uploaded_at,
+        overrides=overrides,
+        gone=tuple(gone),
+        basis=str(projection_set.mapping.get("basis") or "auto"),
+    )
 
 
 def import_set(
@@ -515,6 +708,8 @@ def import_set(
     source_note: str = "",
     path: Path,
     mapping_overrides: Mapping[str, str] | None = None,
+    exact: bool = False,
+    basis: str | None = None,
     dry_run: bool = False,
 ) -> ImportReport:
     """Read a projections file, match its names and store it as a set.
@@ -523,20 +718,58 @@ def import_set(
     a dry run; both come back as a report that says what would have happened,
     because a manager should see the mapping before he trusts a board built on
     it.
+
+    `exact` makes `mapping_overrides` the whole mapping (`guess_mapping`);
+    `basis` forces "per_game" or "totals" over the measured one ("auto" or
+    None measures it). A set this owner already keeps under `name` for the
+    season is replaced in place: its rows, its mapping and its upload time
+    are new, its id is not, so a composite built on it knows to rebuild.
+    A composite's name cannot be taken by an upload.
     """
     headers, rows = read_table(path)
-    mapping = guess_mapping(headers, overrides=mapping_overrides)
-    basis = detect_basis(rows, mapping)
+    existing = named_set(session, owner=owner, season=season, name=name)
+    if existing is not None and existing.kind != "upload":
+        raise ValueError(
+            f"{name!r} is the name of one of your composites; an upload needs a name of its own"
+        )
+    # A name stored before, and no mapping of his own this time: last time's first.
+    remembered = last_time(existing, headers) if mapping_overrides is None else None
+    if remembered is not None:
+        mapping_overrides = remembered.overrides
+        exact = remembered.whole
+        if basis is None:
+            basis = remembered.basis
+    mapping = guess_mapping(headers, overrides=mapping_overrides, exact=exact)
+    measured, reason = measure_basis(rows, mapping)
+    forced = basis is not None and basis != "auto"
+    if forced:
+        if basis not in BASES:
+            raise ValueError(f"basis {basis!r}: one of {', '.join(BASES)}")
+        reason = (
+            f"set by hand to {str(basis).replace('_', ' ')}; measured, it reads as "
+            f"{measured.replace('_', ' ')} ({reason})"
+        )
+    chosen = str(basis) if forced else measured
+    head: dict[str, Any] = {
+        "headers": tuple(headers),
+        "samples": samples(headers, rows),
+        "basis_reason": reason,
+        "basis_forced": forced,
+        "replaces": int(existing.id) if existing is not None else None,
+        "last_time": remembered,
+    }
     if not mapping.usable:
         return ImportReport(
             season=season,
             name=name,
             path=str(path),
             mapping=mapping,
-            basis=basis,
+            basis=chosen,
             rows_read=len(rows),
             dry_run=dry_run,
+            **head,
         )
+    basis = chosen
 
     lookup = espn_lookup(session, season)
     placed: list[tuple[_Parsed, int | None]] = []
@@ -570,36 +803,7 @@ def import_set(
         keys.add(key)
         placed.append((parsed, found))
 
-    set_id = None
-    if not dry_run:
-        projection_set = ProjectionSet(
-            season=season,
-            name=name,
-            owner=owner,
-            source_note=source_note,
-            column_map=mapping.as_json(basis),
-            rows=len(placed),
-        )
-        session.add(projection_set)
-        session.flush()
-        set_id = int(projection_set.id)
-        for parsed, found in placed:
-            session.add(
-                ProjectionRow(
-                    set_id=set_id,
-                    name=parsed.name,
-                    name_key=name_key(parsed.name),
-                    player_id=lookup.ours.get(found) if found is not None else None,
-                    games=parsed.games,
-                    position=parsed.position,
-                    team=parsed.team,
-                    raw=parsed.raw,
-                    **{COUNTS[key]: value for key, value in parsed.per_game.items()},
-                )
-            )
-        session.flush()
-
-    return ImportReport(
+    report = ImportReport(
         season=season,
         name=name,
         path=str(path),
@@ -614,8 +818,45 @@ def import_set(
         duplicates=tuple(duplicates),
         rejected=tuple(rejected),
         dry_run=dry_run,
-        set_id=set_id,
+        **head,
     )
+    if dry_run:
+        return report
+
+    if existing is not None:
+        projection_set = existing
+        session.execute(delete(ProjectionRow).where(ProjectionRow.set_id == existing.id))
+        projection_set.source_note = source_note or projection_set.source_note
+        projection_set.uploaded_at = dt.datetime.now(dt.UTC)
+    else:
+        projection_set = ProjectionSet(season=season, name=name, owner=owner, kind="upload")
+        projection_set.source_note = source_note
+        session.add(projection_set)
+    projection_set.column_map = mapping.as_json(basis)
+    projection_set.mapping = report.stored_mapping()
+    projection_set.rows = len(placed)
+    session.flush()
+    set_id = int(projection_set.id)
+    for parsed, found in placed:
+        session.add(
+            ProjectionRow(
+                set_id=set_id,
+                name=parsed.name,
+                name_key=name_key(parsed.name),
+                player_id=lookup.ours.get(found) if found is not None else None,
+                games=parsed.games,
+                position=parsed.position,
+                team=parsed.team,
+                minutes=parsed.minutes,
+                value=parsed.value,
+                injury=parsed.injury,
+                raw=parsed.raw,
+                **{COUNTS[key]: value for key, value in parsed.per_game.items()},
+            )
+        )
+    session.flush()
+    session.refresh(projection_set)
+    return replace(report, set_id=set_id)
 
 
 def _parse_row(
@@ -646,6 +887,12 @@ def _parse_row(
 
     position = mapping.header_for("position")
     team = mapping.header_for("team")
+    minutes_header = mapping.header_for("minutes")
+    minutes = _number(row.get(minutes_header)) if minutes_header else None
+    if minutes is not None and basis == "totals":
+        minutes = minutes / games
+    value_header = mapping.header_for("value")
+    injury_header = mapping.header_for("injury")
     return (
         _Parsed(
             name=name,
@@ -654,6 +901,9 @@ def _parse_row(
             position=(_text(row.get(position)) or None) if position else None,
             team=(_text(row.get(team)) or None) if team else None,
             raw={key: _jsonable(value) for key, value in row.items()},
+            minutes=minutes,
+            value=_number(row.get(value_header)) if value_header else None,
+            injury=(_text(row.get(injury_header)) or None) if injury_header else None,
         ),
         None,
     )

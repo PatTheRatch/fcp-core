@@ -1179,6 +1179,10 @@ class ProjectionSet(Base):
     """
 
     __tablename__ = "projection_sets"
+    __table_args__ = (
+        CheckConstraint("kind IN ('upload', 'composite')", name="ck_projection_sets_kind"),
+        UniqueConstraint("owner", "season", "name", name="uq_projection_sets_owner_season_name"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     season: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -1197,6 +1201,17 @@ class ProjectionSet(Base):
     column_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     #: How many rows were stored, so a set's size is one read.
     rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: "upload" (a file he brought) or "composite" (worked out from other
+    #: sources with weights, `app.projections.composite`). Migration 0033.
+    kind: Mapped[str] = mapped_column(String, nullable=False, server_default="upload")
+    #: The mapping the set was stored with -- {"fields": {field: header},
+    #: "basis": "auto" | "per_game" | "totals", "headers": [...]} -- offered
+    #: first when a file is uploaded again under the same name.
+    mapping: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    #: A composite's inputs, [{"source": "bbm" | "espn" | <set id>, "weight": w}].
+    recipe: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    #: What a composite's rows were worked out from, and when: its cache key.
+    built_from: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class ProjectionRow(Base):
@@ -1244,6 +1259,11 @@ class ProjectionRow(Base):
 
     position: Mapped[str | None] = mapped_column(String)
     team: Mapped[str | None] = mapped_column(String)
+    #: Optional fields a file may carry: minutes per game, the source's own
+    #: dollar value, its injury note (migration 0033).
+    minutes: Mapped[float | None] = mapped_column(Float)
+    value: Mapped[float | None] = mapped_column(Float)
+    injury: Mapped[str | None] = mapped_column(String)
     #: The row exactly as uploaded, so a column we do not model yet is not lost.
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
@@ -1838,6 +1858,10 @@ class DraftPlanMark(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    #: The pool in view when the mark was last written ("bbm", "espn",
+    #: "upload:7", "composite:9"). Marks are per team, not per source; this
+    #: only lets the drawer say when one was made on another pool.
+    source: Mapped[str | None] = mapped_column(String)
 
     plan: Mapped[DraftPlan] = relationship(back_populates="marks")
 

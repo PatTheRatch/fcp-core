@@ -1624,6 +1624,37 @@ class ProjectionSetOut(BaseModel):
     column_map: dict[str, Any] = Field(
         description="How this file's headers were read, exactly as applied"
     )
+    kind: str = Field(default="upload", description="'upload' or 'composite'")
+    mapping: dict[str, Any] | None = Field(
+        default=None,
+        description="The mapping it was stored with: the column per field and the basis",
+    )
+    recipe: list[dict[str, Any]] | None = Field(
+        default=None, description="A composite's inputs, [{source, weight}]"
+    )
+    built_from: dict[str, Any] | None = Field(
+        default=None, description="What a composite's rows were worked out from, and when"
+    )
+
+
+class FieldMapOut(BaseModel):
+    """One field the plan needs, and the column it is read from."""
+
+    field: str
+    required: bool
+    header: str | None = Field(description="The file's column; null when none is chosen")
+    derived: str | None = Field(
+        default=None, description="For a makes field with no column: rebuilt as 'FG% x FGA'"
+    )
+
+
+class LastTimeOut(BaseModel):
+    """Last time's mapping for a source uploaded again under its name."""
+
+    set_id: int
+    uploaded_at: datetime
+    whole: bool = Field(description="Every stored column is in this file")
+    gone: list[str] = Field(description="Fields whose stored column this file has not got")
 
 
 class RejectedRowOut(BaseModel):
@@ -1658,6 +1689,21 @@ class ProjectionImportOut(BaseModel):
     duplicates: list[str] = Field(description="The same player twice in the file; the second went")
     rejected: list[RejectedRowOut]
     reasons: list[str] = Field(description="Why the mapping is unusable; empty when ok")
+    headers: list[str] = Field(default_factory=list, description="The file's columns, in order")
+    samples: dict[str, list[Any]] = Field(
+        default_factory=dict, description="The first three values under each column"
+    )
+    fields: list[FieldMapOut] = Field(
+        default_factory=list, description="Every field the plan needs and its column"
+    )
+    basis_reason: str = Field(default="", description="Why the basis is what it is")
+    basis_forced: bool = Field(default=False, description="True when the basis was set by hand")
+    replaces: int | None = Field(
+        default=None, description="The set of the same name this replaces, keeping its id"
+    )
+    last_time: LastTimeOut | None = Field(
+        default=None, description="Set when last time's mapping was applied because none was sent"
+    )
 
 
 class ProjectionLineOut(BaseModel):

@@ -17,7 +17,11 @@ the mapping it guessed, the basis it measured, who it could not match and any
 row it could not read, so the mapping is confirmed before a board is built on
 it. `--map "Header=FIELD"` corrects a column the guess got wrong; repeat it
 per column. The fields are name, games, PTS, REB, AST, STL, BLK, 3PM, TO,
-FGM, FGA, FTM, FTA, FG%, FT%, team and position.
+FGM, FGA, FTM, FTA, FG%, FT%, team, position, minutes, value and injury.
+
+A name is the source: a file stored under a name this owner already keeps
+for the season replaces that set's rows (its id is kept), and with no --map
+it is read with the mapping it was stored with last time.
 
 A file carrying a percentage and no attempts is refused with the reason: a
 roster's FG% is made shots over attempts, and cannot be rebuilt from a
@@ -89,7 +93,8 @@ def main() -> int:
             owner=args.owner,
             source_note=args.note,
             path=args.file,
-            mapping_overrides=overrides,
+            # None, not {}: with no --map, a name stored before is read as last time.
+            mapping_overrides=overrides or None,
             dry_run=dry_run,
         )
         for line in report.lines():

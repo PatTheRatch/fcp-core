@@ -43,6 +43,8 @@ from sqlalchemy.orm import Session
 from app.api.access import CurrentUser, Viewer
 from app.api.deps import SessionDep
 from app.api.schemas import (
+    FieldMapOut,
+    LastTimeOut,
     ProjectionImportOut,
     ProjectionLineOut,
     ProjectionSetOut,
@@ -52,6 +54,8 @@ from app.db.models import Player, ProjectionRow, ProjectionSet
 from app.projections.sources import describe, may_show, upload_source
 from app.projections.upload import (
     COUNTS,
+    FIELDS,
+    REQUIRED,
     ImportReport,
     import_set,
     parse_overrides,
@@ -75,6 +79,14 @@ SeasonForm = Annotated[int, Form(description="The season these project, e.g. 202
 NoteForm = Annotated[str, Form(description=NOTE_HELP)]
 OwnerForm = Annotated[str, Form(description=OWNER_HELP)]
 MapForm = Annotated[list[str] | None, Form(alias="map", description=MAP_HELP)]
+ExactForm = Annotated[
+    bool,
+    Form(description="True: the map entries are the whole mapping, nothing is guessed (the page)"),
+]
+BasisForm = Annotated[
+    str,
+    Form(description="'auto' measures per game or totals from the points column; or force one"),
+]
 
 
 @router.post(
@@ -90,6 +102,8 @@ def preview_set(
     note: NoteForm = "",
     owner: OwnerForm = DEFAULT_OWNER,
     column_map: MapForm = None,
+    exact: ExactForm = False,
+    basis: BasisForm = "auto",
 ) -> ProjectionImportOut:
     """The mapping, the basis and the matching, before anything is stored.
 
@@ -105,6 +119,8 @@ def preview_set(
         note=note,
         owner=_owner_of(viewer, owner),
         column_map=column_map,
+        exact=exact,
+        basis=basis,
         dry_run=True,
     )
     return _import_out(report, file)
@@ -120,6 +136,8 @@ def create_set(
     note: NoteForm = "",
     owner: OwnerForm = DEFAULT_OWNER,
     column_map: MapForm = None,
+    exact: ExactForm = False,
+    basis: BasisForm = "auto",
 ) -> ProjectionImportOut:
     """Store the set and report what was stored, or refuse the file and say why.
 
@@ -134,6 +152,8 @@ def create_set(
         note=note,
         owner=_owner_of(viewer, owner),
         column_map=column_map,
+        exact=exact,
+        basis=basis,
         dry_run=False,
     )
     out = _import_out(report, file)
@@ -202,11 +222,18 @@ def _run(
     note: str,
     owner: str,
     column_map: list[str] | None,
+    exact: bool = False,
+    basis: str = "auto",
     dry_run: bool,
 ) -> ImportReport:
-    """`import_set` over an upload, with the caller's mistakes turned into 422s."""
+    """`import_set` over an upload, with the caller's mistakes turned into 422s.
+
+    No `map` at all is None, not an empty mapping, so a name stored before
+    is read with last time's mapping first; `exact` with no entries is an
+    empty mapping he chose, which is refused for its missing fields.
+    """
     try:
-        overrides = parse_overrides(column_map or [])
+        overrides = parse_overrides(column_map or []) if column_map or exact else None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
@@ -219,6 +246,8 @@ def _run(
                 source_note=note,
                 path=path,
                 mapping_overrides=overrides,
+                exact=exact,
+                basis=basis,
                 dry_run=dry_run,
             )
     except ValueError as exc:  # an extension no reader handles
@@ -298,6 +327,10 @@ def _set_out(projection_set: ProjectionSet) -> ProjectionSetOut:
         source_note=projection_set.source_note,
         rows=projection_set.rows,
         column_map=dict(projection_set.column_map or {}),
+        kind=projection_set.kind,
+        mapping=projection_set.mapping,
+        recipe=projection_set.recipe,
+        built_from=projection_set.built_from,
     )
 
 
@@ -322,4 +355,32 @@ def _import_out(report: ImportReport, file: UploadFile) -> ProjectionImportOut:
         duplicates=list(report.duplicates),
         rejected=[RejectedRowOut(where=where, why=why) for where, why in report.rejected],
         reasons=list(report.mapping.problems),
+        headers=list(report.headers),
+        samples=dict(report.samples),
+        fields=[
+            FieldMapOut(
+                field=name,
+                required=name in REQUIRED,
+                header=report.mapping.header_for(name),
+                derived=(
+                    f"{report.mapping.derived[name][0]} x {report.mapping.derived[name][1]}"
+                    if name in report.mapping.derived
+                    else None
+                ),
+            )
+            for name in FIELDS
+        ],
+        basis_reason=report.basis_reason,
+        basis_forced=report.basis_forced,
+        replaces=report.replaces,
+        last_time=(
+            LastTimeOut(
+                set_id=report.last_time.set_id,
+                uploaded_at=report.last_time.uploaded_at,
+                whole=report.last_time.whole,
+                gone=list(report.last_time.gone),
+            )
+            if report.last_time is not None
+            else None
+        ),
     )
