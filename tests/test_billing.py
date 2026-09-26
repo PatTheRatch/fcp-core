@@ -367,3 +367,39 @@ def test_latest_pass_names_a_lapsed_one(session: Session) -> None:
     found = billing.latest_pass(session, jo)
     assert found is not None and found.valid_until == ended
     assert billing.says_until(ended) == "May 1, 2026"
+
+
+# ---------------------------------------------------------------------------
+# the owner's command line (scripts/comp_code.py), on this module's schema
+# ---------------------------------------------------------------------------
+
+
+def test_the_command_line_makes_lists_revokes_and_grants(session: Session) -> None:
+    from scripts import comp_code
+
+    code_, out = comp_code.run(
+        session, ["make", "--note", "for Dennis", "--uses", "2", "--valid-until", "2027-06-30"]
+    )
+    assert code_ == 0
+    printed = out.splitlines()[0]
+    assert CODE_SHAPE.match(printed), out
+    assert "2 uses; the pass runs until Jun 30, 2027. Note: for Dennis" in out
+
+    dennis = user(session, "dennis@example.com")
+    billing.redeem(session, dennis, printed)
+    session.commit()
+    code_, listed = comp_code.run(session, ["list"])
+    assert code_ == 0 and printed in listed and "1/2 left" in listed
+    assert "dennis@example.com" in listed
+
+    assert comp_code.run(session, ["revoke", printed.lower()])[0] == 0
+    assert comp_code.run(session, ["revoke", printed])[0] == 1, "already revoked"
+    assert comp_code.run(session, ["revoke", "ZZZZ-ZZZZ-ZZZZ"])[0] == 1
+
+    code_, said = comp_code.run(
+        session, ["grant", "--email", "New@Example.com", "--until", "2027-06-30"]
+    )
+    assert (code_, said) == (0, "new@example.com has a pass until Jun 30, 2027.")
+    again = comp_code.run(session, ["grant", "--email", "new@example.com", "--until", "2027-07-30"])
+    assert again[0] == 1 and "already has a pass" in again[1]
+    assert comp_code.run(session, ["make", "--uses", "0"])[0] == 1

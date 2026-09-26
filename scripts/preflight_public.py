@@ -7,8 +7,9 @@ Usage:
 
 Run on the VPS before step (b) of docs/cutover.md, and again after editing
 `.env`, from the repository directory so the same `.env` the API reads is the
-one checked. It reads settings and the code's own shape; it opens no socket,
-sends no mail, touches no database and changes nothing.
+one checked. It reads settings and the code's own shape, and makes one read
+of the database: how many season passes are live and how many codes are
+open, for the paywall's line. It sends no mail and changes nothing.
 
 **It never prints a secret.** A token, a key or a password is reported as set
 or not set and by its length, never by its value, because this is run over
@@ -334,11 +335,39 @@ def check_the_service_token_path(settings: Settings) -> Check:
     return Check("service token path", PASS, "warm_pages.py and the watchdog act as the owner")
 
 
-def check_billing_is_off(settings: Settings) -> Check:
-    state = "on" if access.billing_enabled(settings) else "off"
-    return Check(
-        "paywall", NOTE, f"FCP_BILLING_ENABLED is {state}; team pages open to their managers"
-    )
+def pass_counts(settings: Settings) -> str:
+    """Live passes besides the owner's, and codes that would redeem now, in
+    words; or why the database was not read. The one read this script makes
+    (two counts, nothing written), with a five-second limit on connecting."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy.orm import Session
+
+    from app import billing
+
+    engine = create_engine(settings.database_url, connect_args={"connect_timeout": 5})
+    try:
+        with Session(engine) as session:
+            found = billing.counts(session)
+    except SQLAlchemyError as error:
+        # The class only: a connection error's text can carry the URL.
+        return f"the passes were not counted ({type(error).__name__}; migration 0031 run?)"
+    finally:
+        engine.dispose()
+    passes = "1 live pass" if found.live_passes == 1 else f"{found.live_passes} live passes"
+    codes = "1 open code" if found.open_codes == 1 else f"{found.open_codes} open codes"
+    return f"{passes} besides the owner's, {codes}"
+
+
+def check_billing(settings: Settings) -> Check:
+    """The paywall, and what it would find: a note either way, never a
+    failure, since off is a fine state to open the site in (docs/accounts.md,
+    "Launching the pass")."""
+    if access.billing_enabled(settings):
+        gate = "FCP_BILLING_ENABLED is on: team pages need a live pass"
+    else:
+        gate = "FCP_BILLING_ENABLED is off: team pages open to their managers"
+    return Check("paywall", NOTE, f"{gate}; {pass_counts(settings)}")
 
 
 CHECKS: tuple[Callable[[Settings], Check], ...] = (
@@ -356,7 +385,7 @@ CHECKS: tuple[Callable[[Settings], Check], ...] = (
     check_links_are_built_on_the_public_url,
     check_rate_limits,
     check_the_service_token_path,
-    check_billing_is_off,
+    check_billing,
 )
 
 

@@ -254,6 +254,20 @@ def test_the_scheduled_scripts_bearer_path_works(anon: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def no_database_for_the_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The paywall line counts passes in DATABASE_URL, which in a test run is
+    the developer's own database: never opened here."""
+    monkeypatch.setattr(preflight_public, "pass_counts", lambda _: "3 live passes, 2 open codes")
+
+
+def test_the_paywall_line_says_the_switch_and_the_counts() -> None:
+    off = {c.name: c.detail for c in preflight_public.run(ready())}["paywall"]
+    assert off.startswith("FCP_BILLING_ENABLED is off") and "2 open codes" in off
+    on = {c.name: c for c in preflight_public.run(ready(fcp_billing_enabled=True))}["paywall"]
+    assert on.state == preflight_public.NOTE and "is on: team pages need a live pass" in on.detail
+
+
 def ready(**changes: Any) -> Any:
     """Settings a green preflight would find on the VPS."""
     base = {
