@@ -216,6 +216,11 @@ script keeps `--fan-team CLE`.
 
 ## On the night
 
+The marks are kept in the site's database (the VPS's). A room run on the
+laptop reads them through an SSH tunnel to that database
+(docs/draft_night.md, "The week before", step 8); a room run against the
+laptop's own database reads only marks made on a local copy of the site.
+
 The draft room reads the plan for the team it drafts for when it opens
 (`plan_store.marks_for`, in `scripts/draft_service.py`; `--no-plan-marks`
 leaves it out). A card carries `yours` -- his figure, his tag, his going

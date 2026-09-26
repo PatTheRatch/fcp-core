@@ -97,6 +97,36 @@ believe beats the price it shows.
    `data/bbm/` somewhere safe. The launcher reads the two newest BBM files
    from `data/bbm/` at start, so keep them there.
 
+8. **Point the room at the plan you made on the site.** The marks on the
+   draft plan page (your going prices, ceilings, tags, must men) live in the
+   VPS's database; the room on this laptop reads whatever database its
+   `DATABASE_URL` names, which is the laptop's own. So on the night the room
+   reads the VPS's database through an SSH tunnel (the VPS's Postgres
+   listens only on its own localhost, port 5433; nothing is opened to the
+   internet). In one terminal, leave this running:
+
+   ```bash
+   ssh -N -L 5434:localhost:5433 aisha@aisha-vps
+   ```
+
+   In another, start the room with the VPS's connection string, host and
+   port swapped for the tunnel's end: take `DATABASE_URL` from
+   `/opt/fcp-core/.env` on the VPS, replace `localhost:5433` with
+   `127.0.0.1:5434`, and pass it for that command only, never into this
+   repo's `.env`:
+
+   ```bash
+   DATABASE_URL='postgresql+psycopg://…@127.0.0.1:5434/fcp' .venv/bin/python scripts/draft_night.py
+   ```
+
+   The terminal then says how many men carry your figure or tag from the
+   plan page; if it says none and you marked some, the room is reading the
+   wrong database. Checked 2026-09-26: the tunnel reaches the VPS's `fcp`,
+   and the plan tables read through it. The tunnel is read-only in
+   practice, since the room writes its picks to `logs/`, not the database;
+   `--no-plan-marks` turns the reading off. Close the tunnel afterwards
+   (Ctrl-C in its terminal).
+
 ## The hour before
 
 - Close every other tab on the draft account. Charge the laptop. Have the
