@@ -193,7 +193,7 @@ label in a far cell stays inside it).
 BOX OUT
 ● OVERVIEW
 TEAM   Through The Wire
-  Matchup · Roster (soon) · Moves · Trades · Season
+  Matchup · Roster (soon) · Moves · Trades · Draft plan · Season
 LEAGUE
   This week · Standings · Players (soon) · Draft · History
 ───
@@ -210,6 +210,7 @@ Connections · Alerts · Theme  Light ◐
 | Matchup | `/l/{l}/{s}/team/{t}/week` | current on the week page |
 | Roster | the week page at `#tonight-section` | **pending**: no page of its own; says "soon" |
 | Moves, Trades, Season | the team's pages | |
+| Draft plan | `/l/{l}/{s}/team/{t}/draft/plan` | current on the plan page; in every season (after the auction the page says when it was held) |
 | This week | `/l/{l}/{s}/week` | the league's week, kept from the old bar |
 | Standings, Draft, History | the league's pages | |
 | Players | the week page at `#whatif-section` (its wire), else the league's week | **pending**: says "soon" |
@@ -531,6 +532,25 @@ figure buttons, the NEEDS ATTENTION list (a figure column, the fact, the
 link), THE WIRE's three move blocks on one panel, the five-row standings
 cut and the lineup a place a row; and on a desk 1180 px and wider, two
 sections side by side where the owner's order pairs them.
+
+### The draft plan: done (2026-09-26)
+
+The second page designed in the system (docs/draft_plan.md), on the
+Overview's pattern: a header line with the pools as a `ws-seg`, a facts line
+whose figures open the drawer on their fields, then sections a label over
+one panel. What it adds is its own furniture (`.dp-*` in `pages.css`): the
+ladder a `ws-input` per place, its sum red while it does not add up; the
+board as the screener with two editable figures and a tag select per row
+(an edit is kept on change and the table redrawn only once the field is
+left, so a man half typed is never wiped); the model's lists a man a row, two
+lists a row on a desk 1180 px and wider; YOUR PLAN in the `ws-grid`'s
+metrics. Orange is spent only where the rules allow: the rail, the selected
+row, a must man's tag. Red is a figure that cannot be kept (a ladder that
+does not add up, a figure out of range, a must set over the budget) and a
+price past its place's slack -- each a cost to his own plan. The nine are
+the glyph scale, cut at 2 and 10 points of the chance of beating the
+league's median opponent. The rail's TEAM group gained **Draft plan**
+between Trades and Season.
 
 ## Decisions
 

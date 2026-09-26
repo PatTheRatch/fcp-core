@@ -30,7 +30,17 @@ believe beats the price it shows.
    lacks Leag$; if it refuses, fix the settings and pull again rather than
    forcing it.
 
-2. **Re-run the plan** on the fresh export and read it once:
+2. **Make the plan on the site**: the rail's **Draft plan**, under your team
+   (`/l/{league}/2027/team/{team}/draft/plan`, docs/draft_plan.md). After a
+   fresh `--store` pull press **Build again**; the plan is worked out on the
+   new capture in about two minutes, and the source line says which capture
+   and how old. Set your own going prices and ceilings where you disagree,
+   tag your targets, must-haves, let-gos, nominations and IR pick, and keep
+   notes: that is what the room shows you on the night (step "The hour
+   before"). It carries BBM's numbers and is served only to you.
+
+   The script is the offline fallback, and writes the same file it always
+   has:
 
    ```bash
    .venv/bin/python scripts/draft_plan.py --season 2027 --me "Through The Wire" --bbm data/bbm/BBM_Projections_2027_total.xls --bbm-per-game data/bbm/BBM_Projections_2027_pergame.xls
@@ -97,7 +107,9 @@ believe beats the price it shows.
   and stays; the screen opens in the browser by itself. Check three things
   on it: the source line under the title says Basketball Monster with the
   latest export; the pick counter reads 0 / 208; the plan and the ladder
-  are filled. Three worker processes compute ceilings in the background;
+  are filled. The terminal says how many men carry your own figure or tag
+  from the plan page; a man you marked shows "Yours · from your plan" beside
+  our ceiling on the block, and your tag in the desk. Three worker processes compute ceilings in the background;
   the first few cards say "ceiling pending" for a moment, which is normal.
 - **Press Connect.** The URL box already holds the league's room. The pill
   goes *opening the ESPN window…*, then either *sign in, in the ESPN

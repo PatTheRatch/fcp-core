@@ -90,6 +90,13 @@ on disk carrying a price, a ceiling and a target roster for every player, and
 `viewer_owns_source=True`, which is true of the only account there is. When
 auth lands, that argument is the only thing that has to learn an answer.
 
+**The first per-user answer (2026-09-26).** The draft plan route
+(`app/api/draft_plan.py`, docs/draft_plan.md) is the first place the argument
+is answered per viewer: the stored BBM captures are pulled with the site
+owner's membership, so `viewer_owns_source` is `Viewer.is_owner` there, and a
+plan on BBM is withheld from anyone else with the pools he may plan on
+instead. The co-manager's `draft_board` asks the same function.
+
 **Uploads.** `app/projections/upload.py` reads a CSV, .xlsx or .xls, maps the
 header row by a synonyms table rather than demanding a template, measures
 whether the file is per game or season totals from its own numbers, matches
