@@ -716,7 +716,8 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 
 /* ---- the season pass: the owner's Codes on Connections, and /upgrade ------ */
 /* A code as it is sent: the data face, never broken across a line. */
-.ws-codes td.code,.ws-newcode .ws-data{font-family:var(--font-data);white-space:nowrap;letter-spacing:.04em}
+.ws-codes td.code,.ws-newcode #newcode-text{font-family:var(--font-data);white-space:nowrap;letter-spacing:.04em}
+.ws-newcode dd{min-width:0;overflow-wrap:anywhere}
 .ws-codes td{white-space:nowrap}
 .ws-codes .ws-tag{vertical-align:middle}
 .ws-newcode{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--line);align-items:center}

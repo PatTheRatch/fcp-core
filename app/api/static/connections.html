@@ -85,7 +85,7 @@
       <button type="button" class="ws-btn sm" id="copycode">Copy</button></dd>
     <dt>For</dt><dd id="newcode-for"></dd>
     <dt>Uses</dt><dd class="ws-data" id="newcode-uses"></dd>
-    <dt>Pass until</dt><dd class="ws-data" id="newcode-until"></dd>
+    <dt>Pass until</dt><dd id="newcode-until"></dd>
   </dl>
   </div>
   <div class="ws-panel flush"><div class="scroll">
@@ -428,8 +428,10 @@ $("makecode").onsubmit = async (event) => {
   $("newcode-text").textContent = c.code;
   $("newcode-for").textContent = c.note || "—";
   $("newcode-uses").textContent = c.uses_total === 1 ? "1 use" : `${c.uses_total} uses`;
-  $("newcode-until").textContent =
-    c.valid_until_words + (c.default_valid_until ? " (the season's end, plus a month)" : "");
+  $("newcode-until").replaceChildren(
+    el("span", c.valid_until_words, "ws-data"),
+    c.default_valid_until ? " (the season's end, plus a month)" : "",
+  );
   $("copycode").textContent = "Copy";
   $("newcode").hidden = false;
   $("codenote").value = "";
