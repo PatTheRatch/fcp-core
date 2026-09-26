@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from concurrent.futures import Executor, Future, ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -43,6 +43,7 @@ from app.draft.estimate import estimated_worth
 from app.draft.feed import LoggedPick, OnBlock, match_name, match_team
 from app.draft.live import SCREEN_CATEGORIES, Room, bargain_warning, market_prices
 from app.draft.optimizer import Candidate, RosterPlan
+from app.draft.plan_store import Mark, held_up_to
 from app.draft.room import (
     Allocation,
     Ceiling,
@@ -192,8 +193,14 @@ class DraftSession:
         executor: Executor | None = None,
         on_block: Executor | None = None,
         precompute: int = PRECOMPUTE,
+        yours: Mapping[int, Mark] | None = None,
     ) -> None:
         self.room = room
+        #: The manager's own marks from his draft plan (docs/draft_plan.md,
+        #: "On the night"): his ceiling, his going price, his tag and note per
+        #: man, read once when the room opens (`plan_store.marks_for`). A card
+        #: carries them as `yours`, beside our ceiling and never in place of it.
+        self.yours: dict[int, Mark] = dict(yours or {})
         self.log = log
         self.executor = executor
         #: A pool reserved for the man on the block, so his ceiling never
@@ -749,7 +756,28 @@ class DraftSession:
                     ceiling.price if ceiling is not None else None,
                     total_dollars,
                 ),
+                "yours": self._yours(player_id, going),
             }
+
+    def _yours(self, player_id: int, going: int | None) -> dict[str, Any] | None:
+        """The manager's own figure for a man, from his plan, or None.
+
+        `bid_up_to` is the figure the screen holds up: his ceiling when he
+        set one; for a man he tagged must, his going price (his, else the
+        room's) plus the ladder's slack, because the plan does not let him
+        go (`plan_store.held_up_to`).
+        """
+        mark = self.yours.get(player_id)
+        if mark is None:
+            return None
+        return {
+            "bid_up_to": held_up_to(mark, going),
+            "set": mark.bid_up_to,
+            "going_price": mark.going_price,
+            "tag": mark.tag,
+            "must": mark.tag == "must",
+            "note": mark.note or None,
+        }
 
     def search(
         self, text: str = "", *, available_only: bool = True, limit: int = 25
@@ -861,6 +889,7 @@ def _withheld_card(player_id: int, name: str, source: str) -> dict[str, Any]:
         "bbm": None,
         "ceiling": {"status": "withheld"},
         "warning": None,
+        "yours": None,
     }
 
 

@@ -97,6 +97,12 @@ button.btn.tiny{padding:2px 7px;font-size:10px}
 .money .worth.nobid .lab{color:var(--stop)}
 .money .aside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;align-content:start}
 .money .aside div{padding:2px 0}
+/* The manager's own figure from his draft plan page: beside ours, never in
+   its place, and marked as his (docs/draft_plan.md, "On the night"). */
+.money .aside .yours-cell{grid-column:1/-1;border-top:1px dashed var(--rule-strong);padding-top:6px}
+.money .aside .yours-cell .lab::before{content:"\25C6  "}
+.money .aside .yours-cell.must b{text-decoration:underline;text-underline-offset:4px}
+.yourtag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--rule-strong);border-radius:2px;padding:0 4px;margin-left:4px}
 .money .aside b{display:block;font-family:var(--mono);font-size:clamp(19px,2.2vw,26px);font-weight:600;line-height:1.1}
 /* "a $28 place" is a sentence, not a figure: it reads at a smaller size. */
 .money .phrase b{font-size:clamp(15px,1.7vw,19px);letter-spacing:-.01em}
@@ -403,6 +409,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);border:1px sol
       <div><span class="lab">Expected to go</span><b class="num" id="b-going">–</b><small id="b-going-note"></small></div>
       <div id="b-plan-cell"><span class="lab">Plan pays</span><b class="num" id="b-plan">–</b><small id="b-plan-note"></small></div>
       <div><span class="lab" id="b-went-lab">Went for</span><b class="num" id="b-went">–</b><small id="b-went-note"></small></div>
+      <div class="yours-cell" id="b-yours-cell" hidden><span class="lab">Yours · from your plan</span><b class="num" id="b-yours">–</b><small id="b-yours-note"></small></div>
     </div>
   </div>
   <div class="strip" id="b-strip"></div>
@@ -1017,6 +1024,27 @@ function resetMoney() {
   $("b-plan-cell").classList.remove("phrase");
   $("b-went-note").textContent = "";
   document.querySelector(".money .worth").className = "worth";
+  $("b-yours-cell").hidden = true;
+}
+
+/** The manager's own figure for this man, from his draft plan page: his
+ *  ceiling (or, for a man he tagged must, his going price plus the ladder's
+ *  slack) and his tag. Beside ours, labelled his; ours is never replaced. */
+const YOUR_TAGS = { must: "must", target: "target", let_go: "let go", nominate: "nominate", ir: "IR", none: "" };
+function renderYours(card) {
+  const yours = card && card.yours;
+  const cell = $("b-yours-cell");
+  cell.hidden = !yours;
+  if (!yours) return;
+  cell.className = "yours-cell" + (yours.must ? " must" : "");
+  $("b-yours").textContent = num(yours.bid_up_to) !== null ? money(yours.bid_up_to) : "–";
+  const bits = [];
+  if (yours.must) bits.push(num(yours.set) !== null ? "must: your ceiling" : "must: his going price plus the ladder's slack");
+  else if (yours.tag && yours.tag !== "none") bits.push(YOUR_TAGS[yours.tag] || yours.tag);
+  if (!yours.must && num(yours.set) !== null) bits.push("your ceiling");
+  if (num(yours.going_price) !== null) bits.push(`you said he goes for $${yours.going_price}`);
+  if (yours.note) bits.push(yours.note);
+  $("b-yours-note").textContent = bits.join(" · ");
 }
 
 /** What he is worth to us: the ceiling, which is the number to bid by.
@@ -1100,6 +1128,7 @@ function renderBlock() {
     + (where.length ? ` · eligible ${esc(where.join(", "))}` : "");
 
   renderWorth(card);
+  renderYours(card);
   $("b-ours").textContent = money(card.board_price);
   $("b-ours-note").textContent = "the board's valuation";
   $("b-going").textContent = money(card.market_price);
@@ -1902,8 +1931,14 @@ function refreshSale(force = false) {
         ? (ce.price === null ? `<span class="faint">no</span>` : `$${ce.price}`)
         : `<span class="faint">…</span>`;
       const under = ce.status === "ready" && ce.price !== null && num(p.market_price) !== null && p.market_price <= ce.price;
+      // His own figure from the plan page, marked as his, beside ours.
+      const y = p.yours;
+      const yours = y
+        ? ` <span class="yourtag" title="yours, from your draft plan">${esc(y.must ? "must" : YOUR_TAGS[y.tag] || "")}` +
+          `${num(y.bid_up_to) !== null ? ` ◆$${y.bid_up_to}` : ""}</span>`
+        : "";
       return `<tr class="click" data-id="${p.player_id}">
-        <td>${esc(p.name)} <span class="faint">${esc(p.position || "")}</span></td>
+        <td>${esc(p.name)} <span class="faint">${esc(p.position || "")}</span>${yours}</td>
         <td class="r">${money(p.market_price)}</td>
         <td class="r${under ? " under" : ""}">${ceiling}</td>
         ${anyBbm ? `<td class="r faint">${p.bbm && num(p.bbm.league_total) !== null ? "$" + p.bbm.league_total : ""}</td>` : ""}

@@ -420,3 +420,31 @@ def test_the_search_skips_the_estimate_because_sixty_of_them_is_not_free() -> No
 
     assert rows, "the search still answers"
     assert all(row["ceiling"].get("estimate") is None for row in rows)
+
+
+def test_the_card_carries_the_managers_own_figure_beside_ours() -> None:
+    """The plan page's marks, read when the room opens: his ceiling where he
+    set one, and for a must man without one his going price plus the ladder's
+    slack. Ours is untouched; a man he did not mark carries none."""
+    from app.draft.plan_store import Mark
+
+    yours = {
+        1: Mark(1, going_price=None, bid_up_to=15, tag="target", note="the one"),
+        2: Mark(2, going_price=None, bid_up_to=None, tag="must", note=""),
+        3: Mark(3, going_price=9, bid_up_to=None, tag="must", note=""),
+    }
+    session = DraftSession(make_room(), yours=yours)
+    one = session.card(1, estimate=False)
+    assert one["yours"] == {
+        "bid_up_to": 15,
+        "set": 15,
+        "going_price": None,
+        "tag": "target",
+        "must": False,
+        "note": "the one",
+    }
+    assert "ceiling" in one, "ours is still there, beside his"
+    two = session.card(2, estimate=False)
+    assert two["yours"]["must"] and two["yours"]["bid_up_to"] == int(two["market_price"] * 1.1)
+    assert session.card(3, estimate=False)["yours"]["bid_up_to"] == 9, "his going price, plus 10%"
+    assert session.card(4, estimate=False)["yours"] is None

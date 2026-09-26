@@ -62,7 +62,7 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 
@@ -121,6 +121,11 @@ def build_parser(*, require_room: bool = True) -> argparse.ArgumentParser:
     ap.add_argument("--punt", action="append", default=[])
     ap.add_argument("--plan", default="history", choices=("history", "optimizer", "none"))
     ap.add_argument("--plan-slack", type=float, default=0.10)
+    ap.add_argument(
+        "--no-plan-marks",
+        action="store_true",
+        help="leave out the manager's own figures and tags from his draft plan page",
+    )
     ap.add_argument("--pool-season", type=int)
     ap.add_argument("--pool-kind", default="projected", choices=("projected", "total"))
     return ap
@@ -172,12 +177,21 @@ def serve(args: argparse.Namespace, *, on_ready: Callable[[], None] | None = Non
         else Path("logs") / f"draft-{args.season}.jsonl"
     )
     log_path = args.log or default_log
+    yours = {} if args.no_plan_marks else plan_marks(args.season, room.state.me)
     session = DraftSession(
         room,
         log=DraftLog(log_path),
         executor=process_executor(room, args.workers),
         on_block=block_executor(room),
+        yours=yours,
     )
+    if yours:
+        print(
+            f"the draft plan page: {len(yours)} "
+            f"{'man carries' if len(yours) == 1 else 'men carry'} your own figure or tag "
+            "(docs/draft_plan.md, 'On the night')",
+            flush=True,
+        )
     print(room.pool_note, flush=True)
     print(f"source: {room.projection_source} ({describe(room.projection_source)})", flush=True)
     print(
@@ -245,6 +259,33 @@ def serve(args: argparse.Namespace, *, on_ready: Callable[[], None] | None = Non
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
+
+
+def plan_marks(season: int, espn_team_id: int) -> dict[int, Any]:
+    """The manager's marks from the draft plan page, for the team the room drafts for.
+
+    What he kept on the site (`app.draft.plan_store.marks_for`): the screen
+    shows his ceiling and tag beside ours. Nothing when the plan tables are
+    not there yet, which is a room exactly as it was.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.exc import ProgrammingError
+
+    from app.db.models import LeagueSeason
+    from app.draft.plan_store import marks_for
+
+    factory = make_session_factory(make_engine(get_settings().database_url))
+    with factory() as db:
+        try:
+            league_season = db.scalars(
+                select(LeagueSeason).where(LeagueSeason.season == season)
+            ).one_or_none()
+            if league_season is None:
+                return {}
+            marks, _ = marks_for(db, league_season, espn_team_id)
+        except ProgrammingError:
+            return {}
+    return dict(marks)
 
 
 def main() -> int:
