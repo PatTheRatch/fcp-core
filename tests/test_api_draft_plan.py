@@ -441,6 +441,66 @@ def test_the_plan_builds_on_an_upload_and_names_it(
         assert body["plan"]["source"]["key"].startswith(f"upload:{hers}@")
 
 
+def test_a_composite_with_bbm_in_it_is_withheld_from_a_non_owner_and_one_without_is_not(
+    seeded: sessionmaker[Session], two_sets: dict[str, int]
+) -> None:
+    """Alice holds two composites: one reads BBM (it cannot have been made
+    through the route, which refuses her BBM; it stands for a set whose
+    reader is not BBM's member), one reads ESPN and her sheet. The first is
+    BBM's number to her and is withheld, and not in her chooser; the second
+    is hers. The owner's BBM composite is his to plan on and never hers."""
+    from app.db.models import ProjectionSet
+
+    hers = two_sets["alice@example.com"]
+    with seeded() as session:
+        alice_id = accounts.get_or_create_user(session, "alice@example.com").id
+        owner_id = accounts.get_or_create_user(session, OWNER).id
+        made = {}
+        for key, owner, recipe in (
+            (
+                "alice_bbm",
+                alice_id,
+                [{"source": "bbm", "weight": 50}, {"source": "espn", "weight": 50}],
+            ),
+            (
+                "alice_plain",
+                alice_id,
+                [{"source": "espn", "weight": 40}, {"source": hers, "weight": 60}],
+            ),
+            (
+                "owner_bbm",
+                owner_id,
+                [{"source": "bbm", "weight": 70}, {"source": "espn", "weight": 30}],
+            ),
+        ):
+            one = ProjectionSet(
+                season=SEASON, name=key, owner=str(owner), kind="composite", recipe=recipe, rows=0
+            )
+            session.add(one)
+            session.flush()
+            made[key] = int(one.id)
+        session.commit()
+
+    with as_user(seeded, "alice@example.com") as alice:
+        withheld = alice.get(url(), params={"source": f"composite:{made['alice_bbm']}"}).json()
+        assert withheld["state"] == "withheld" and "plan" not in withheld
+        assert withheld["source"]["gated"] is True
+        choices = [c["source"] for c in withheld["choices"]]
+        assert choices[0] == "espn"
+        assert set(choices) == {"espn", f"upload:{hers}", f"composite:{made['alice_plain']}"}
+        assert f"composite:{made['alice_bbm']}" not in choices
+        plain = alice.get(url(), params={"source": f"composite:{made['alice_plain']}"}).json()
+        assert plain["state"] == "ready" and plain["source"]["kind"] == "composite"
+        assert plain["source"]["gated"] is False
+        assert (
+            alice.get(url(), params={"source": f"composite:{made['owner_bbm']}"}).status_code == 404
+        )
+        assert alice.get(f"/projections/sets/{made['alice_bbm']}").status_code == 403
+    with as_user(seeded, OWNER) as owner:
+        body = owner.get(url(), params={"source": "espn"}).json()
+        assert f"composite:{made['owner_bbm']}" in [c["source"] for c in body["choices"]]
+
+
 def test_a_mark_is_per_team_and_remembers_the_pool_it_was_made_on(client: TestClient) -> None:
     client.put(
         url(tail="/marks"),

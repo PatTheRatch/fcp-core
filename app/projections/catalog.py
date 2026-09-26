@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.db.models import BBMCapture, PlayerSeasonStat, ProjectionRow, ProjectionSet, User
 from app.draft import bbm_store
 from app.projections import sources
+from app.projections.composite import recipe_words
 
 #: The words each kind is called by on the page.
 KIND_WORDS = {
@@ -196,7 +197,11 @@ def set_entries(
                 when=one.uploaded_at,
                 by=emails.get(one.owner, one.owner),
                 gated=sources.is_gated(tag),
-                note=one.source_note,
+                note=(
+                    recipe_words(session, one.recipe)
+                    if one.kind == "composite"
+                    else one.source_note
+                ),
                 set_id=one.id,
                 recipe=list(one.recipe or []),
                 carried=dict((one.built_from or {}).get("carried") or {}),

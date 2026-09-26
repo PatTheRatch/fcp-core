@@ -69,7 +69,7 @@ from app.db.models import ProjectionRow, ProjectionSet
 from app.draft.bbm import espn_lookup
 from app.draft.valuation import PERCENTAGE_COMPONENTS, PlayerProjection
 from app.player_names import match_player, name_key, synthetic_id
-from app.projections.sources import upload_source
+from app.projections.sources import set_source
 
 #: The counting stats a projection set carries, mapped to the column each is
 #: stored in. Keyed exactly as the valuation and the scoring package key them
@@ -944,6 +944,8 @@ def load_projection_set(session: Session, set_id: int) -> list[PlayerProjection]
         raise ValueError(f"no projection set {set_id}")
     lookup = espn_lookup(session, projection_set.season)
     espn_of = {ours: espn for espn, ours in lookup.ours.items()}
+    # An upload's tag, or a composite's (gated when its recipe reads BBM).
+    tag = set_source(projection_set)
 
     out: list[PlayerProjection] = []
     for row in session.scalars(
@@ -962,7 +964,7 @@ def load_projection_set(session: Session, set_id: int) -> list[PlayerProjection]
                 },
                 eligible=eligible,
                 position=position,
-                source=upload_source(set_id),
+                source=tag,
             )
         )
     return out
@@ -977,8 +979,16 @@ def set_headline(session: Session, set_id: int) -> str:
     projection_set = session.get(ProjectionSet, set_id)
     if projection_set is None:
         raise ValueError(f"no projection set {set_id}")
+    if projection_set.kind == "composite":
+        return f"{projection_set.name!r}: a composite, {_recipe_words(session, projection_set)}"
     note = projection_set.source_note.strip()
     return f"{projection_set.name!r}{f': {note}' if note else ''}"
+
+
+def _recipe_words(session: Session, projection_set: ProjectionSet) -> str:
+    from app.projections.composite import recipe_words  # reads this module
+
+    return recipe_words(session, projection_set.recipe)
 
 
 def stored_sets(session: Session, season: int | None = None) -> list[ProjectionSet]:
@@ -1005,6 +1015,13 @@ def set_note(session: Session, set_id: int) -> str:
         or 0
     )
     note = projection_set.source_note.strip()
+    if projection_set.kind == "composite":
+        return (
+            f"pool: composite {set_id}, {projection_set.name!r} "
+            f"({_recipe_words(session, projection_set)}): {projection_set.rows} players, "
+            f"{matched} matched to ESPN ids, {projection_set.rows - matched} on the board by "
+            "name only"
+        )
     return (
         f"pool: uploaded set {set_id}, {projection_set.name!r} "
         f"(uploaded by {projection_set.owner}): {projection_set.rows} players, "

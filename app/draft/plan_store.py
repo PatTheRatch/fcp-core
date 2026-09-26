@@ -65,10 +65,11 @@ SLACK = 0.10
 
 def slot_for(source: engine.PoolSource) -> int:
     """The `scoring_period` a plan on this pool is kept under: 0 for BBM,
-    1 for ESPN, 1000 plus the set id for an uploaded set."""
+    1 for ESPN, 1000 plus the set id for an uploaded set or a composite
+    (one id space: both are `projection_sets` rows)."""
     if source.kind == "bbm":
         return 0
-    if source.kind == "upload" and source.set_id is not None:
+    if source.kind in ("upload", "composite") and source.set_id is not None:
         return 1000 + source.set_id
     return 1
 

@@ -490,6 +490,58 @@ def test_sources_lists_espn_and_his_uploads_with_their_matching(client: TestClie
     ]
 
 
+def test_a_composite_is_made_listed_and_rebuilt_when_its_sheet_is_uploaded_again(
+    client: TestClient,
+) -> None:
+    sheet = client.post(
+        "/projections/sets",
+        files=upload(ODD, "odd.csv"),
+        data=page_data(ODD_FIELDS, name="Hand sheet"),
+    ).json()
+    made = client.post(
+        "/projections/composites",
+        json={
+            "season": SEASON,
+            "name": "Blend",
+            "recipe": [
+                {"source": sheet["set_id"], "weight": 70},
+                {"source": "espn", "weight": 30},
+            ],
+        },
+    )
+    assert made.status_code == 200, made.text
+    blend = made.json()
+    assert blend["kind"] == "composite" and blend["rows"] == 2
+    # ESPN's seeded line carries no numbers, so each man is the sheet's alone.
+    assert blend["built_from"]["carried"] == {"1": 2}
+    listed = client.get("/projections/sources", params={"season": SEASON}).json()["sources"]
+    entry = next(s for s in listed if s["kind"] == "composite")
+    assert entry["source"] == f"composite:{blend['id']}"
+    assert entry["note"] == "70% Hand sheet + 30% ESPN"
+
+    was = blend["built_from"]["at"]
+    client.post(
+        "/projections/sets",
+        files=upload(ODD.replace("18.5", "19.5"), "odd.csv"),
+        data={"season": str(SEASON), "name": "Hand sheet"},
+    )
+    again = client.get(f"/projections/sets/{blend['id']}").json()
+    assert again["built_from"]["at"] != was, "its sheet came again, so it was worked out again"
+
+    refused = client.post(
+        "/projections/composites",
+        json={"season": SEASON, "name": "Hand sheet", "recipe": [{"source": "espn", "weight": 1}]},
+    )
+    assert refused.status_code == 422
+    assert "already have a source called" in refused.json()["detail"]
+    no_bbm = client.post(
+        "/projections/composites",
+        json={"season": SEASON, "name": "With BBM", "recipe": [{"source": "bbm", "weight": 1}]},
+    )
+    assert no_bbm.status_code == 422
+    assert "no Basketball Monster capture" in no_bbm.json()["detail"]
+
+
 def test_a_reupload_missing_a_column_is_partly_as_last_time(client: TestClient) -> None:
     client.post(
         "/projections/sets",

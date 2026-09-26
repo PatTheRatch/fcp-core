@@ -57,6 +57,7 @@ from app.draft import plan_store
 from app.draft.market import MINIMUM_BID
 from app.draft.pool import roster_size_for
 from app.inseason.drafted import season_is_drafted, when
+from app.projections import composite
 from app.projections.catalog import catalog
 from app.projections.sources import choice_of, describe, may_show
 
@@ -91,6 +92,19 @@ def _source(
             raise HTTPException(
                 status_code=422, detail=f"projection set {found.id} is for {found.season}"
             )
+        if found.kind == "composite" and may_show(
+            source.tag, viewer_owns_source=viewer_owns_bbm(viewer)
+        ):
+            # The recipe is the truth and the rows a cache: an input that
+            # moved (a new capture, a set uploaded again) rebuilds them, and
+            # the plan's key moves with them.
+            try:
+                if composite.ensure_current(session, found):
+                    session.commit()
+                    source = engine.PoolSource.of_set(session, found.id)
+            except ValueError as error:
+                session.rollback()
+                raise HTTPException(status_code=422, detail=str(error)) from None
     return source
 
 

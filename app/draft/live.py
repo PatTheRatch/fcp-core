@@ -15,7 +15,7 @@ from sqlalchemy import select as sql_select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import LeagueSeason, Player, Team
+from app.db.models import LeagueSeason, Player, ProjectionSet, Team
 from app.db.session import make_engine, make_session_factory
 from app.draft import pool
 from app.draft.availability import measured_availability
@@ -298,7 +298,12 @@ def room_for(
             raise RoomError(str(exc)) from exc
         if not projections:
             raise RoomError(f"projection set {projection_set} has no rows stored")
-        projection_source = sources.upload_source(projection_set)
+        stored = session.get(ProjectionSet, projection_set)
+        projection_source = (
+            sources.set_source(stored)
+            if stored is not None
+            else sources.upload_source(projection_set)
+        )
     else:
         projections = pool.load_projections(session, source_season, kind=pool_kind)
         projection_source = sources.ESPN

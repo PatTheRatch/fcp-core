@@ -113,6 +113,9 @@ class BBMRow:
     #: every analyst column, so tags BBM adds later (Bust Candidate, Sleeper,
     #: Tank Candidate) come through without a code change.
     tags: tuple[str, ...] = ()
+    #: Minutes a game (`m/g`), when the export carries it: a composite
+    #: averages it (`app.projections.composite`); the room does not read it.
+    minutes: float | None = None
 
 
 @dataclass
@@ -245,6 +248,7 @@ def parse_records(
                 role=cell("Role"),
                 status=split_list(cell("Status")),
                 tags=tuple(tags),
+                minutes=maybe("m/g"),
             )
         )
     return rows

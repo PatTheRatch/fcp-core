@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,6 +52,7 @@ from app.api.schemas import (
     RejectedRowOut,
 )
 from app.db.models import Player, ProjectionRow, ProjectionSet
+from app.projections import composite
 from app.projections.catalog import catalog
 from app.projections.sources import describe, may_show, set_source
 from app.projections.upload import (
@@ -166,7 +168,84 @@ def create_set(
         session.rollback()
         raise HTTPException(status_code=422, detail=out.model_dump(mode="json"))
     session.commit()
+    if report.replaces is not None and report.set_id is not None:
+        # A source uploaded again: every composite that reads it is worked
+        # out again now (and would be on its next read regardless).
+        for one in composite.dependents(session, report.set_id):
+            try:
+                composite.build(session, one)
+            except ValueError:
+                session.rollback()
+        session.commit()
     return out
+
+
+# ---------------------------------------------------------------------------
+# composites
+# ---------------------------------------------------------------------------
+
+
+class RecipePartIn(BaseModel):
+    source: str | int = Field(description="'bbm', 'espn' or the id of one of your uploads")
+    weight: float = Field(ge=0, le=composite.MAX_WEIGHT, description="0 to 100; 0 is not read")
+
+
+class CompositeIn(BaseModel):
+    """A composite: a name and the sources it blends, each with a weight."""
+
+    season: int
+    name: str = Field(min_length=1, max_length=80)
+    recipe: list[RecipePartIn] = Field(min_length=1, max_length=20)
+
+
+@router.post("/composites", summary="Make a composite source from other sources, with weights")
+def create_composite(
+    session: SessionDep, viewer: CurrentUser, made: CompositeIn
+) -> ProjectionSetOut:
+    """Stored as a set of kind `composite` whose rows are worked out now from
+    the recipe (`app.projections.composite`) and again whenever an input
+    changes. BBM may be in the recipe only for the viewer who owns BBM's
+    captures, and the composite is then gated exactly like BBM."""
+    try:
+        stored = composite.save(
+            session,
+            season=made.season,
+            owner=_owner_of(viewer, DEFAULT_OWNER),
+            owners=upload_owners(viewer),
+            owns_bbm=viewer_owns_bbm(viewer),
+            name=made.name,
+            recipe=[part.model_dump() for part in made.recipe],
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    session.commit()
+    return _set_out(stored)
+
+
+@router.put("/composites/{set_id}", summary="Change a composite's name or weights")
+def update_composite(
+    set_id: int, session: SessionDep, viewer: CurrentUser, made: CompositeIn
+) -> ProjectionSetOut:
+    found = _stored_set(session, set_id, viewer)
+    if found.kind != "composite":
+        raise HTTPException(status_code=422, detail=f"projection set {set_id} is not a composite")
+    try:
+        stored = composite.save(
+            session,
+            season=found.season,
+            owner=found.owner,
+            owners=upload_owners(viewer),
+            owns_bbm=viewer_owns_bbm(viewer),
+            name=made.name,
+            recipe=[part.model_dump() for part in made.recipe],
+            composite=found,
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    session.commit()
+    return _set_out(stored)
 
 
 @router.get("/sources", summary="Every pool this viewer may plan on for a season")
@@ -179,9 +258,10 @@ def list_sources(
     projections, his uploads and his composites, each with its rows, how
     many matched, when and by whom (`app.projections.catalog`). A composite
     that carries BBM is listed only to the viewer who owns BBM."""
-    listed = catalog(
-        session, season, owners=upload_owners(viewer), owns_bbm=viewer_owns_bbm(viewer)
-    )
+    owners = upload_owners(viewer)
+    if composite.refresh(session, season, owners=owners):
+        session.commit()
+    listed = catalog(session, season, owners=owners, owns_bbm=viewer_owns_bbm(viewer))
     return {
         "season": season,
         "owns_bbm": viewer_owns_bbm(viewer),

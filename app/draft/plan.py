@@ -158,11 +158,13 @@ def default_workers() -> int:
 
 @dataclass(frozen=True)
 class PoolSource:
-    """Which projections one plan is built on. Exactly one of the three.
+    """Which projections one plan is built on. Exactly one pool.
 
     `kind` is "bbm" (a stored capture, `captured_on`, or the two export files
-    on disk, `files`, which only the script passes), "upload" (`set_id`) or
-    "espn".
+    on disk, `files`, which only the script passes), "upload" (`set_id`),
+    "composite" (`set_id`: a named blend of other sources, whose rows are
+    stored like an upload's, `app.projections.composite`) or "espn".
+    `gated` is a composite whose recipe reads BBM.
     """
 
     kind: str
@@ -174,6 +176,7 @@ class PoolSource:
     #: When a stored set was last uploaded: a set uploaded again under its
     #: name keeps its id, so its plan is keyed on this as well.
     version: str = ""
+    gated: bool = False
 
     @property
     def tag(self) -> str:
@@ -182,6 +185,9 @@ class PoolSource:
             return sources.BBM
         if self.kind == "upload" and self.set_id is not None:
             return sources.upload_source(self.set_id)
+        if self.kind == "composite" and self.set_id is not None:
+            recipe = [{"source": sources.BBM, "weight": 1}] if self.gated else []
+            return sources.composite_source(self.set_id, recipe)
         return sources.ESPN
 
     @property
@@ -191,13 +197,14 @@ class PoolSource:
             if self.captured_on is not None:
                 return f"bbm:{self.captured_on.isoformat()}"
             return f"bbm-files:{self.files[0].name if self.files else ''}"
-        if self.kind == "upload":
-            return f"upload:{self.set_id}" + (f"@{self.version}" if self.version else "")
+        if self.kind in ("upload", "composite"):
+            return f"{self.kind}:{self.set_id}" + (f"@{self.version}" if self.version else "")
         return "espn"
 
     @classmethod
     def parse(cls, text: str, session: Session, season: int) -> PoolSource:
-        """A source named in a URL: "bbm" (the newest capture), "espn" or "upload:<id>"."""
+        """A source named in a URL: "bbm" (the newest capture), "espn",
+        "upload:<id>" or "composite:<id>"."""
         if text == "espn":
             return cls("espn")
         if text == "bbm":
@@ -206,15 +213,28 @@ class PoolSource:
                 raise ValueError(f"no Basketball Monster capture is stored for {season}")
             return cls("bbm", captured_on=day)
         set_id = sources.upload_set_id(text)
+        if set_id is None:
+            set_id = sources.composite_set_id(text)
         if set_id is not None:
-            return cls.of_set(session, set_id)
-        raise ValueError(f"unknown source {text!r}: bbm, espn or upload:<set id>")
+            found = cls.of_set(session, set_id)
+            if found.kind != text.split(":")[0]:
+                raise ValueError(f"projection set {set_id} is not a {text.split(':')[0]}")
+            return found
+        raise ValueError(
+            f"unknown source {text!r}: bbm, espn, upload:<set id> or composite:<set id>"
+        )
 
     @classmethod
     def of_set(cls, session: Session, set_id: int) -> PoolSource:
-        """A stored set as a pool, carrying when it was last uploaded."""
+        """A stored set as a pool, carrying when it was last uploaded (for a
+        composite, last worked out) and, for a composite, its gate."""
         found = session.get(ProjectionSet, set_id)
-        version = found.uploaded_at.isoformat() if found is not None else ""
+        if found is None:
+            return cls("upload", set_id=set_id)
+        version = found.uploaded_at.isoformat()
+        if found.kind == "composite":
+            gated = sources.is_gated(sources.set_source(found))
+            return cls("composite", set_id=set_id, version=version, gated=gated)
         return cls("upload", set_id=set_id, version=version)
 
 
@@ -572,7 +592,7 @@ def load_plan_room(
             bbm = bbm_input(session, int(league_season.season), source.captured_on)
         else:
             raise RoomError("a BBM plan needs a stored capture or the export files")
-    elif source.kind == "upload":
+    elif source.kind in ("upload", "composite"):
         projection_set = source.set_id
     room = room_for(
         session,
