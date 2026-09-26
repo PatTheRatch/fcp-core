@@ -255,3 +255,52 @@ def history(
             .order_by(BBMProjection.first_seen)
         )
     )
+
+
+def latest_capture(
+    session: Session, season: int, on: date | None = None, value_type: str = "total"
+) -> date | None:
+    """The day of the newest stored capture for a season, on or before `on`."""
+    query = select(func.max(BBMCapture.captured_on)).where(
+        BBMCapture.season == season, BBMCapture.value_type == value_type
+    )
+    if on is not None:
+        query = query.where(BBMCapture.captured_on <= on)
+    return session.scalar(query)
+
+
+def _in_export_order(versions: Sequence[BBMProjection]) -> list[dict[str, Any]]:
+    """The stored rows in the order the export listed them: BBM's own rank.
+
+    The room reads a pool in file order, and the order is not idle: it is
+    the order players are matched in (a second name for the same man loses)
+    and the order the optimizer's candidates are shuffled from. The export
+    is sorted by `Rank`, so sorting the stored rows by it puts them back.
+    """
+    records = [dict(version.row) for version in versions]
+
+    def rank(record: dict[str, Any]) -> tuple[float, str]:
+        value = record.get("Rank")
+        ranked = float(value) if isinstance(value, int | float) else float("inf")
+        return (ranked, str(record.get("Name", "")))
+
+    return sorted(records, key=rank)
+
+
+def stored_records(
+    session: Session, season: int, on: date, value_type: str = "total"
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The rows BBM served on `on`, as the export's records and its columns.
+
+    What `app.draft.bbm.parse_records` reads, so a plan built on the store
+    reads the same rows the draft room reads from the file.
+    """
+    records = _in_export_order(as_of(session, season, on, value_type))
+    columns: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        for column in record:
+            if column not in seen:
+                seen.add(column)
+                columns.append(column)
+    return records, columns

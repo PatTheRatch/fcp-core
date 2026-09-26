@@ -174,30 +174,46 @@ def read_bbm(path: Path) -> list[BBMRow]:
 
     sheet = xlrd.open_workbook(str(path)).sheet_by_index(0)
     header = [str(v).strip() for v in sheet.row_values(0)]
-    col = {name: index for index, name in enumerate(header)}
+    records = []
+    for r in range(1, sheet.nrows):
+        values = sheet.row_values(r)
+        records.append({name: values[index] for index, name in enumerate(header)})
+    return parse_records(records, header, label=path.name)
+
+
+def parse_records(
+    records: Iterable[Mapping[str, object]], columns: Iterable[str], *, label: str
+) -> list[BBMRow]:
+    """BBM rows from records keyed by the export's own column headers.
+
+    One parser for both places an export is read from: the file on disk
+    (`read_bbm`) and the rows the store kept of it (`app.draft.bbm_store`,
+    whose `row` is exactly such a record), so a plan built from a stored
+    capture reads a player the way the draft room reads the file.
+    """
+    col = set(columns)
     required = ("Name", "Pos", "g", "fg%", "ft%", *_RATES)
     missing = [c for c in required if c not in col]
     if missing:
-        raise ValueError(f"{path.name}: not a BBM projection export, missing {missing}")
+        raise ValueError(f"{label}: not a BBM projection export, missing {missing}")
 
     rows: list[BBMRow] = []
-    for r in range(1, sheet.nrows):
-        values = sheet.row_values(r)
-        name = str(values[col["Name"]]).strip()
-        games = values[col["g"]]
+    for record in records:
+        name = str(record.get("Name", "")).strip()
+        games = record.get("g")
         if not name or not isinstance(games, int | float) or games <= 0:
             continue
 
-        def num(column: str, row_values: list[object] = values) -> float:
-            value = row_values[col[column]]
+        def num(column: str, values: Mapping[str, object] = record) -> float:
+            value = values.get(column)
             return float(value) if isinstance(value, int | float) else 0.0
 
-        def maybe(column: str, row_values: list[object] = values) -> float | None:
-            value = row_values[col[column]] if column in col else None
+        def maybe(column: str, values: Mapping[str, object] = record) -> float | None:
+            value = values.get(column) if column in col else None
             return float(value) if isinstance(value, int | float) else None
 
-        def cell(column: str, row_values: list[object] = values) -> str:
-            return str(row_values[col[column]]).strip() if column in col else ""
+        def cell(column: str, values: Mapping[str, object] = record) -> str:
+            return str(values.get(column, "")).strip() if column in col else ""
 
         note_by, note = split_note(cell("Note"))
         raw_confidence = cell("Conf")
@@ -210,14 +226,14 @@ def read_bbm(path: Path) -> list[BBMRow]:
         rows.append(
             BBMRow(
                 name=name,
-                position=str(values[col["Pos"]]).strip(),
+                position=str(record.get("Pos", "")).strip(),
                 games=float(games),
                 rates={key: num(column) for column, key in _RATES.items()},
                 fg_pct=num("fg%"),
                 ft_pct=num("ft%"),
                 dollars=maybe("$"),
-                injury=str(values[col["Inj"]]).strip() if "Inj" in col else "",
-                injury_risk=str(values[col["Inj Risk"]]).strip() if "Inj Risk" in col else "",
+                injury=cell("Inj"),
+                injury_risk=cell("Inj Risk"),
                 age=maybe("Age"),
                 espn_dollars=maybe("ESPN$"),
                 yahoo_dollars=maybe("Y!Avg$"),
@@ -334,7 +350,12 @@ def espn_lookup(session: Session, season: int) -> EspnLookup:
 
 
 def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
-    """BBM's export as projections keyed on our ESPN ids.
+    """BBM's export file as projections keyed on our ESPN ids (`load_bbm_rows`)."""
+    return load_bbm_rows(session, read_bbm(path), season)
+
+
+def load_bbm_rows(session: Session, bbm_rows: Iterable[BBMRow], season: int) -> BBMLoad:
+    """BBM's rows as projections keyed on our ESPN ids.
 
     Every row with a games projection becomes a projection: matched rows
     under our id, the rest under a synthetic one. The load reports what it
@@ -346,7 +367,7 @@ def load_bbm(session: Session, path: Path, season: int) -> BBMLoad:
 
     out = BBMLoad(projections=[])
     seen: set[int] = set()
-    for row in read_bbm(path):
+    for row in bbm_rows:
         found = match_player(row.name, known, lookup.recency)
         if found is not None and found in seen:
             out.ambiguous.append(f"{row.name} (a second name for {known[found]})")

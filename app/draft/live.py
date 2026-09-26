@@ -19,7 +19,7 @@ from app.db.models import LeagueSeason, Player, Team
 from app.db.session import make_engine, make_session_factory
 from app.draft import pool
 from app.draft.availability import measured_availability
-from app.draft.bbm import BBMRow, load_bbm, read_bbm
+from app.draft.bbm import BBMRow, load_bbm_rows, read_bbm
 from app.draft.feed import match_team
 from app.draft.market import price_board
 from app.draft.optimizer import Candidate, candidates_from
@@ -146,6 +146,10 @@ class Room:
     #: A room built by hand, as the tests build one, carries none and the
     #: screen degrades to the names and the money.
     lines: dict[int, PlayerLine] = field(default_factory=dict)
+    #: The pool the room was loaded from, as projections: what the plan values
+    #: each player's categories on (`app.draft.plan`). Empty on a room built
+    #: by hand.
+    projections: list[PlayerProjection] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +167,32 @@ def _teams(session: Session, league_season: LeagueSeason) -> dict[int, str]:
 
     league = fetch_league(get_espn_settings(), season=league_season.season)
     return {int(t.team_id): str(t.team_name) for t in league.teams}
+
+
+@dataclass(frozen=True)
+class BBMInput:
+    """Basketball Monster's rows for a room, from wherever they were kept.
+
+    The draft night reads the two exports on disk (`from_files`); the plan
+    page reads the capture the store kept of them (`app.draft.bbm_store`),
+    which is how a server without the laptop's files builds a plan. Both are
+    read by the same parser (`app.draft.bbm.parse_records`), so a player is
+    the same row either way.
+    """
+
+    rows: list[BBMRow]
+    #: The per-game export's rows, for BBM's per-game league value.
+    per_game: list[BBMRow] | None
+    #: What the page names the source by: the file's name, or the capture's day.
+    detail: str
+
+    @classmethod
+    def from_files(cls, total: Path, per_game: Path | None) -> BBMInput:
+        return cls(
+            rows=read_bbm(total),
+            per_game=read_bbm(per_game) if per_game is not None else None,
+            detail=total.name,
+        )
 
 
 def load_room(
@@ -192,174 +222,217 @@ def load_room(
         ).one_or_none()
         if league_season is None:
             raise RoomError(f"season {season} is not in the database; ingest it first")
-        if league_season.auction_budget <= 0:
-            raise RoomError(
-                f"season {season} has no auction budget stored; re-run the ingest so the "
-                "draft settings are read from ESPN"
-            )
-
-        categories = pool.season_categories(session, league_season)
-        slots = pool.roster_size_for(league_season)
-        teams = _teams(session, league_season)
-
-        source_season = pool_season or season
-        stand_in = None
-        bbm_rows: dict[int, BBMRow] = {}
-        if bbm is not None:
-            loaded = load_bbm(session, bbm, season)
-            projections = loaded.projections
-            bbm_rows = loaded.rows
-            projection_source = sources.BBM
-            source_detail = bbm.name
-            pool_note = (
-                f"pool: Basketball Monster, {bbm.name}: {len(projections)} players, "
-                f"{loaded.matched} matched to ESPN ids ({len(loaded.loose)} by short first name), "
-                f"{len(loaded.unmatched)} on the board by name only"
-            )
-        elif projection_set is not None:
-            try:
-                projections = load_projection_set(session, projection_set)
-                pool_note = set_note(session, projection_set)
-                source_detail = set_headline(session, projection_set)
-            except ValueError as exc:
-                raise RoomError(str(exc)) from exc
-            if not projections:
-                raise RoomError(f"projection set {projection_set} has no rows stored")
-            projection_source = sources.upload_source(projection_set)
-        else:
-            projections = pool.load_projections(session, source_season, kind=pool_kind)
-            projection_source = sources.ESPN
-            source_detail = f"{source_season} {pool_kind}"
-            pool_note = f"pool: ESPN {source_season} {pool_kind}"
-        # One room, one source. The gate and every page read
-        # `projection_source` alone, so a pool that quietly mixed two would
-        # make a paid row invisible to the check that exists to find it.
-        mixed = sources.sources_in(projections) - {projection_source}
-        if mixed:
-            raise RoomError(
-                f"pool tagged {projection_source} carries {', '.join(sorted(mixed))} as well; "
-                "a room is drafted on one source"
-            )
-        if not projections and pool_season is None:
-            raise RoomError(
-                f"no {pool_kind} lines stored for {season}. ESPN publishes projections in "
-                "the weeks before the draft; until then pass --pool-season and --pool-kind "
-                "to stand in another season's, knowing that is what they are."
-            )
-        if source_season != season or pool_kind != "projected":
-            stand_in = f"{source_season} {pool_kind}"
-
-        distributions = category_distributions(session, league_season)
-        values = value_players(projections, categories)
-        board = price_board(
-            values,
-            teams=league_season.team_count,
-            budget_per_team=league_season.auction_budget,
-            roster_slots=slots,
+        return room_for(
+            session,
+            league_season,
+            me,
+            pool_season=pool_season,
+            pool_kind=pool_kind,
+            punt=punt,
+            restarts=restarts,
+            tier_curve=tier_curve,
+            bbm=BBMInput.from_files(bbm, bbm_per_game) if bbm is not None else None,
+            projection_set=projection_set,
+            plan=plan,
+            plan_slack=plan_slack,
         )
-        if tier_curve:
-            # Reshape to how this league actually spends: about half again on
-            # the top five, less below rank 60. See app/draft/tiers.py.
-            board = apply_tier_curve(board, LEAGUE_TIER_CURVE)
-        # BBM's games already price availability; ESPN's do not, and an
-        # uploaded set makes no promise either way, so it is discounted like
-        # ESPN's rather than trusted like BBM's.
-        availability = 1.0 if bbm is not None else measured_availability(session).factor
-        candidates = candidates_from(
-            projections,
-            board,
-            periods=pool.effective_weeks(session),
-            availability=availability,
-            keys=categories,
-        )
-        names = {p.name: int(p.espn_player_id) for p in session.scalars(sql_select(Player)).all()}
-        names.update({c.name: c.player_id for c in candidates})
 
-        # A name, matched loosely, or ESPN's own team id -- which is how the
-        # launcher names us from FCP_TRACKED_TEAM_ID without knowing the name.
-        mine = teams.get(me) if isinstance(me, int) else match_team(me, teams.values())
-        if mine is None:
-            raise RoomError(f"no team called {me!r}. Teams: {', '.join(teams.values())}")
-        my_id = next(tid for tid, name in teams.items() if name == mine)
 
-        state = DraftState.open(
-            budget=league_season.auction_budget,
-            roster_slots=slots,
-            teams=teams,
-            me=my_id,
-            nomination_order=league_season.draft_order or (),
+def room_for(
+    session: Session,
+    league_season: LeagueSeason,
+    me: str | int,
+    *,
+    pool_season: int | None,
+    pool_kind: str,
+    punt: Sequence[str],
+    restarts: int,
+    tier_curve: bool = True,
+    bbm: BBMInput | None = None,
+    projection_set: int | None = None,
+    plan: str = "history",
+    plan_slack: float = 0.10,
+) -> Room:
+    """The room for one league season, on a session the caller holds.
+
+    `load_room` is this for the command line, which names a season and a
+    file; the plan page (`app.draft.plan`) calls it with the league season it
+    already resolved and BBM's stored capture. One body, so the two can never
+    load a different room from the same inputs.
+    """
+    if bbm is not None and projection_set is not None:
+        raise RoomError(
+            "a room is drafted on one pool: pass BBM's rows or an uploaded projection set, not both"
         )
-        lineup = pool.lineup_for(league_season)
-        limits = pool.position_limits_for(league_season)
-        bbm_view = Room(
-            season=season,
-            state=state,
-            candidates=candidates,
-            distributions=list(distributions),
+    season = int(league_season.season)
+    if league_season.auction_budget <= 0:
+        raise RoomError(
+            f"season {season} has no auction budget stored; re-run the ingest so the "
+            "draft settings are read from ESPN"
+        )
+
+    categories = pool.season_categories(session, league_season)
+    slots = pool.roster_size_for(league_season)
+    teams = _teams(session, league_season)
+
+    source_season = pool_season or season
+    stand_in = None
+    bbm_rows: dict[int, BBMRow] = {}
+    if bbm is not None:
+        loaded = load_bbm_rows(session, bbm.rows, season)
+        projections = loaded.projections
+        bbm_rows = loaded.rows
+        projection_source = sources.BBM
+        source_detail = bbm.detail
+        pool_note = (
+            f"pool: Basketball Monster, {bbm.detail}: {len(projections)} players, "
+            f"{loaded.matched} matched to ESPN ids ({len(loaded.loose)} by short first name), "
+            f"{len(loaded.unmatched)} on the board by name only"
+        )
+    elif projection_set is not None:
+        try:
+            projections = load_projection_set(session, projection_set)
+            pool_note = set_note(session, projection_set)
+            source_detail = set_headline(session, projection_set)
+        except ValueError as exc:
+            raise RoomError(str(exc)) from exc
+        if not projections:
+            raise RoomError(f"projection set {projection_set} has no rows stored")
+        projection_source = sources.upload_source(projection_set)
+    else:
+        projections = pool.load_projections(session, source_season, kind=pool_kind)
+        projection_source = sources.ESPN
+        source_detail = f"{source_season} {pool_kind}"
+        pool_note = f"pool: ESPN {source_season} {pool_kind}"
+    # One room, one source. The gate and every page read
+    # `projection_source` alone, so a pool that quietly mixed two would
+    # make a paid row invisible to the check that exists to find it.
+    mixed = sources.sources_in(projections) - {projection_source}
+    if mixed:
+        raise RoomError(
+            f"pool tagged {projection_source} carries {', '.join(sorted(mixed))} as well; "
+            "a room is drafted on one source"
+        )
+    if not projections and pool_season is None:
+        raise RoomError(
+            f"no {pool_kind} lines stored for {season}. ESPN publishes projections in "
+            "the weeks before the draft; until then pass --pool-season and --pool-kind "
+            "to stand in another season's, knowing that is what they are."
+        )
+    if source_season != season or pool_kind != "projected":
+        stand_in = f"{source_season} {pool_kind}"
+
+    distributions = category_distributions(session, league_season)
+    values = value_players(projections, categories)
+    board = price_board(
+        values,
+        teams=league_season.team_count,
+        budget_per_team=league_season.auction_budget,
+        roster_slots=slots,
+    )
+    if tier_curve:
+        # Reshape to how this league actually spends: about half again on
+        # the top five, less below rank 60. See app/draft/tiers.py.
+        board = apply_tier_curve(board, LEAGUE_TIER_CURVE)
+    # BBM's games already price availability; ESPN's do not, and an
+    # uploaded set makes no promise either way, so it is discounted like
+    # ESPN's rather than trusted like BBM's.
+    availability = 1.0 if bbm is not None else measured_availability(session).factor
+    candidates = candidates_from(
+        projections,
+        board,
+        periods=pool.effective_weeks(session),
+        availability=availability,
+        keys=categories,
+    )
+    names = {p.name: int(p.espn_player_id) for p in session.scalars(sql_select(Player)).all()}
+    names.update({c.name: c.player_id for c in candidates})
+
+    # A name, matched loosely, or ESPN's own team id -- which is how the
+    # launcher names us from FCP_TRACKED_TEAM_ID without knowing the name.
+    mine = teams.get(me) if isinstance(me, int) else match_team(me, teams.values())
+    if mine is None:
+        raise RoomError(f"no team called {me!r}. Teams: {', '.join(teams.values())}")
+    my_id = next(tid for tid, name in teams.items() if name == mine)
+
+    state = DraftState.open(
+        budget=league_season.auction_budget,
+        roster_slots=slots,
+        teams=teams,
+        me=my_id,
+        nomination_order=league_season.draft_order or (),
+    )
+    lineup = pool.lineup_for(league_season)
+    limits = pool.position_limits_for(league_season)
+    bbm_view = Room(
+        season=season,
+        state=state,
+        candidates=candidates,
+        distributions=list(distributions),
+        lineup=lineup,
+        limits=limits,
+        names=names,
+        team_names=teams,
+        punt=tuple(punt),
+        restarts=restarts,
+        bbm=bbm_rows,
+        board={c.player_id: c.price for c in candidates},
+        projection_source=projection_source,
+    )
+    # Plan at what players will cost, not at what they are worth: priced
+    # at the board, the model built rosters around a $52 Doncic the room
+    # has paid $69-91 for in five of six drafts.
+    going = market_prices(bbm_view, state)
+    board_prices = dict(bbm_view.board)
+    candidates = [
+        replace(c, price=going.get(c.player_id, (c.price, ""))[0] or c.price) for c in candidates
+    ]
+    allocation = None
+    if plan == "history":
+        shape = winning_shape(session, roster_slots=slots, budget=state.budget)
+        allocation = Allocation.from_prices(shape, state, slack=plan_slack)
+    elif plan == "optimizer":
+        allocation, _ = plan_allocation(
+            state,
+            candidates,
+            distributions,
+            slack=plan_slack,
+            punt=punt,
             lineup=lineup,
             limits=limits,
-            names=names,
-            team_names=teams,
-            punt=tuple(punt),
-            restarts=restarts,
-            bbm=bbm_rows,
-            board={c.player_id: c.price for c in candidates},
-            projection_source=projection_source,
         )
-        # Plan at what players will cost, not at what they are worth: priced
-        # at the board, the model built rosters around a $52 Doncic the room
-        # has paid $69-91 for in five of six drafts.
-        going = market_prices(bbm_view, state)
-        board_prices = dict(bbm_view.board)
-        candidates = [
-            replace(c, price=going.get(c.player_id, (c.price, ""))[0] or c.price)
-            for c in candidates
-        ]
-        allocation = None
-        if plan == "history":
-            shape = winning_shape(session, roster_slots=slots, budget=state.budget)
-            allocation = Allocation.from_prices(shape, state, slack=plan_slack)
-        elif plan == "optimizer":
-            allocation, _ = plan_allocation(
-                state,
-                candidates,
-                distributions,
-                slack=plan_slack,
-                punt=punt,
-                lineup=lineup,
-                limits=limits,
-            )
-        return Room(
-            season=season,
-            state=state,
-            candidates=candidates,
-            distributions=list(distributions),
-            lineup=lineup,
-            limits=limits,
-            names=names,
-            team_names=teams,
-            punt=tuple(punt),
-            restarts=restarts,
-            stand_in=stand_in,
-            allocation=allocation,
-            plan_source=plan,
-            bbm=bbm_rows,
-            per_game_dollars=_per_game(bbm_rows, bbm_per_game),
-            pool_note=pool_note,
-            projection_source=projection_source,
-            source_detail=source_detail,
-            board=board_prices,
-            lines=player_lines(projections),
-        )
+    return Room(
+        season=season,
+        state=state,
+        candidates=candidates,
+        distributions=list(distributions),
+        lineup=lineup,
+        limits=limits,
+        names=names,
+        team_names=teams,
+        punt=tuple(punt),
+        restarts=restarts,
+        stand_in=stand_in,
+        allocation=allocation,
+        plan_source=plan,
+        bbm=bbm_rows,
+        per_game_dollars=_per_game(bbm_rows, bbm.per_game if bbm is not None else None),
+        projections=list(projections),
+        pool_note=pool_note,
+        projection_source=projection_source,
+        source_detail=source_detail,
+        board=board_prices,
+        lines=player_lines(projections),
+    )
 
 
-def _per_game(rows: dict[int, BBMRow], path: Path | None) -> dict[int, float]:
+def _per_game(rows: dict[int, BBMRow], per_game: list[BBMRow] | None) -> dict[int, float]:
     """League dollars from a per-game export, keyed like the total export's rows."""
-    if path is None:
+    if per_game is None:
         return {}
     by_name = {
         name_key(r.name): r.league_dollars if r.league_dollars is not None else r.dollars
-        for r in read_bbm(path)
+        for r in per_game
     }
     out: dict[int, float] = {}
     for player_id, row in rows.items():
