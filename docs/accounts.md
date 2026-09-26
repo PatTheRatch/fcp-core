@@ -255,6 +255,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |
 | `GET /l/{league_id}/{season}/team/{team_id}/moves` | team manager + entitled (page) | the scorecard of the team's own moves, in the paid layer (its data route is league scope) |
 | `GET /l/{league_id}/{season}/team/{team_id}/trades` | team manager + entitled (page) | the trade builder and what a deal does to both rosters' nine categories |
+| `GET /l/{league_id}/{season}/team/{team_id}/draft/plan` | team manager + entitled (page) | the draft plan page; its data route asks the projection source's gate as well |
 | `GET /pages/teams/{league_id}/{season}/{team_id}/week` | team manager + entitled (page) | old address: a 308 to `/l/.../team/{team_id}/week` |
 | `GET /pages/teams/{league_id}/{season}/{team_id}/season` | team manager + entitled (page) | old address: a 308 to `/l/.../team/{team_id}/season` |
 | `POST /connections` | signed in, rate-limited | connect a league with your own ESPN login |

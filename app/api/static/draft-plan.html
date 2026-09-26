@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("fcp-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<title>Draft plan</title>
+<link rel="icon" href="/pages/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/pages/static/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Oswald:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="ws-page dp">
+
+<!-- The header line: what this is and when, and the pool it is built on. -->
+<header class="ws-head">
+  <h1 class="ws-title"><span id="title">Draft plan</span><span class="ws-when" id="sub"></span></h1>
+  <div class="ws-head-tools">
+    <span class="ws-seg" id="pools" role="group" aria-label="The pool the plan is built on"></span>
+    <button type="button" class="ws-btn sm quiet" id="rebuild" hidden>Build again</button>
+    <button type="button" class="ws-btn sm quiet" data-account="plan-account" aria-haspopup="dialog">How this is worked out</button>
+  </div>
+</header>
+
+<p class="warnline" id="failed" hidden></p>
+
+<!-- The facts line: the pot, the budget, the nomination, the cap, the pool.
+     Every figure opens the drawer on where it came from. -->
+<dl class="ws-factline ov-facts" id="facts" hidden></dl>
+<p class="ws-p dp-state" id="state" hidden></p>
+
+<div class="ws-account" id="plan-account" data-title="The draft plan">
+  <p data-k="What this is">The plan you take into the auction, made from the draft room's own
+    arithmetic before the first pick (<span class="mono">app/draft/plan.py</span>): the league's
+    spending shape as a ladder, what each man will probably go for, our ceiling for him from an empty
+    room, and the model's lists. The model proposes; your figures, tags, ladder and notes are yours,
+    kept beside the model's and never mixed into them. What you keep is what the draft room shows you
+    on the night.</p>
+  <p data-k="Going $">What he will probably go for: ESPN's average auction price blended half and
+    half with our board, then sized to the room -- a quarter of the places at $1, 8% at $2, 98.8% of
+    the budget spent. Tested on past drafts it misses by about $5 a man and $10 on the $40-and-up
+    stars, where it runs about $3 low.</p>
+  <p data-k="Ours $">Our ceiling: the most he is worth to a roster that has bought nothing yet, the
+    point where the best roster with him stops beating the best roster without him. It snaps to the
+    ladder's places, so read it as the tier he qualifies for. On the night the room works it out again
+    after every pick.</p>
+  <p data-k="The model's figure">The lower of our ceiling and BBM's league value, never under $1. With
+    no BBM value it is the ceiling.</p>
+  <p data-k="Your figures">Your going price replaces the model's as his cost in the best roster, and
+    your ceiling caps what the plan will pay for him: a ceiling under his going price keeps him out of
+    the best roster. The lists and the best roster are worked out again with them within seconds; the
+    model's own figures are never overwritten, and with none of yours the plan is the model's
+    exactly.</p>
+  <p data-k="Must-have men">A man tagged must is in the roster whatever the model thinks: the plan is
+    built again around him, bought at his going price (yours when you set one), with the ladder and the
+    ceilings worked out for the places and money left. That build takes about two minutes; the page
+    shows the last one meanwhile.</p>
+  <p data-k="Nothing here acts">Nothing on this page bids, nominates or touches ESPN.</p>
+</div>
+
+<main class="dp-body" id="body" hidden>
+
+  <!-- 1. THE LADDER: the spending shape, a place a field, his to change. -->
+  <section class="ws-sect" id="ladder-section">
+    <div class="ws-sect-head"><h2 class="ws-label">The ladder</h2><span class="ws-k" id="ladder-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="ladder-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-panel">
+      <div class="dp-ladder" id="ladder"></div>
+      <p class="dp-sum" id="ladder-sum"></p>
+      <p class="dp-tools"><button type="button" class="ws-btn sm" id="ladder-reset">Reset to the league's shape</button>
+        <span class="dp-saved faint" id="ladder-saved" aria-live="polite"></span></p>
+      <p class="ws-note" id="ladder-must" hidden></p>
+    </div>
+    <div class="ws-account" id="ladder-account" data-title="The ladder">
+      <p data-k="Where the shape comes from">How this league's best category teams spread their
+        budget, most expensive man first (<span class="mono">app/draft/shape.py</span>): every drafted
+        team-season's prices sorted and scaled to this budget, the top third of each season by
+        category win rate, the mean at each place. Across 98 team-seasons the most balanced quartile
+        beat the most top-heavy at every league size, so the shape is measured rather than the
+        optimizer's own taste for stars and scrubs.</p>
+      <p data-k="Draft balanced">Balanced drafts won 53.1% of categories to top-heavy's 48.0% across 98
+        team-seasons, in 6 of 8 seasons. Top-heavy lost even when its stars stayed healthy.</p>
+      <p data-k="Pay for the middle">$10-25 men average +2.6 a game in nine-category z-score; $1-2
+        picks average -0.6, close to a waiver pickup's -0.9, and half are dropped within a month. The
+        wire cannot replace the middle tier.</p>
+      <p data-k="Buy the bigs' categories">Rebounds, blocks and FG% are worth real money: the wire adds
+        almost none. Steals and threes are what cheap men and the wire supply.</p>
+      <p data-k="Take a star only inside the price">This league pays about 1.5 times for stars, and the
+        going price is sized to that. $101 is the most anyone has paid, so read the very top as a
+        range.</p>
+      <p data-k="The cap">While the top place is open one man may take the top place plus 10%: the
+        room's own rule on the night (<span class="mono">Allocation.cap</span>). Your ladder moves the
+        cap with it.</p>
+      <p data-k="Your ladder">Yours when you change a place, kept only when the places add up to the
+        budget with at least $1 each; Reset puts the league's shape back. The model's ceilings are
+        worked out on the league's shape, whichever ladder you keep.</p>
+    </div>
+  </section>
+
+  <!-- 2. THE BOARD: the whole pool as a screener, his figures editable. -->
+  <section class="ws-sect" id="board-section">
+    <div class="ws-sect-head"><h2 class="ws-label">The board</h2><span class="ws-k" id="board-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="board-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-panel flush">
+      <div class="dp-filters">
+        <span class="ws-field sel"><label class="sr" for="f-pos">Position</label>
+          <select class="ws-select" id="f-pos"><option value="">Every position</option>
+            <option>PG</option><option>SG</option><option>SF</option><option>PF</option><option>C</option></select></span>
+        <span class="ws-field sel"><label class="sr" for="f-tag">Tag</label>
+          <select class="ws-select" id="f-tag"><option value="">Every tag</option>
+            <option value="any">Tagged</option><option value="must">Must</option><option value="target">Target</option>
+            <option value="let_go">Let go</option><option value="nominate">Nominate</option><option value="ir">IR</option>
+            <option value="none">Untagged</option></select></span>
+        <span class="ws-field search"><label class="sr" for="f-name">Name</label>
+          <input class="ws-input" id="f-name" type="search" placeholder="Name" autocomplete="off"></span>
+        <button type="button" class="ws-btn sm" id="show-rest" aria-pressed="false"></button>
+        <span class="dp-saved faint" id="board-saved" aria-live="polite"></span>
+      </div>
+      <div id="board"></div>
+    </div>
+    <div class="ws-account" id="board-account" data-title="The board">
+      <p data-k="The rows">Every man in the pool. The first view is the men the market or BBM prices at
+        $3 or more, the ones the model worked a ceiling out for; Show the rest adds the others, with no
+        ceiling.</p>
+      <p data-k="Your figures">Your going $ and your ceiling $ are yours: empty is the model's. Each is
+        kept the moment you change it, and the lists and the best roster are worked out again with it
+        within seconds (the stamp over the table says when). A ceiling runs from $1 to the cap; a going
+        price from $1 to the most one man can cost.</p>
+      <p data-k="The nine">Each category is the change in the chance of beating this league's median
+        opponent when he takes the place of a par man: a roster of par men posts exactly the opponent's
+        mean (<span class="mono">app/draft/targets.py</span>), a counting category shared evenly, a
+        percentage at the opponent's rate on an average rostered man's attempts. The optimizer's own
+        arithmetic, one man at a time. Green and red are what he does for a roster, not a grade.</p>
+      <p data-k="Best">A dot is a man in the best roster at your prices: the model's balanced build, or
+        the same search again when you have figures of your own.</p>
+    </div>
+  </section>
+
+  <!-- 3. The model's lists. -->
+  <div class="dp-grid" id="lists"></div>
+
+  <!-- 4. YOUR PLAN: what the room shows him on the night. -->
+  <section class="ws-sect" id="yours-section">
+    <div class="ws-sect-head"><h2 class="ws-label">Your plan</h2><span class="ws-k" id="yours-tag"></span>
+      <button type="button" class="ws-btn sm quiet" data-account="yours-account" aria-haspopup="dialog">How this is worked out</button></div>
+    <div class="ws-panel">
+      <p class="ws-note">This is what the draft room shows you on the night: your ceilings beside ours, your tags on the board.</p>
+      <div id="yours"></div>
+      <div class="dp-notes">
+        <label class="ws-sub" for="notes">Notes <span class="n dp-saved" id="notes-saved" aria-live="polite"></span></label>
+        <textarea class="dp-textarea" id="notes" rows="4" maxlength="5000" placeholder="Your notes for the night"></textarea>
+      </div>
+    </div>
+    <div class="ws-account" id="yours-account" data-title="Your plan">
+      <p data-k="Must-have men">First, at the price the plan buys them at, and the money and places left
+        after them. What the lock costs is the best roster with them against the best roster without
+        the requirement, in categories a week, for the set and for each man alone: the fan section's
+        own arithmetic.</p>
+      <p data-k="Targets">Your targets in ladder order, largest ceiling first: your ceiling where you set
+        one, else the model's figure, and what they commit together against the budget.</p>
+      <p data-k="The best roster">The model's best roster at your prices, place by place against your
+        ladder (the league's shape when you kept none).</p>
+      <p data-k="Nothing here acts">The room reads these on the night and holds your ceiling up beside
+        ours. Nothing bids, nominates or touches ESPN.</p>
+    </div>
+  </section>
+
+</main>
+
+<p class="ws-foot" id="foot"></p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/scenario.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* The draft plan (docs/draft_plan.md): the model's plan for this team's
+   auction, and the manager's own figures, tags, ladder and notes beside it.
+
+   Everything drawn is a field of one route,
+     GET /leagues/{l}/seasons/{s}/teams/{t}/draft/plan
+   -- `plan` the model's build as the engine made it, `effective` the plan
+   once his going prices and ceilings are applied, `marks` his -- and every
+   edit is a PUT to .../draft/plan/marks, after which the page asks again
+   and says when it was worked out. The model's plan takes about two
+   minutes cold; until it lands the page says so and asks every five
+   seconds. Nothing here bids, nominates or touches ESPN. */
+
+const WHERE = place();
+const PLAN_URL = `/leagues/${WHERE.league}/seasons/${WHERE.season}/teams/${WHERE.team}/draft/plan`;
+const ASKED = new URLSearchParams(window.location.search).get("source");
+
+/** The route's last answer, and what the page is showing of it. */
+let ANSWER = null;
+let SHOW_REST = false;
+let POLL = null;
+let BOARD = null;
+let SELECTED = null;
+
+/** The glyph scale for the nine: a change in the chance of beating the
+ *  median opponent, 2 points and 10 points. */
+const NINE_STEPS = [0.02, 0.1];
+const TAG_WORDS = { must: "Must", target: "Target", let_go: "Let go", nominate: "Nominate", ir: "IR", none: "None" };
+const TAG_ORDER = ["must", "target", "let_go", "nominate", "ir", "none"];
+
+const money = (v) => (isNum(v) ? `$${v}` : dash);
+/** Our ceiling as the board writes it: "no bid" when he is worth less than a floor bid. */
+const oursOf = (m) => (m.considered && !isNum(m.ceiling) ? "no bid" : money(m.ceiling));
+const planUrl = (source) => PLAN_URL + (source ? `?source=${encodeURIComponent(source)}` : "");
+const plan = () => (ANSWER && ANSWER.plan) || null;
+const eff = (id) => (ANSWER && ANSWER.effective ? ANSWER.effective.players[String(id)] : null) || null;
+const markOf = (id) => (ANSWER && ANSWER.marks ? ANSWER.marks[String(id)] : null) || null;
+const tagOf = (id) => (markOf(id) || {}).tag || "none";
+
+/** Every man the plan carries: the considered, then the rest. */
+function everyone() {
+  const p = plan();
+  return p ? [...p.players, ...(p.rest || [])] : [];
+}
+const byId = () => new Map(everyone().map((m) => [m.id, m]));
+
+/* ---- talking to the route ------------------------------------------------ */
+
+async function send(method, url, body) {
+  const response = await fetch(url, {
+    method,
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let answer = null;
+  try {
+    answer = await response.json();
+  } catch (error) {
+    /* no body */
+  }
+  if (response.status === 401) toSignIn();
+  if (response.status === 402) toUpgrade();
+  return { ok: response.ok, status: response.status, body: answer, detail: answer && answer.detail };
+}
+
+async function load() {
+  const got = await get(planUrl(ASKED));
+  if (!got.ok) {
+    fail(got.detail);
+    return;
+  }
+  ANSWER = got.body;
+  draw();
+  clearTimeout(POLL);
+  const waiting = ANSWER.state === "building" || (ANSWER.state === "ready" && ANSWER.rebuilding && !ANSWER.rebuilding.failed);
+  if (waiting) POLL = setTimeout(load, 5000);
+}
+
+/** Edits wait a moment and go together, so a man typed in three keystrokes
+ *  is one write and one fresh answer. */
+const PENDING = { marks: new Map(), timer: null, where: null };
+
+function queueMark(id, change, where) {
+  const kept = PENDING.marks.get(id) || { player_id: id };
+  PENDING.marks.set(id, { ...kept, ...change });
+  PENDING.where = where || "board-saved";
+  $(PENDING.where).textContent = "saving…";
+  clearTimeout(PENDING.timer);
+  PENDING.timer = setTimeout(flushMarks, 600);
+}
+
+async function flushMarks() {
+  const marks = [...PENDING.marks.values()];
+  const where = PENDING.where;
+  PENDING.marks.clear();
+  if (!marks.length) return;
+  await putMarks({ marks }, where);
+}
+
+async function putMarks(body, where) {
+  const done = await send("PUT", `${PLAN_URL}/marks`, body);
+  const line = $(where || "board-saved");
+  if (!done.ok) {
+    if (line) {
+      line.textContent = done.detail || `not kept: ${done.status}`;
+      line.classList.add("ws-neg");
+    }
+    return false;
+  }
+  if (line) {
+    line.classList.remove("ws-neg");
+    line.textContent = "saved · working the plan out again…";
+  }
+  await refresh(where);
+  return true;
+}
+
+/** Ask again after an edit, and say when the answer was worked out. */
+async function refresh(where) {
+  const got = await get(planUrl(ASKED));
+  if (!got.ok) return;
+  ANSWER = got.body;
+  const stamp = ANSWER.effective && ANSWER.effective.rebuilt_at ? clockOf(ANSWER.effective.rebuilt_at) : "";
+  const line = $(where || "board-saved");
+  if (line && !line.classList.contains("ws-neg")) line.textContent = stamp ? `saved · worked out at ${stamp}` : "saved";
+  draw({ keepFocus: true });
+  if (ANSWER.state === "ready" && ANSWER.rebuilding) {
+    clearTimeout(POLL);
+    POLL = setTimeout(load, 5000);
+  }
+}
+
+const clockOf = (iso) =>
+  new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+/* ---- the header, the facts and the state ------------------------------------ */
+
+function drawHeader() {
+  const a = ANSWER;
+  const parts = [String(a.season || WHERE.season)];
+  if (a.auction_when) parts.push(`auction ${a.auction_when.replace(" at ", " · ")}`);
+  if (a.state === "drafted") parts.push("drafted");
+  $("sub").textContent = parts.join(" · ");
+  const pools = a.choices || [];
+  const current = a.source ? a.source.kind === "upload" ? `upload:${String(a.source.key).split(":")[1]}` : a.source.kind : null;
+  $("pools").innerHTML = pools.length > 1
+    ? pools
+        .map(
+          (c) =>
+            `<button type="button" data-pool="${escape(c.source)}" aria-pressed="${c.source === current}"` +
+            ` title="${escape(c.label)}">${escape(c.source === "bbm" ? "BBM" : c.source === "espn" ? "ESPN" : "Yours")}</button>`,
+        )
+        .join("")
+    : "";
+  $("pools").querySelectorAll("[data-pool]").forEach((button) => {
+    button.onclick = () => {
+      window.location.assign(window.location.pathname + `?source=${encodeURIComponent(button.dataset.pool)}`);
+    };
+  });
+  $("rebuild").hidden = !(a.state === "ready" || a.state === "failed");
+}
+
+function facts() {
+  const a = ANSWER;
+  const p = plan();
+  if (!p) return [];
+  const f = p.facts;
+  const route = `<span class="ws-data">GET ${escape(PLAN_URL)}</span>`;
+  const source = a.source;
+  const age = isNum(source.age_days) ? ` (${count(source.age_days, "day")})` : "";
+  const out = [
+    {
+      key: "pot",
+      label: "Pot",
+      figure: `<b>$${f.pot.toLocaleString("en-US")}</b> <small>· ${f.teams} teams</small>`,
+      rows: [
+        ["Figure", `${f.teams} teams at a $${f.budget} budget each`],
+        ["Route", route],
+        ["Fields", "plan.facts.pot, plan.facts.teams: the league's stored draft settings (auction_budget, team count)"],
+      ],
+    },
+    {
+      key: "budget",
+      label: "Budget",
+      figure: `<b>$${f.budget}</b> <small>· ${f.places} places</small>`,
+      rows: [
+        ["Figure", `$${f.budget} for ${f.places} places, at least $${f.floor} each`],
+        ["Route", route],
+        ["Fields", "plan.facts.budget, plan.facts.places (the lineup and bench places), plan.facts.floor"],
+      ],
+    },
+  ];
+  if (isNum(f.nominate)) {
+    out.push({
+      key: "nominate",
+      label: "Nominate",
+      figure: `<b>${escape(ordinal(f.nominate))}</b> <small>of ${f.teams}</small>`,
+      rows: [
+        ["Figure", `you put up the ${ordinal(f.nominate)} man, and every ${ordinal(f.teams)} after`],
+        ["Fields", "plan.facts.nominate: your place in the league's stored draft order"],
+      ],
+    });
+  }
+  const cap = isNum(a.cap) ? a.cap : f.cap;
+  out.push({
+    key: "cap",
+    label: "Cap",
+    figure: `<b>$${cap}</b> <small>while the top place is open</small>`,
+    rows: [
+      ["Figure", `$${cap}: the ladder's top place plus ${Math.round(f.slack * 100)}%, the most one man may take while the top place is open`],
+      ["Model's", `$${f.cap} on the league's shape (plan.facts.cap)`],
+      ["Yours", a.ladder ? `$${a.cap} on your ladder (cap)` : "none: you kept the league's shape"],
+      ["On the night", "the room caps a bid the same way, and refits the places after every buy"],
+    ],
+  });
+  out.push({
+    key: "source",
+    label: "Source",
+    figure:
+      `<b>${escape(source.kind === "bbm" ? "BBM" : source.kind === "espn" ? "ESPN" : "Your set")}</b>` +
+      (source.captured_on ? ` <small>captured ${escape(shortDate(source.captured_on))}${escape(age)}</small>` : "") +
+      (source.stale ? ` <span class="ws-tag neg">old</span>` : ""),
+    rows: [
+      ["Pool", escape(p.source.note || source.name)],
+      ["Detail", escape(p.source.pool || "")],
+      ["Captured", source.captured_on ? `${escape(source.captured_on)}${escape(age)}` : "not a capture"],
+      ...(source.stale
+        ? [["Refresh", `older than a week: <span class="ws-data">${escape(source.refresh)}</span>, then Build again`]]
+        : source.refresh
+          ? [["Refresh", `<span class="ws-data">${escape(source.refresh)}</span>`]]
+          : []),
+      ["Paid", source.gated ? "Basketball Monster's numbers are paid: this plan is yours alone and not to be shared" : "not a gated source"],
+      ["Built", `${escape(p.generated)}${isNum(p.build_seconds) ? `, in ${p.build_seconds} seconds` : ""}`],
+    ],
+  });
+  return out;
+}
+
+const shortDate = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+};
+
+function drawFacts() {
+  const list = facts();
+  $("facts").hidden = !list.length;
+  $("facts").innerHTML = list
+    .map(
+      (f) =>
+        `<div><dt>${escape(f.label)}</dt><dd><button type="button" class="ov-fig" ` +
+        `data-fact="${f.key}" aria-haspopup="dialog" aria-expanded="false">${f.figure}</button></dd></div>`,
+    )
+    .join("");
+  $("facts")
+    .querySelectorAll("[data-fact]")
+    .forEach((button) => {
+      button.onclick = () => {
+        const fact = facts().find((f) => f.key === button.dataset.fact);
+        if (!fact) return;
+        if (DRAWER.isOpen() && DRAWER.keyOf() === `fact-${fact.key}`) {
+          DRAWER.close(false);
+          return;
+        }
+        DRAWER.open({
+          key: `fact-${fact.key}`,
+          trigger: button,
+          kicker: "Where this came from",
+          title: fact.label,
+          body:
+            `<dl class="ws-facts">` +
+            fact.rows.map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
+            `</dl><p class="ws-note">Read-only: nothing here bids, nominates or touches ESPN.</p>`,
+        });
+      };
+    });
+}
+
+function drawState() {
+  const a = ANSWER;
+  const box = $("state");
+  let html = "";
+  if (a.state === "drafted") {
+    html = `${escape(a.note)} <a class="ws-btn sm quiet" href="${escape(a.draft_page)}">The board and the grades →</a>`;
+  } else if (a.state === "withheld") {
+    html =
+      `${escape(a.note)} <a class="ws-btn sm" href="${escape(window.location.pathname)}?source=${escape(a.offer)}">` +
+      `Plan on ESPN's pool</a>`;
+  } else if (a.state === "building") {
+    html = `Working the plan out on ${escape(a.source.name)}: about ${Math.round(a.expected_seconds / 60) || 1} ` +
+      `minute${a.expected_seconds >= 90 ? "s" : ""} for the ceilings of every man worth $3 or more. The page fills in when it lands.`;
+  } else if (a.state === "failed") {
+    html = `The plan could not be worked out on this pool: ${escape(a.detail)}`;
+  } else if (a.rebuilding) {
+    const r = a.rebuilding;
+    html = r.failed
+      ? `The plan could not be worked out again for ${escape(r.why)}: ${escape(r.failed)}. This is the last one.`
+      : `Working the plan out again for ${escape(r.why)}; this is the last one until it lands (about ` +
+        `${Math.max(1, Math.round(r.expected_seconds / 60))} minute${r.expected_seconds >= 90 ? "s" : ""}).`;
+  }
+  box.hidden = !html;
+  box.innerHTML = html;
+  box.classList.toggle("ws-neg", a.state === "failed");
+}
+
+/* ---- THE LADDER ------------------------------------------------------------- */
+
+function drawLadder() {
+  const p = plan();
+  const model = p.ladder;
+  const mine = ANSWER.ladder;
+  const shown = mine || model;
+  $("ladder-tag").textContent = mine ? "yours" : "the league's shape";
+  $("ladder").innerHTML = shown
+    .map(
+      (amount, i) =>
+        `<label class="dp-place"><span class="dp-n">${i + 1}</span>` +
+        `<input class="ws-input plain dp-amount" type="number" inputmode="numeric" min="1" step="1" ` +
+        `value="${amount}" data-place="${i}" aria-label="Place ${i + 1}, dollars">` +
+        `<span class="dp-model faint">${mine && model[i] !== amount ? `model $${model[i]}` : ""}</span></label>`,
+    )
+    .join("");
+  $("ladder").querySelectorAll("input").forEach((input) => {
+    input.oninput = ladderChanged;
+  });
+  ladderSum();
+  $("ladder-reset").disabled = !mine;
+  const must = p.must;
+  const note = $("ladder-must");
+  if (must && must.applied) {
+    note.hidden = false;
+    note.innerHTML =
+      `After your must men: <span class="ws-data">${count(must.places_left, "place")}</span> and ` +
+      `<span class="ws-data">$${must.money_left}</span> left, the league's shape refit to them: ` +
+      `<span class="ws-data">${must.ladder_after.map((v) => `$${v}`).join(" · ")}</span>.`;
+  } else {
+    note.hidden = true;
+  }
+}
+
+function ladderValues() {
+  return [...$("ladder").querySelectorAll("input")].map((input) => Number(input.value));
+}
+
+function ladderSum() {
+  const p = plan();
+  const values = ladderValues();
+  const total = values.reduce((a, b) => a + (isNum(b) ? b : 0), 0);
+  const floor = p.facts.floor;
+  const low = values.some((v) => !Number.isInteger(v) || v < floor);
+  const ok = total === p.facts.budget && !low;
+  $("ladder-sum").innerHTML =
+    `Adds up to <b class="ws-data${ok ? "" : " ws-neg"}">$${total}</b> of the $${p.facts.budget} budget` +
+    (low ? ` <span class="ws-neg">· every place is at least $${floor}</span>` : "") +
+    (!ok ? ` <span class="ws-neg">· not kept until it adds up</span>` : "");
+  $("ladder-sum").classList.toggle("bad", !ok);
+  return ok;
+}
+
+let LADDER_TIMER = null;
+function ladderChanged() {
+  clearTimeout(LADDER_TIMER);
+  if (!ladderSum()) {
+    $("ladder-saved").textContent = "";
+    return;
+  }
+  $("ladder-saved").textContent = "saving…";
+  // Put back to the league's shape exactly, it is the league's again: kept as none.
+  const values = ladderValues();
+  const same = values.join() === plan().ladder.join();
+  LADDER_TIMER = setTimeout(() => putMarks({ ladder: same ? null : values }, "ladder-saved"), 700);
+}
+
+/* ---- THE BOARD ----------------------------------------------------------------- */
+
+/** One of his two figures for a man: empty is the model's, which sits in
+ *  the column beside it, so the field never shows a number that is not his. */
+const figureInput = (m, field, value, label) =>
+  `<input class="ws-input plain dp-fig${isNum(value) ? " mine" : ""}" type="number" inputmode="numeric" min="1" step="1" ` +
+  `data-id="${m.id}" data-field="${field}" value="${isNum(value) ? value : ""}" ` +
+  `aria-label="${escape(label)}">`;
+
+function tagSelect(m) {
+  const tag = tagOf(m.id);
+  return (
+    `<select class="ws-select dp-tagsel" data-id="${m.id}" aria-label="Tag for ${escape(m.name)}">` +
+    TAG_ORDER.map((t) => `<option value="${t}"${t === tag ? " selected" : ""}>${TAG_WORDS[t]}</option>`).join("") +
+    `</select>`
+  );
+}
+
+function nineCells() {
+  return CATS.map((cat) => {
+    return {
+      key: `n-${cat}`,
+      label: cat,
+      title: `${cat}: change in the chance of beating the median opponent`,
+      align: "c",
+      value: (row) => ((row.nine || {})[cat] ?? null),
+      cell: (row) => {
+        const d = (row.nine || {})[cat];
+        return isNum(d) ? glyphHtml(d, `${cat} ${points(d)}`, NINE_STEPS) : dash;
+      },
+    };
+  });
+}
+
+function boardRows() {
+  const p = plan();
+  const pos = $("f-pos").value;
+  const tag = $("f-tag").value;
+  const name = $("f-name").value.trim().toLowerCase();
+  const pool = SHOW_REST ? everyone() : p.players;
+  return pool.filter((m) => {
+    if (pos && !(m.eligible || []).includes(pos) && m.position !== pos) return false;
+    const t = tagOf(m.id);
+    if (tag === "any" && t === "none") return false;
+    if (tag && tag !== "any" && t !== tag) return false;
+    if (name && !m.name.toLowerCase().includes(name)) return false;
+    return true;
+  });
+}
+
+function drawBoard(options) {
+  const p = plan();
+  const hasBbm = p.players.some((m) => isNum(m.bbm_total));
+  const cap = isNum(ANSWER.cap) ? ANSWER.cap : p.facts.cap;
+  const columns = [
+    {
+      key: "name",
+      label: "Player",
+      align: "l",
+      text: true,
+      lock: true,
+      value: (m) => m.name,
+      cell: (m) =>
+        rowNameHtml(m.id, m.name) +
+        `<span class="ws-bb">${escape(bbMark({ pro_team: m.nba_team, position: m.position }))}</span>` +
+        (tagOf(m.id) !== "none" ? ` <span class="ws-tag${tagOf(m.id) === "must" ? " accent" : ""}">${escape(TAG_WORDS[tagOf(m.id)])}</span>` : ""),
+    },
+    { key: "pos", label: "Pos", align: "l", value: (m) => (m.eligible || []).join("/") || m.position || "", cell: (m) => escape((m.eligible || []).join("/") || m.position || "") },
+    { key: "going", label: "Going $", title: "Going $: what he will probably go for (the model's)", value: (m) => m.going, cell: (m) => money(m.going) },
+    {
+      key: "my-going",
+      label: "Your going $",
+      title: "Your going $: yours replaces the model's in the build; empty is the model's",
+      value: (m) => (markOf(m.id) || {}).going_price ?? null,
+      cell: (m) => figureInput(m, "going_price", (markOf(m.id) || {}).going_price, `Your going price for ${m.name}`),
+    },
+    {
+      key: "ours",
+      label: "Ours $",
+      title: "Ours $: our ceiling from an empty room (the model's)",
+      value: (m) => m.ceiling,
+      cell: (m) =>
+        m.must_price !== null && m.must_price !== undefined
+          ? `<span class="faint" title="a must man: bought at $${m.must_price}">must</span>`
+          : `${oursOf(m)}${m.capped ? `<span class="faint" title="the cap set it"> cap</span>` : ""}`,
+    },
+    {
+      key: "my-ceiling",
+      label: "Your ceiling $",
+      title: `Your ceiling $: caps what the plan pays for him, $1 to the $${cap} cap; empty is the model's`,
+      value: (m) => (markOf(m.id) || {}).bid_up_to ?? null,
+      cell: (m) =>
+        figureInput(m, "bid_up_to", (markOf(m.id) || {}).bid_up_to, `Your ceiling for ${m.name}`),
+    },
+  ];
+  if (hasBbm) {
+    columns.push({ key: "bbm", label: "BBM $", title: "BBM $: Basketball Monster's league value", value: (m) => m.bbm_total, cell: (m) => money(m.bbm_total) });
+  }
+  columns.push(
+    {
+      key: "best",
+      label: "Best",
+      title: "In the best roster at your prices",
+      align: "c",
+      value: (m) => ((eff(m.id) || {}).in_best ? 1 : 0),
+      cell: (m) => ((eff(m.id) || {}).in_best ? `<span class="dp-dot" title="in the best roster">●</span><span class="sr">in the best roster</span>` : ""),
+    },
+    {
+      key: "tag",
+      label: "Tag",
+      align: "l",
+      value: (m) => TAG_ORDER.indexOf(tagOf(m.id)),
+      cell: (m) => tagSelect(m),
+    },
+    { key: "g", label: "G", title: "Games projected", value: (m) => m.games, cell: (m) => (isNum(m.games) ? String(m.games) : dash) },
+    ...nineCells(),
+  );
+  const rows = boardRows();
+  const shownTag = SHOW_REST ? `${everyone().length} men` : `${p.players.length} men worth $${p.consider_from} or more`;
+  $("board-tag").textContent = shownTag;
+  $("show-rest").textContent = SHOW_REST ? `Only the $${p.consider_from}-and-up men` : `Show the rest (${(p.rest || []).length})`;
+  $("show-rest").setAttribute("aria-pressed", String(SHOW_REST));
+  const steps = ladderTiers();
+  const legend =
+    glyphLegend("pts", NINE_STEPS) +
+    `<span class="faint">Ours snaps to the ladder's tiers: ${steps}</span>`;
+  const spec = {
+    id: "draft-plan-board",
+    caption: "The pool",
+    rows,
+    key: (m) => m.id,
+    columns,
+    sort: ["going", "desc"],
+    height: "560px",
+    legend,
+    onSelect: (m, trigger) => openMan(m.id, trigger),
+  };
+  const focused = document.activeElement;
+  const keep = options && options.keepFocus && focused && $("board").contains(focused) && focused.dataset
+    ? { id: focused.dataset.id, field: focused.dataset.field || "tag" }
+    : null;
+  if (BOARD && keep) {
+    // A man is being typed into: leave the table be; his row redraws on blur.
+    return;
+  }
+  BOARD = screener($("board"), spec);
+  wireBoard();
+}
+
+function ladderTiers() {
+  const p = plan();
+  const shown = ANSWER.ladder || p.ladder;
+  const cap = isNum(ANSWER.cap) ? ANSWER.cap : p.facts.cap;
+  const tiers = [...new Set(shown)].filter((v) => v > 2).slice(0, 6);
+  return `$${cap} cap · ` + tiers.map((v) => `$${v}`).join(" · ");
+}
+
+function wireBoard() {
+  const host = $("board");
+  host.querySelectorAll("input.dp-fig").forEach((input) => {
+    input.onchange = () => figureChanged(input);
+    input.onkeydown = (event) => {
+      if (event.key === "Enter") input.blur();
+    };
+  });
+  host.querySelectorAll("select.dp-tagsel").forEach((select) => {
+    select.onchange = () => queueMark(Number(select.dataset.id), { tag: select.value });
+  });
+}
+
+function figureChanged(input) {
+  const id = Number(input.dataset.id);
+  const field = input.dataset.field;
+  const raw = input.value.trim();
+  const p = plan();
+  const cap = isNum(ANSWER.cap) ? ANSWER.cap : p.facts.cap;
+  const most = ANSWER.max_bid;
+  const value = raw === "" ? null : Number(raw);
+  const top = field === "bid_up_to" ? cap : most;
+  const bad = value !== null && (!Number.isInteger(value) || value < 1 || value > top);
+  input.classList.toggle("bad", bad);
+  if (bad) {
+    $("board-saved").textContent = field === "bid_up_to" ? `a ceiling is $1 to the $${cap} cap` : `a going price is $1 to $${most}`;
+    $("board-saved").classList.add("ws-neg");
+    return;
+  }
+  $("board-saved").classList.remove("ws-neg");
+  queueMark(id, { [field]: value });
+}
+
+/* ---- a man, in the drawer ---------------------------------------------------- */
+
+function manRows(m) {
+  const e = eff(m.id) || {};
+  const mark = markOf(m.id) || {};
+  const p = plan();
+  const rows = [];
+  rows.push([
+    "Going",
+    `<span class="ws-data">${money(m.going)}</span> the model's: ${escape(m.going_source || "")}` +
+      (isNum(mark.going_price) ? `; <b>yours $${mark.going_price}</b>, which the build read` : ""),
+  ]);
+  rows.push([
+    "Ours",
+    m.must_price !== null && m.must_price !== undefined
+      ? `a must man: bought at <span class="ws-data">$${m.must_price}</span> before anyone else, so no ceiling is worked out for him`
+      : m.considered
+        ? `<span class="ws-data">${money(m.ceiling)}</span>${m.capped ? ", set by the plan's cap: he is worth at least the cap" : ""}` +
+          (isNum(m.marginal) ? `; at $1 he adds <span class="ws-data">${minus(signed(m.marginal, 2))}</span> categories a week to the best roster` : "")
+        : `none worked out: he is under $${p.consider_from} with the market and BBM`,
+  ]);
+  if (isNum(mark.bid_up_to)) {
+    rows.push(["Your ceiling", `<b>$${mark.bid_up_to}</b>${e.ceiling_from === "yours" ? ", under ours, so the build read yours" : ", over ours, so the build read ours"}`]);
+  }
+  rows.push([
+    "Model's figure",
+    `<span class="ws-data">${money(m.bid_to)}</span>: the lower of our ceiling and BBM's value` +
+      (isNum(e.bid_to) && e.bid_to !== m.bid_to ? `; <b>$${e.bid_to}</b> with your ceiling` : ""),
+  ]);
+  if (isNum(m.bbm_total) || isNum(m.bbm_per_game)) {
+    rows.push([
+      "BBM",
+      `<span class="ws-data">${money(m.bbm_total)}</span> league value on total games` +
+        (isNum(m.bbm_per_game) ? `, <span class="ws-data">${money(m.bbm_per_game)}</span> per game` : "") +
+        (isNum(m.espn_avg) ? `; ESPN drafts paid <span class="ws-data">$${m.espn_avg}</span>` : "") +
+        (isNum(m.yahoo_avg) ? `, Yahoo's <span class="ws-data">$${m.yahoo_avg}</span>` : ""),
+    ]);
+  }
+  rows.push(["Best roster", e.in_best ? "in it at your prices" : "not in it at your prices"]);
+  const lists = (e.sections || m.sections || [])
+    .map((key) => {
+      const s = (ANSWER.effective.sections || []).find((x) => x.key === key);
+      return s ? `<b>${escape(s.label)}</b>: ${escape(s.reasons[String(m.id)] || "")}` : "";
+    })
+    .filter(Boolean);
+  rows.push(["Lists", lists.length ? lists.join("<br>") : "in none of the model's lists"]);
+  const facts = [
+    isNum(m.age) ? `age ${m.age}` : "",
+    m.injury_risk ? `injury risk ${m.injury_risk}` : "",
+    m.injury || "",
+    m.role || "",
+    ...(m.status || []),
+    isNum(m.confidence) ? `BBM confidence ${m.confidence}/10` : "",
+    ...(m.tags || []),
+  ].filter(Boolean);
+  if (facts.length) rows.push(["Facts", escape(facts.join(" · "))]);
+  if (m.note) rows.push([`${m.note_by || "BBM"}'s note`, escape(m.note)]);
+  if (m.check_news) rows.push(["Check news", escape(m.check_news)]);
+  const must = p.must;
+  if (must && must.each && isNum(must.each[String(m.id)])) {
+    rows.push(["Lock cost", `<span class="ws-data">${fixed(must.each[String(m.id)], 2)}</span> categories a week: the best roster with him fixed in, against the free best roster`]);
+  }
+  return rows;
+}
+
+function nineTable(m) {
+  const cells = CATS.map((cat) => {
+    const d = (m.nine || {})[cat];
+    const figure = isNum(d) ? (Math.abs(d) < 0.005 ? "0" : minus(signed(d * 100, 0))) : "";
+    return `<div><dt>${cat}</dt><dd>${isNum(d) ? glyphHtml(d, `${cat} ${points(d)}`, NINE_STEPS) : dash}<small>${figure}</small></dd></div>`;
+  }).join("");
+  return `<dl class="dp-nine">${cells}</dl>`;
+}
+
+function manBody(m) {
+  const mark = markOf(m.id) || {};
+  const tag = tagOf(m.id);
+  const seg =
+    `<div class="ws-seg dp-tagseg" role="group" aria-label="Tag">` +
+    TAG_ORDER.map((t) => `<button type="button" data-tag="${t}" aria-pressed="${t === tag}">${TAG_WORDS[t]}</button>`).join("") +
+    `</div>`;
+  const yours = isNum(mark.going_price) || isNum(mark.bid_up_to);
+  return (
+    `<div class="dp-drawer-tools">${seg}` +
+    (yours ? `<button type="button" class="ws-btn sm quiet" data-reset-man="${m.id}">Reset to the model's</button>` : "") +
+    `</div>` +
+    `<label class="ws-sub" for="man-note">Your note</label>` +
+    `<input class="ws-input plain dp-mannote" id="man-note" maxlength="500" value="${escape(mark.note || "")}" placeholder="A line for the night">` +
+    `<p class="ws-sub">The nine against this league's median opponent <span class="n">points of chance</span></p>` +
+    nineTable(m) +
+    `<dl class="ws-facts">` +
+    manRows(m).map(([k, v]) => `<dt>${escape(k)}</dt><dd>${v}</dd>`).join("") +
+    `</dl>` +
+    `<p class="ws-note">From <span class="ws-data">GET ${escape(PLAN_URL)}</span>: the model's figures are ` +
+    `<span class="ws-data">plan.players[]</span>, the build's with your figures <span class="ws-data">effective.players</span>, ` +
+    `yours <span class="ws-data">marks</span>. Nothing here bids or touches ESPN.</p>`
+  );
+}
+
+function openMan(id, trigger) {
+  const m = byId().get(Number(id));
+  if (!m) return;
+  SELECTED = m.id;
+  DRAWER.open({
+    key: `man-${m.id}`,
+    trigger,
+    kicker: "Player",
+    title: m.name,
+    meta: escape([bbMark({ pro_team: m.nba_team, position: m.position }), isNum(m.games) ? `${m.games} g` : ""].filter(Boolean).join(" · ")),
+    body: manBody(m),
+    onClose: () => {
+      SELECTED = null;
+      if (BOARD) BOARD.clear();
+    },
+  });
+  wireMan(m);
+}
+
+/** The drawer's own controls for one man: the tag, his note, the reset. */
+function wireMan(m) {
+  const body = $("ws-drawer-body");
+  body.querySelectorAll("[data-tag]").forEach((button) => {
+    button.onclick = () => {
+      body.querySelectorAll("[data-tag]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+      queueMark(m.id, { tag: button.dataset.tag });
+    };
+  });
+  const note = body.querySelector("#man-note");
+  if (note) note.onchange = () => queueMark(m.id, { note: note.value });
+  const reset = body.querySelector("[data-reset-man]");
+  if (reset) reset.onclick = () => queueMark(m.id, { going_price: null, bid_up_to: null });
+}
+
+/* ---- the model's lists --------------------------------------------------------- */
+
+function listMan(m, reason) {
+  const e = eff(m.id) || {};
+  const mark = markOf(m.id) || {};
+  const tag = tagOf(m.id);
+  const going = isNum(mark.going_price) && mark.going_price !== m.going
+    ? `going ${money(m.going)} <b>· yours $${mark.going_price}</b>`
+    : `going ${money(m.going)}`;
+  const ours = isNum(mark.bid_up_to)
+    ? `ours ${oursOf(m)} <b>· yours $${mark.bid_up_to}</b>`
+    : `ours ${oursOf(m)}`;
+  const bbm = isNum(m.bbm_total) ? ` · BBM ${money(m.bbm_total)}` : "";
+  return (
+    `<li><div class="dp-who"><button type="button" class="dp-name" data-man="${m.id}" aria-haspopup="dialog">${escape(m.name)}</button>` +
+    `<span class="ws-bb">${escape(bbMark({ pro_team: m.nba_team, position: m.position }))}</span>` +
+    (tag !== "none" ? ` <span class="ws-tag${tag === "must" ? " accent" : ""}">${escape(TAG_WORDS[tag])}</span>` : "") +
+    (e.in_best ? ` <span class="dp-dot" title="in the best roster at your prices">●</span>` : "") +
+    `</div><div class="dp-money ws-data">${going} · ${ours}${bbm}</div>` +
+    `<div class="dp-why">${escape(reason || "")}</div>` +
+    `<div class="dp-tagcell">${tagSelect(m)}</div></li>`
+  );
+}
+
+const LIST_FIRST = 10;
+
+function drawLists() {
+  const p = plan();
+  const lists = (ANSWER.effective && ANSWER.effective.sections) || p.sections;
+  const men = byId();
+  $("lists").innerHTML = lists
+    .map((s) => {
+      const all = s.ids.map((id) => men.get(id)).filter(Boolean);
+      const open = OPEN_LISTS.has(s.key);
+      const shown = open ? all : all.slice(0, LIST_FIRST);
+      const more =
+        all.length > LIST_FIRST
+          ? `<p class="dp-more"><button type="button" class="ws-btn sm quiet" data-more="${s.key}">${open ? "Fewer" : `All ${all.length}`}</button></p>`
+          : "";
+      const label = s.key === "fan" ? `Fan: ${s.label}` : s.label;
+      return (
+        `<section class="ws-sect" id="list-${s.key}"><div class="ws-sect-head"><h2 class="ws-label">${escape(label)}</h2>` +
+        `<span class="ws-k">${escape(s.rule)}</span></div>` +
+        `<div class="ws-panel flush">` +
+        (all.length
+          ? `<ul class="dp-list">${shown.map((m) => listMan(m, s.reasons[String(m.id)])).join("")}</ul>${more}`
+          : `<p class="ov-wait">Nobody fits this rule on this pool.</p>`) +
+        `</div></section>`
+      );
+    })
+    .join("");
+  $("lists").querySelectorAll("[data-man]").forEach((button) => {
+    button.onclick = () => openMan(button.dataset.man, button);
+  });
+  $("lists").querySelectorAll("select.dp-tagsel").forEach((select) => {
+    select.onchange = () => queueMark(Number(select.dataset.id), { tag: select.value }, "board-saved");
+  });
+  $("lists").querySelectorAll("[data-more]").forEach((button) => {
+    button.onclick = () => {
+      const key = button.dataset.more;
+      if (OPEN_LISTS.has(key)) OPEN_LISTS.delete(key);
+      else OPEN_LISTS.add(key);
+      drawLists();
+    };
+  });
+}
+const OPEN_LISTS = new Set();
+
+/* ---- YOUR PLAN ------------------------------------------------------------------- */
+
+function drawYours() {
+  const p = plan();
+  const men = byId();
+  const budget = p.facts.budget;
+  const tagged = (t) =>
+    Object.entries(ANSWER.marks || {})
+      .filter(([, mark]) => mark.tag === t)
+      .map(([id]) => men.get(Number(id)))
+      .filter(Boolean);
+  const ceilingOf = (m) => {
+    const mark = markOf(m.id) || {};
+    return isNum(mark.bid_up_to) ? mark.bid_up_to : m.bid_to;
+  };
+  const parts = [];
+  const yoursCount = ANSWER.yours || 0;
+  parts.push(
+    `<p class="dp-count"><span class="ws-data">${count(yoursCount, "figure")}</span> ${yoursCount === 1 ? "is" : "are"} yours` +
+      (yoursCount ? ` <button type="button" class="ws-btn sm quiet" id="reset-all">Reset every figure to the model's</button>` : "") +
+      `</p>`,
+  );
+
+  // Must-have men first, at the plan's price, then the money left.
+  const must = p.must;
+  const musts = tagged("must");
+  if (musts.length) {
+    const rows = musts
+      .map((m) => {
+        const price = must && must.prices ? must.prices[String(m.id)] : null;
+        const each = must && must.each ? must.each[String(m.id)] : null;
+        return `<tr><td class="name">${escape(m.name)} <span class="ws-bb">${escape(bbMark({ pro_team: m.nba_team, position: m.position }))}</span></td>` +
+          `<td>${money(price)}</td><td>${isNum(each) ? fixed(each, 2) : dash}</td></tr>`;
+      })
+      .join("");
+    let tail = "";
+    if (must && must.error) {
+      tail = `<p class="ws-p ws-neg">${escape(must.error)}</p>`;
+    } else if (must && must.applied) {
+      tail =
+        `<p class="ws-p">Then <span class="ws-data">$${must.money_left}</span> for ` +
+        `<span class="ws-data">${count(must.places_left, "place")}</span>. Fixing them in costs ` +
+        `<button type="button" class="ov-fig" id="lock-cost" aria-haspopup="dialog"><b>${fixed(must.cost, 2)}</b> categories a week</button>.</p>`;
+    } else if (ANSWER.rebuilding) {
+      tail = `<p class="ws-p faint">Being worked into the plan now.</p>`;
+    }
+    parts.push(
+      `<p class="ws-sub">Must-have men</p><div class="scroll"><table class="ws-grid dp-grid-t"><thead><tr><th class="l">Man</th><th>Price</th><th title="categories a week, him alone">Lock cost</th></tr></thead>` +
+        `<tbody>${rows}</tbody></table></div>${tail}`,
+    );
+  }
+
+  // Targets in ladder order, his ceiling beside the model's.
+  const targets = tagged("target").sort((a, b) => (ceilingOf(b) || 0) - (ceilingOf(a) || 0));
+  const committed =
+    targets.reduce((sum, m) => sum + (ceilingOf(m) || 0), 0) +
+    (must && must.applied ? Object.values(must.prices).reduce((a, b) => a + b, 0) : 0);
+  if (targets.length) {
+    const rows = targets
+      .map((m) => {
+        const mark = markOf(m.id) || {};
+        return `<tr><td class="name">${escape(m.name)} <span class="ws-bb">${escape(bbMark({ pro_team: m.nba_team, position: m.position }))}</span></td>` +
+          `<td>${isNum(mark.bid_up_to) ? `<b>$${mark.bid_up_to}</b>` : dash}</td><td>${money(m.bid_to)}</td><td>${money(m.going)}</td></tr>`;
+      })
+      .join("");
+    parts.push(
+      `<p class="ws-sub">Targets <span class="n">committed <b class="${committed > budget ? "ws-neg" : ""}">$${committed}</b> of $${budget}</span></p>` +
+        `<div class="scroll"><table class="ws-grid dp-grid-t"><thead><tr><th class="l">Man</th><th>Yours</th><th>Model's</th><th>Going</th></tr></thead>` +
+        `<tbody>${rows}</tbody></table></div>`,
+    );
+  }
+
+  const namesOf = (list) =>
+    list.length ? list.map((m) => escape(m.name)).join(", ") : `<span class="faint">none tagged</span>`;
+  parts.push(
+    `<dl class="ws-facts dp-tagged">` +
+      `<dt>Let go</dt><dd>${namesOf(tagged("let_go"))}</dd>` +
+      `<dt>Nominate</dt><dd>${namesOf(tagged("nominate"))}</dd>` +
+      `<dt>IR</dt><dd>${namesOf(tagged("ir"))}</dd>` +
+      `</dl>`,
+  );
+
+  // The best roster at his prices, place by place against the ladder.
+  const best = (ANSWER.effective && ANSWER.effective.best) || p.best;
+  const ladder = ANSWER.ladder || p.ladder;
+  if (best && best.roster) {
+    const roster = [...best.roster].sort((a, b) => b.price - a.price);
+    const rows = roster
+      .map((man, i) => {
+        const place = ladder[i];
+        const over = isNum(place) && man.price > place;
+        return `<tr><td>${i + 1}</td><td>${money(place)}</td><td class="name">${escape(man.name)}</td>` +
+          `<td class="${over ? "ws-neg" : ""}">${money(man.price)}</td></tr>`;
+      })
+      .join("");
+    parts.push(
+      `<p class="ws-sub">The best roster at your prices <span class="n">${fixed(best.all_nine, 2)} categories a week on all nine · $${best.cost}</span></p>` +
+        `<div class="scroll"><table class="ws-grid dp-grid-t"><thead><tr><th class="l">Place</th><th>Ladder</th><th class="l">Man</th><th>Price</th></tr></thead>` +
+        `<tbody>${rows}</tbody></table></div>`,
+    );
+  }
+  $("yours").innerHTML = parts.join("");
+  $("yours-tag").textContent = ANSWER.updated_at ? `kept ${clockOf(ANSWER.updated_at)}` : "nothing kept yet";
+  const reset = $("reset-all");
+  if (reset) reset.onclick = () => putMarks({ reset: "figures" }, "board-saved");
+  const lock = $("lock-cost");
+  if (lock) lock.onclick = () => openLock(lock);
+  const notes = $("notes");
+  if (document.activeElement !== notes) notes.value = ANSWER.notes || "";
+}
+
+function openLock(trigger) {
+  const must = plan().must;
+  const men = byId();
+  const each = Object.entries(must.each || {})
+    .map(([id, cost]) => `${escape((men.get(Number(id)) || { name: id }).name)} <span class="ws-data">${fixed(cost, 2)}</span>`)
+    .join("<br>");
+  DRAWER.open({
+    key: "lock",
+    trigger,
+    kicker: "Where this came from",
+    title: "What the lock costs",
+    body:
+      `<dl class="ws-facts">` +
+      `<dt>The set</dt><dd><span class="ws-data">${fixed(must.cost, 3)}</span> categories a week: the best roster with every must man fixed in at his price, against the best roster with no such requirement</dd>` +
+      `<dt>Each alone</dt><dd>${each}</dd>` +
+      `<dt>With them</dt><dd>${must.roster_with.map((m) => `${escape(m.name)} $${m.price}`).join(", ")}</dd>` +
+      `<dt>Free</dt><dd>${must.roster_free.map((m) => `${escape(m.name)} $${m.price}`).join(", ")}</dd>` +
+      `<dt>Fields</dt><dd><span class="ws-data">plan.must.cost, plan.must.each, plan.must.roster_with, plan.must.roster_free</span>: the fan section's arithmetic (<span class="ws-data">lock_cost</span>)</dd>` +
+      `</dl><p class="ws-note">A figure, not advice: the men are yours to keep or not.</p>`,
+  });
+}
+
+let NOTES_TIMER = null;
+$("notes").addEventListener("input", () => {
+  clearTimeout(NOTES_TIMER);
+  $("notes-saved").textContent = "saving…";
+  NOTES_TIMER = setTimeout(async () => {
+    const done = await send("PUT", `${PLAN_URL}/marks`, { notes: $("notes").value });
+    $("notes-saved").textContent = done.ok ? "saved" : done.detail || "not kept";
+  }, 800);
+});
+
+/* ---- the whole page ------------------------------------------------------------- */
+
+function draw(options) {
+  drawHeader();
+  drawState();
+  const ready = ANSWER.state === "ready";
+  $("facts").hidden = !ready;
+  $("body").hidden = !ready;
+  if (!ready) {
+    $("foot").textContent = "";
+    return;
+  }
+  drawFacts();
+  drawLadder();
+  drawBoard(options);
+  drawLists();
+  drawYours();
+  $("foot").innerHTML =
+    `Built ${escape(plan().generated.replace("computed ", ""))}` +
+    (ANSWER.effective && ANSWER.effective.solved ? ` · your prices worked in at ${escape(clockOf(ANSWER.effective.rebuilt_at))}` : "") +
+    ` · ${escape(plan().source.note || "")} · Read-only: nothing here bids, nominates or touches ESPN.`;
+  if (SELECTED !== null && DRAWER.isOpen() && DRAWER.keyOf() === `man-${SELECTED}`) {
+    const m = byId().get(SELECTED);
+    if (m) {
+      DRAWER.update(`man-${SELECTED}`, { kicker: "Player", title: m.name, body: manBody(m) });
+      wireMan(m);
+    }
+  }
+}
+
+["f-pos", "f-tag"].forEach((id) => {
+  $(id).onchange = () => BOARD && BOARD.rows(boardRows());
+});
+$("f-name").oninput = () => BOARD && BOARD.rows(boardRows());
+$("show-rest").onclick = () => {
+  SHOW_REST = !SHOW_REST;
+  drawBoard();
+};
+$("ladder-reset").onclick = () => putMarks({ ladder: null }, "ladder-saved");
+$("rebuild").onclick = async () => {
+  $("rebuild").disabled = true;
+  await send("POST", `${PLAN_URL}/rebuild${ASKED ? `?source=${encodeURIComponent(ASKED)}` : ""}`);
+  $("rebuild").disabled = false;
+  load();
+};
+document.addEventListener("focusout", (event) => {
+  // A figure typed into the board: once the field is left, the table
+  // catches up with the answer that came back while it was being typed.
+  if (event.target && event.target.classList && event.target.classList.contains("dp-fig")) {
+    setTimeout(() => {
+      if (!$("board").contains(document.activeElement) && ANSWER && ANSWER.state === "ready") drawBoard();
+    }, 0);
+  }
+});
+
+load();
+</script>
+</body>
+</html>

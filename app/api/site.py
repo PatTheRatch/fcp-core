@@ -12,6 +12,7 @@
     /l/{league_id}/{season}/team/{team_id}/season   the season plan
     /l/{league_id}/{season}/team/{team_id}/moves    the scorecard of this team's own moves
     /l/{league_id}/{season}/team/{team_id}/trades   what a proposed trade would do to both
+    /l/{league_id}/{season}/team/{team_id}/draft/plan   the pre-auction plan and his marks
     /account/connections | /projections | /alerts   the viewer's own account
     /design                                   the design language, open, no data in it
     GET /me/alerts                            the one JSON route the pages needed
@@ -229,6 +230,19 @@ def team_moves_page() -> HTMLResponse:
 def team_trades_page() -> HTMLResponse:
     """Build a trade and see what it does to both rosters' nine categories."""
     return _page("trades.html")
+
+
+@router.get(
+    "/l/{league_id}/{season}/team/{team_id}/draft/plan",
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[TEAM_PLAN_PAGE],
+)
+def team_draft_plan_page() -> HTMLResponse:
+    """The pre-auction plan: the model's ladder, board and lists, and the
+    manager's own figures, tags and notes beside them (docs/draft_plan.md).
+    Its data route asks the projection source's gate as well as this one."""
+    return _page("draft-plan.html")
 
 
 # ---------------------------------------------------------------------------

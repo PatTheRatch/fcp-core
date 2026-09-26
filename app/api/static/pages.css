@@ -1513,6 +1513,80 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .ov-tonight tr.off td.name .pname{font-weight:400}
 #their-tonight .tonight{margin:0}
 
+/* ---- the draft plan: the auction's plan and the manager's own figures ----
+   (docs/draft_plan.md). The ladder a place a field; the board is the
+   screener with two figures of his own per row; the model's lists a man a
+   row, two lists a row on a desk; YOUR PLAN in the lineup tables' metrics.
+   Orange only where the design allows it: a must man's tag, the drawer's
+   selected row. A figure out of range is red because it cannot be kept. */
+.dp-state{margin:0 0 var(--sp-5);color:var(--fg)}
+.dp-state.ws-neg{color:var(--neg)}
+.dp-ladder{display:grid;grid-template-columns:repeat(auto-fit,minmax(3.4rem,1fr));gap:var(--sp-2)}
+.dp-place{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dp-n{font-family:var(--font-data);font-size:var(--t-2xs);letter-spacing:.08em;color:var(--fg-3)}
+.dp-amount{width:100%;font-family:var(--font-data);font-variant-numeric:tabular-nums;text-align:right}
+.dp-model{min-height:1.2em;font-family:var(--font-data);font-size:var(--t-2xs)}
+.dp-sum{margin:var(--sp-3) 0 0;font-size:var(--t-md);color:var(--fg-2)}
+.dp-sum b{font-weight:600;color:var(--fg)}
+.dp-sum b.ws-neg{color:var(--neg)}
+.dp-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);margin:var(--sp-2) 0 0}
+.dp-saved{font-size:var(--t-sm)}
+.dp-saved.ws-neg{color:var(--neg)}
+.dp-filters{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);
+  border-bottom:1px solid var(--line)}
+.dp-filters .ws-input{width:11rem}
+.dp-filters .dp-saved{margin-left:auto}
+@media (max-width:700px){
+  .dp-filters .ws-input{width:100%}
+  .dp-filters .ws-field.search{flex:1 1 100%}
+  .dp-filters .dp-saved{margin-left:0;flex:1 1 100%}
+}
+/* The screener inside the board's panel shares its edge. */
+.dp #board .ws-scr{border:0;border-radius:0}
+.dp-fig{width:4.2rem;height:24px;padding:0 6px;font-family:var(--font-data);font-size:var(--t-md);
+  font-variant-numeric:tabular-nums;text-align:right}
+.dp-fig.mine{font-weight:600;border-color:var(--fg-2)}
+.dp-fig.bad,.dp-amount.bad{border-color:var(--neg);color:var(--neg)}
+.dp-tagsel{height:24px;padding:0 22px 0 6px;font-size:var(--t-sm)}
+.dp-dot{color:var(--fg);font-size:10px}
+@media (min-width:1180px){
+  .dp-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--sp-5)}
+}
+.dp-list{list-style:none;margin:0;padding:0}
+.dp-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px var(--sp-3);align-items:center;
+  padding:6px var(--sp-3);border-top:1px solid var(--line)}
+.dp-list li:first-child{border-top:0}
+.dp-who{min-width:0;overflow-wrap:anywhere}
+.dp-who .ws-bb{margin-left:6px}
+.dp-name{padding:0;font:inherit;font-weight:600;color:var(--fg);background:none;border:0;cursor:pointer;
+  text-align:left}
+.dp-name:hover{text-decoration:underline;text-underline-offset:3px}
+.dp-money{grid-column:1;font-size:var(--t-sm);color:var(--fg-2)}
+.dp-money b{color:var(--fg);font-weight:600}
+.dp-why{grid-column:1;font-size:var(--t-sm);color:var(--fg-3)}
+.dp-tagcell{grid-column:2;grid-row:1 / span 3}
+.dp-more{margin:0;padding:4px var(--sp-3);border-top:1px solid var(--line)}
+.dp-count{margin:0 0 var(--sp-3);font-size:var(--t-base)}
+.dp .scroll{overflow-x:auto}
+.dp-grid-t{margin:0 0 var(--sp-3)}
+.dp-tagged{margin:0 0 var(--sp-3)}
+.dp-notes{margin-top:var(--sp-3)}
+.dp-textarea{display:block;width:100%;min-height:6rem;padding:8px 10px;border:1px solid var(--line-strong);
+  border-radius:var(--r-control);background:var(--panel);color:var(--fg);font-family:var(--font-ui);
+  font-size:var(--t-md);line-height:1.45;resize:vertical}
+.dp-textarea:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.dp-drawer-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-3)}
+.dp-tagseg{flex-wrap:wrap;max-width:100%}
+.dp-mannote{margin:0 0 var(--sp-3)}
+.dp-nine{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:0;margin:0 0 var(--sp-3);
+  border:1px solid var(--line);border-radius:var(--r-control)}
+.dp-nine > div{display:flex;flex-direction:column;align-items:center;padding:4px 2px;min-width:0;
+  border-left:1px solid var(--line)}
+.dp-nine > div:first-child{border-left:0}
+.dp-nine dt{font-family:var(--font-data);font-size:var(--t-2xs);color:var(--fg-3)}
+.dp-nine dd{margin:0;display:flex;flex-direction:column;align-items:center}
+.dp-nine small{font-family:var(--font-data);font-size:var(--t-2xs);color:var(--fg-2);white-space:nowrap}
+
 /* Nothing on these pages animates to say anything -- the drawer and the
    rail slide in, and that is all -- and a reader who has asked for
    stillness gets it outright rather than nearly. */
