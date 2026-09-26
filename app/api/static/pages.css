@@ -1568,6 +1568,9 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .dp-more{margin:0;padding:4px var(--sp-3);border-top:1px solid var(--line)}
 .dp-count{margin:0 0 var(--sp-3);font-size:var(--t-base)}
 .dp .scroll{overflow-x:auto}
+/* His plan's tables are three or four columns: they fit a phone, the name wrapping. */
+.dp .scroll .ws-grid.dp-grid-t{min-width:0}
+.dp-grid-t td.name{white-space:normal;overflow-wrap:anywhere}
 .dp-grid-t{margin:0 0 var(--sp-3)}
 .dp-tagged{margin:0 0 var(--sp-3)}
 .dp-notes{margin-top:var(--sp-3)}
