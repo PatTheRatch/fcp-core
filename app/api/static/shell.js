@@ -3,7 +3,7 @@
 
      BOX OUT
      ● OVERVIEW
-     TEAM    Matchup · Roster · Moves · Trades · Season
+     TEAM    Matchup · Roster · Moves · Trades · Draft plan · Season
      LEAGUE  This week · Standings · Players · Draft · History
      ───
      ◈ SCENARIO   Current scenario · n changes
@@ -64,6 +64,9 @@ const TEAM_SECTIONS = [
   ["roster", "Roster", "week", "#tonight-section", false],
   ["moves", "Moves", "moves", "", true],
   ["trades", "Trades", "trades", "", true],
+  // The pre-auction plan. Its address has two parts, so its section (the
+  // part after the team, `place()`) is "draft" and its page "draft/plan".
+  ["draft", "Draft plan", "draft/plan", "", true],
   ["season", "Season", "season", "", true],
 ];
 const LEAGUE_SECTIONS = [
@@ -192,8 +195,9 @@ function leagueMenu(ctx, where) {
           const theirs = (league.teams || []).find(
             (t) => t.season === year && t.state === "verified",
           );
+          const section = TEAM_SECTIONS.find(([key]) => where.section === `team-${key}`);
           href = theirs
-            ? teamUrl(league.id, year, theirs.espn_team_id, where.section.slice(5))
+            ? teamUrl(league.id, year, theirs.espn_team_id, section ? section[2] : where.section.slice(5))
             : leagueUrl(league.id, year, "week");
         }
         items.push(itemHtml(href, String(year), year === season && where.league !== null));

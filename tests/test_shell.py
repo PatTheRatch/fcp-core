@@ -56,7 +56,7 @@ STATIC = REPO_ROOT / "app" / "api" / "static"
 
 LEAGUE_SECTIONS = ("week", "standings", "draft", "history")
 #: The team's pages; "" is the team's own address, its Overview.
-TEAM_SECTIONS = ("", "week", "season", "moves", "trades")
+TEAM_SECTIONS = ("", "week", "season", "moves", "trades", "draft/plan")
 ACCOUNT_SECTIONS = ("connections", "projections", "alerts")
 
 LEAGUE_REFUSED = "This league&#x27;s pages are its members&#x27;."
@@ -344,6 +344,7 @@ SHELL_PAGES = [
     "alerts.html",
     "home.html",
     "overview.html",
+    "draft-plan.html",
     "claim.html",
     "join.html",
     "design.html",
@@ -371,6 +372,7 @@ def test_the_shell_is_the_rail_the_design_draws() -> None:
         "Roster",
         "Moves",
         "Trades",
+        "Draft plan",
         "Season",
         "This week",
         "Standings",
@@ -509,6 +511,7 @@ def test_the_map_in_the_docs_names_every_page() -> None:
         "/l/{league_id}/{season}/team/{team_id}/season",
         "/l/{league_id}/{season}/team/{team_id}/moves",
         "/l/{league_id}/{season}/team/{team_id}/trades",
+        "/l/{league_id}/{season}/team/{team_id}/draft/plan",
         "/account/connections",
         "/account/projections",
         "/account/alerts",
@@ -631,3 +634,15 @@ def test_before_the_draft_the_overview_draws_only_what_needs_no_roster(
     assert "NOT_READY.note" in script and '$("ready")' in script, "the sentence, once"
     assert 'leagueUrl(WHERE.league, WHERE.season, "draft")' in script, "the draft, linked"
     assert 'STREAM.state = "none"' in script, "the week report is not asked for"
+
+
+def test_the_rail_carries_draft_plan_between_trades_and_season() -> None:
+    """The team's Draft plan sits between Trades and Season, opens the plan's
+    two-part address, and is current on that page: its section is "draft"
+    (`place()` reads the part after the team), its page "draft/plan"."""
+    shell = (STATIC / "shell.js").read_text()
+    assert '["draft", "Draft plan", "draft/plan", "", true]' in shell
+    assert shell.index('"Trades"') < shell.index('"Draft plan"') < shell.index('"Season"')
+    # The season switcher on a team page goes to the same page in the other
+    # season, which for the plan is its page, not its section.
+    assert "section ? section[2] : where.section.slice(5)" in shell

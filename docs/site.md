@@ -46,6 +46,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/season` | My team, Season: the rest-of-season report | the team's verified manager, entitled | `season.html` |
 | `/l/{league_id}/{season}/team/{team_id}/moves` | My team, Moves: the scorecard of his own moves | the team's verified manager, entitled | `moves.html` |
 | `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
+| `/l/{league_id}/{season}/team/{team_id}/draft/plan` | My team, Draft plan: the pre-auction plan -- the ladder and the board he edits, the model's lists, his own plan (docs/draft_plan.md); for a drafted season, when it was held and a link to Draft | the team's verified manager, entitled; its data route asks the projection source's gate as well | `draft-plan.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your league's numbers, your machine tokens, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
 | `/upgrade` | The team layer: what it is, your season pass, "Have a code?", purchase (drawn disabled until it opens), the free tier's links; where a team page without a pass sends you, with `?next=` | anyone signed in | `upgrade.html` |
@@ -95,7 +96,7 @@ single mode, every league stored).
 BOX OUT
 ● OVERVIEW                       → the team's own address, its Overview
 TEAM  Through The Wire
-  Matchup · Roster (soon) · Moves · Trades · Season
+  Matchup · Roster (soon) · Moves · Trades · Draft plan · Season
 LEAGUE
   This week · Standings · Players (soon) · Draft · History
 ───
@@ -107,7 +108,9 @@ Connections · Alerts · Theme ◐
 ```
 
 - **The items.** Matchup is the team's Week page (current there), Moves,
-  Trades and Season the team's other pages, This week, Standings, Draft and
+  Trades, Draft plan and Season the team's other pages (Draft plan is there
+  in every season: before the auction it is the plan, after it the page says
+  when it was held and links to the league's Draft), This week, Standings, Draft and
   History the league's. Overview is the team's own address, the Overview
   page (since 2026-09-25), and is marked current there and on no other page;
   without a team it goes to the league's This week, as `/` does, and marks
