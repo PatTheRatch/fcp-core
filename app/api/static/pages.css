@@ -185,8 +185,16 @@ body.ws{padding-left:var(--rail-w)}
   font-size:var(--t-md);line-height:1.3}
 .ws-rail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);
   min-height:var(--top-h);padding:0 var(--sp-4);border-bottom:1px solid var(--line)}
-.ws-brand{font-family:var(--font-accent);font-weight:600;font-size:16px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--fg);text-decoration:none;white-space:nowrap}
+.ws-brand{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-accent);font-weight:600;
+  font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg);text-decoration:none;
+  white-space:nowrap}
+.bo-mark{height:20px;width:auto;flex:none;display:block}
+.bo-word{height:auto;width:auto;display:block}
+/* The lockup: symbol beside the drawn wordmark (brand/box-out-primary-horizontal.svg), both in
+   the page's ink, sized by the container's font-size. */
+.bo-lockup{display:inline-flex;align-items:center;gap:.28em;color:var(--fg);line-height:1}
+.bo-lockup .bo-mark{height:1em}
+.bo-lockup .bo-word{height:.47em}
 .ws-brand:hover{color:var(--accent-text)}
 .ws-rail-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:var(--sp-2) 0 var(--sp-3)}
 .ws-group{display:flex;align-items:baseline;gap:var(--sp-2);margin:var(--sp-4) 0 2px;
@@ -791,8 +799,11 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .shell{border-bottom:1px solid var(--rule);background:var(--ground)}
 .nav{max-width:1080px;margin:0 auto;padding:10px 24px 8px;display:flex;flex-wrap:wrap;
   align-items:center;gap:6px 22px}
-.brand{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-weight:600;
+  font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);text-decoration:none;
+  white-space:nowrap}
+.brand .bo-mark{height:18px}
+.mast .bo-lockup{font-size:clamp(56px,11vw,96px);margin:0 0 var(--sp-3)}
 .brand:hover{color:var(--accent-deep)}
 @media (max-width:560px){
   /* A section's tag is pushed to the right of its heading, and it never

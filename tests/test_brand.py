@@ -180,7 +180,9 @@ def test_a_served_page_declares_the_icon(single: TestClient, path: str) -> None:
 def test_the_shell_draws_the_name(single: TestClient) -> None:
     shell = single.get("/pages/static/shell.js").text
     assert f'aria-label="{brand.BRAND}, home"' in shell
-    assert f">{brand.BRAND}</a>" in shell
+    # The name sits beside the BO symbol in the same link (brand/README.md).
+    assert f"<span>{brand.BRAND}</span></a>" in shell
+    assert 'class="bo-mark"' in shell
 
 
 def test_a_refused_page_and_a_dead_link_carry_the_name(

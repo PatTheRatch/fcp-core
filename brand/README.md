@@ -54,6 +54,15 @@ with a 180px PNG render beside it as `apple-touch-icon.png`. Every page declares
 both in its `<head>`, and `/favicon.ico` redirects to the SVG. After changing the
 icon, copy it over and re-render the PNG.
 
+The rail, the phone's top bar and the plain pages' bar draw the symbol
+**inline** (`app/api/static/shell.js`, `MARK`; the landing and sign-in pages
+carry the same markup), with the strokes in `currentColor` so one drawing
+serves both themes; the landing page's name is the horizontal lockup, inline
+the same way (`.bo-lockup`). The path data is `generate.py`'s, shifted to a
+`30 30 980 560` viewBox for the symbol and `0 0 790 140` for the wordmark;
+after changing the symbol's or wordmark's paths, update those two inline
+copies as well (docs/design_system.md, "The mark").
+
 ## Regenerating
 
 ```sh

@@ -139,6 +139,21 @@ section's `.ws-label` and the name in the rail: not in a heading line, a
 figure, a name, a score or a table. The plain pages keep it in their
 mastheads.
 
+## The mark
+
+`brand/` holds the logo system (README there; every SVG is drawn by
+`brand/generate.py`): the BO symbol, the drawn wordmark, the lockups and the
+icon tile. In the app the symbol is **inline SVG** with its strokes in
+`currentColor`, so it is the page's ink in either theme and needs no light
+and dark copies; the ball is the brand's orange, `#F26A1B`, and the only
+orange in it. Where it is drawn: 20 px beside the wordmark in the rail head
+and the phone's top bar (`shell.js`, `MARK`); 18 px in the plain pages' bar
+(landing, sign-in); the full lockup, symbol beside the drawn wordmark, as the
+landing page's name (`.bo-lockup`, sized by its font-size); the icon tile as
+every page's favicon and touch icon (`favicon.svg`, `apple-touch-icon.png`,
+served by the page-asset route). `/design` shows all three. The compact mark
+is the rule under 120 px, and nothing draws it smaller than the favicon.
+
 ## Colour: four that mean something
 
 - **Orange is Box Out's, and scarce.** It marks the page you are on (the

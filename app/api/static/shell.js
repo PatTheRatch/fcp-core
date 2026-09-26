@@ -46,6 +46,14 @@
 
 "use strict";
 
+/** The BO symbol (brand/box-out-mark.svg, drawn in generate.py), inline so its
+ *  ink follows the theme: the strokes are currentColor, the ball is the
+ *  brand's orange. Used at 20 px beside the wordmark; the compact mark is the
+ *  rule under 120 px (brand/README.md). */
+const MARK =
+  '<svg class="bo-mark" viewBox="30 30 980 560" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="80" stroke-linejoin="round" stroke-linecap="round"><path d="M80 80V540"/><path d="M80 80H270Q340 80 340 150V240Q340 310 270 310H80"/><path d="M80 310H300Q380 310 380 390V460Q380 540 300 540H80"/><circle cx="730" cy="310" r="230"/></g><circle cx="730" cy="310" r="165" fill="#F26A1B"/><g fill="none" stroke="currentColor" stroke-width="16"><path d="M730 145V475"/><path d="M565 310H895"/><path d="M610 180Q680 310 610 440"/><path d="M850 180Q780 310 850 440"/></g></svg>';
+
+
 /** Where the last league looked at is kept, per browser. */
 const LEAGUE_KEY = "fcp-league";
 
@@ -96,13 +104,13 @@ function shellFrame() {
   document.body.classList.add("ws");
   host.innerHTML =
     `<header class="ws-top">` +
-    `<a class="ws-brand" href="/">{{brand}}</a>` +
+    `<a class="ws-brand" href="/">${MARK}<span>{{brand}}</span></a>` +
     `<span class="ws-where" id="ws-where"></span>` +
     `<button type="button" class="ws-btn sm" id="ws-menu" aria-controls="ws-rail" ` +
     `aria-expanded="false">Menu</button></header>` +
     `<nav class="ws-rail" id="ws-rail" aria-label="Site">` +
     `<div class="ws-rail-head">` +
-    `<a class="ws-brand" href="/" aria-label="{{brand}}, home">{{brand}}</a>` +
+    `<a class="ws-brand" href="/" aria-label="{{brand}}, home">${MARK}<span>{{brand}}</span></a>` +
     `<button type="button" class="ws-btn sm quiet ws-rail-close" id="ws-rail-close">Close</button>` +
     `</div>` +
     `<div class="ws-rail-body" id="shell-main"></div>` +
