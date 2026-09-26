@@ -274,7 +274,42 @@ function leagueNumbers(league, data) {
   part.append(state);
 
   for (const number of data.numbers) part.append(numberLine(data, number, league.role));
+  const fan = fanLine(league);
+  if (fan) part.append(fan);
   return part;
+}
+
+/* His fan team: a setting of his own team's draft plan (docs/draft_plan.md,
+   "The fan team"), shown here beside the league's numbers as every setting
+   a plan reads is. None by default; set, the plan costs each of that NBA
+   team's men for him. Only for the newest season he manages in the league. */
+function fanLine(league) {
+  const mine = (league.teams || [])
+    .filter((t) => t.state === "verified")
+    .sort((a, b) => b.season - a.season)[0];
+  if (!mine) return null;
+  const url = `/leagues/${league.espn_league_id}/seasons/${mine.season}/teams/${mine.espn_team_id}/draft/plan/settings`;
+  const line = el("p", "", "ws-line");
+  line.append(el("b", "Fan team"), `: your ${mine.season} draft plan costs this NBA team's men for you `);
+  const pick = document.createElement("select");
+  pick.className = "ws-select";
+  pick.setAttribute("aria-label", "Fan team");
+  const said = el("span", "", "faint");
+  line.append(pick, " ", said);
+  call("GET", url).then((got) => {
+    if (!got.ok) {
+      line.hidden = true;
+      return;
+    }
+    pick.append(new Option("None", ""));
+    for (const team of got.data.teams) pick.append(new Option(team, team));
+    pick.value = got.data.fan_team || "";
+  });
+  pick.onchange = async () => {
+    const done = await call("PUT", url, { fan_team: pick.value || null });
+    said.textContent = done.ok ? " kept: the plan is worked out again with it" : ` ${done.detail}`;
+  };
+  return line;
 }
 
 function numberLine(data, number, role) {
