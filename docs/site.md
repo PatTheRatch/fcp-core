@@ -46,6 +46,7 @@ something.
 | `/l/{league_id}/{season}/team/{team_id}/trades` | My team, Trades: build a deal and see what it does | the team's verified manager, entitled | `trades.html` |
 | `/account/connections` | Connections: connect a league, invites, claims, your league's numbers, your machine tokens, your SWID | anyone signed in | `connections.html` |
 | `/account/projections` | Projections: your uploaded sets, how to upload | anyone signed in | `projections.html` |
+| `/upgrade` | The team layer: what it is, your season pass, "Have a code?", purchase (drawn disabled until it opens), the free tier's links; where a team page without a pass sends you, with `?next=` | anyone signed in | `upgrade.html` |
 | `/account/alerts` | Alerts: your own address (add, confirm, disable), what goes in your email per league, and the server's recipients for its owner | anyone signed in | `alerts.html` |
 | `/pages/claim/{league_id}/{season}` | Claim your team (step 2's, now under the shell) | a member of the league | `claim.html` |
 | `/join/{token}` | where an invite link lands (step 2's, under the shell) | anyone signed in | `join.html` |
@@ -53,10 +54,15 @@ something.
 
 The league pages are the free tier and the team pages the paid one
 (docs/product.md, "Free and paid"); `require_entitlement` answers yes for
-everyone until billing, so today every manager opens his own team's pages.
-Signed out, every page but `/` and `/sign-in` sends the browser to
-`/sign-in?next=<the page>` and back. A refusal is one line of HTML: "This
-league's pages are its members'." or "This team's plan is its manager's."
+everyone while `FCP_BILLING_ENABLED` is off, so today every manager opens his
+own team's pages. Signed out, every page but `/` and `/sign-in` sends the
+browser to `/sign-in?next=<the page>` and back. With billing on, a team page
+opened without a live season pass sends the browser to `/upgrade?next=<the
+page>` (303), and back once he has redeemed a code; any 402 a page's fetch
+meets goes there too (`pages.js`, `get`), once for every page. Any other
+refusal is one line of HTML, in the shell's tokens and either theme, without
+the rail: "This league's pages are its members'." or "This team's plan is its
+manager's."
 docs/accounts.md has every route's check in its table.
 
 **The old addresses redirect** (308, the query kept) and keep the check they
@@ -419,7 +425,7 @@ The scenario bar draws over it as over every page; nothing on the Overview
 reads a scenario yet, and the one place it would subscribe is marked in the
 file. The foot is the read-only line. A viewer who is not the team's
 verified manager hears the team pages' one line (403), and with billing on
-the free tier hears the paid plan's (402) and keeps This week.
+a manager without a pass goes to `/upgrade` and back, and keeps This week.
 
 **My team: Week.** The streaming report as **a game sheet**, rewritten
 2026-09-23 (docs/in_season_pages.md has it top to bottom). The page shows
@@ -728,8 +734,20 @@ nobody had a roster for.
 - **The claim and join pages** keep their step 2 addresses and gain the
   shell.
 
+**The upgrade page** (`/upgrade`, since 2026-09-26; docs/accounts.md, "The
+pass"). Inside the shell: the header line "The team layer" and one paragraph
+of what it is; YOUR PASS as a facts line (live with its end date and where
+it came from, ended with the date it ended, or none) and a sentence, with,
+when live, links on to the page he asked for and his Overview; HAVE A CODE?
+(one field, Redeem; the answer is one sentence either way); BUY A SEASON PASS,
+the button drawn disabled with its reason ("Purchase is not open yet; use a
+code.") until `billing.purchase_available()` says otherwise; and THE FREE
+TIER, This week, Standings, Draft, History and the digest, as links into his
+league. No price, no urgency. It reads `/billing/pass`.
+
 ## Not done here
 
-- The upgrade page and a real 402 path (step 7).
+- Purchase: the upgrade page's button and a payment provider writing
+  `purchase` passes (the next job, docs/product.md, "Billing").
 - A season picker for the team pages beyond the switcher.
 - The draft room stays its own dark screen, outside the shell.

@@ -694,6 +694,20 @@ the league or the team exists.
 The SDK prefixes a tool error with "Error executing tool `<name>`:", so the
 sentence arrives inside that. Everything after the colon is ours.
 
+**The season pass (2026-09-26).** `my_leagues` and `league_context` carry a
+`season_pass` block, read from the same entitlement row the site's gate reads
+(`accounts.active_entitlement`; docs/accounts.md, "The pass"): `live`,
+`until` (ISO; null on a live pass means it does not end) and `until_words`,
+`from` ("a code", "your own", later "purchased"), `required` (whether
+`FCP_BILLING_ENABLED` is on), `team_plans_open` (the gate's own answer for
+this account) and `upgrade`, the upgrade page's address. With billing on, a
+team tool asked for by an account with no live pass is refused with the one
+sentence that names that address -- the site's `FCP_PUBLIC_URL` plus
+`/upgrade` -- because a conversation has no browser to redirect: "The team
+layer needs a season pass, and this account has no live one: a code redeemed
+at https://boxoutfantasy.com/upgrade opens it." Nothing here redeems a code or
+buys anything; the manager does that on the page.
+
 ## The live run, 2026-09-23
 
 The three conversations the brief asked for were driven on 2026-09-23 from

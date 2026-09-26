@@ -409,7 +409,7 @@ still holding it.
   once a send succeeded.
 - **Anyone else's** is the league section (this period's matchups as they
   stand, the wire's traffic in the last day) and, for a verified manager
-  who is entitled (everyone while `BILLING_ENABLED` is off), his team's
+  who is entitled (everyone while `FCP_BILLING_ENABLED` is off), his team's
   digest. It reads the events observed since his own last digest went out
   and marks nothing, because `notified_at` is one column and can only mean
   "the owner has been told".

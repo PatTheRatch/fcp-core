@@ -14,7 +14,9 @@ every route declares), `app/api/auth.py` (the sign-in routes and the two
 small pages), migration `0018_accounts`. Step 2: `app/memberships.py` (its
 database half), `app/api/leagues_admin.py` (its routes and three pages),
 `app/secrets_box.py` (sealing), migration `0019_leagues_members_claims`.
-Step 3: `app/api/site.py` (the pages on the map, and `/me/alerts`).
+Step 3: `app/api/site.py` (the pages on the map, and `/me/alerts`). The
+season pass (2026-09-26): `app/billing.py`, `app/api/upgrade.py`,
+`scripts/comp_code.py`, migration `0031_comp_codes`; "The pass", below.
 Tests: `tests/test_access.py`, `tests/test_leagues_admin.py` and
 `tests/test_shell.py`, which run accounts mode; every other API test runs
 single mode.
@@ -58,7 +60,9 @@ request's `Host` header, which the caller writes.
 **The pages.** A page route asked for by someone signed out redirects to
 `/sign-in?next=<the page>`, so the link lands back on it. The pages' script
 (`app/api/static/pages.js`, `get()`) does the same on a 401 from any fetch,
-and on a 403 shows one plain line: "This team's plan is its manager's."
+sends a 402 to `/upgrade?next=<the page>` (a team page opened without a live
+pass is redirected there by the server too), and on a 403 shows one plain
+line: "This team's plan is its manager's."
 The one fetch that is a part of a page rather than the page itself, a free
 league page's look at the reader's own week, asks quietly and words its own
 answer (docs/site.md).
@@ -127,12 +131,13 @@ added without one or with two, or is missing from the table below.
 - **Team manager** (`require_team_manager`): a verified manager of this team
   in this season. 403, "This team's plan is its manager's.", otherwise,
   including for a team that does not exist.
-- **Entitled** (`require_entitlement`): a live `team` entitlement (no
-  `valid_until`, or one in the future). 402 otherwise. **Answers yes for
-  everyone while `BILLING_ENABLED = False`** (a module constant in
-  `app/api/access.py`), which it is until step 7. Turning the paywall on is
-  that constant and a payment provider writing `entitlements`, not a change
-  to any route.
+- **Entitled** (`require_entitlement`): a live season pass, a `team`
+  entitlement with no `valid_until` or one in the future ("The pass",
+  below). 402 otherwise, and a page goes to `/upgrade` instead. **Answers yes
+  for everyone while `FCP_BILLING_ENABLED` is off**, the default (a setting
+  since 2026-09-26, read at call time; it was the constant `BILLING_ENABLED`).
+  Turning the paywall on is that setting and a restart, not a change to any
+  route.
 
 - **Site owner** (`require_site_owner`): the site's owner, `FCP_OWNER_EMAIL`,
   in either mode. The comp codes. 403 otherwise, for a league's owner as for
@@ -272,10 +277,123 @@ team claims (the table step 1 began, grown rather than duplicated).
 FastAPI's own `/docs`, `/redoc` and `/openapi.json` stay open: they
 describe the routes and carry no data.
 
-Two calls worth revisiting when billing is designed: projection uploads are
+Two calls worth revisiting when purchase is designed: projection uploads are
 in the paid team layer in docs/product.md but are "signed in" here, as
 asked for step 1; and the scorecard is league scope here while "the
 scorecard of your own moves" is listed as paid.
+
+## The pass (2026-09-26)
+
+**An entitlement is a season pass.** One `team` row per user, covering every
+team he manages, in every league, until its `valid_until`. It is not per
+team and not per league: a man who manages teams in two leagues needs one
+pass. Nothing is recurring and nothing renews itself. When a pass lapses the
+row stays as the record of what he had, the viewer is on the free tier
+again, and `/upgrade` says so with the date it ended. A live pass is never
+stacked on: redeeming a code (or a hand grant) while one is live is refused
+with its end date.
+
+**Where a pass comes from** (`entitlements.source`):
+
+| Source | Written by | Ends |
+|---|---|---|
+| `owner` | `accounts.ensure_owner`, for `FCP_OWNER_EMAIL` | never |
+| `comp` | redeeming a code, or the owner's `scripts/comp_code.py grant` | the date the code (or the grant) carries |
+| `purchase` | the payment webhook, in the job after this one; the check constraint already allows it (migration 0031), so that job is a webhook and not a migration | the date bought |
+| `subscription`, `trial` | nothing now; kept from the first design so no old row breaks | |
+
+**How long a code's pass runs.** The owner sets the date when he makes the
+code. Left empty, it is the end of the newest stored season's last matchup
+period (its playoffs), dated by that season's NBA schedule, plus thirty
+days; with no season stored, or when that date is already past (a store
+that has not yet seen the new season), a year from the day the code is made
+(`billing.default_valid_until`). A date typed as `2027-06-30` means through
+the end of that day (UTC).
+
+**Who is entitled.** With `FCP_BILLING_ENABLED` off, everyone: the check
+answers yes whatever the table says. With it on: whoever holds a live pass,
+and single mode's owner (`all_access`), who is also the one `owner` row. In
+accounts mode the owner is entitled by that row, which never ends.
+
+**The seams for purchase.** `billing.purchase_available()` is False; the
+upgrade page draws "Buy a season pass" disabled with its reason ("Purchase
+is not open yet; use a code.") until it is True. `billing.grant(user_id,
+source, valid_until, note)` is the one place a pass is written; redeeming
+calls it with `comp`, and the webhook will call it with `purchase`. Whether
+the man who connects a league gets his own team free is the owner's to
+decide; nothing implements it, and `grant` is where it would go.
+
+### Codes
+
+A code is twelve characters from an alphabet with no `0`, `O`, `1` or `I`,
+grouped `XXXX-XXXX-XXXX` (for example `K66Z-QXS9-DS44`, from a test
+database), drawn with `secrets`: 32 letters, 60 bits. It is typed back in any
+case, with or without the dashes. It is **kept in clear** in `comp_codes`,
+because the owner has to read it back to send it and a copy of the table
+grants nothing a revoke does not end.
+
+| Table | Holds |
+|---|---|
+| `comp_codes` | `code` (unique, its index), `created_by`, `created_at`, `note` (who it is for, the owner's words), `uses_total`, `uses_left`, `valid_until` (the pass's end, not the code's), `redeem_by` (null: never; after it the code itself is dead), `revoked_at` |
+| `comp_code_redemptions` | `code_id`, `user_id`, `entitlement_id`, `redeemed_at`; unique on (`code_id`, `user_id`), so one man cannot burn a multi-use code twice |
+
+**Redeeming** (`POST /billing/redeem`, or the form on `/upgrade`): in one
+transaction, the user's own row is locked (so two codes at once for one man
+cannot both write a pass), a live pass refuses it, then the code's row is
+locked (`SELECT … FOR UPDATE`, so two men racing on a one-use code cannot
+both spend it: the test runs eight threads at one code and exactly one
+wins), and the code must exist, not be revoked, have a use left, not be past
+`redeem_by`, not carry a pass that would already be over, and not have been
+redeemed by him before. Then one `Entitlement(tier="team", source="comp",
+valid_until=code.valid_until)`, one redemption row and `uses_left - 1`. Every
+refusal about the code is the same sentence, "That code does not work. Check
+it against the one you were sent.", never which part was wrong. The route is
+rate-limited as sign-in is: per account five, then one a minute; per client
+address twenty, then one every ten seconds (`app/api/upgrade.py`,
+`RedeemLimits`). Every attempt is logged on `fcp.billing` with the account,
+the address and why a refusal was one, never the code typed.
+
+**Making them** is the site owner's alone (`require_site_owner`, above): the
+Codes section on `/account/connections` (drawn only for him; the routes
+refuse anyone else) or the command line on the server, which calls the same
+functions in `app/billing.py`:
+
+```
+./.venv/bin/python scripts/comp_code.py make --note "for Dennis" [--uses 1] [--valid-until 2027-06-30] [--redeem-by 2027-01-31]
+./.venv/bin/python scripts/comp_code.py list
+./.venv/bin/python scripts/comp_code.py revoke K66Z-QXS9-DS44
+./.venv/bin/python scripts/comp_code.py grant --email dennis@example.com --until 2027-06-30 [--note "treasurer"]
+```
+
+`make` prints the code once, with the pass's end. `revoke` stops it; the
+passes it already wrote stand. `grant` comps someone by hand with no code
+(source `comp`), making the account if the address has never signed in.
+
+### Launching the pass
+
+Flip day, in order, on the VPS (after the cutover, docs/cutover.md):
+
+1. Deploy and migrate: `./.venv/bin/alembic upgrade head` (0031).
+2. Make the codes, one per person with a note, or one multi-use code for the
+   league: `scripts/comp_code.py make --note "for Dennis"` N times, or
+   `--uses 12 --note "the league"`. `scripts/comp_code.py list` shows them.
+3. Send them (the owner's own channel; nothing here mails a code). They can
+   be redeemed on `/upgrade` before the switch: a pass redeemed early is
+   simply there on the day.
+4. In `/opt/fcp-core/.env`, set `FCP_BILLING_ENABLED=true`.
+5. Restart the API (and the worker, which reads it for the digest's team
+   section): `sudo systemctl restart fcp-core-api.service fcp-core-worker.service`.
+6. `./.venv/bin/python scripts/preflight_public.py`: the `paywall` line says
+   `FCP_BILLING_ENABLED is on`, how many live passes besides the owner's and
+   how many open codes.
+
+**What flipping it does on day one.** The owner is entitled (his `owner`
+row). Everyone else in the league is on the free tier until he redeems a
+code: This week, Standings, Draft, History and the league digest as before;
+a team page sends him to `/upgrade` and back; the team routes answer 402; the
+digest leaves out his team section; the co-manager's team tools refuse with
+the upgrade page's address. To undo it, set it back to `false` and restart:
+nothing is lost, and the passes stay for the next time.
 
 ## Leagues, members and claims (step 2)
 
@@ -474,6 +592,8 @@ The API stays tailnet-only until this is done. In order:
      print(secrets.token_urlsafe(32))"`. It is read by the API and by
      `scripts/warm_pages.py` from the same `.env`.
    - `ESPN_LEAGUE_ID` and `FCP_TRACKED_TEAM_ID` are already there.
+   - `FCP_BILLING_ENABLED` stays unset (off) through the cutover; turning
+     it on is its own step ("Launching the pass").
    - Last, `FCP_AUTH_MODE=accounts`, and restart the API.
 3. Run `scripts/warm_pages.py` once and check it prints HTTP 200 (not 401).
 4. Sign in at `/sign-in`, open the week page, check `/auth/me`.

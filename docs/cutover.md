@@ -37,8 +37,10 @@ cd /opt/fcp-core
 ```
 
 It reads settings and the app's own shape. It opens no socket, sends no mail,
-touches no database, changes nothing, and prints no secret: a token is
-reported by its length. Every line must be `PASS` or `NOTE` before anything
+changes nothing and prints no secret: a token is reported by its length. Its
+one read of the database is two counts for the paywall's line (live season
+passes and open codes); if the database cannot be reached, or migration 0031
+has not run, that line says so and is still a `NOTE`. Every line must be `PASS` or `NOTE` before anything
 below is run. At this point `FCP_AUTH_MODE` is still `single`, so that line
 will say `FAIL` — it is the next step's. Everything else must be green now.
 
@@ -84,6 +86,12 @@ systemctl is-active fcp-core-api fcp-core-worker
 curl -sS http://100.105.64.94:8001/health          # {"status":"ok"}
 curl -sS -o /dev/null -w '%{http_code}\n' http://100.105.64.94:8001/leagues   # 401
 ```
+
+**The paywall stays off.** `FCP_BILLING_ENABLED` is unset (false) through
+the cutover: every verified manager opens his own team's pages, exactly as on
+the tailnet. Turning it on is its own step, after the league has its codes,
+and docs/accounts.md, "Launching the pass", is that runbook. The preflight's
+`paywall` line says which it is either way.
 
 That 401 is the point of the whole exercise: over the tailnet, with no
 cookie, the API now refuses. `/health` still answers, because it says nothing.
@@ -324,8 +332,10 @@ the one public form.
 - **The old site is not retired here.** `fcp.patrickmcdowell.dev` keeps
   serving whatever it serves. Deciding what happens to it is a separate day's
   work.
-- **Billing** (`BILLING_ENABLED`, docs/product.md step 7). The team pages are
-  open to whoever manages the team until then.
+- **Switching the paywall on** (`FCP_BILLING_ENABLED`, docs/accounts.md,
+  "Launching the pass"). The team pages are open to whoever manages the team
+  until then; codes can be made and redeemed before it, and a pass redeemed
+  early is simply there on the day. Purchase is the next job.
 - **A bare-SWID claim** is still not proof (docs/accounts.md, "A known
   weakness"). `TRUST_BARE_SWID` is `False`, so every member's claim waits for
   a league owner to approve it, which is the right setting for a league of

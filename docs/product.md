@@ -25,7 +25,8 @@ one manager, so a second user is a row in a table and not a rewrite.
 | What members see of each other | League pages shared; each manager's plans private. |
 | Who connects ESPN | One connection per league, by whoever adds it. Members only claim a team. |
 | When the domain moves | When sign-in works. Nothing is public before auth. |
-| What is paid | The league pages are free; the team layer (planning, pickups, bids, alerts, projections, the draft room) is paid. Decided 2026-09-19; price and billing not yet. |
+| What is paid | The league pages are free; the team layer (planning, pickups, bids, alerts, projections, the draft room) is paid. Decided 2026-09-19; price not yet. |
+| How it is paid (2026-09-26) | A **season pass**, once, not recurring, per user: every team he manages in every league, until a date. The owner hands out **codes** for free passes; purchase comes next. "Billing", below. |
 
 ## Two scopes
 
@@ -65,7 +66,8 @@ this team **and** entitled to the paid tier. It is written from the start as
 one dependency (`require_entitlement`) that answers yes for everyone until
 billing exists, the same way `viewer_owns_source` answers yes for one user
 today. Turning the paywall on is then a table and a payment provider, not a
-change to every route.
+change to every route. (Since 2026-09-26 it is the setting `FCP_BILLING_ENABLED`, off
+by default, and the table is filled by codes: "Billing", below.)
 
 A free member of a league still gets a taste of the paid layer on the free
 pages, without the plan itself: his own team's expected categories this
@@ -73,12 +75,35 @@ week and his projected record, with "see the moves worth a look" linking to
 the upgrade. The league digest (standings, the week's matchups, league news)
 can be free by email; the team plan in it is paid.
 
-**Not decided yet, and not needed until the cutover:** the price; per user
-or per team (per user is simpler, since a user may manage teams in several
-leagues); a free trial or a free first week; whether the person who connects
-a league gets his own team free; and the provider (Stripe is the default:
-hosted checkout and a customer portal mean no card data ever touches this
-server). Patrick's own teams are entitled, always.
+**Not decided yet:** the price; a free trial or a free first week; and
+whether the person who connects a league gets his own team free (the seam is
+`app.billing.grant`, and nothing uses it for that yet). **Decided since
+(2026-09-26):** per user, not per team, as a season pass; once, not a
+subscription; free passes by the owner's codes; the provider is Stripe
+Checkout in one-time mode, next. Patrick's own teams are entitled, always.
+
+## Billing
+
+**The pass (built 2026-09-26).** What an entitlement means now: one `team`
+row per user, a **season pass**, covering every team he manages in every
+league until its `valid_until`. It is paid for once, or given as a code, and
+nothing renews itself; when it lapses he is on the free tier again and the
+upgrade page says so, with the date. docs/accounts.md, "The pass", has the
+rule and the tables.
+
+**Codes now.** The owner makes codes (on Connections, or
+`scripts/comp_code.py`), each carrying how many people may redeem it and the
+date the pass it writes ends (by default the end of the newest season's
+playoffs plus a month). A member redeems one on `/upgrade`. That is enough to
+open the site with the paywall on and nobody paying anybody: the owner
+invites his league with codes, flips `FCP_BILLING_ENABLED` and restarts
+(docs/accounts.md, "Launching the pass").
+
+**Purchase next.** Stripe Checkout in one-time mode: its webhook calls
+`billing.grant(user, "purchase", valid_until, note)` (the source is already
+allowed), and `billing.purchase_available()` turns the upgrade page's
+disabled "Buy a season pass" on. No card data ever touches this server. No
+price is on the page until then, and none is decided.
 
 **One risk to settle before charging anyone.** Every league's data comes
 from ESPN's unofficial, undocumented API, read with the member's own login.
@@ -170,7 +195,8 @@ ESPN allows co-owners and `team_owners` already models it.
 | `invites` | per league, a revocable token |
 | `notification_channels` | per user: email address or Telegram chat, verified flag |
 | `user_secrets` | per user, encrypted: a BBM login, anything else that is only his |
-| `entitlements` | per user: tier, source (`owner`, `subscription`, `trial`, `comp`), valid until; written by the payment provider's webhook |
+| `entitlements` | per user: tier, source (`owner`, `comp`, `purchase`; `subscription` and `trial` kept from the first design), valid until: the season pass. Written by a redeemed code or the owner's hand now, by the payment webhook next |
+| `comp_codes`, `comp_code_redemptions` | the owner's codes, and who spent one use of each (built 2026-09-26) |
 
 `projection_sets.owner` becomes a user id, and `viewer_owns_source` stops
 being a constant: it is "this viewer is the user whose secrets fetched it".
@@ -249,9 +275,10 @@ project of its own; nothing above closes that door.
    are invited. docs/cutover.md.
 6. **Platform columns:** `platform` on leagues and players, before any
    second platform is written.
-7. **Billing:** the entitlements table filled by a payment provider's
-   webhook, the upgrade page, and `require_entitlement` switched on. After
-   the price is decided and the ESPN and BBM terms are read.
+7. **Billing:** the season pass, codes, the upgrade page and the switch
+   (`FCP_BILLING_ENABLED`) are built (2026-09-26); the entitlements table
+   filled by a payment provider's webhook is next. Charging comes after the
+   price is decided and the ESPN and BBM terms are read.
 
 ## Trades between managers (decided in outline, 2026-09-22; not built)
 
