@@ -8,6 +8,7 @@ from app.api.auth import router as auth_router
 from app.api.changes import router as changes_router
 from app.api.channels import router as channels_router
 from app.api.draft import router as draft_router
+from app.api.draft_plan import router as draft_plan_router
 from app.api.health import router as health_router
 from app.api.ingest_runs import router as ingest_runs_router
 from app.api.leagues import router as leagues_router
@@ -119,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(leagues_admin_router)
     app.include_router(upgrade_router)
     app.include_router(draft_router)
+    app.include_router(draft_plan_router)
     app.include_router(teams_router)
     app.include_router(narratives_router)
     app.include_router(transactions_router)

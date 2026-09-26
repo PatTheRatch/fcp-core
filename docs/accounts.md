@@ -245,6 +245,11 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/pool` | team manager + entitled | the wire on the day, ranked by what each man would be worth in the place this deal opens |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/trades/report` | team manager + entitled | a proposed trade judged from both sides (docs/trades.md) |
 | `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/what-if` | team manager + entitled | one named pickup judged: this week, the rest of the season and the projected finish before and after (docs/what_if.md) |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/draft/plan` | team manager + entitled | the pre-auction plan with the manager's marks beside the model's figures; a plan on Basketball Monster only for the owner of that source (`state: "withheld"` otherwise), and `state: "drafted"` once the auction is held (docs/draft_plan.md) |
+| `PUT /leagues/{league_id}/seasons/{season}/teams/{team_id}/draft/plan/marks` | team manager + entitled | keep his going prices, ceilings, tags, notes and ladder, each checked first |
+| `POST /leagues/{league_id}/seasons/{season}/teams/{team_id}/draft/plan/rebuild` | team manager + entitled | build the model's plan again on the same pool |
+| `GET /leagues/{league_id}/seasons/{season}/teams/{team_id}/draft/plan/settings` | team manager + entitled | his fan team |
+| `PUT /leagues/{league_id}/seasons/{season}/teams/{team_id}/draft/plan/settings` | team manager + entitled | set his fan team (an NBA abbreviation, or none) |
 | `GET /l/{league_id}/{season}/team/{team_id}` | team manager + entitled (page) | the Overview: the team's morning briefing, from routes each behind its own check |
 | `GET /l/{league_id}/{season}/team/{team_id}/week` | team manager + entitled (page) | the week page |
 | `GET /l/{league_id}/{season}/team/{team_id}/season` | team manager + entitled (page) | the season page |
