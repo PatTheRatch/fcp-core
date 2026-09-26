@@ -292,7 +292,7 @@ class EntitlementOut(BaseModel):
     tier: str
     source: str
     valid_until: str | None
-    #: Whether the paywall is on at all (`app.api.access.BILLING_ENABLED`).
+    #: Whether the paywall is on at all (`FCP_BILLING_ENABLED`).
     billing_enabled: bool
 
 
@@ -342,7 +342,7 @@ def me(viewer: CurrentUser, session: SessionDep, settings: SettingsDep) -> MeOut
             tier=held.tier,
             source=held.source,
             valid_until=held.valid_until.isoformat() if held.valid_until else None,
-            billing_enabled=access.BILLING_ENABLED,
+            billing_enabled=access.billing_enabled(settings),
         )
         if held is not None
         else None,

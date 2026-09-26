@@ -6,7 +6,7 @@ These switch one app to `FCP_AUTH_MODE=accounts` by overriding the settings
 dependency, and pin what docs/accounts.md promises: a signed-out caller is
 refused (401 from a route, a redirect from a page), a member of one league
 cannot read another, a manager of one team cannot read another team's plan,
-the entitlement check waits on `BILLING_ENABLED`, a link works once and only
+the entitlement check waits on `FCP_BILLING_ENABLED`, a link works once and only
 for fifteen minutes, and signing out ends the session.
 
 The leagues are built as rows rather than ingested, because only their
@@ -364,9 +364,7 @@ def test_an_unknown_team_is_refused_not_revealed(sign_in: SignIn) -> None:
     assert bob.get(f"/leagues/{LEAGUE_B + 1}/seasons/{SEASON}/standings").status_code == 403
 
 
-def test_the_entitlement_waits_on_billing(
-    sign_in: SignIn, session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_entitlement_waits_on_billing(app: FastAPI, sign_in: SignIn, session: Session) -> None:
     alice = sign_in("alice@example.com")
     user = accounts.user_by_email(session, "alice@example.com")
     assert user is not None
@@ -374,7 +372,7 @@ def test_the_entitlement_waits_on_billing(
 
     assert alice.get(pickups(3)).status_code == THROUGH, "no plan, but billing is off"
 
-    monkeypatch.setattr(access, "BILLING_ENABLED", True)
+    app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
     refused = alice.get(pickups(3))
     assert refused.status_code == 402
     assert alice.get(trades(3)).status_code == 402
@@ -401,10 +399,8 @@ def test_the_entitlement_waits_on_billing(
     session.commit()
 
 
-def test_a_stranger_hears_about_the_team_before_the_plan(
-    sign_in: SignIn, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(access, "BILLING_ENABLED", True)
+def test_a_stranger_hears_about_the_team_before_the_plan(app: FastAPI, sign_in: SignIn) -> None:
+    app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
     bob = sign_in("bob@example.com")
     assert bob.get(pickups(3)).status_code == 403
 

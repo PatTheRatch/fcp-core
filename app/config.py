@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     #: and no link is ever emailed.
     fcp_public_url: str | None = None
 
+    #: The paywall (docs/accounts.md, "The pass"). Off, the entitlement check
+    #: answers yes for everyone and the team layer opens to every verified
+    #: manager; on, a manager needs a live season pass (a code redeemed, or
+    #: the owner's own). Codes, /upgrade and redeeming work the same either
+    #: way: only the gate's answer changes. A setting rather than a constant
+    #: so the owner flips it on the VPS with a restart, not a deploy.
+    fcp_billing_enabled: bool = False
+
     #: Where the co-manager's remote form answers, e.g.
     #: https://mcp.boxoutfantasy.com (docs/mcp.md). The MCP server is a
     #: resource server: it names itself and its authorization server
@@ -152,6 +160,12 @@ class Settings(BaseSettings):
     def _blank_id_is_unset(cls, value: object) -> object:
         """`FCP_TRACKED_TEAM_ID=` with nothing after it is unset, not a crash."""
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("fcp_billing_enabled", mode="before")
+    @classmethod
+    def _blank_billing_is_off(cls, value: object) -> object:
+        """`FCP_BILLING_ENABLED=` with nothing after it is off, the default."""
+        return False if isinstance(value, str) and not value.strip() else value
 
     @field_validator("fcp_auth_mode", mode="before")
     @classmethod

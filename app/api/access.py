@@ -38,11 +38,14 @@ with the owner's claims: his own team's plan, not everyone's.
 
 THE ENTITLEMENT
 
-`BILLING_ENABLED` is False until step 7, and while it is,
-`require_entitlement` answers yes for everyone: the same seam
-`viewer_owns_source` is for the projection gate. Turning the paywall on is
-this constant and a payment provider writing `entitlements`, not a change
-to any route.
+An entitlement is a season pass (docs/accounts.md, "The pass"): one `team`
+row per user, covering every team he manages in every league, until its
+`valid_until`. `FCP_BILLING_ENABLED` (a setting, `billing_enabled`) is off
+by default, and while it is, `require_entitlement` answers yes for
+everyone: the same seam `viewer_owns_source` is for the projection gate.
+Turning the paywall on is that setting and a restart; a pass is written by
+redeeming a code (`app/billing.py`), and later by a payment provider, never
+by a change to any route.
 """
 
 import logging
@@ -62,11 +65,6 @@ from app.config import Settings, get_settings
 from app.db.models import User
 
 log = logging.getLogger("fcp.access")
-
-#: The paywall. False until billing exists (docs/product.md step 7): while it
-#: is, `require_entitlement` lets everyone through. Read at call time, so a
-#: test can flip it.
-BILLING_ENABLED = False
 
 #: The session cookie's name.
 COOKIE = "fcp_session"
@@ -252,8 +250,19 @@ def is_team_manager(
     return accounts.manages_team(session, viewer.user_id, league_id, season, team_id)
 
 
-def is_entitled(session: Session, viewer: Viewer) -> bool:
-    if not BILLING_ENABLED or viewer.all_access:
+def billing_enabled(settings: Settings | None = None) -> bool:
+    """Whether the paywall is on: `FCP_BILLING_ENABLED`, read at call time.
+
+    A route passes the settings its dependency resolved, so a test that
+    overrides them flips it; a caller that is not a request (the digest, the
+    co-manager's tools) reads the process's own.
+    """
+    return bool((settings if settings is not None else get_settings()).fcp_billing_enabled)
+
+
+def is_entitled(session: Session, viewer: Viewer, settings: Settings | None = None) -> bool:
+    """A live season pass, or the paywall off, or single mode's owner."""
+    if not billing_enabled(settings) or viewer.all_access:
         return True
     if viewer.user_id is None:
         return False
@@ -292,10 +301,10 @@ def require_team_manager(
     return viewer
 
 
-def require_entitlement(viewer: CurrentUser, session: SessionDep) -> Viewer:
+def require_entitlement(viewer: CurrentUser, session: SessionDep, settings: SettingsDep) -> Viewer:
     """Entitled to the paid tier; else 402. Yes for everyone while
-    `BILLING_ENABLED` is False."""
-    if not is_entitled(session, viewer):
+    `FCP_BILLING_ENABLED` is off."""
+    if not is_entitled(session, viewer, settings):
         raise HTTPException(status_code=402, detail=NOT_ENTITLED)
     return viewer
 
@@ -340,10 +349,11 @@ def require_team_plan_page(
     team_id: TeamIdPath,
     viewer: PageViewer,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> Viewer:
     if not is_team_manager(session, viewer, league_id, season, team_id):
         raise PageRefusedError(403, TEAM_REFUSED)
-    if not is_entitled(session, viewer):
+    if not is_entitled(session, viewer, settings):
         raise PageRefusedError(402, NOT_ENTITLED)
     return viewer
 

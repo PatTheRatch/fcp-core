@@ -34,7 +34,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api import access
 from app.api.deps import get_session
 from app.config import get_settings
 from app.db.models import League
@@ -233,10 +232,10 @@ def test_a_stranger_hears_the_refusal_line_and_nothing_else(sign_in: SignIn) -> 
 
 
 def test_the_team_pages_close_with_billing_and_the_league_pages_do_not(
-    sign_in: SignIn, monkeypatch: pytest.MonkeyPatch
+    app: FastAPI, sign_in: SignIn
 ) -> None:
     alice = sign_in("alice@example.com")
-    monkeypatch.setattr(access, "BILLING_ENABLED", True)
+    app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
     for path in TEAM_PAGES:
         assert alice.get(path).status_code == 402, path
     for path in LEAGUE_PAGES:
@@ -573,9 +572,9 @@ def test_the_overview_opens_to_its_manager_alone(sign_in: SignIn) -> None:
     assert carol.get(team_page(3, "")).status_code == 403
 
 
-def test_the_overview_closes_with_billing(sign_in: SignIn, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_overview_closes_with_billing(app: FastAPI, sign_in: SignIn) -> None:
     alice = sign_in("alice@example.com")
-    monkeypatch.setattr(access, "BILLING_ENABLED", True)
+    app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
     refused = alice.get(team_page(3, ""))
     assert refused.status_code == 402
     assert "The team layer is part of the paid plan." in refused.text

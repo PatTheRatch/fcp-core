@@ -334,9 +334,11 @@ def check_the_service_token_path(settings: Settings) -> Check:
     return Check("service token path", PASS, "warm_pages.py and the watchdog act as the owner")
 
 
-def check_billing_is_off(_: Settings) -> Check:
-    state = "off" if not access.BILLING_ENABLED else "on"
-    return Check("paywall", NOTE, f"BILLING_ENABLED is {state}; team pages open to their managers")
+def check_billing_is_off(settings: Settings) -> Check:
+    state = "on" if access.billing_enabled(settings) else "off"
+    return Check(
+        "paywall", NOTE, f"FCP_BILLING_ENABLED is {state}; team pages open to their managers"
+    )
 
 
 CHECKS: tuple[Callable[[Settings], Check], ...] = (

@@ -387,10 +387,10 @@ def run_project_standings(
 # ---------------------------------------------------------------------------
 
 
-def _entitled(session: Session, user: User, is_owner: bool) -> bool:
+def _entitled(session: Session, user: User, is_owner: bool, settings: Settings) -> bool:
     from app.api import access
 
-    if not access.BILLING_ENABLED or is_owner:
+    if not access.billing_enabled(settings) or is_owner:
         return True
     return accounts.active_entitlement(session, user.id) is not None
 
@@ -582,7 +582,7 @@ def _member_digest(
     since = jobs.last_done(
         session, jobs.DIGEST, user_id=user.id, team_id=job.team_id, mode=mode
     ) or (at - FIRST_WINDOW[mode])
-    entitled = _entitled(session, user, is_owner)
+    entitled = _entitled(session, user, is_owner, settings)
     parts: list[str] = []
     # The `Digest` when there is one, so the HTML part can draw the lineup as
     # a grid rather than re-reading a sentence. A league the listener does not
