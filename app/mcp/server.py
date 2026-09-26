@@ -652,6 +652,31 @@ def build_server(
             ),
         )
 
+    # -- the auction -------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "The draft plan for this team's auction, as the plan page reads it: the "
+            "spending ladder (the model's and the manager's), the cap, the board's "
+            "dearest men with the model's going price and ceiling, what the build read "
+            "once the manager's own going price and ceiling were applied, and his marks, "
+            "side by side; the model's lists with their rules; his must-have men and "
+            "what fixing them in costs; the best roster at his prices. `source` is "
+            "bbm, espn or upload:<set id> (default: the newest stored BBM capture). A "
+            "plan on Basketball Monster is paid and is only for the owner of that "
+            "source: anyone else hears `withheld` and the pools he may plan on. After "
+            "the auction it says when it was held. It never bids or nominates."
+        )
+    )
+    def draft_board(
+        league_id: int,
+        season: int,
+        team_id: int,
+        ctx: Context,
+        source: str | None = None,
+    ) -> dict[str, Any]:
+        return run(ctx, lambda s, v: tools.draft_board(s, v, league_id, season, team_id, source))
+
     _install_notes(mcp)
 
     @mcp.prompt(

@@ -1394,3 +1394,178 @@ def _side(side: dict[str, Any]) -> dict[str, Any]:
         "men_arriving_who_are_out": [trim.stash(one) for one in side.get("stashed") or []],
         "notes": side["notes"],
     }
+
+
+# ---------------------------------------------------------------------------
+# the draft board: the pre-auction plan, as the plan page reads it
+# ---------------------------------------------------------------------------
+
+#: How many men of the board survive the trim, dearest first.
+BOARD = 40
+#: And of each of the model's lists.
+LIST = 12
+
+NO_BIDS = (
+    "the plan proposes and the manager decides: nothing here bids, nominates or "
+    "touches ESPN. `model` is the model's figure; `effective` is what the build read "
+    "once his own going price and ceiling were applied; `yours` is his. Quote them "
+    "side by side, never one for the other"
+)
+
+
+def draft_board(
+    session: Session,
+    viewer: Viewer,
+    league_id: int,
+    season: int,
+    team_id: int,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """The draft plan for this team's auction: the plan route's own answer
+    (`app.api.draft_plan.get_plan`), gated the same way and trimmed."""
+    from app.api import draft_plan as plan_api
+
+    found = league_member(session, viewer, league_id, season)
+    team = team_plan(session, viewer, found, league_id, team_id)
+    try:
+        body = plan_api.get_plan(
+            league_id=league_id,
+            league_season=found,
+            team=team,
+            session=session,
+            viewer=viewer,
+            source=source,
+        )
+    except HTTPException as error:
+        raise _passed_through(error) from None
+    state = body["state"]
+    provenance = block(
+        session,
+        found,
+        extra={
+            "plan_source": {
+                "pool": body.get("source"),
+                "note": (
+                    "every figure is from this one pool; a Basketball Monster capture is "
+                    "paid and private to the owner of that source"
+                ),
+            }
+        },
+    )
+    if state == "drafted":
+        return {
+            "ready": False,
+            "why_not": body["note"],
+            "draft_page": body["draft_page"],
+            "provenance": provenance,
+        }
+    if state == "withheld":
+        return {
+            "ready": False,
+            "why_not": body["note"],
+            "withheld": True,
+            "may_plan_on": [choice["source"] for choice in body.get("choices") or []],
+            "language": (
+                "the plan on this pool is not this reader's to see; say so, and offer the "
+                "pools in `may_plan_on`. No figure from it is here"
+            ),
+            "provenance": provenance,
+        }
+    if state in ("building", "failed"):
+        return {
+            "ready": False,
+            "why_not": (
+                f"the plan is being worked out (about {body.get('expected_seconds')} seconds "
+                "for a cold build); ask again shortly"
+                if state == "building"
+                else body.get("detail")
+            ),
+            "provenance": provenance,
+        }
+    plan = body["plan"]
+    effective = body["effective"]
+    marks = body.get("marks") or {}
+    men = {m["id"]: m for m in [*plan["players"], *(plan.get("rest") or [])]}
+
+    def man(m: dict[str, Any]) -> dict[str, Any]:
+        e = effective["players"].get(str(m["id"])) or {}
+        return {
+            "id": m["id"],
+            "name": m["name"],
+            "nba_team": m.get("nba_team"),
+            "position": m.get("position"),
+            "model": {
+                "going": m.get("going"),
+                "ceiling": m.get("ceiling"),
+                "capped": m.get("capped"),
+                "bid_to": m.get("bid_to"),
+                "bbm_total": m.get("bbm_total"),
+                "must_price": m.get("must_price"),
+            },
+            "effective": {
+                "going": e.get("going"),
+                "ceiling": e.get("ceiling"),
+                "going_from": e.get("going_from"),
+                "ceiling_from": e.get("ceiling_from"),
+                "in_best_roster": e.get("in_best"),
+                "lists": e.get("sections"),
+            },
+            "yours": marks.get(str(m["id"])),
+            "check_news": m.get("check_news"),
+        }
+
+    board, of_board = trim.cut(sorted(plan["players"], key=lambda m: -(m.get("going") or 0)), BOARD)
+    marked = [men[int(pid)] for pid in marks if int(pid) in men]
+    lists = []
+    for section in effective["sections"]:
+        ids, of_ids = trim.cut(section["ids"], LIST)
+        lists.append(
+            {
+                "key": section["key"],
+                "label": section["label"],
+                "rule": section["rule"],
+                "of": of_ids,
+                "men": [
+                    {"id": pid, "name": men[pid]["name"], "why": section["reasons"].get(str(pid))}
+                    for pid in ids
+                    if pid in men
+                ],
+            }
+        )
+    must = plan.get("must")
+    return {
+        "ready": True,
+        "team": {"espn_team_id": body["espn_team_id"], "name": body["team"]},
+        "auction": body.get("auction_when"),
+        "rebuilding": body.get("rebuilding"),
+        "facts": plan["facts"],
+        "cap": body.get("cap"),
+        "ladder": {"model": plan["ladder"], "yours": body.get("ladder")},
+        "must": (
+            {
+                "applied": must["applied"],
+                "error": must["error"],
+                "prices": must["prices"],
+                "lock_cost_per_week": trim.n(must["cost"]),
+                "lock_cost_each": {k: trim.n(v) for k, v in (must.get("each") or {}).items()},
+                "money_left": must["money_left"],
+                "places_left": must["places_left"],
+                "note": (
+                    "`lock_cost_per_week` is what the best roster with every must man fixed "
+                    "in gives up against the free best roster, in categories a week: a "
+                    "figure, not advice"
+                ),
+            }
+            if must
+            else None
+        ),
+        "board": {"of": of_board, "men": [man(m) for m in board]},
+        "your_marks": [man(m) for m in marked],
+        "yours_count": body.get("yours"),
+        "notes": body.get("notes"),
+        "lists": lists,
+        "best_roster": effective.get("best"),
+        "built": plan.get("generated"),
+        "language": NO_BIDS,
+        "provenance": provenance,
+    }

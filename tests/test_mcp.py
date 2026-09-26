@@ -286,6 +286,7 @@ EXPECTED = {
     "free_agents",
     "judge_trade",
     "what_if",
+    "draft_board",
 }
 
 

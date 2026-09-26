@@ -30,7 +30,7 @@ from app.db.models import BBMCapture, League, LeagueSeason, Team, TeamManager
 from app.draft import plan as engine
 from app.draft import plan_store
 from app.main import create_app
-from tests.test_draft_plan import build, small_room
+from tests.test_draft_plan import small_room
 
 LEAGUE = 111
 SEASON = 2027
@@ -375,3 +375,47 @@ def test_a_bbm_plan_is_only_for_the_owner_of_the_source(seeded: sessionmaker[Ses
         assert alice.post(url(tail="/rebuild")).status_code == 403
     with as_user(seeded, OWNER) as owner:
         assert owner.get(url()).json()["state"] == "ready"
+
+
+# -- the co-manager's draft_board --------------------------------------------------
+
+
+def _viewer(session: Session, email: str) -> Any:
+    from app.api.access import Viewer
+
+    user = accounts.get_or_create_user(session, email)
+    return Viewer(user.id, email, is_owner=email == OWNER, all_access=False, via="token")
+
+
+def test_draft_board_is_the_routes_answer_and_gated_the_same_way(
+    seeded: sessionmaker[Session],
+) -> None:
+    from app.api.access import Viewer
+    from app.mcp import tools
+    from app.mcp.scope import RefusedError
+
+    with seeded() as session:
+        owner = tools.draft_board(session, _viewer(session, OWNER), LEAGUE, SEASON, 3)
+        assert owner["ready"] is True and owner["facts"]["cap"] == 6
+        first = owner["board"]["men"][0]
+        assert {"model", "effective", "yours"} <= set(first)
+        assert "never bids" in owner["language"] or "nothing here bids" in owner["language"]
+        assert owner["provenance"]["plan_source"]["pool"]["kind"] == "bbm"
+        assert owner["provenance"]["plan_source"]["pool"]["captured_on"]
+
+        alice = tools.draft_board(session, _viewer(session, "alice@example.com"), LEAGUE, SEASON, 3)
+        assert alice["ready"] is False and alice["withheld"] is True
+        assert alice["may_plan_on"] == ["espn"]
+        assert "board" not in alice and "lists" not in alice
+        espn = tools.draft_board(
+            session, _viewer(session, "alice@example.com"), LEAGUE, SEASON, 3, "espn"
+        )
+        assert espn["ready"] is True
+
+        with pytest.raises(RefusedError):
+            tools.draft_board(session, _viewer(session, "bob@example.com"), LEAGUE, SEASON, 3)
+
+        # His claim is on 2027; single mode's owner reads every season.
+        single = Viewer(None, OWNER, is_owner=True, all_access=True, via="single")
+        held = tools.draft_board(session, single, LEAGUE, SEASON - 1, 3)
+        assert held["ready"] is False and held["why_not"].startswith("The auction was held")

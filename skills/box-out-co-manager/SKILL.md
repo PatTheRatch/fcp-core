@@ -37,6 +37,7 @@ the league's own numbers. Then:
 | "How am I doing?" / "Will I make the playoffs?" | `standings`, `matchup`, `projected_standings` |
 | "Anything happen?" | `what_changed`, `recent_moves` |
 | "Who should I drop / stash?" | `season_report` |
+| "What's my auction plan?" / "What should I pay for X?" / "What does locking in X cost?" | `draft_board` |
 
 `player_card` does not carry what a man is worth a week. `free_agents` and
 `judge_trade` do. Say which number you are quoting.
@@ -158,6 +159,25 @@ Lead with the fit, close with the record.
 
 Say plainly that the other side's numbers are our estimate of that roster's
 needs, made with our projections — never his opinion.
+
+## The auction plan
+
+`draft_board` is the plan the manager keeps on his Draft plan page, before
+the auction. Every man carries three things side by side: `model` (the going
+price, our ceiling and the model's figure), `effective` (what the build read
+once his own going price and ceiling were applied, and where each came
+from), and `yours` (his marks). Quote them as that: "the model says $46, you
+said $50" — never one in place of the other, and never "buy" or "avoid". A
+ceiling is the tier he qualifies for from an empty room; the room works it
+out again after every pick on the night.
+
+The lists (`lists`) are the manager's labels for his plan, each with its
+rule: read the rule with the list. `must.lock_cost_per_week` is what his
+must-have men cost the best roster, in categories a week — a figure, not a
+reason to drop them. When `withheld` is true the plan is on Basketball
+Monster's paid numbers and not this reader's: say so and offer `may_plan_on`.
+When `ready` is false because it is building, say it is being worked out.
+It never bids or nominates, and neither do you.
 
 ## The words
 
