@@ -40,6 +40,7 @@ moves need no roster, and carry the `draft` line in their provenance.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
@@ -1424,9 +1425,37 @@ def draft_board(
     """The draft plan for this team's auction: the plan route's own answer
     (`app.api.draft_plan.get_plan`), gated the same way and trimmed."""
     from app.api import draft_plan as plan_api
+    from app.api.projections import upload_owners, viewer_owns_bbm
+    from app.projections.catalog import catalog
 
     found = league_member(session, viewer, league_id, season)
     team = team_plan(session, viewer, found, league_id, team_id)
+    # Every pool this reader may plan on, as SOURCES and the chooser list
+    # them; `source` may name one by its token or by its own name.
+    listed = catalog(
+        session, int(found.season), owners=upload_owners(viewer), owns_bbm=viewer_owns_bbm(viewer)
+    )
+    pools = [
+        {
+            "source": one.choice,
+            "name": one.name,
+            "kind": one.kind,
+            "paid": one.gated,
+            **({"recipe": one.note} if one.kind == "composite" else {}),
+        }
+        for one in listed
+    ]
+    if source is not None and not SOURCE_TOKEN.match(source):
+        named = [one.choice for one in listed if one.name.casefold() == source.strip().casefold()]
+        if not named:
+            choices = ", ".join(f"{p['source']} ({p['name']})" for p in pools)
+            raise _passed_through(
+                HTTPException(
+                    status_code=422,
+                    detail=f"no source called {source!r} for this reader; one of {choices}",
+                )
+            )
+        source = named[0]
     try:
         body = plan_api.get_plan(
             league_id=league_id,
@@ -1459,6 +1488,27 @@ def draft_board(
             "draft_page": body["draft_page"],
             "provenance": provenance,
         }
+    answer = _draft_board_answer(body, state, provenance)
+    answer["sources"] = pools
+    answer["sources_note"] = SOURCES_NOTE
+    return answer
+
+
+#: What `draft_board`'s `source` takes as a token rather than as a source's name.
+SOURCE_TOKEN = re.compile(r"^(bbm|espn|upload:\d+|composite:\d+)$")
+
+SOURCES_NOTE = (
+    "`sources` is every pool this reader may plan on: pass one's `source` (or its name) as "
+    "`source` to read the plan on it. A composite is the manager's own blend of other sources "
+    "with his weights (`recipe`); one with Basketball Monster in it is paid like BBM. The "
+    "weights are his; no source is called better"
+)
+
+
+def _draft_board_answer(
+    body: dict[str, Any], state: str, provenance: dict[str, Any]
+) -> dict[str, Any]:
+    """The plan route's answer, trimmed, for a season whose auction is ahead."""
     if state == "withheld":
         return {
             "ready": False,

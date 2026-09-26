@@ -554,3 +554,27 @@ def test_draft_board_is_the_routes_answer_and_gated_the_same_way(
         single = Viewer(None, OWNER, is_owner=True, all_access=True, via="single")
         held = tools.draft_board(session, single, LEAGUE, SEASON - 1, 3)
         assert held["ready"] is False and held["why_not"].startswith("The auction was held")
+
+
+def test_draft_board_lists_the_sources_and_takes_one_by_name(
+    seeded: sessionmaker[Session], two_sets: dict[str, int]
+) -> None:
+    from app.mcp import tools
+    from app.mcp.scope import RefusedError
+
+    hers = two_sets["alice@example.com"]
+    with seeded() as session:
+        alice = _viewer(session, "alice@example.com")
+        answer = tools.draft_board(session, alice, LEAGUE, SEASON, 3, "Alice's sheet")
+        assert answer["ready"] is True
+        assert answer["provenance"]["plan_source"]["pool"]["choice"] == f"upload:{hers}"
+        assert [p["source"] for p in answer["sources"]] == ["espn", f"upload:{hers}"]
+        assert "no source is called better" in answer["sources_note"]
+        withheld = tools.draft_board(session, alice, LEAGUE, SEASON, 3)
+        assert withheld["withheld"] is True and "bbm" not in [
+            p["source"] for p in withheld["sources"]
+        ]
+        owner = tools.draft_board(session, _viewer(session, OWNER), LEAGUE, SEASON, 3, "espn")
+        assert [p["source"] for p in owner["sources"]][:2] == ["bbm", "espn"]
+        with pytest.raises(RefusedError, match=r"no source called .Owner's sheet. for this reader"):
+            tools.draft_board(session, alice, LEAGUE, SEASON, 3, "Owner's sheet")
