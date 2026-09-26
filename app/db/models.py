@@ -1348,19 +1348,26 @@ class ApiToken(Base):
 
 
 class Entitlement(Base):
-    """A user's right to the paid tier: which tier, where it came from, until when.
+    """A user's season pass: which tier, where it came from, until when.
 
-    `source` is `owner` (Patrick's own, always), `subscription` (written by
-    the payment provider's webhook, step 7), `trial` or `comp`. An open
-    `valid_until` never lapses. One `owner` row per user at most, which is
-    what lets the owner's row be written idempotently on every first use.
+    One `team` row covers every team the user manages, in every league,
+    until `valid_until` (docs/accounts.md, "The pass"). Nothing renews
+    itself: a lapsed row stays as the record of what he had. `source` is
+    `owner` (Patrick's own, always, open-ended), `comp` (a code redeemed, or
+    the owner's hand: `app.billing.grant`), `purchase` (a one-time payment,
+    written by the payment provider's webhook in the job after this one),
+    and `subscription` and `trial` from the first design, kept so no old row
+    breaks. An open `valid_until` never lapses. One `owner` row per user at
+    most, which is what lets the owner's row be written idempotently on
+    every first use. `note` is the owner's own words for a hand grant.
     """
 
     __tablename__ = "entitlements"
     __table_args__ = (
         CheckConstraint("tier IN ('team')", name="ck_entitlements_tier"),
         CheckConstraint(
-            "source IN ('owner', 'subscription', 'trial', 'comp')", name="ck_entitlements_source"
+            "source IN ('owner', 'subscription', 'trial', 'comp', 'purchase')",
+            name="ck_entitlements_source",
         ),
         Index(
             "uq_entitlements_one_owner",
@@ -1378,6 +1385,69 @@ class Entitlement(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    note: Mapped[str | None] = mapped_column(String)
+
+
+class CompCode(Base):
+    """A code the owner makes and hands out: redeemed, it writes a season pass.
+
+    `code` is kept in clear, `XXXX-XXXX-XXXX` from an alphabet with no 0, O, 1
+    or I (`app.billing`): it is not a secret from the owner, who has to read
+    it back to send it, and a copy of the table grants nothing a revoke does
+    not end. `valid_until` is when the pass it writes ends, not the code;
+    `redeem_by` (null: never) is when the code itself stops working.
+    `uses_left` counts down from `uses_total`, under a row lock, so a
+    one-use code cannot be spent twice.
+    """
+
+    __tablename__ = "comp_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_comp_codes_code"),
+        CheckConstraint("uses_total >= 1", name="ck_comp_codes_uses_total"),
+        CheckConstraint(
+            "uses_left >= 0 AND uses_left <= uses_total", name="ck_comp_codes_uses_left"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: Who it is for, in the owner's own words.
+    note: Mapped[str] = mapped_column(String, nullable=False, server_default="")
+    uses_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    uses_left: Mapped[int] = mapped_column(Integer, nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redeem_by: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CompCodeRedemption(Base):
+    """One user spending one use of a code, and the pass it wrote.
+
+    Unique on (code, user), so one man cannot burn a multi-use code twice.
+    """
+
+    __tablename__ = "comp_code_redemptions"
+    __table_args__ = (
+        UniqueConstraint("code_id", "user_id", name="uq_comp_code_redemptions_code_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_id: Mapped[int] = mapped_column(
+        ForeignKey("comp_codes.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entitlement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entitlements.id", ondelete="SET NULL")
+    )
+    redeemed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
