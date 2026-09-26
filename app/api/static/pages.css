@@ -722,6 +722,22 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .ws-newcode{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--line);align-items:center}
 .ws-newcode dd .ws-btn{margin-left:var(--sp-2);vertical-align:middle}
 .ws-newcode #newcode-text{font-size:var(--t-lg);font-weight:600}
+/* /upgrade: the one paragraph in view, the pass as a facts line, the code
+   typed in the data face, and the free tier as a table of links. */
+.up-page .up-what{margin:0 0 var(--sp-5);max-width:62ch}
+.up-page .up-facts{margin-bottom:var(--sp-2)}
+.up-page .ws-line.up-on{display:flex;flex-wrap:wrap;gap:var(--sp-2);border-top:0;padding-top:var(--sp-2)}
+.up-page .up-code{font-family:var(--font-data);text-transform:uppercase;letter-spacing:.06em}
+.up-page .up-code::placeholder{text-transform:none;letter-spacing:.06em}
+.up-page .up-buy{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3)}
+.up-page .up-why{font-size:var(--t-md);color:var(--fg-2)}
+.up-page .up-free td.l{font-family:var(--font-ui);font-size:var(--t-md);color:var(--fg-2);
+  white-space:normal;padding-top:6px;padding-bottom:6px;height:auto}
+.up-page .up-free td.name{white-space:nowrap;width:1%;padding-right:var(--sp-5)}
+/* A page a viewer may not open, drawn without the rail (app/api/access.py,
+   REFUSED_PAGE): one line and a way back, in either theme. */
+.ws-refused{max-width:44rem;margin:0 auto;padding-top:var(--sp-6)}
+.ws-refused .ws-head .ws-label{margin:0}
 
 /* ---- the design page's own specimens (/design) --------------------------- */
 .ws-doc-head{margin:0 0 var(--sp-6)}

@@ -104,15 +104,28 @@ function toSignIn() {
   window.location.assign(`/sign-in?next=${encodeURIComponent(here)}`);
 }
 
+/** No live pass for the team layer (a 402): go to the upgrade page, and come
+ *  back here once there is one. */
+function toUpgrade() {
+  const here = window.location.pathname + window.location.search;
+  window.location.assign(`/upgrade?next=${encodeURIComponent(here)}`);
+}
+
+/** The line a page says while it goes there. */
+const NEEDS_PASS = "The team layer needs a season pass.";
+
 /** One JSON route. A refusal comes back as a message, not as an exception,
  *  because every one of them is something the page should say out loud: a
- *  season the listener never ran for is an answer. Two are handled here for
- *  every page: a 401 (signed out) goes to the sign-in page, and a 403 (not
- *  this reader's team) is one plain line and nothing else (docs/accounts.md).
+ *  season the listener never ran for is an answer. Three are handled here for
+ *  every page: a 401 (signed out) goes to the sign-in page, a 402 (no live
+ *  season pass) goes to /upgrade and back, and a 403 (not this reader's
+ *  team) is one plain line and nothing else (docs/accounts.md).
  *
  *  `quiet` is for a fetch that is one part of a page and not the page itself
- *  (the free pages' look at the reader's own week): its 403 comes back with
- *  its status for the caller to word, and the rest of the page stands. */
+ *  (the free pages' look at the reader's own week): its 403 and its 402 come
+ *  back with their status for the caller to word, and the rest of the page
+ *  stands -- except on a team page, where a 402 on any of its parts means
+ *  the page itself is the team layer, so it goes to /upgrade too. */
 async function get(url, options) {
   const quiet = Boolean(options && options.quiet);
   const response = await fetch(url, { headers: { accept: "application/json" } });
@@ -125,6 +138,11 @@ async function get(url, options) {
   if (response.status === 401) {
     toSignIn();
     return { ok: false, status: 401, detail: "Signing in…" };
+  }
+  if (response.status === 402 && (!quiet || String(place().section).startsWith("team-"))) {
+    toUpgrade();
+    REFUSED = true;
+    return { ok: false, status: 402, detail: NEEDS_PASS };
   }
   if (response.status === 403 && !quiet) {
     fail(NOT_YOURS);

@@ -23,13 +23,16 @@ part of a code was wrong.
 
 import logging
 from datetime import date, datetime
+from pathlib import Path as FilePath
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app import accounts, billing
+from app import accounts, billing, brand
 from app.api.access import (
+    SIGNED_IN_PAGE,
     CurrentUser,
     SettingsDep,
     SiteOwner,
@@ -43,6 +46,8 @@ from app.db.models import Entitlement
 log = logging.getLogger("fcp.billing")
 
 router = APIRouter(tags=["billing"])
+
+STATIC = FilePath(__file__).parent / "static"
 
 NO_ACCOUNT = "accounts are not set up on this server yet"
 TOO_MANY = "Too many codes tried. Wait a minute and try again."
@@ -89,6 +94,16 @@ def _user_id(viewer: Viewer) -> int:
 # ---------------------------------------------------------------------------
 # the page, and what it reads
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/upgrade", include_in_schema=False, response_class=HTMLResponse, dependencies=[SIGNED_IN_PAGE]
+)
+def upgrade_page() -> HTMLResponse:
+    """The team layer, your pass, a code, and the free tier. Where a team
+    page's 402 sends a browser, with `?next=` the page it asked for. Read per
+    request, like the other pages, so an edit shows on a refresh."""
+    return HTMLResponse(brand.fill((STATIC / "upgrade.html").read_text()))
 
 
 class PassOut(BaseModel):

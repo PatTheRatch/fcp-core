@@ -237,7 +237,9 @@ def test_the_team_pages_close_with_billing_and_the_league_pages_do_not(
     alice = sign_in("alice@example.com")
     app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
     for path in TEAM_PAGES:
-        assert alice.get(path).status_code == 402, path
+        sent = alice.get(path, follow_redirects=False)
+        assert sent.status_code == 303, path
+        assert sent.headers["location"] == f"/upgrade?next={quote(path, safe='/')}", path
     for path in LEAGUE_PAGES:
         assert alice.get(path).status_code == 200, path
 
@@ -345,6 +347,7 @@ SHELL_PAGES = [
     "claim.html",
     "join.html",
     "design.html",
+    "upgrade.html",
 ]
 
 
@@ -575,9 +578,14 @@ def test_the_overview_opens_to_its_manager_alone(sign_in: SignIn) -> None:
 def test_the_overview_closes_with_billing(app: FastAPI, sign_in: SignIn) -> None:
     alice = sign_in("alice@example.com")
     app.dependency_overrides[get_settings] = lambda: accounts_settings(fcp_billing_enabled=True)
-    refused = alice.get(team_page(3, ""))
-    assert refused.status_code == 402
-    assert "The team layer is part of the paid plan." in refused.text
+    sent = alice.get(team_page(3, "") + "?today=5", follow_redirects=False)
+    assert sent.status_code == 303
+    assert (
+        sent.headers["location"]
+        == f"/upgrade?next={quote(team_page(3, '') + '?today=5', safe='/')}"
+    )
+    landed = alice.get(sent.headers["location"])
+    assert landed.status_code == 200 and "The team layer" in landed.text
     assert alice.get(league_page("week")).status_code == 200, "the free tier's This week"
 
 

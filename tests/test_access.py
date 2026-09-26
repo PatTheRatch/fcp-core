@@ -377,8 +377,11 @@ def test_the_entitlement_waits_on_billing(app: FastAPI, sign_in: SignIn, session
     assert refused.status_code == 402
     assert alice.get(trades(3)).status_code == 402
     assert alice.get(what_if(3)).status_code == 402
-    assert alice.get(week_page(3)).status_code == 402
-    assert alice.get(overview_page(3)).status_code == 402
+    # A page without a pass goes to /upgrade, and comes back.
+    for page in (week_page(3), overview_page(3)):
+        sent = alice.get(page, follow_redirects=False)
+        assert sent.status_code == 303
+        assert sent.headers["location"] == f"/upgrade?next={page}"
     # The free league pages do not ask.
     assert alice.get(standings(LEAGUE_A)).status_code == 200
 

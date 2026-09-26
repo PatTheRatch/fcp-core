@@ -296,3 +296,59 @@ def test_every_attempt_is_logged_without_the_code(
 
 def test_a_date_is_the_last_day_of_the_pass() -> None:
     assert billing.end_of_day(date(2027, 6, 30)) == datetime(2027, 6, 30, 23, 59, 59, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# the page, and where a team page without a pass sends a browser
+# ---------------------------------------------------------------------------
+
+STATIC = REPO_ROOT / "app" / "api" / "static"
+OVERVIEW = f"/l/{LEAGUE_A}/{SEASON}/team/3"
+
+
+def test_the_upgrade_page_is_signed_in_and_comes_back(anon: TestClient, sign_in: SignIn) -> None:
+    sent = anon.get("/upgrade?next=/l/1/2/team/3", follow_redirects=False)
+    assert sent.status_code == 303
+    assert sent.headers["location"] == "/sign-in?next=/upgrade%3Fnext%3D/l/1/2/team/3"
+    page = sign_in("bob@example.com").get("/upgrade")
+    assert page.status_code == 200
+    assert '<div id="shell"></div>' in page.text and "/billing/pass" in page.text
+    assert "Buy a season pass" in page.text and "Have a code?" in page.text
+    assert "The free tier" in page.text
+
+
+def test_a_team_page_without_a_pass_goes_to_upgrade_and_back(app: FastAPI, sign_in: SignIn) -> None:
+    alice = sign_in("alice@example.com")
+    billing_on(app)
+    for page in (OVERVIEW, OVERVIEW + "/week?today=5"):
+        sent = alice.get(page, follow_redirects=False)
+        assert sent.status_code == 303
+        assert sent.headers["location"] == "/upgrade?next=" + page.replace("?", "%3F").replace(
+            "=", "%3D"
+        )
+    # A stranger to the team hears the one line, and is never offered a pass for it.
+    carol = sign_in("carol@example.com")
+    refused = carol.get(OVERVIEW, follow_redirects=False)
+    assert refused.status_code == 403
+    # The refusal is in the shell's tokens now: either theme, the kept choice
+    # applied before paint, and still no rail.
+    assert 'data-theme="light"' not in refused.text
+    assert 'localStorage.getItem("fcp-theme")' in refused.text
+    assert "ws-panel" in refused.text and "shell.js" not in refused.text
+
+
+def test_the_pages_send_a_402_to_upgrade_once_for_every_page() -> None:
+    """pages.js's `get`: a 402 goes to /upgrade with `next`, except a quiet
+    fetch on a page that is not a team page, which words its own answer."""
+    script = (STATIC / "pages.js").read_text()
+    assert "function toUpgrade()" in script
+    assert "window.location.assign(`/upgrade?next=${encodeURIComponent(here)}`)" in script
+    assert (
+        'response.status === 402 && (!quiet || String(place().section).startsWith("team-"))'
+        in script
+    )
+    # No team page handles its own 402: pages.js is the one place.
+    for name in ("overview.html", "week.html", "season.html", "moves.html", "trades.html"):
+        assert "402" not in (STATIC / name).read_text(), name
+    # This week's look at the reader's own week links to the upgrade page.
+    assert "/upgrade?next=" in (STATIC / "league-week.html").read_text()

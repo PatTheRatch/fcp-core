@@ -173,6 +173,7 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /me/api-tokens` | signed in, own only | his machine tokens, never their secrets (docs/mcp.md), an OAuth-issued one named after the app that asked |
 | `POST /me/api-tokens` | signed in, rate-limited | mint one; the token is in this answer and nowhere else |
 | `DELETE /me/api-tokens/{token_id}` | signed in, own only (404 otherwise) | revoke one of his own, however it was made |
+| `GET /upgrade` | signed in (page) | the team layer, his pass, "Have a code?", the free tier; where a team page without a pass sends him, with `next` |
 | `GET /billing/pass` | signed in, own only | his season pass (live, or the last one that lapsed), whether the team layer is gated, and whether purchase is open: the upgrade page's context |
 | `POST /billing/redeem` | signed in, rate-limited | spend a code on his own season pass; one sentence whatever is wrong with the code |
 | `GET /billing/codes` | site owner | every comp code, in clear, with who redeemed each and when |

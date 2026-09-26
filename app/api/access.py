@@ -19,7 +19,9 @@ route is added without one):
 * `require_site_owner`: the site's owner (`FCP_OWNER_EMAIL`), in either
   mode. The comp codes he makes and hands out (app/billing.py).
 * The `*_page` twins of the above, for the HTML pages: the same answers, but
-  a signed-out browser is sent to /sign-in and a refusal is a line of HTML.
+  a signed-out browser is sent to /sign-in, a page without a pass is sent to
+  /upgrade (both with `next`, so they come back), and any other refusal is a
+  line of HTML.
 
 THE TWO MODES
 
@@ -75,7 +77,11 @@ SIGN_IN_FIRST = "sign in first"
 NOT_A_MEMBER = "not a member of this league"
 NOT_LEAGUE_OWNER = "only the league's owner may do that"
 TEAM_REFUSED = "This team's plan is its manager's."
-NOT_ENTITLED = "The team layer is part of the paid plan."
+#: What a team route's 402 says. The page that fetched it goes to /upgrade
+#: (pages.js); the co-manager's tools add the site's address (app/mcp/scope.py).
+NOT_ENTITLED = "The team layer needs a season pass: /upgrade has yours, or a code."
+#: Where a page without a pass is sent, with `?next=` the page it asked for.
+UPGRADE_PATH = "/upgrade"
 NOT_SITE_OWNER = "only the site's owner may do that"
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -182,6 +188,15 @@ class SignInRequiredError(Exception):
         self.next_path = next_path
 
 
+class UpgradeRequiredError(Exception):
+    """A team page asked for without a live pass: send the browser to /upgrade,
+    which comes back here once he has one."""
+
+    def __init__(self, next_path: str) -> None:
+        super().__init__(next_path)
+        self.next_path = next_path
+
+
 class PageRefusedError(Exception):
     """A page this viewer may not open: one plain line, as HTML."""
 
@@ -205,8 +220,7 @@ def current_page_viewer(request: Request, session: SessionDep, settings: Setting
     """Signed in, or a redirect to /sign-in that comes back here afterwards."""
     viewer = resolve_viewer(request, session, settings)
     if viewer is None:
-        here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        raise SignInRequiredError(here)
+        raise SignInRequiredError(_here(request))
     return viewer
 
 
@@ -360,7 +374,12 @@ def require_league_member_page(
     return viewer
 
 
+def _here(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
 def require_team_plan_page(
+    request: Request,
     league_id: LeagueIdPath,
     season: SeasonPath,
     team_id: TeamIdPath,
@@ -368,10 +387,13 @@ def require_team_plan_page(
     session: SessionDep,
     settings: SettingsDep,
 ) -> Viewer:
+    """The team pages: this team's manager (else the one line, 403), with a
+    live pass (else to /upgrade and back). The manager is asked first, so a
+    stranger to the team is never offered a pass for it."""
     if not is_team_manager(session, viewer, league_id, season, team_id):
         raise PageRefusedError(403, TEAM_REFUSED)
     if not is_entitled(session, viewer, settings):
-        raise PageRefusedError(402, NOT_ENTITLED)
+        raise UpgradeRequiredError(_here(request))
     return viewer
 
 
@@ -413,22 +435,39 @@ TEAM_PLAN_PAGE = Depends(require_team_plan_page)
 # the page exceptions, as responses
 # ---------------------------------------------------------------------------
 
+#: A page this viewer may not open: one line and a way back, in the shell's
+#: tokens and either theme (the kept choice is applied before first paint, as
+#: on every page), without the rail, whose fetches would only be refused too.
+#: `{{`/`}}` are the script's own braces, escaped for `str.format`.
 REFUSED_PAGE = """<!doctype html>
-<html lang="en" data-theme="light"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{brand}</title><link rel="stylesheet" href="/pages/static/pages.css"></head>
-<body><main class="page"><header class="mast"><p class="eyebrow">{brand}</p>
-<p class="sub">{message}</p><p class="sub"><a href="/">Your leagues</a></p></header></main>
-</body></html>
+<script>try{{var t=localStorage.getItem("fcp-theme");if(t==="light"||t==="dark")\
+document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<title>{brand}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600\
+&family=IBM+Plex+Mono:wght@400;500&family=Oswald:wght@500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css"></head>
+<body><main class="ws-page ws-refused">
+<header class="ws-head"><p class="ws-label">{brand}</p></header>
+<section class="ws-sect"><div class="ws-panel"><p class="ws-line">{message}</p>
+<p class="ws-line"><a class="ws-btn" href="/">Your leagues</a></p></div></section>
+</main></body></html>
 """
 
 
 def install(app: FastAPI) -> None:
-    """Register the two page exceptions' responses on the app."""
+    """Register the three page exceptions' responses on the app."""
 
     async def to_sign_in(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, SignInRequiredError)
         return RedirectResponse(f"/sign-in?next={quote(exc.next_path, safe='/')}", 303)
+
+    async def to_upgrade(request: Request, exc: Exception) -> Response:
+        assert isinstance(exc, UpgradeRequiredError)
+        return RedirectResponse(f"{UPGRADE_PATH}?next={quote(exc.next_path, safe='/')}", 303)
 
     async def refused(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, PageRefusedError)
@@ -438,4 +477,5 @@ def install(app: FastAPI) -> None:
         )
 
     app.add_exception_handler(SignInRequiredError, to_sign_in)
+    app.add_exception_handler(UpgradeRequiredError, to_upgrade)
     app.add_exception_handler(PageRefusedError, refused)

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("fcp-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<title>The Team Layer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Oswald:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/pages/static/pages.css">
+</head>
+<body>
+<div id="shell"></div>
+<div class="ws-page up-page">
+
+<header class="ws-head">
+  <h1 class="ws-title">The team layer</h1>
+  <div class="ws-head-tools"><button type="button" class="ws-btn sm quiet" data-account="head-account"
+    aria-haspopup="dialog">What a pass is</button></div>
+  <div class="ws-account" id="head-account" data-title="The team layer" data-kicker="The season pass">
+    <p data-k="What it opens">The team pages of every team you manage, in every league you are in:
+    the Overview, the week and season plans, the what-if, the trade judgement, the scorecard of
+    your own moves, and the co-manager reading the same for you.</p>
+    <p data-k="How long">A pass runs to the date it carries, usually the end of the season's
+    playoffs and a month after. It is paid for once, or given as a code, and nothing renews on
+    its own. When it ends you are on the free tier again, and this page says so, with the
+    date.</p>
+    <p data-k="What stays free">Every league page, for every member: This week, Standings, Draft,
+    History, and the league's digest by email.</p>
+  </div>
+</header>
+
+<p class="ws-p up-what">The Overview, the week and season plans, the what-if, the trade judgement
+  and the co-manager, for every team you manage, until your pass ends.</p>
+
+<p class="warnline" id="failed" hidden></p>
+
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">Your pass</h2><span class="ws-k" id="pass-k"></span></div>
+  <div class="ws-panel">
+    <dl class="ws-factline up-facts" id="facts"></dl>
+    <p class="ws-line" id="pass-line" role="status">Loading…</p>
+    <p class="ws-line up-on" id="pass-on" hidden></p>
+  </div>
+</section>
+
+<section class="ws-sect" id="code-sect" hidden>
+  <div class="ws-sect-head"><h2 class="ws-label">Have a code?</h2><span class="ws-k">from the site's owner</span></div>
+  <div class="ws-panel">
+    <form class="ws-form" id="redeem" autocomplete="off">
+      <span class="ws-fld"><label for="code">Code</label>
+        <input class="ws-input plain up-code" id="code" maxlength="40" required placeholder="XXXX-XXXX-XXXX"
+          spellcheck="false" autocapitalize="characters" autocorrect="off"></span>
+      <button class="ws-btn primary" type="submit">Redeem</button>
+    </form>
+    <p class="ws-line" id="redeem-said" role="status" hidden></p>
+  </div>
+</section>
+
+<section class="ws-sect" id="buy-sect" hidden>
+  <div class="ws-sect-head"><h2 class="ws-label">Buy a season pass</h2><span class="ws-k">once, not recurring</span></div>
+  <div class="ws-panel">
+    <p class="ws-line up-buy"><button class="ws-btn primary" type="button" id="buy" disabled
+      aria-describedby="buy-why">Buy a season pass</button>
+      <span class="up-why" id="buy-why"></span></p>
+  </div>
+</section>
+
+<section class="ws-sect">
+  <div class="ws-sect-head"><h2 class="ws-label">The free tier</h2><span class="ws-k">every member of a league</span></div>
+  <div class="ws-panel flush">
+    <table class="ws-grid up-free">
+      <tbody id="free">
+        <tr><td class="name"><a data-free="week">This week</a></td><td class="l">every matchup, what changed, and a look at your own week</td></tr>
+        <tr><td class="name"><a data-free="standings">Standings</a></td><td class="l">the table on categories, and where the season is heading</td></tr>
+        <tr><td class="name"><a data-free="draft">Draft</a></td><td class="l">the board, graded</td></tr>
+        <tr><td class="name"><a data-free="history">History</a></td><td class="l">every season the league has played</td></tr>
+        <tr><td class="name"><a href="/account/alerts">The league digest</a></td><td class="l">the league's week by email</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<p class="ws-foot">Nothing here takes a payment yet, and no card is asked for anywhere on the site.
+  <span class="mono">docs/accounts.md</span>, "The pass", is the whole rule.</p>
+
+</div>
+<script src="/pages/static/pages.js"></script>
+<script src="/pages/static/scenario.js"></script>
+<script src="/pages/static/shell.js"></script>
+<script>
+"use strict";
+
+/* /upgrade, where a team page's 402 sends a browser (`?next=` the page it
+   asked for). Everything is read from /billing/pass and written as text.
+   No price and no purchase: the button is drawn disabled with the reason
+   the route gives (`billing.purchase_available()`), until the payment job
+   turns it on. `$`, `get` and the URL helpers are pages.js's. */
+
+const UP = new URLSearchParams(window.location.search);
+
+/** The page asked for before this one, if it is a path on this site. */
+function wanted() {
+  const raw = UP.get("next") || "";
+  return raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("\\") ? raw : null;
+}
+
+function fact(label, value) {
+  const box = document.createElement("div");
+  const dt = document.createElement("dt");
+  const dd = document.createElement("dd");
+  dt.textContent = label;
+  dd.textContent = value;
+  box.append(dt, dd);
+  return box;
+}
+
+function link(text, href, cls) {
+  const a = document.createElement("a");
+  a.className = cls || "ws-btn";
+  a.href = href;
+  a.textContent = text;
+  return a;
+}
+
+/** Where a live pass goes on to: the page that sent him here, then his
+ *  Overview (which `/` finds for him). */
+function onward(where) {
+  where.replaceChildren();
+  const back = wanted();
+  if (back) where.append(link("Back to the page you asked for", back, "ws-btn primary"), " ");
+  where.append(link("Your Overview", "/", back ? "ws-btn" : "ws-btn primary"));
+  where.hidden = false;
+}
+
+function drawPass(state) {
+  const facts = $("facts");
+  facts.replaceChildren();
+  const live = state.live;
+  if (live) {
+    facts.append(fact("Pass", "Live"), fact("Until", live.until_words), fact("From", live.source_words));
+    $("pass-k").textContent = "live";
+    $("pass-line").textContent = live.until
+      ? `Your pass runs until ${live.until_words}, from ${live.source_words === "your own" ? "your own account" : live.source_words}.`
+      : "Your pass is your own, and it does not end.";
+    onward($("pass-on"));
+  } else if (state.lapsed) {
+    facts.append(fact("Pass", "Ended"), fact("Ended", state.lapsed.until_words), fact("From", state.lapsed.source_words));
+    $("pass-k").textContent = "free tier";
+    $("pass-line").textContent =
+      `Your pass ended on ${state.lapsed.until_words}. You are on the free tier until you redeem a code.`;
+  } else {
+    facts.append(fact("Pass", "None"), fact("Tier", state.entitled ? "Open to managers" : "Free"));
+    $("pass-k").textContent = "free tier";
+    $("pass-line").textContent = state.billing_enabled
+      ? "You have no pass. The team layer opens with one."
+      : "Passes are not asked for yet: the team layer is open to every manager. A code redeemed now is kept for when they are.";
+  }
+  $("code-sect").hidden = Boolean(live);
+  $("buy-sect").hidden = Boolean(live);
+  $("buy").disabled = !state.purchase_available;
+  $("buy-why").textContent = state.purchase_available ? "" : state.purchase_note;
+}
+
+async function load() {
+  const got = await get("/billing/pass");
+  if (!got.ok) return fail(got.detail);
+  drawPass(got.body);
+}
+
+$("redeem").onsubmit = async (event) => {
+  event.preventDefault();
+  const said = $("redeem-said");
+  const response = await fetch("/billing/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ code: $("code").value }),
+  });
+  if (response.status === 401) return toSignIn();
+  const body = await response.json().catch(() => ({}));
+  said.hidden = false;
+  if (!response.ok) {
+    said.textContent = typeof body.detail === "string" ? body.detail : `${response.status}`;
+    return;
+  }
+  $("code").value = "";
+  said.textContent = body.detail;
+  load();
+};
+
+startTheme();
+SHELL.then((ctx) => {
+  // The free tier's links are this viewer's league's pages; with no league
+  // yet, the home page, which says how to get one.
+  const league = ctx && ctx.league && ctx.season ? ctx.league : null;
+  document.querySelectorAll("[data-free]").forEach((a) => {
+    a.href = league ? leagueUrl(league.id, ctx.season, a.dataset.free) : "/";
+  });
+});
+load();
+</script>
+</body>
+</html>

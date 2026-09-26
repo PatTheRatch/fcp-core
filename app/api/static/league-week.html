@@ -288,7 +288,8 @@ async function drawYours(ctx, context, report) {
     $("yours-body").innerHTML =
       got.status === 402
         ? "<p>Your week, your projected record and the moves behind them are the team " +
-          `layer.</p>${link}`
+          `layer: <a href="/upgrade?next=${encodeURIComponent(window.location.pathname)}">a ` +
+          "season pass</a> opens them.</p>"
         : got.status === 409
           ? "<p>Your week is worked out once this season's NBA schedule and rosters are " +
             "stored.</p>"
