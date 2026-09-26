@@ -16,6 +16,8 @@ route is added without one):
 * `require_team_plan`: `require_team_manager` (a verified manager of this
   very team) and then `require_entitlement` (the paid tier). The team layer:
   the pickup reports and the week and season pages.
+* `require_site_owner`: the site's owner (`FCP_OWNER_EMAIL`), in either
+  mode. The comp codes he makes and hands out (app/billing.py).
 * The `*_page` twins of the above, for the HTML pages: the same answers, but
   a signed-out browser is sent to /sign-in and a refusal is a line of HTML.
 
@@ -74,6 +76,7 @@ NOT_A_MEMBER = "not a member of this league"
 NOT_LEAGUE_OWNER = "only the league's owner may do that"
 TEAM_REFUSED = "This team's plan is its manager's."
 NOT_ENTITLED = "The team layer is part of the paid plan."
+NOT_SITE_OWNER = "only the site's owner may do that"
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -319,6 +322,20 @@ def require_team_plan(
     return manager
 
 
+def require_site_owner(viewer: CurrentUser) -> Viewer:
+    """The site's owner (`FCP_OWNER_EMAIL`); else 403, for a league owner as
+    for anyone. The codes that hand out a season pass are his alone.
+
+    `is_owner` rather than `all_access`: in accounts mode the owner is an
+    ordinary user with the owner's claims (`all_access` is False for him
+    there), and the codes are exactly what he needs on the day he opens the
+    site to his league. In single mode every request is him, as everywhere.
+    """
+    if not viewer.is_owner:
+        raise HTTPException(status_code=403, detail=NOT_SITE_OWNER)
+    return viewer
+
+
 def require_listened_league_member(
     viewer: CurrentUser, session: SessionDep, settings: SettingsDep
 ) -> Viewer:
@@ -369,6 +386,7 @@ CHECKS = (
     require_entitlement,
     require_team_plan,
     require_listened_league_member,
+    require_site_owner,
     require_league_member_page,
     require_team_plan_page,
 )
@@ -386,6 +404,7 @@ TEAM_PLAN = Depends(require_team_plan)
 TEAM_MANAGER = Depends(require_team_manager)
 SIGNED_IN = Depends(current_user)
 LISTENED_LEAGUE_MEMBER = Depends(require_listened_league_member)
+SiteOwner = Annotated[Viewer, Depends(require_site_owner)]
 LEAGUE_MEMBER_PAGE = Depends(require_league_member_page)
 TEAM_PLAN_PAGE = Depends(require_team_plan_page)
 

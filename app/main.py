@@ -26,6 +26,7 @@ from app.api.teams import router as teams_router
 from app.api.tokens import router as tokens_router
 from app.api.trades import router as trades_router
 from app.api.transactions import router as transactions_router
+from app.api.upgrade import router as upgrade_router
 from app.api.what_if import router as what_if_router
 
 DESCRIPTION = """Read-only access to stored ESPN fantasy basketball seasons.
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(leagues_router)
     app.include_router(leagues_admin_router)
+    app.include_router(upgrade_router)
     app.include_router(draft_router)
     app.include_router(teams_router)
     app.include_router(narratives_router)

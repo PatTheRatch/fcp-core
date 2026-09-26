@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -347,6 +347,12 @@ def latest_pass(session: Session, user_id: int) -> Entitlement | None:
         .order_by(Entitlement.valid_until.desc().nulls_first(), Entitlement.id.desc())
         .limit(1)
     )
+
+
+def end_of_day(day: date) -> datetime:
+    """A date the owner typed, as the last second of that day (UTC): a pass
+    "until Jun 30" works through Jun 30."""
+    return datetime.combine(day, time(23, 59, 59), tzinfo=UTC)
 
 
 def says_until(when: datetime | None) -> str:

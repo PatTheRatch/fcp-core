@@ -110,7 +110,7 @@ owner's token to whoever asked.
 
 ## The checks
 
-Five questions, as FastAPI dependencies in `app/api/access.py`. Every route
+Six questions, as FastAPI dependencies in `app/api/access.py`. Every route
 declares exactly one (the team layer's one is the manager check and the
 entitlement check together), and `tests/test_access.py` fails if a route is
 added without one or with two, or is missing from the table below.
@@ -133,6 +133,12 @@ added without one or with two, or is missing from the table below.
   `app/api/access.py`), which it is until step 7. Turning the paywall on is
   that constant and a payment provider writing `entitlements`, not a change
   to any route.
+
+- **Site owner** (`require_site_owner`): the site's owner, `FCP_OWNER_EMAIL`,
+  in either mode. The comp codes. 403 otherwise, for a league's owner as for
+  anyone else. It reads `is_owner`, not `all_access`: in accounts mode the
+  owner is an ordinary user with the owner's claims, and the codes are what
+  he needs on the day the site opens to his league.
 
 The pages have twins of the league and team checks (`*_page`) that redirect
 a signed-out browser to `/sign-in` and answer a refusal with one line of
@@ -167,6 +173,11 @@ team claims (the table step 1 began, grown rather than duplicated).
 | `GET /me/api-tokens` | signed in, own only | his machine tokens, never their secrets (docs/mcp.md), an OAuth-issued one named after the app that asked |
 | `POST /me/api-tokens` | signed in, rate-limited | mint one; the token is in this answer and nowhere else |
 | `DELETE /me/api-tokens/{token_id}` | signed in, own only (404 otherwise) | revoke one of his own, however it was made |
+| `GET /billing/pass` | signed in, own only | his season pass (live, or the last one that lapsed), whether the team layer is gated, and whether purchase is open: the upgrade page's context |
+| `POST /billing/redeem` | signed in, rate-limited | spend a code on his own season pass; one sentence whatever is wrong with the code |
+| `GET /billing/codes` | site owner | every comp code, in clear, with who redeemed each and when |
+| `POST /billing/codes` | site owner | make one; the code is in the answer and in the list, because he has to send it |
+| `POST /billing/codes/{code_id}/revoke` | site owner | it redeems nothing more; the passes it already wrote stand |
 | `GET /.well-known/oauth-authorization-server` | open | RFC 8414: what the front door supports. Describes the server and carries no data (docs/mcp.md) |
 | `POST /oauth/register` | open, rate-limited | RFC 7591: an app registers itself. No secret is issued, and a row opens nothing until a manager has signed in and allowed it |
 | `GET /oauth/authorize` | signed in (page) | the consent page. Signed out it goes to `/sign-in?next=` and comes back to the whole request |
