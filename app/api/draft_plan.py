@@ -123,6 +123,8 @@ def _choices(session: Session, season: int, viewer: Viewer) -> list[dict[str, An
             "kind": one.kind,
             "gated": one.gated,
             "recipe": one.recipe,
+            "note": one.note,
+            "carried": one.carried,
         }
         for one in listed
     ]

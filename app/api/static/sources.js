@@ -55,6 +55,10 @@ const SOURCES = (() => {
       UP.timer = setTimeout(() => (UP.file ? preview() : judge()), 450);
     };
     $("src-store").onclick = store;
+    $("src-mix-open").onclick = () => ($("src-mix").hidden ? openMix(null) : closeMix());
+    $("src-mix-cancel").onclick = closeMix;
+    $("src-mix-save").onclick = saveMix;
+    $("src-mix-name").oninput = judgeMix;
     return load();
   }
 
@@ -63,6 +67,7 @@ const SOURCES = (() => {
       `<section class="ws-sect src" id="sources-section">` +
       `<div class="ws-sect-head"><h2 class="ws-label">Sources</h2><span class="ws-k" id="src-tag"></span>` +
       `<button type="button" class="ws-btn sm" id="src-upload-open" aria-expanded="false" aria-controls="src-up">Upload a file</button>` +
+      `<button type="button" class="ws-btn sm" id="src-mix-open" aria-expanded="false" aria-controls="src-mix">New composite</button>` +
       `<button type="button" class="ws-btn sm quiet" data-account="sources-account" aria-haspopup="dialog">How this is worked out</button></div>` +
       `<div class="ws-panel flush"><div class="scroll"><table class="ws-grid src-grid">` +
       `<thead><tr><th class="l">Name</th><th class="l">Kind</th><th>Season</th><th>Rows</th>` +
@@ -70,6 +75,7 @@ const SOURCES = (() => {
       `<th class="l">When</th><th class="l">By</th></tr></thead>` +
       `<tbody id="src-rows"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div></div>` +
       uploadHtml() +
+      mixHtml() +
       `<div class="ws-account" id="sources-account" data-title="Sources">` +
       `<p data-k="What a source is">A pool of projections the plan can be built on: Basketball Monster's ` +
       `newest capture (paid, and yours alone when your membership pulled it), ESPN's own projections, ` +
@@ -90,6 +96,16 @@ const SOURCES = (() => {
       `<p data-k="A name is the source">Your names are unique for a season. A file stored under one ` +
       `of them again replaces that source's rows and keeps its place in your composites, and is ` +
       `read with the mapping it was stored with last time.</p>` +
+      `<p data-k="A composite">A named source worked out from other sources with your weights ` +
+      `(<span class="mono">app/projections/composite.py</span>). Per man, over the sources that carry him: ` +
+      `per-game numbers and games are the weighted mean, the weights shared out again over the sources ` +
+      `present, so a man one source lacks is the other's number at full weight; the two percentages come ` +
+      `from the weighted makes and attempts, never from averaging percentages; minutes and value are the ` +
+      `weighted mean where a source has them. A man no source carries is not in it. It is worked out again ` +
+      `whenever a source in it changes. A composite with BBM in it is BBM's number, and yours alone.</p>` +
+      `<p data-k="What a composite is not">The weights are yours: nothing here measures which source was ` +
+      `closer last season, and no source is called better. It does not blend injuries (two sources' games ` +
+      `are averaged like any number), and takes a man's position from the first source that names one.</p>` +
       `<p data-k="Nothing here acts">Storing a file changes nothing but your own sources. Nothing ` +
       `here bids, nominates or touches ESPN.</p></div>` +
       `</section>`
@@ -143,7 +159,11 @@ const SOURCES = (() => {
         return (
           `<tr class="${current ? "ours" : ""}"><td class="name">${name}` +
           (current ? ` <span class="ws-tag accent">in view</span>` : "") +
-          (s.gated ? ` <span class="ws-tag" title="${escape(s.note)}">paid</span>` : "") +
+          (s.gated ? ` <span class="ws-tag" title="${escape(s.kind === "bbm" ? s.note : "carries BBM's paid numbers")}">paid</span>` : "") +
+          (s.kind === "composite"
+            ? `<span class="src-recipe">${escape(s.note)}${escape(carriedWords(s.carried))}</span>` +
+              `<button type="button" class="ws-btn sm quiet src-edit" data-edit="${s.set_id}">Edit weights</button>`
+            : "") +
           `</td><td class="l small">${escape(s.kind_words)}</td><td>${s.season}</td>` +
           `<td>${s.rows}</td><td>${s.matched}</td><td>${s.unmatched}</td>` +
           `<td class="l small">${escape(dayOf(s.when))}</td><td class="l small src-by">${escape(s.by)}</td></tr>`
@@ -152,6 +172,9 @@ const SOURCES = (() => {
       .join("");
     $("src-rows").querySelectorAll("[data-pick]").forEach((button) => {
       button.onclick = () => OPTS.choose(button.dataset.pick);
+    });
+    $("src-rows").querySelectorAll("[data-edit]").forEach((button) => {
+      button.onclick = () => openMix(Number(button.dataset.edit));
     });
     $("src-names").innerHTML = uploads()
       .map((s) => `<option value="${escape(s.name)}"></option>`)
@@ -376,6 +399,145 @@ const SOURCES = (() => {
       (OPTS.choose ? ` <button type="button" class="ws-btn sm" id="src-plan-on">Plan on it</button>` : "");
     const planOn = $("src-plan-on");
     if (planOn) planOn.onclick = () => OPTS.choose(choice);
+    if (OPTS.onChanged) OPTS.onChanged(choice);
+  }
+
+  /* ---- a composite ------------------------------------------------------------ */
+
+  const MIX = { editing: null };
+
+  /** "carried by 2: 170 · by 1: 190", from what the rows were built with. */
+  function carriedWords(carried) {
+    const keys = Object.keys(carried || {}).sort((a, b) => b - a);
+    if (!keys.length) return "";
+    return " · " + keys.map((k, i) => `${i ? "by" : "carried by"} ${k}: ${carried[k]}`).join(" · ");
+  }
+
+  function mixHtml() {
+    return (
+      `<div class="ws-panel src-up" id="src-mix" hidden>` +
+      `<p class="ws-sub"><span id="src-mix-title">New composite</span> <span class="n">a weight per source · 0 leaves it out</span></p>` +
+      `<div class="ws-form"><div class="ws-fld"><label for="src-mix-name">Name the composite</label>` +
+      `<input class="ws-input plain" id="src-mix-name" maxlength="80" autocomplete="off" placeholder="e.g. My consensus"></div></div>` +
+      `<div class="scroll src-mapframe"><table class="ws-grid src-mixgrid"><thead><tr><th class="l">Source</th>` +
+      `<th class="l">Weight</th><th>Share</th></tr></thead><tbody id="src-mix-rows"></tbody></table></div>` +
+      `<p class="ws-note">Per man, the weighted mean over the sources that carry him, the weights shared out again ` +
+      `over those; FG% and FT% from the weighted makes and attempts. BBM in it makes the composite BBM's number, ` +
+      `and yours alone.</p>` +
+      `<div class="ws-form"><button type="button" class="ws-btn primary" id="src-mix-save" disabled>Save</button>` +
+      `<button type="button" class="ws-btn quiet" id="src-mix-cancel">Close</button></div>` +
+      `<p class="src-why" id="src-mix-why" aria-live="polite"></p></div>`
+    );
+  }
+
+  /** What a composite may read: BBM when it is his, ESPN, his uploads. */
+  const mixable = () => (LIST ? LIST.sources.filter((s) => s.kind !== "composite") : []);
+  const partOf = (s) => String(s.kind === "upload" ? s.set_id : s.source);
+
+  /** Open the editor on a composite to change (its set id), or null for a new one. */
+  function openMix(id) {
+    MIX.editing = id;
+    const editing = id === null ? null : composites().find((s) => s.set_id === id);
+    const weights = new Map((editing ? editing.recipe : []).map((part) => [String(part.source), part.weight]));
+    const pool = mixable();
+    const even = Math.round(100 / Math.max(1, pool.length));
+    $("src-mix-title").textContent = editing ? `Change “${editing.name}”` : "New composite";
+    $("src-mix-name").value = editing ? editing.name : "";
+    $("src-mix-rows").innerHTML = pool
+      .map((s) => {
+        const part = partOf(s);
+        const weight = editing ? (weights.get(part) ?? 0) : even;
+        return (
+          `<tr><td class="l name">${escape(s.name)} <span class="faint">${escape(s.kind_words)}</span>` +
+          (s.gated ? ` <span class="ws-tag">paid</span>` : "") +
+          `</td><td class="l"><label class="sr" for="src-w-${escape(part)}">Weight for ${escape(s.name)}</label>` +
+          `<input class="ws-input plain src-weight" id="src-w-${escape(part)}" type="number" inputmode="decimal" ` +
+          `min="0" max="100" step="1" value="${weight}" data-part="${escape(part)}"></td>` +
+          `<td class="src-share" data-share="${escape(part)}"></td></tr>`
+        );
+      })
+      .join("");
+    $("src-mix-rows").querySelectorAll("input.src-weight").forEach((input) => {
+      input.oninput = judgeMix;
+    });
+    $("src-mix").hidden = false;
+    $("src-mix-open").setAttribute("aria-expanded", "true");
+    $("src-mix-why").textContent = "";
+    judgeMix();
+    $("src-mix-name").focus();
+  }
+
+  function closeMix() {
+    MIX.editing = null;
+    $("src-mix").hidden = true;
+    $("src-mix-open").setAttribute("aria-expanded", "false");
+  }
+
+  function recipe() {
+    return [...$("src-mix-rows").querySelectorAll("input.src-weight")].map((input) => ({
+      source: /^\d+$/.test(input.dataset.part) ? Number(input.dataset.part) : input.dataset.part,
+      weight: input.value === "" ? NaN : Number(input.value),
+    }));
+  }
+
+  function judgeMix() {
+    const parts = recipe();
+    const total = parts.reduce((sum, p) => sum + (Number.isFinite(p.weight) && p.weight > 0 ? p.weight : 0), 0);
+    parts.forEach((p) => {
+      const cell = $("src-mix-rows").querySelector(`[data-share="${String(p.source)}"]`);
+      if (cell) cell.textContent = total > 0 && p.weight > 0 ? `${Math.round((100 * p.weight) / total)}%` : dash;
+    });
+    const name = $("src-mix-name").value.trim();
+    const bad = parts.find((p) => !Number.isFinite(p.weight) || p.weight < 0 || p.weight > 100);
+    const taken = (LIST ? LIST.sources : []).find(
+      (s) => s.name === name && (s.kind === "upload" || (s.kind === "composite" && s.set_id !== MIX.editing)),
+    );
+    let reason = "";
+    if (bad) reason = "A weight is a number from 0 to 100.";
+    else if (total <= 0) reason = "Give at least one source a weight above 0.";
+    else if (!name) reason = "Name the composite to save it.";
+    else if (taken) reason = `You already have a source called “${name}”.`;
+    $("src-mix-save").disabled = Boolean(reason);
+    $("src-mix-why").textContent = reason;
+    $("src-mix-why").classList.toggle("ws-neg", Boolean(bad) || Boolean(taken));
+  }
+
+  async function saveMix() {
+    $("src-mix-save").disabled = true;
+    $("src-mix-why").textContent = "Working it out…";
+    const body = { season: OPTS.season, name: $("src-mix-name").value.trim(), recipe: recipe() };
+    const url = MIX.editing === null ? "/projections/composites" : `/projections/composites/${MIX.editing}`;
+    const response = await fetch(url, {
+      method: MIX.editing === null ? "POST" : "PUT",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    let answer = null;
+    try {
+      answer = await response.json();
+    } catch (error) {
+      /* no body */
+    }
+    if (response.status === 401) toSignIn();
+    if (!response.ok) {
+      const detail = answer && answer.detail;
+      $("src-mix-why").textContent = typeof detail === "string" ? detail : `Not saved: ${response.status}`;
+      $("src-mix-why").classList.add("ws-neg");
+      $("src-mix-save").disabled = false;
+      return;
+    }
+    await load();
+    const choice = `composite:${answer.id}`;
+    MIX.editing = answer.id;
+    $("src-mix-title").textContent = `Change “${answer.name}”`;
+    $("src-mix-why").classList.remove("ws-neg");
+    $("src-mix-why").innerHTML =
+      `Saved “${escape(answer.name)}”: <span class="ws-data">${answer.rows}</span> men` +
+      `${escape(carriedWords((answer.built_from || {}).carried))}.` +
+      (OPTS.choose ? ` <button type="button" class="ws-btn sm" id="src-mix-plan">Plan on it</button>` : "");
+    const planOn = $("src-mix-plan");
+    if (planOn) planOn.onclick = () => OPTS.choose(choice);
+    $("src-mix-save").disabled = false;
     if (OPTS.onChanged) OPTS.onChanged(choice);
   }
 

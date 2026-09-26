@@ -1603,6 +1603,14 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .src-pick{padding:0;font:inherit;font-weight:inherit;color:var(--fg);background:none;border:0;cursor:pointer;
   text-align:left}
 .src-pick:hover{text-decoration:underline;text-underline-offset:3px}
+.src-recipe{display:block;font-family:var(--font-data);font-size:var(--t-xs);font-weight:400;color:var(--fg-3)}
+.src-edit{margin:2px 0 4px -9px}
+.src-grid tr:has(.src-recipe) > td{height:auto;padding-top:4px;padding-bottom:4px}
+.src-mixgrid td{height:36px}
+.src-mixgrid td.name{white-space:normal}
+.src-weight{width:6rem;font-family:var(--font-data);text-align:right}
+.src-share{font-family:var(--font-data);color:var(--fg-2)}
+.dp .scroll .ws-grid.src-mixgrid,.ws-page .scroll .ws-grid.src-mixgrid{min-width:0}
 .src-up{display:flex;flex-direction:column;gap:var(--sp-3)}
 .src-up > *{margin:0}
 .src-file{max-width:100%;font:inherit;font-size:var(--t-md);color:var(--fg-2)}
