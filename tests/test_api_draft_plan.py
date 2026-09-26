@@ -232,7 +232,13 @@ def test_the_plan_carries_the_models_figures_and_the_marks_side_by_side(
     kept = client.put(url(tail="/marks"), json={"marks": [{"player_id": 2, "bid_up_to": 5}]})
     assert kept.status_code == 200, kept.text
     again = client.get(url()).json()
-    assert again["marks"]["2"] == {"going_price": None, "bid_up_to": 5, "tag": "none", "note": ""}
+    assert again["marks"]["2"] == {
+        "going_price": None,
+        "bid_up_to": 5,
+        "tag": "none",
+        "note": "",
+        "source": None,
+    }
     model = next(p for p in again["plan"]["players"] if p["id"] == 2)
     assert model["ceiling"] == man["ceiling"], "the model's figure is not overwritten"
     assert again["effective"]["players"]["2"]["ceiling"] == min(5, man["ceiling"])
@@ -259,6 +265,7 @@ def test_marks_round_trip_whole_and_partial(client: TestClient) -> None:
         "bid_up_to": None,
         "tag": "must",
         "note": "watch",
+        "source": None,
     }, "a field left out is left as it was"
     client.put(url(tail="/marks"), json={"marks": [{"player_id": 1, "going_price": None}]})
     assert client.get(url()).json()["marks"]["1"]["going_price"] is None, "null clears it"
@@ -375,6 +382,74 @@ def test_a_bbm_plan_is_only_for_the_owner_of_the_source(seeded: sessionmaker[Ses
         assert alice.post(url(tail="/rebuild")).status_code == 403
     with as_user(seeded, OWNER) as owner:
         assert owner.get(url()).json()["state"] == "ready"
+
+
+# -- the source chooser ---------------------------------------------------------------
+
+
+@pytest.fixture
+def two_sets(seeded: sessionmaker[Session]) -> Iterator[dict[str, int]]:
+    """One uploaded set for the owner and one for Alice, both for 2027."""
+    from sqlalchemy import delete
+
+    from app.db.models import ProjectionSet
+
+    with seeded() as session:
+        made = {}
+        for email, name in ((OWNER, "Owner's sheet"), ("alice@example.com", "Alice's sheet")):
+            user = accounts.get_or_create_user(session, email)
+            one = ProjectionSet(season=SEASON, name=name, owner=str(user.id), rows=0)
+            session.add(one)
+            session.flush()
+            made[email] = int(one.id)
+        session.commit()
+    yield made
+    with seeded() as session:
+        session.execute(delete(ProjectionSet))
+        session.commit()
+
+
+def test_the_chooser_lists_exactly_what_may_show_allows(
+    seeded: sessionmaker[Session], two_sets: dict[str, int]
+) -> None:
+    """The owner of the BBM captures: BBM, ESPN and his own upload. Alice,
+    on the same team: ESPN and hers -- never BBM, never his set."""
+    mine, hers = two_sets[OWNER], two_sets["alice@example.com"]
+    with as_user(seeded, OWNER) as owner:
+        body = owner.get(url(), params={"source": "espn"}).json()
+        assert [c["source"] for c in body["choices"]] == ["bbm", "espn", f"upload:{mine}"]
+        assert [c["short"] for c in body["choices"]] == ["BBM", "ESPN", "Owner's sheet"]
+        listed = owner.get("/projections/sources", params={"season": SEASON}).json()
+        assert [s["source"] for s in listed["sources"]] == [c["source"] for c in body["choices"]]
+    with as_user(seeded, "alice@example.com") as alice:
+        body = alice.get(url(), params={"source": "espn"}).json()
+        assert [c["source"] for c in body["choices"]] == ["espn", f"upload:{hers}"]
+        listed = alice.get("/projections/sources", params={"season": SEASON}).json()
+        assert [s["source"] for s in listed["sources"]] == ["espn", f"upload:{hers}"]
+        assert alice.get(url(), params={"source": f"upload:{mine}"}).status_code == 404
+
+
+def test_the_plan_builds_on_an_upload_and_names_it(
+    seeded: sessionmaker[Session], two_sets: dict[str, int]
+) -> None:
+    hers = two_sets["alice@example.com"]
+    with as_user(seeded, "alice@example.com") as alice:
+        body = alice.get(url(), params={"source": f"upload:{hers}"}).json()
+        assert body["state"] == "ready"
+        assert body["source"]["kind"] == "upload" and body["source"]["choice"] == f"upload:{hers}"
+        assert body["source"]["short"] == "Alice's sheet"
+        assert body["plan"]["source"]["key"].startswith(f"upload:{hers}@")
+
+
+def test_a_mark_is_per_team_and_remembers_the_pool_it_was_made_on(client: TestClient) -> None:
+    client.put(
+        url(tail="/marks"),
+        json={"marks": [{"player_id": 1, "going_price": 7}], "source": "espn"},
+    )
+    on_bbm = client.get(url()).json()
+    assert on_bbm["source"]["choice"] == "bbm"
+    assert on_bbm["marks"]["1"]["going_price"] == 7, "the same mark on another pool"
+    assert on_bbm["marks"]["1"]["source"] == "espn"
 
 
 # -- the co-manager's draft_board --------------------------------------------------

@@ -1590,9 +1590,15 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
 .dp-nine dd{margin:0;display:flex;flex-direction:column;align-items:center}
 .dp-nine small{font-family:var(--font-data);font-size:var(--t-2xs);color:var(--fg-2);white-space:nowrap}
 
+/* The plan's source chooser: a segmented control for three pools or fewer,
+   a select for more. */
+.dp-pools .ws-select{height:26px;max-width:16rem;font-size:var(--t-sm)}
+.ws-seg.dp-pools{max-width:100%;overflow-x:auto;scrollbar-width:thin}
+.ws-seg.dp-pools button{white-space:nowrap}
+
 /* ---- SOURCES (sources.js): the pools, the upload's mapping, a composite ---- */
 .src-season{margin:0 0 var(--sp-3)}
-.src-grid td.name{white-space:normal;overflow-wrap:anywhere}
+.src-grid td.name{min-width:12rem;white-space:normal;overflow-wrap:break-word}
 .src-grid td.src-by{white-space:nowrap}
 .src-pick{padding:0;font:inherit;font-weight:inherit;color:var(--fg);background:none;border:0;cursor:pointer;
   text-align:left}

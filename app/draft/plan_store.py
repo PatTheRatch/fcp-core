@@ -315,6 +315,9 @@ class Mark:
     bid_up_to: int | None
     tag: str
     note: str
+    #: The pool in view when he last wrote it: marks are per team, not per
+    #: source, and this only lets the page say when it was another pool.
+    source: str | None = None
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -322,6 +325,7 @@ class Mark:
             "bid_up_to": self.bid_up_to,
             "tag": self.tag,
             "note": self.note,
+            "source": self.source,
         }
 
 
@@ -330,7 +334,7 @@ def marks_of(row: DraftPlan | None) -> dict[int, Mark]:
     if row is None:
         return {}
     return {
-        m.player_id: Mark(m.player_id, m.going_price, m.bid_up_to, m.tag, m.note or "")
+        m.player_id: Mark(m.player_id, m.going_price, m.bid_up_to, m.tag, m.note or "", m.source)
         for m in row.marks
         if m.going_price is not None or m.bid_up_to is not None or m.tag != "none" or m.note
     }

@@ -220,6 +220,7 @@ const money = (v) => (isNum(v) ? `$${v}` : dash);
 const oursOf = (m) => (m.considered && !isNum(m.ceiling) ? "no bid" : money(m.ceiling));
 const planUrl = (source) => PLAN_URL + (source ? `?source=${encodeURIComponent(source)}` : "");
 const plan = () => (ANSWER && ANSWER.plan) || null;
+const currentPool = () => (ANSWER && ANSWER.source ? ANSWER.source.choice : null);
 const eff = (id) => (ANSWER && ANSWER.effective ? ANSWER.effective.players[String(id)] : null) || null;
 const markOf = (id) => (ANSWER && ANSWER.marks ? ANSWER.marks[String(id)] : null) || null;
 const tagOf = (id) => (markOf(id) || {}).tag || "none";
@@ -285,7 +286,7 @@ async function flushMarks() {
 }
 
 async function putMarks(body, where) {
-  const done = await send("PUT", `${PLAN_URL}/marks`, body);
+  const done = await send("PUT", `${PLAN_URL}/marks`, { ...body, source: currentPool() });
   const line = $(where || "board-saved");
   if (!done.ok) {
     if (line) {
@@ -328,24 +329,59 @@ function drawHeader() {
   if (a.auction_when) parts.push(`auction ${a.auction_when.replace(" at ", " · ")}`);
   if (a.state === "drafted") parts.push("drafted");
   $("sub").textContent = parts.join(" · ");
-  const pools = a.choices || [];
-  const current = a.source ? a.source.kind === "upload" ? `upload:${String(a.source.key).split(":")[1]}` : a.source.kind : null;
-  $("pools").innerHTML = pools.length > 1
-    ? pools
-        .map(
-          (c) =>
-            `<button type="button" data-pool="${escape(c.source)}" aria-pressed="${c.source === current}"` +
-            ` title="${escape(c.label)}">${escape(c.source === "bbm" ? "BBM" : c.source === "espn" ? "ESPN" : "Yours")}</button>`,
-        )
-        .join("")
-    : "";
-  $("pools").querySelectorAll("[data-pool]").forEach((button) => {
-    button.onclick = () => {
-      window.location.assign(window.location.pathname + `?source=${encodeURIComponent(button.dataset.pool)}`);
-    };
-  });
+  drawChooser(a);
   $("rebuild").hidden = !(a.state === "ready" || a.state === "failed");
 }
+
+/** The source chooser: every pool he may plan on (the route's `choices`,
+ *  SOURCES' own list). Three or fewer are a segmented control, more a
+ *  select. Choosing one plans on it; each pool's build is kept, so going
+ *  back is instant once built. */
+function drawChooser(a) {
+  const pools = a.choices || [];
+  const current = a.source ? a.source.choice : null;
+  const go = (choice) => window.location.assign(window.location.pathname + `?source=${encodeURIComponent(choice)}`);
+  const host = $("pools");
+  if (pools.length <= 1) {
+    host.innerHTML = "";
+    host.className = "ws-seg";
+    return;
+  }
+  if (pools.length <= 3) {
+    host.className = "ws-seg dp-pools";
+    host.innerHTML = pools
+      .map(
+        (c) =>
+          `<button type="button" data-pool="${escape(c.source)}" aria-pressed="${c.source === current}"` +
+          ` title="${escape(c.label)}">${escape(c.short)}</button>`,
+      )
+      .join("");
+    host.querySelectorAll("[data-pool]").forEach((button) => {
+      button.onclick = () => go(button.dataset.pool);
+    });
+    return;
+  }
+  host.className = "dp-pools";
+  host.innerHTML =
+    `<span class="ws-field sel"><label class="sr" for="pool-pick">The pool the plan is built on</label>` +
+    `<select class="ws-select" id="pool-pick">` +
+    pools
+      .map(
+        (c) =>
+          `<option value="${escape(c.source)}"${c.source === current ? " selected" : ""}>` +
+          `${escape(c.kind === "bbm" ? "BBM" : c.kind === "espn" ? "ESPN" : c.short)}` +
+          `${c.kind === "upload" ? " · upload" : c.kind === "composite" ? " · composite" : ""}</option>`,
+      )
+      .join("") +
+    `</select></span>`;
+  $("pool-pick").onchange = () => go($("pool-pick").value);
+}
+
+/** What a pool is called, by its choice ("upload:7" is the set's own name). */
+const poolLabel = (choice) => {
+  const found = ((ANSWER && ANSWER.choices) || []).find((c) => c.source === choice);
+  return found ? found.label : choice;
+};
 
 function facts() {
   const a = ANSWER;
@@ -404,11 +440,12 @@ function facts() {
     key: "source",
     label: "Source",
     figure:
-      `<b>${escape(source.kind === "bbm" ? "BBM" : source.kind === "espn" ? "ESPN" : "Your set")}</b>` +
+      `<b>${escape(source.short || source.kind)}</b>` +
       (source.captured_on ? ` <small>captured ${escape(shortDate(source.captured_on))}${escape(age)}</small>` : "") +
       (source.stale ? ` <span class="ws-tag neg">old</span>` : ""),
     rows: [
-      ["Pool", escape(p.source.note || source.name)],
+      ["Pool", escape(source.label || p.source.note || source.name)],
+      ["Chooser", "the pools you may plan on are at the top of the page and in SOURCES; each keeps its own build"],
       ["Detail", escape(p.source.pool || "")],
       ["Captured", source.captured_on ? `${escape(source.captured_on)}${escape(age)}` : "not a capture"],
       ...(source.stale
@@ -805,6 +842,13 @@ function manRows(m) {
   if (facts.length) rows.push(["Facts", escape(facts.join(" · "))]);
   if (m.note) rows.push([`${m.note_by || "BBM"}'s note`, escape(m.note)]);
   if (m.check_news) rows.push(["Check news", escape(m.check_news)]);
+  if (mark.source && mark.source !== currentPool()) {
+    rows.push([
+      "Made on",
+      `your marks for him were last set with <b>${escape(poolLabel(mark.source))}</b> in view; this plan reads ` +
+        `<b>${escape(poolLabel(currentPool()))}</b>. They are yours for the room whatever pool the model reads.`,
+    ]);
+  }
   const must = p.must;
   if (must && must.each && isNum(must.each[String(m.id)])) {
     rows.push(["Lock cost", `<span class="ws-data">${fixed(must.each[String(m.id)], 2)}</span> categories a week: the best roster with him fixed in, against the free best roster`]);
@@ -1087,7 +1131,7 @@ $("notes").addEventListener("input", () => {
   clearTimeout(NOTES_TIMER);
   $("notes-saved").textContent = "saving…";
   NOTES_TIMER = setTimeout(async () => {
-    const done = await send("PUT", `${PLAN_URL}/marks`, { notes: $("notes").value });
+    const done = await send("PUT", `${PLAN_URL}/marks`, { notes: $("notes").value, source: currentPool() });
     $("notes-saved").textContent = done.ok ? "saved" : done.detail || "not kept";
   }, 800);
 });

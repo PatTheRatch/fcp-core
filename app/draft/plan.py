@@ -171,6 +171,9 @@ class PoolSource:
     set_id: int | None = None
     #: The script's `--exported` words: when the files were pulled.
     exported: str = ""
+    #: When a stored set was last uploaded: a set uploaded again under its
+    #: name keeps its id, so its plan is keyed on this as well.
+    version: str = ""
 
     @property
     def tag(self) -> str:
@@ -189,7 +192,7 @@ class PoolSource:
                 return f"bbm:{self.captured_on.isoformat()}"
             return f"bbm-files:{self.files[0].name if self.files else ''}"
         if self.kind == "upload":
-            return f"upload:{self.set_id}"
+            return f"upload:{self.set_id}" + (f"@{self.version}" if self.version else "")
         return "espn"
 
     @classmethod
@@ -204,8 +207,15 @@ class PoolSource:
             return cls("bbm", captured_on=day)
         set_id = sources.upload_set_id(text)
         if set_id is not None:
-            return cls("upload", set_id=set_id)
+            return cls.of_set(session, set_id)
         raise ValueError(f"unknown source {text!r}: bbm, espn or upload:<set id>")
+
+    @classmethod
+    def of_set(cls, session: Session, set_id: int) -> PoolSource:
+        """A stored set as a pool, carrying when it was last uploaded."""
+        found = session.get(ProjectionSet, set_id)
+        version = found.uploaded_at.isoformat() if found is not None else ""
+        return cls("upload", set_id=set_id, version=version)
 
 
 def default_source(
@@ -225,7 +235,7 @@ def default_source(
             .limit(1)
         )
         if newest is not None:
-            return PoolSource("upload", set_id=int(newest))
+            return PoolSource.of_set(session, int(newest))
     return PoolSource("espn")
 
 

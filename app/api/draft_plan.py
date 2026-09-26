@@ -50,13 +50,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import reports
 from app.api.access import Viewer, require_team_plan
 from app.api.deps import LeagueIdPath, LeagueSeasonDep, SessionDep, TeamDep
-from app.api.projections import DEFAULT_OWNER
+from app.api.projections import upload_owners, viewer_owns_bbm
 from app.db.models import DraftPlan, DraftPlanMark, LeagueSeason, ProjectionSet, Team, TeamReport
-from app.draft import bbm_store, plan_store
 from app.draft import plan as engine
+from app.draft import plan_store
 from app.draft.market import MINIMUM_BID
 from app.draft.pool import roster_size_for
 from app.inseason.drafted import season_is_drafted, when
+from app.projections.catalog import catalog
 from app.projections.sources import choice_of, describe, may_show
 
 router = APIRouter(tags=["draft plan"])
@@ -72,33 +73,19 @@ WITHHELD = (
 )
 
 
-def viewer_owns_bbm(viewer: Viewer) -> bool:
-    """Whether this viewer owns the stored BBM captures: the site's owner,
-    whose membership `scripts/bbm_pull.py` signs in with."""
-    return viewer.is_owner
-
-
-def _upload_owners(viewer: Viewer) -> list[str]:
-    """Whose uploaded sets are this viewer's (`app.api.projections._owns`)."""
-    owners = [str(viewer.user_id)] if viewer.user_id is not None else []
-    if viewer.is_owner or viewer.all_access:
-        owners.append(DEFAULT_OWNER)
-    return owners
-
-
 def _source(
     session: Session, league_season: LeagueSeason, viewer: Viewer, asked: str | None
 ) -> engine.PoolSource:
     season = int(league_season.season)
     if not asked:
-        return engine.default_source(session, season, upload_owners=_upload_owners(viewer))
+        return engine.default_source(session, season, upload_owners=upload_owners(viewer))
     try:
         source = engine.PoolSource.parse(asked, session, season)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
-    if source.kind == "upload":
+    if source.set_id is not None:
         found = session.get(ProjectionSet, source.set_id)
-        if found is None or (found.owner not in _upload_owners(viewer) and not viewer.all_access):
+        if found is None or (found.owner not in upload_owners(viewer) and not viewer.all_access):
             raise HTTPException(status_code=404, detail=f"no projection set {source.set_id}")
         if found.season != season:
             raise HTTPException(
@@ -108,21 +95,23 @@ def _source(
 
 
 def _choices(session: Session, season: int, viewer: Viewer) -> list[dict[str, Any]]:
-    """The pools this viewer may plan on: BBM's newest capture when it is his,
-    his own uploaded sets, and ESPN's."""
-    out: list[dict[str, Any]] = []
-    day = bbm_store.latest_capture(session, season)
-    if day is not None and viewer_owns_bbm(viewer):
-        out.append({"source": "bbm", "label": f"Basketball Monster, captured {day:%b} {day.day}"})
-    owners = _upload_owners(viewer)
-    for found in session.scalars(
-        select(ProjectionSet)
-        .where(ProjectionSet.season == season, ProjectionSet.owner.in_(owners))
-        .order_by(ProjectionSet.uploaded_at.desc())
-    ):
-        out.append({"source": f"upload:{found.id}", "label": f"your set: {found.name}"})
-    out.append({"source": "espn", "label": "ESPN's projections"})
-    return out
+    """The pools this viewer may plan on, as SOURCES lists them
+    (`app.projections.catalog`): BBM's newest capture when it is his, ESPN's,
+    his uploads and his composites, each by name."""
+    listed = catalog(
+        session, season, owners=upload_owners(viewer), owns_bbm=viewer_owns_bbm(viewer)
+    )
+    return [
+        {
+            "source": one.choice,
+            "label": one.name,
+            "short": one.short,
+            "kind": one.kind,
+            "gated": one.gated,
+            "recipe": one.recipe,
+        }
+        for one in listed
+    ]
 
 
 def _factory(session: Session) -> sessionmaker[Session]:
@@ -202,6 +191,10 @@ def get_plan(
         },
         "choices": _choices(session, season, viewer),
     }
+    # The pool in view by the name the chooser gives it (a set's own name).
+    named = next((c for c in head["choices"] if c["source"] == head["source"]["choice"]), None)
+    head["source"]["label"] = named["label"] if named else head["source"]["name"]
+    head["source"]["short"] = named["short"] if named else head["source"]["kind"].upper()
     if not may_show(pool.tag, viewer_owns_source=viewer_owns_bbm(viewer)):
         return {**head, "state": "withheld", "note": WITHHELD, "offer": "espn"}
 
@@ -293,6 +286,15 @@ class MarksIn(BaseModel):
     reset: Literal["figures"] | None = Field(
         default=None, description="'figures': every going price and ceiling back to the model's"
     )
+    source: str | None = Field(
+        default=None,
+        max_length=40,
+        description=(
+            "The pool in view when these were made ('bbm', 'espn', 'upload:7', 'composite:9'). "
+            "Marks are per team, not per source; this only lets the page say when one was "
+            "made on another pool"
+        ),
+    )
 
 
 @router.put(PLAN + "/marks", summary="Keep the manager's figures, tags, ladder and notes")
@@ -355,6 +357,8 @@ def put_marks(
             kept.tag = mark.tag or "none"
         if "note" in sent:
             kept.note = mark.note or ""
+        if edits.source:
+            kept.source = edits.source
         kept.updated_at = dt.datetime.now(dt.UTC)
     if edits.reset == "figures":
         for kept in row.marks:
