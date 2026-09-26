@@ -56,6 +56,48 @@
   </div>
 </section>
 
+<section class="ws-sect" id="codes-sect" hidden>
+  <div class="ws-sect-head"><h2 class="ws-label">Codes</h2><span class="ws-k">season passes you hand out</span>
+    <button type="button" class="ws-btn sm quiet" data-account="codes-account" aria-haspopup="dialog">How codes work</button></div>
+  <div class="ws-account" id="codes-account" data-title="Codes" data-kicker="The site's owner">
+    <p data-k="What a code gives">A season pass: the team layer for every team the person manages, in
+    every league, until the date the code carries. Nothing renews; when the pass ends the
+    person is back on the free tier. Someone with a live pass cannot redeem another.</p>
+    <p data-k="The date">Leave it empty and the pass runs to the end of the newest season's playoffs,
+    plus a month (a year from today when no season is stored). Uses is how many people may
+    redeem the one code; each person once.</p>
+    <p data-k="Revoking">A revoked code redeems nothing more. The passes it already wrote stand.
+    The same codes are on the command line: <span class="mono">scripts/comp_code.py</span>.</p>
+  </div>
+  <div class="ws-panel">
+  <form class="ws-form" id="makecode" autocomplete="off">
+    <span class="ws-fld"><label for="codenote">Who it is for</label>
+      <input class="ws-input plain" id="codenote" maxlength="200" placeholder="Dennis"></span>
+    <span class="ws-fld narrow"><label for="codeuses">Uses</label>
+      <input class="ws-input plain" id="codeuses" type="number" min="1" max="500" value="1" required></span>
+    <span class="ws-fld narrow"><label for="codeuntil">Pass runs until</label>
+      <input class="ws-input plain" id="codeuntil" type="date"></span>
+    <button class="ws-btn primary" type="submit">Make a code</button>
+  </form>
+  <p class="ws-line" id="codesaid" hidden></p>
+  <dl class="ws-facts ws-newcode" id="newcode" hidden>
+    <dt>Code</dt><dd><span class="ws-data" id="newcode-text"></span>
+      <button type="button" class="ws-btn sm" id="copycode">Copy</button></dd>
+    <dt>For</dt><dd id="newcode-for"></dd>
+    <dt>Uses</dt><dd class="ws-data" id="newcode-uses"></dd>
+    <dt>Pass until</dt><dd class="ws-data" id="newcode-until"></dd>
+  </dl>
+  </div>
+  <div class="ws-panel flush"><div class="scroll">
+  <table class="ws-grid ws-codes">
+    <thead><tr><th scope="col">Code</th><th scope="col" class="l">For</th><th scope="col">Left</th>
+      <th scope="col">Pass until</th><th scope="col" class="l">Redeemed by</th><th scope="col" class="l">State</th>
+      <th scope="col"><span class="sr">Revoke</span></th></tr></thead>
+    <tbody id="codes"><tr><td class="empty" colspan="7">Loading…</td></tr></tbody>
+  </table>
+  </div></div>
+</section>
+
 <section class="ws-sect">
   <div class="ws-sect-head"><h2 class="ws-label">Your league's numbers</h2><span class="ws-k">measured on your own history</span>
     <button type="button" class="ws-btn sm quiet" data-account="numbers-account" aria-haspopup="dialog">How this is worked out</button></div>
@@ -320,6 +362,103 @@ async function ownedLeague(id) {
   return part;
 }
 
+/* Codes, the site owner's (docs/accounts.md, "Codes"). The section is drawn
+   only when /auth/me says he is the owner; the routes refuse anyone else
+   with a 403 whatever the page draws. A code is shown in the list as well
+   as once when made: he has to read it back to send it. */
+
+async function loadCodes() {
+  const box = $("codes");
+  const got = await call("GET", "/billing/codes");
+  box.replaceChildren();
+  if (!got.ok) return box.append(codesEmpty(got.detail));
+  if (!got.data.length) return box.append(codesEmpty("No codes yet."));
+  for (const c of got.data) {
+    const row = document.createElement("tr");
+    const cell = (text, cls) => {
+      const td = el("td", text, cls);
+      row.append(td);
+      return td;
+    };
+    cell(c.code, "code");
+    cell(c.note || "—", "l");
+    cell(`${c.uses_left}/${c.uses_total}`);
+    cell(c.valid_until_words);
+    cell(
+      c.redeemed.length
+        ? c.redeemed.map((r) => `${r.email} · ${day(r.redeemed_at)}`).join(", ")
+        : "—",
+      "l",
+    );
+    cell("", "l").append(el("span", c.state, "ws-tag"));
+    const act = cell("");
+    if (!c.revoked_at) {
+      const revoke = button("Revoke", async () => {
+        if (!window.confirm(`Revoke ${c.code}? It redeems nothing more; its passes stand.`)) return;
+        await call("POST", `/billing/codes/${c.id}/revoke`);
+        loadCodes();
+      });
+      revoke.classList.add("quiet");
+      revoke.setAttribute("aria-label", `Revoke ${c.code}`);
+      act.append(revoke);
+    }
+    box.append(row);
+  }
+}
+
+function codesEmpty(text) {
+  const row = document.createElement("tr");
+  const td = el("td", text, "empty");
+  td.colSpan = 7;
+  row.append(td);
+  return row;
+}
+
+$("makecode").onsubmit = async (event) => {
+  event.preventDefault();
+  const body = { note: $("codenote").value.trim(), uses: Number($("codeuses").value) };
+  if ($("codeuntil").value) body.valid_until = $("codeuntil").value;
+  const done = await call("POST", "/billing/codes", body);
+  if (!done.ok) {
+    $("newcode").hidden = true;
+    return say("codesaid", done.detail);
+  }
+  $("codesaid").hidden = true;
+  const c = done.data;
+  $("newcode-text").textContent = c.code;
+  $("newcode-for").textContent = c.note || "—";
+  $("newcode-uses").textContent = c.uses_total === 1 ? "1 use" : `${c.uses_total} uses`;
+  $("newcode-until").textContent =
+    c.valid_until_words + (c.default_valid_until ? " (the season's end, plus a month)" : "");
+  $("copycode").textContent = "Copy";
+  $("newcode").hidden = false;
+  $("codenote").value = "";
+  loadCodes();
+};
+
+$("copycode").onclick = async () => {
+  const text = $("newcode-text").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copycode").textContent = "Copied";
+  } catch (error) {
+    /* no clipboard (an http page, an old browser): select it to copy by hand */
+    const range = document.createRange();
+    range.selectNodeContents($("newcode-text"));
+    const picked = window.getSelection();
+    picked.removeAllRanges();
+    picked.addRange(range);
+    $("copycode").textContent = "Selected";
+  }
+};
+
+async function loadOwnerParts() {
+  const me = await call("GET", "/auth/me");
+  if (!me.ok || !me.data.owner) return;
+  $("codes-sect").hidden = false;
+  loadCodes();
+}
+
 $("connect").onsubmit = async (event) => {
   event.preventDefault();
   const body = {
@@ -404,6 +543,7 @@ loadConnections();
 loadOwned();
 loadNumbers();
 loadTokens();
+loadOwnerParts();
 </script>
 </body>
 </html>

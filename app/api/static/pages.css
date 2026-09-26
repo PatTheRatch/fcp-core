@@ -711,6 +711,17 @@ details.ws-disc.ws-panel.flush .ws-disc-body.flush{padding:0}
   text-transform:uppercase;color:var(--fg-3)}
 .ws-input.plain{padding-left:10px;width:100%}
 .ws-page .ws-select{max-width:100%}
+/* A short field (a count, a date) beside a long one. */
+.ws-form .ws-fld.narrow{flex:0 1 10rem}
+
+/* ---- the season pass: the owner's Codes on Connections, and /upgrade ------ */
+/* A code as it is sent: the data face, never broken across a line. */
+.ws-codes td.code,.ws-newcode .ws-data{font-family:var(--font-data);white-space:nowrap;letter-spacing:.04em}
+.ws-codes td{white-space:nowrap}
+.ws-codes .ws-tag{vertical-align:middle}
+.ws-newcode{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--line);align-items:center}
+.ws-newcode dd .ws-btn{margin-left:var(--sp-2);vertical-align:middle}
+.ws-newcode #newcode-text{font-size:var(--t-lg);font-weight:600}
 
 /* ---- the design page's own specimens (/design) --------------------------- */
 .ws-doc-head{margin:0 0 var(--sp-6)}
